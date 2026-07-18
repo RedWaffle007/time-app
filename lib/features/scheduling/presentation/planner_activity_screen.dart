@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/timezone/tz_resolver.dart';
+import '../../../core/widgets/async_view.dart';
 import '../../auth/application/auth_providers.dart';
 import '../application/schedule_providers.dart';
 import '../domain/schedule_item.dart';
@@ -18,13 +19,12 @@ class PlannerActivityScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Activity')),
-      body: itemsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
-        data: (items) {
-          if (items.isEmpty) {
-            return const Center(child: Text('You haven\'t planned anything yet.'));
-          }
+      body: AsyncView<List<ScheduleItem>>(
+        value: itemsAsync,
+        onRetry: () => ref.invalidate(myItemsAsPlannerProvider),
+        isEmpty: (items) => items.isEmpty,
+        emptyMessage: "You haven't planned anything yet.",
+        builder: (context, items) {
           final sorted = [...items]
             ..sort((a, b) => b.scheduledInstantUtc.compareTo(a.scheduledInstantUtc));
           return ListView(

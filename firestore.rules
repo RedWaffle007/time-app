@@ -84,16 +84,17 @@ service cloud.firestore {
       }
 
       // ---- plannerGrants/{grantId} ----
-      // Read: the planner or target of the grant (powers the cross-group
-      // collection-group query), OR any group member (powers the roster view).
+      // This SPECIFIC-path rule serves DIRECT, path-scoped access only (the
+      // roster list watchGrants(groupId), where groupId is bound so get() is
+      // valid). The planner's cross-group query is a COLLECTION-GROUP query and
+      // is NOT matched by a specific parent path — it is handled by the
+      // /{path=**}/plannerGrants rule at the bottom. (Verified on the emulator;
+      // see DECISIONS.md.)
       // Write: consent is the TARGET's to give — the caller must be the target
       // and the recorded grantedByUid, the grant must name this group, and both
       // parties must be group members.
       match /plannerGrants/{grantId} {
-        allow read: if signedIn()
-          && (resource.data.plannerUid == request.auth.uid
-              || resource.data.targetUid == request.auth.uid
-              || callerInGroup(groupId));
+        allow read: if callerInGroup(groupId);
 
         allow create, update: if signedIn()
           && request.resource.data.targetUid == request.auth.uid
@@ -107,17 +108,18 @@ service cloud.firestore {
     }
 
     // ---- scheduleItems/{targetUid}/items/{itemId} ----
-    // Read: the target (owner of the subtree) OR the planner who created the item
-    //   (powers the planner's cross-target collection-group activity query).
+    // This SPECIFIC-path rule serves the TARGET's own subtree (their pending
+    // queue / approved items) via direct, path-scoped reads, plus item writes.
+    // The PLANNER's cross-target read is a COLLECTION-GROUP query and is NOT
+    // matched by a specific parent path — it is handled by the /{path=**}/items
+    // rule at the bottom. (Verified on the emulator; see DECISIONS.md.)
     // Create: the creator — who is either the target themselves, or a planner
     //   holding an ACTIVE grant over the target in the item's group. createdByUid
     //   and targetUid cannot be forged (must equal the caller / the path).
     // Update: TARGET only — approve / reject / mark done / mark skipped.
     //   Planner cancel/edit is deferred (no code path yet; see DECISIONS.md).
     match /scheduleItems/{targetUid}/items/{itemId} {
-      allow read: if signedIn()
-        && (request.auth.uid == targetUid
-            || resource.data.createdByUid == request.auth.uid);
+      allow read: if signedIn() && request.auth.uid == targetUid;
 
       allow create: if signedIn()
         && request.resource.data.targetUid == targetUid
@@ -128,6 +130,24 @@ service cloud.firestore {
       allow update: if signedIn() && request.auth.uid == targetUid;
 
       allow delete: if false;
+    }
+
+    // ---- Collection-group READ rules ----
+    // A `collectionGroup()` query is matched ONLY by a recursive `{path=**}`
+    // rule — never by a rule scoped to a specific parent path (empirically
+    // verified; see DECISIONS.md). These serve the planner's two cross-parent
+    // queries. Both stay resource-scoped so a caller can read ONLY items they
+    // created / grants that name them — the query MUST filter on the same field
+    // (which the app's queries do) or Firestore denies it.
+    match /{path=**}/items/{itemId} {
+      allow read: if signedIn()
+        && resource.data.createdByUid == request.auth.uid;
+    }
+
+    match /{path=**}/plannerGrants/{grantId} {
+      allow read: if signedIn()
+        && (resource.data.plannerUid == request.auth.uid
+            || resource.data.targetUid == request.auth.uid);
     }
 
     // Everything else: deny. (No client path touches `invites/` — join is by

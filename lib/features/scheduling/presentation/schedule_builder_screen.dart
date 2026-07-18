@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/timezone/tz_resolver.dart';
+import '../../../core/widgets/async_view.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../groups/application/group_providers.dart';
 import '../../groups/domain/planner_grant.dart';
@@ -109,25 +110,14 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Schedule Builder')),
-      body: targetsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
-        data: (grants) {
-          if (grants.isEmpty) {
-            return const Padding(
-              padding: EdgeInsets.all(24),
-              child: Center(
-                child: Text(
-                  "No one has let you plan for them yet.\n\n"
-                  "Ask a friend to turn on \"can plan for me\" for you in a "
-                  "shared group.",
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            );
-          }
-          return _buildForm(grants);
-        },
+      body: AsyncView<List<PlannerGrant>>(
+        value: targetsAsync,
+        onRetry: () => ref.invalidate(myPlanningTargetsProvider),
+        isEmpty: (grants) => grants.isEmpty,
+        emptyMessage: "No one has let you plan for them yet.\n\n"
+            "Ask a friend to turn on \"can plan for me\" for you in a "
+            "shared group.",
+        builder: (context, grants) => _buildForm(grants),
       ),
     );
   }

@@ -84,6 +84,46 @@ Model:
     **target-only** (approve/reject/done/skip); createdByUid/targetUid can't be
     forged.
 
+**Collection-group reads need `{path=**}` rules (fixed 2026-07-18).** Two screens
+issue `collectionGroup` queries — Planner Activity (`items` where
+`createdByUid == me`) and Schedule Builder (`plannerGrants` where
+`plannerUid == me`). Root cause of the `permission-denied`: **a `collectionGroup()`
+query is matched ONLY by a rule written with a recursive `{path=**}` wildcard;
+a rule scoped to a specific parent path (`/scheduleItems/{targetUid}/items/...`)
+never matches it, regardless of the condition** — so there was literally "No
+matching allow statements." This is about the match PATH SHAPE, not the
+condition. (Two earlier hypotheses were wrong: it was not a `resource` vs
+parent-wildcard mix, and splitting one `allow` into two changed nothing —
+verified on the Firestore emulator.)
+
+Fix — keep the specific-path rules for DIRECT/path-scoped reads + writes, and add
+top-level recursive rules for the collection-group reads:
+```
+match /{path=**}/items/{itemId} {
+  allow read: if signedIn() && resource.data.createdByUid == request.auth.uid;
+}
+match /{path=**}/plannerGrants/{grantId} {
+  allow read: if signedIn()
+    && (resource.data.plannerUid == request.auth.uid
+        || resource.data.targetUid == request.auth.uid);
+}
+```
+`resource.data`-scoping DOES work for collection-group lists, so the model stays
+restrictive: the client query must filter on the same field (the app's queries
+do), and a user can read only items they created / grants naming them. No
+denormalization needed (`createdByUid`, `plannerUid` already on the docs). Reads
+were NOT opened to any-signed-in.
+
+**How it was verified (do this, not console-eyeballing):** the Firestore emulator
+(`firebase emulators:start --only firestore`) loads the real `firestore.rules`,
+and its `emulator/v1/.../:securityRules` endpoint hot-swaps rulesets for a fast
+loop. Ran the exact query shapes with a mock ID token, seeded a group/grant/item
+as admin, and asserted ALLOW **plus negative controls** (can't read others'
+items/grants, unfiltered collection-group query denied, non-member roster denied)
+before deploying. The Rules **test API** / Playground could NOT verify this — they
+evaluate `list` with `resource == null`, so they falsely deny any resource-scoped
+list. See also the "diagnostic hazard" note below.
+
 Deferred hardening (logged, not built):
 - **Cloud-Function-mediated join** — server-validated "add only yourself" instead
   of a client `arrayUnion`. Needs the **Blaze** plan. The current rule already
@@ -112,6 +152,41 @@ only) with **one real friend** before investing in alarm work. The behavioral be
 that bet fails, the expensive alarm work is wasted. Alarms come *after* this test.
 
 ---
+
+# UI: no silent infinite spinners (AsyncView)
+
+All list/stream screens render through `lib/core/widgets/async_view.dart`, which
+adds a **loading timeout** on top of the usual loading/error/empty states: if a
+Firestore listener sits in `loading` past ~12s with no data or error, the screen
+shows an actionable "taking longer than expected → Retry" instead of spinning.
+
+**Why:** a Firestore `.snapshots()` listener does NOT surface `UNAVAILABLE`
+(network) errors to the stream — it retries silently — so a query with no cached
+data to fall back on hangs forever with no error. First seen 2026-07-18: the
+planner's two collection-group screens (Schedule Builder, Planner Activity) spun
+forever on the Redmi while every other screen worked.
+
+**There were TWO stacked bugs, and the outer one hid the inner one:**
+1. **App-scoped network block** — the device OS resolved `firestore.googleapis.com`,
+   but the app process could not (HyperOS per-app network restriction). This made
+   the listeners retry silently and never emit — a spinner with no error. Cached
+   screens rendered; uncached collection-group queries hung.
+2. **A real collection-group rules denial** (below) — once the network block was
+   cleared, the true error surfaced immediately: `permission-denied`.
+
+The timeout does not fix either bug; it makes both *visible* (spinner → error or
+retry) so we stop mistaking a backend problem for a broken app.
+
+## Diagnostic hazard: an offline app makes rules tests lie
+
+While the network block (above) was in effect, a "broaden the rules to any
+signed-in user" test was deployed to check whether permissions were the cause.
+It changed nothing — but **only because the app couldn't reach the server at
+all**, so no rule (loose or strict) could have mattered. That falsely exonerated
+the rules. **Rule: never conclude "not a permissions problem" from a live-app
+test until the app is confirmed to be actually reaching Firestore** (a genuine
+`permission-denied` error, or a server-side query that returns). An
+infinite/silent spinner means "no answer," not "allowed."
 
 # Outstanding verification debt (UNPAID)
 
