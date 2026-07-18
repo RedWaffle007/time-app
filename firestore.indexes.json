@@ -1,0 +1,21 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "plannerGrants",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "granted", "order": "ASCENDING" },
+        { "fieldPath": "plannerUid", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "items",
+      "fieldPath": "createdByUid",
+      "indexes": [
+        { "queryScope": "COLLECTION_GROUP", "order": "ASCENDING" }
+      ]
+    }
+  ]
+}

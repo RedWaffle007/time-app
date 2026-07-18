@@ -1,0 +1,136 @@
+rules_version = '2';
+
+// time-app Firestore security rules (v1).
+//
+// Model in one line: membership ≠ permission to plan. Reading a profile is open
+// to any signed-in user; everything relationship-sensitive (rosters, grants,
+// schedules) is gated on group membership or on being the planner/target of the
+// specific record. Consent to be planned for is the TARGET's to give.
+//
+// These rules are written to exactly match the app's real read/write paths
+// (see lib/**/data/*_repository.dart). Deferred hardening is logged in
+// DECISIONS.md (Cloud-Function-mediated join; "share-a-group" profile scoping).
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- helpers ----
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Is `uid` in the group's denormalized memberUids array?
+    function uidInGroup(groupId, uid) {
+      return exists(/databases/$(database)/documents/groups/$(groupId))
+        && uid in get(/databases/$(database)/documents/groups/$(groupId)).data.memberUids;
+    }
+
+    // Is the CALLER a member of the group?
+    function callerInGroup(groupId) {
+      return signedIn() && uidInGroup(groupId, request.auth.uid);
+    }
+
+    // Does the caller hold an ACTIVE planner grant over `targetUid` in `groupId`?
+    // Grant id is deterministic: `{plannerUid}_{targetUid}` (PlannerGrant.docId).
+    function callerHasActiveGrant(targetUid, groupId) {
+      let grant = /databases/$(database)/documents/groups/$(groupId)/plannerGrants/$(request.auth.uid + '_' + targetUid);
+      return exists(grant) && get(grant).data.granted == true;
+    }
+
+    // ---- users/{uid} ----
+    // Decision ①: any signed-in user may read profiles (name / avatar / home tz).
+    // Writes are owner-only. Tighter "share-a-group" read scoping is deferred
+    // (DECISIONS.md).
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.auth.uid == uid;
+      allow delete: if false;
+    }
+
+    // ---- groups/{groupId} ----
+    // Decision ②: the group doc (name, joinCode, memberUids) is readable by any
+    // signed-in user so join-by-code can look it up. Anyone may create a group
+    // as its owner + sole first member. The only permitted UPDATE by a
+    // non-member is a self-join that adds ONLY themselves to memberUids.
+    match /groups/{groupId} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.memberUids == [request.auth.uid];
+
+      // Self-join: memberUids is the only field touched, the caller wasn't
+      // already a member, and exactly one element — the caller — was added.
+      allow update: if signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberUids'])
+        && !(request.auth.uid in resource.data.memberUids)
+        && request.auth.uid in request.resource.data.memberUids
+        && request.resource.data.memberUids.hasAll(resource.data.memberUids)
+        && request.resource.data.memberUids.size() == resource.data.memberUids.size() + 1;
+
+      allow delete: if false;
+
+      // ---- members/{memberUid} ----
+      // Roster is relationship-gated: only group members may read it. A user may
+      // write only their OWN member doc, and only once they're in memberUids
+      // (join writes memberUids before the member doc, so this holds).
+      match /members/{memberUid} {
+        allow read: if callerInGroup(groupId);
+        allow create, update: if signedIn()
+          && memberUid == request.auth.uid
+          && callerInGroup(groupId);
+        allow delete: if false;
+      }
+
+      // ---- plannerGrants/{grantId} ----
+      // Read: the planner or target of the grant (powers the cross-group
+      // collection-group query), OR any group member (powers the roster view).
+      // Write: consent is the TARGET's to give — the caller must be the target
+      // and the recorded grantedByUid, the grant must name this group, and both
+      // parties must be group members.
+      match /plannerGrants/{grantId} {
+        allow read: if signedIn()
+          && (resource.data.plannerUid == request.auth.uid
+              || resource.data.targetUid == request.auth.uid
+              || callerInGroup(groupId));
+
+        allow create, update: if signedIn()
+          && request.resource.data.targetUid == request.auth.uid
+          && request.resource.data.grantedByUid == request.auth.uid
+          && request.resource.data.groupId == groupId
+          && callerInGroup(groupId)
+          && uidInGroup(groupId, request.resource.data.plannerUid);
+
+        allow delete: if false;
+      }
+    }
+
+    // ---- scheduleItems/{targetUid}/items/{itemId} ----
+    // Read: the target (owner of the subtree) OR the planner who created the item
+    //   (powers the planner's cross-target collection-group activity query).
+    // Create: the creator — who is either the target themselves, or a planner
+    //   holding an ACTIVE grant over the target in the item's group. createdByUid
+    //   and targetUid cannot be forged (must equal the caller / the path).
+    // Update: TARGET only — approve / reject / mark done / mark skipped.
+    //   Planner cancel/edit is deferred (no code path yet; see DECISIONS.md).
+    match /scheduleItems/{targetUid}/items/{itemId} {
+      allow read: if signedIn()
+        && (request.auth.uid == targetUid
+            || resource.data.createdByUid == request.auth.uid);
+
+      allow create: if signedIn()
+        && request.resource.data.targetUid == targetUid
+        && request.resource.data.createdByUid == request.auth.uid
+        && (request.auth.uid == targetUid
+            || callerHasActiveGrant(targetUid, request.resource.data.groupId));
+
+      allow update: if signedIn() && request.auth.uid == targetUid;
+
+      allow delete: if false;
+    }
+
+    // Everything else: deny. (No client path touches `invites/` — join is by
+    // code on the group doc — so it stays closed until/unless that flow lands.)
+  }
+}
