@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/timezone/tz_resolver.dart';
+import '../../../core/format/datetime_format.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../routing/app_router.dart';
 import '../../home/presentation/account_button.dart';
@@ -67,6 +67,10 @@ class _OutcomeCard extends ConsumerWidget {
 
   final ScheduleItem item;
 
+  /// A self-planned item has the same person as creator and target — no planner
+  /// on the other end to notify.
+  bool get _isSelfPlanned => item.createdByUid == item.targetUid;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final outcome = item.outcome;
@@ -81,7 +85,7 @@ class _OutcomeCard extends ConsumerWidget {
             Text(item.title,
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            Text(formatInZone(item.scheduledInstantUtc, item.timezone)),
+            Text(formatInstant(context, item.scheduledInstantUtc, item.timezone)),
             const SizedBox(height: 12),
             if (outcome == null)
               Row(
@@ -125,6 +129,7 @@ class _OutcomeCard extends ConsumerWidget {
   /// the source of truth; the push is additive (see DECISIONS.md).
   Future<void> _markDone(WidgetRef ref) async {
     await ref.read(scheduleRepositoryProvider).markDone(item.targetUid, item.id);
+    if (_isSelfPlanned) return; // no point notifying yourself
     await ref.read(outcomeNotifierProvider).notifyOutcome(
           targetUid: item.targetUid,
           itemId: item.id,
@@ -157,6 +162,7 @@ class _OutcomeCard extends ConsumerWidget {
             item.id,
             reason: controller.text,
           );
+      if (_isSelfPlanned) return; // no point notifying yourself
       await ref.read(outcomeNotifierProvider).notifyOutcome(
             targetUid: item.targetUid,
             itemId: item.id,

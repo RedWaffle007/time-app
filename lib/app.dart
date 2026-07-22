@@ -1,5 +1,6 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'features/auth/application/auth_providers.dart';
@@ -63,6 +64,28 @@ class _TimeAppState extends ConsumerState<TimeApp> {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
         useMaterial3: true,
       ),
+      // Follow the device locale: these delegates localize Material chrome and
+      // the date/time pickers, and make Localizations.localeOf(context) reflect
+      // the user's locale (which every display in datetime_format.dart reads).
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      // Accept ANY locale that Flutter's Material localizations support (~80,
+      // covering South Asia, MENA, SE Asia, Africa, Latin America) rather than a
+      // hand-picked few — so no region is silently dropped. This only governs
+      // date/time formatting + Material chrome; our own labels stay English
+      // (translating those would need ARB files, which is out of scope). The
+      // supportedLocales list below is just a representative fallback set.
+      localeResolutionCallback: (deviceLocale, supportedLocales) {
+        if (deviceLocale != null &&
+            GlobalMaterialLocalizations.delegate.isSupported(deviceLocale)) {
+          return deviceLocale;
+        }
+        return const Locale('en');
+      },
+      supportedLocales: const [Locale('en')],
       routerConfig: router,
     );
   }

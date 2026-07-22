@@ -12,28 +12,40 @@ class ScheduleRepository {
   CollectionReference<Map<String, dynamic>> _items(String targetUid) =>
       _db.collection('scheduleItems').doc(targetUid).collection('items');
 
-  /// Planner creates an item. [wall] is the wall-clock time as entered; it's
-  /// resolved to a UTC instant using the target's [timezone].
+  /// Creates an item. [wall] is the wall-clock time as entered; it's resolved to
+  /// a UTC instant using the target's [timezone].
+  ///
+  /// Two callers:
+  ///   • a planner planning for someone else — [groupId] names the granting
+  ///     group and [status] stays `pending` (the target approves per item).
+  ///   • a user planning for themselves — [groupId] is null (no group needed)
+  ///     and [status] is `approved` (self-authored items skip the queue).
+  /// The rules enforce that only the self path may create an `approved` item.
   Future<void> createItem({
     required String targetUid,
     required String createdByUid,
-    required String groupId,
+    String? groupId,
     required String title,
     String? note,
     required DateTime wall,
     required String timezone,
+    ScheduleItemStatus status = ScheduleItemStatus.pending,
   }) async {
     final instant = resolveWallTimeToUtc(wall, timezone);
     await _items(targetUid).add({
       'targetUid': targetUid,
       'createdByUid': createdByUid,
-      'groupId': groupId,
+      'groupId': groupId ?? '',
       'title': title.trim(),
       if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
       'localWallTime': formatWallTime(wall),
       'timezone': timezone,
       'scheduledInstantUtc': Timestamp.fromDate(instant),
-      'status': ScheduleItemStatus.pending.name,
+      'status': status.name,
+      // A self-approved item is decided at creation — record it for parity with
+      // the approve() transition.
+      if (status == ScheduleItemStatus.approved)
+        'decidedAt': FieldValue.serverTimestamp(),
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });

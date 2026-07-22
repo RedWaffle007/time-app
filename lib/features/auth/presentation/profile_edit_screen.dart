@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/format/datetime_format.dart';
 import '../application/auth_providers.dart';
 import 'timezone_picker.dart';
 
@@ -20,6 +21,12 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
   bool _saving = false;
   String? _error;
 
+  // Quiet hours (in the user's own timezone). Off until they set it; defaults
+  // to a sensible overnight window when first enabled.
+  bool _quietEnabled = false;
+  TimeOfDay _quietStart = const TimeOfDay(hour: 22, minute: 0);
+  TimeOfDay _quietEnd = const TimeOfDay(hour: 7, minute: 0);
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -32,6 +39,20 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
     );
     if (chosen != null) setState(() => _timezone = chosen);
   }
+
+  Future<void> _pickQuietStart() async {
+    final picked =
+        await showTimePicker(context: context, initialTime: _quietStart);
+    if (picked != null) setState(() => _quietStart = picked);
+  }
+
+  Future<void> _pickQuietEnd() async {
+    final picked =
+        await showTimePicker(context: context, initialTime: _quietEnd);
+    if (picked != null) setState(() => _quietEnd = picked);
+  }
+
+  int _minutes(TimeOfDay t) => t.hour * 60 + t.minute;
 
   bool get _canSave =>
       _nameController.text.trim().isNotEmpty &&
@@ -51,6 +72,9 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
             uid: user.uid,
             name: _nameController.text,
             homeTimezone: _timezone!,
+            quietHoursStartMinutes:
+                _quietEnabled ? _minutes(_quietStart) : null,
+            quietHoursEndMinutes: _quietEnabled ? _minutes(_quietEnd) : null,
           );
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
@@ -67,6 +91,17 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
     if (!_initialised && profile != null) {
       _nameController.text = profile.name;
       _timezone = profile.homeTimezone;
+      if (profile.hasQuietHours) {
+        _quietEnabled = true;
+        _quietStart = TimeOfDay(
+          hour: profile.quietHoursStartMinutes! ~/ 60,
+          minute: profile.quietHoursStartMinutes! % 60,
+        );
+        _quietEnd = TimeOfDay(
+          hour: profile.quietHoursEndMinutes! ~/ 60,
+          minute: profile.quietHoursEndMinutes! % 60,
+        );
+      }
       _initialised = true;
     }
 
@@ -96,6 +131,38 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
               icon: const Icon(Icons.public),
               label: Text(_timezone ?? 'Tap to choose'),
             ),
+            const SizedBox(height: 24),
+            const Divider(),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Quiet hours'),
+              subtitle: const Text(
+                'Planners are warned before scheduling in this window. '
+                '(11pm–6am is always flagged.)',
+              ),
+              value: _quietEnabled,
+              onChanged: (v) => setState(() => _quietEnabled = v),
+            ),
+            if (_quietEnabled)
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _pickQuietStart,
+                      icon: const Icon(Icons.bedtime_outlined),
+                      label: Text('From ${formatTimeOfDay(context, _quietStart)}'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _pickQuietEnd,
+                      icon: const Icon(Icons.wb_sunny_outlined),
+                      label: Text('To ${formatTimeOfDay(context, _quietEnd)}'),
+                    ),
+                  ),
+                ],
+              ),
             const SizedBox(height: 32),
             FilledButton(
               onPressed: _canSave ? _save : null,

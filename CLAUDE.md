@@ -17,6 +17,67 @@ If a feature doesn't serve this loop, it's parked.
 
 **Completion/skip → notify planner is non-negotiable** — it's what closes the accountability loop; it ships, it does not get cut.
 
+## Status — where we actually are (as of 2026-07-22)
+
+**The non-alarm core loop is CODE-COMPLETE.** Every screen in the loop above is
+built: groups + invites, planner-grant consent, schedule builder (in the target's
+tz), per-item pending queue + approve/reject, done/skip outcomes, and the
+completion→planner push (client-triggered Cloudflare Worker transport — see
+DECISIONS.md "Completion→planner push"). Surrounding correctness work is done too:
+Firestore security rules v1, DST gap/overlap resolution, locale-aware date/time
+formatting, quiet-hours *warnings*, and self-planning. **There is no missing
+non-alarm feature.** Next session is **real-pair validation**, not more building.
+
+**Code-complete ≠ verified.** Several things are built/deployed but never exercised
+end-to-end, and some are parked. The single durable list is **"Parked & unverified"
+below** — treat nothing there as done until its run is recorded.
+
+**Standing worldwide requirement (do not regress):** this app is worldwide. All
+user-facing date/time rendering goes through the ONE helper
+(`core/format/datetime_format.dart`), honoring the device locale and its 12h/24h
+setting; `supportedLocales` accepts every Material-supported locale. Any new
+time/date UI must use that helper — never hardcode a format, English month/day
+names, or 24h. (Details: DECISIONS.md "Locale-aware date/time display.")
+
+## Parked & unverified — the durable checklist (nothing gets lost between sessions)
+
+Keep this current. Do not mark an item done until its run/decision is recorded here
+or in DECISIONS.md.
+
+**Unverified — built/deployed but never exercised end-to-end** (all block the
+friend hand-off per DECISIONS.md "Outstanding verification debt"):
+1. **Rules Test 2 — on-device happy path.** A creates group → B joins by code → A
+   grants B planner → B creates item → A approves + marks Done → B sees outcome.
+   Never run on a device.
+2. **Rules Test 3 — grant-off negative test.** With the planner grant revoked,
+   confirm B's item-create is rejected `PERMISSION_DENIED`. Never run.
+3. **Real two-timezone loop (build step 5g).** A genuine two-people/two-devices run
+   across a **DST-observing** timezone pair (the early Chicago↔Kolkata check was
+   neither a real pair nor DST-observing, so the gap/overlap rule is unverified live).
+4. **iOS locale check.** Whether `CFBundleLocalizations` actually makes iOS report
+   the user's language and render local digits — **blocked: no iOS target is wired
+   up yet.** (DECISIONS.md, 2026-07-22.)
+5. **Worker deploy + `kNotifyEndpoint`.** Confirm the Cloudflare Worker is deployed
+   and the app's `kNotifyEndpoint` points at the live URL, and that a real outcome
+   write triggers a push. (Silent-miss gap at N=2 is knowingly accepted — see
+   DECISIONS.md; this item is just "is the transport actually wired and live?")
+
+**Open product decisions — deferred until AFTER the first real loop test:**
+6. **Consent model: toggle vs. request-driven.** Current = target flips a
+   "can plan for me" switch; a planner-requests→target-approves model may fit the
+   "friend takes initiative" vision better. Decide from how the loop *feels*; may
+   rebuild the grant flow. (DECISIONS.md "Open questions.")
+7. **"Share-a-group" profile-read scoping.** Profile reads are currently
+   any-signed-in; tighten to users who share a group with the owner. Deferred rules
+   hardening. (DECISIONS.md "Deferred hardening.")
+
+**Parked to the alarm layer (do NOT build until explicitly directed):** all alarm
+firing (Xiaomi spike — the whole premise is empirically unverified), voice-mode
+alarms, quiet-hours *enforcement*, boot-persistence/re-registration, and the
+tz-snapshot **detect-and-re-approve** upgrade (option 3; v1 stays pure snapshot —
+DECISIONS.md 2026-07-22). Card-day items (Cloud-Function push swap, CF-mediated
+join) are parked to Blaze, not to now.
+
 ## Committed stack
 
 - **Frontend:** Flutter (single codebase).

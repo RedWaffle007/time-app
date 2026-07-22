@@ -122,9 +122,16 @@ service cloud.firestore {
     // The PLANNER's cross-target read is a COLLECTION-GROUP query and is NOT
     // matched by a specific parent path — it is handled by the /{path=**}/items
     // rule at the bottom. (Verified on the emulator; see DECISIONS.md.)
-    // Create: the creator — who is either the target themselves, or a planner
-    //   holding an ACTIVE grant over the target in the item's group. createdByUid
-    //   and targetUid cannot be forged (must equal the caller / the path).
+    // Create: the creator is either the target themselves (self-planning) or a
+    //   planner holding an ACTIVE grant over the target in the item's group.
+    //   createdByUid and targetUid cannot be forged (must equal caller / path).
+    //   Initial `status` is CONSTRAINED, and this is a security fix in its own
+    //   right (independent of self-planning): a planner must NOT be able to
+    //   write an item already `approved`, which would bypass the target's
+    //   per-item approval. So —
+    //     • planner path (grant): may create `pending` ONLY.
+    //     • self path (creator == target): may create `pending` or `approved`
+    //       (self-authored items skip the queue; consent is inherent).
     // Update: TARGET only — approve / reject / mark done / mark skipped.
     //   Planner cancel/edit is deferred (no code path yet; see DECISIONS.md).
     match /scheduleItems/{targetUid}/items/{itemId} {
@@ -133,8 +140,12 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.targetUid == targetUid
         && request.resource.data.createdByUid == request.auth.uid
-        && (request.auth.uid == targetUid
-            || callerHasActiveGrant(targetUid, request.resource.data.groupId));
+        && (
+          (request.auth.uid == targetUid
+              && request.resource.data.status in ['pending', 'approved'])
+          || (callerHasActiveGrant(targetUid, request.resource.data.groupId)
+              && request.resource.data.status == 'pending')
+        );
 
       allow update: if signedIn() && request.auth.uid == targetUid;
 

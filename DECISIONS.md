@@ -626,3 +626,209 @@ does not detect or warn about either case. **India (Asia/Kolkata) does not obser
 DST, so this won't bite the first test** — but it must be handled before testing
 with anyone in a DST-observing zone (US/EU/etc.). Handling = detect the gap/overlap
 and either warn the planner or pick a defined rule.
+
+## Quiet hours = warning-only in v1 (enforcement deferred to the alarm layer)
+
+Spec (§3, §6) frames quiet hours two ways: "no alarm *can be scheduled*" AND
+"planner *sees a warning*." There is no alarm layer yet (and none may be built
+until directed), so v1 ships only the half that's buildable now: **a non-blocking
+warning to the planner in the schedule builder.** Nothing is blocked — "Send for
+approval" still works — and the target still approves every item, so consent
+stays the real gate. Hard enforcement (refusing to arm an alarm in the window)
+lands with the alarm work.
+
+- The target sets their **own** quiet-hours window on their profile
+  (`quietHoursStartMinutes`/`EndMinutes`, minutes-since-local-midnight, may wrap
+  past midnight). Consent-consistent: nobody else sets your quiet hours.
+- **11pm–6am is a fixed, always-on band** flagged regardless of whether the user
+  configured a window (spec §6). The two warnings are independent — the builder
+  shows whichever apply.
+- Warning math lives in a pure helper (`core/timezone/quiet_hours.dart`): no
+  alarm/notification/scheduling side effects, just "which warnings apply to this
+  instant in the target's tz."
+
+## Self-planning (a user plans for themselves)
+
+The app must be useful solo from day one, so a user can create items for
+themselves — not only be planned for by a granted planner.
+
+- **No self-grant; the grant check is bypassed when creator == target.** The
+  rules already special-cased `request.auth.uid == targetUid`, and grants live
+  under a group — requiring one would force a solo user to have a group.
+  Planning for yourself is inherent consent, so no `plannerGrant` record is
+  written.
+- **`groupId` is optional.** Self-items carry no group (stored as `''`). No
+  permission widens: the grant check is simply never reached on the self path.
+- **Self-items are born `approved`** and skip the pending queue — approval
+  exists to gate what *others* impose on you; approving your own item is pure
+  friction. They appear straight in My Schedule with Done/Skip.
+- **UI:** "Myself" is always the first target in the schedule builder (present
+  even with zero grants, so the builder never dead-ends for a solo user).
+  Self-items are **filtered out of Activity** (Activity = people you plan FOR;
+  the self-item already lives in My Schedule). The completion→planner **push is
+  suppressed when creator == target** — no point notifying yourself.
+
+## Security fix: constrain initial item `status` on create (independent of self-planning)
+
+Enabling self auto-approve forced a look at create-time `status`, which exposed
+a latent hole: the old `scheduleItems` create rule did **not** constrain
+`status`, so a planner holding an active grant could have written an item
+already `status: approved`, **bypassing the target's per-item approval** — the
+core consent gate. The app never did this (it always wrote `pending`), but the
+rule permitted it.
+
+Create is now constrained by path:
+- **planner path (active grant): `pending` only.**
+- **self path (creator == target): `pending` or `approved`.**
+
+This closes the bypass regardless of self-planning, and enables self
+auto-approve as a side effect. It is **create-only** — it does not touch items
+already in Firestore (rules evaluate writes at request time, never documents at
+rest; reads and the separate `update` branch are unchanged), so no migration.
+
+## DST-invalid / ambiguous wall times — now handled (was a known gap)
+
+The earlier "unhandled" note is resolved. `resolveWall()` (in `tz_resolver.dart`)
+now detects both DST edge cases and applies a defined rule, and the planner is
+warned in the builder:
+
+- **skipped** (spring-forward gap — the clock time never happens): push forward
+  past the gap (java.time's rule) so the item still fires that night.
+- **ambiguous** (fall-back overlap — the clock time happens twice): take the
+  FIRST occurrence.
+
+Detection method: label the wall fields as if UTC, shift by the two stable
+offsets bracketing the moment (±24h — a DST shift is ≤ a couple of hours and
+never twice within a day). A candidate instant is *real* only if the zone's
+actual offset there equals the offset used to compute it. Zero real candidates ⇒
+gap; two distinct real candidates ⇒ overlap. Covered by `tz_resolver_dst_test`
+against real 2026 US + Australia transitions.
+
+### Sub-fix: wall times must be UTC-kind field carriers, not local DateTimes
+
+Root cause found while testing: the app built the entered wall time as a
+host-local `DateTime(y,m,d,h,min)`. If those fields land in a DST gap **on the
+PLANNER's own device zone**, Dart silently normalizes (shifts) them *before*
+resolution — corrupting a time meant for the target's zone, dependent on where
+the planner happens to be. Fix: build the wall time as `DateTime.utc(...)`, a
+pure tz-agnostic field carrier that never normalizes. The resolver only reads
+the fields, so this is the correct representation of "the clock time typed."
+
+## Locale-aware date/time display (worldwide consistency)
+
+The app is worldwide, so it can't show "9:00 PM" in a picker and "21:00" in the
+preview on the same screen, nor English-only dates. All user-facing date/time
+rendering now goes through ONE helper (`core/format/datetime_format.dart`) built
+on `intl`'s `DateFormat`, so the whole app shares:
+
+- **one locale** — the device's, via `Localizations.localeOf(context)`, and
+- **one 12h/24h decision** — the device's setting, via
+  `MediaQuery.alwaysUse24HourFormat`.
+
+Scaffolding added to make that real:
+- `flutter_localizations` + `intl` deps; `GlobalMaterial/Widgets/Cupertino`
+  localization delegates and a broad `supportedLocales` on `MaterialApp` (the
+  app had NONE before, so `localeOf` always resolved to en_US). This also
+  localizes the Material date/time picker dialogs.
+- `initializeDateFormatting()` in `main()` so `DateFormat` works in any locale.
+
+The old pure `formatInZone` (hardcoded English day/month names, always 24h) and
+`formatMinutesOfDay` (always 24h) are DELETED — every screen (outcomes, pending
+approvals, activity, schedule builder preview + DST/quiet banners, profile
+quiet-hours labels, the builder's date/time buttons) now uses the helper. The
+machine-format `formatWallTime` (persisted `localWallTime`, never shown) stays.
+
+## Target-zone label on the planner's Activity view (b)
+
+The planner's Activity list rendered a bare time (e.g. "09:00") with no cue it
+was the TARGET's local time, not the planner's — the most misleading thing in
+the app for a cross-timezone pair. Each Activity card now appends the zone and
+an explicit qualifier: "for {name} · {localized time} ({IANA zone}, their local
+time)". (The target's own views — My Schedule, Pending Approvals — don't need
+this: those times are already in the viewer's own zone.)
+
+## Locale coverage = every Material-supported locale, not a hand-picked list
+
+Superseding the earlier ~23-locale `supportedLocales`: the app now accepts ANY
+locale Flutter's Material localizations support (~80, spanning South Asia, MENA,
+SE Asia, Africa, Latin America) via a `localeResolutionCallback` that returns the
+device locale when `GlobalMaterialLocalizations.delegate.isSupported(it)`, else
+English. No region is silently dropped, and it's a single guarded callback — no
+list to keep in sync.
+
+**Date/time localization vs. UI translation are separate, and only the former is
+in scope.** Adding a locale gives correct local date/time formatting on its own:
+`intl`'s `DateFormat` carries its own locale data (loaded by
+`initializeDateFormatting()`), independent of any translation files. Verified in
+a throwaway test that hi/bn/ur/ta/ar/fa/th/vi/id/sw/am/es/pt/zh/ja all format
+dates in their own scripts and digits (e.g. Bengali "৯:৩০ PM", Persian
+"۲۱:۳۰"), and that the Material date/time PICKER dialogs localize too (Flutter's
+bundled translations). Our OWN labels ("Plan for", "Send for approval") stay
+English — translating those would need ARB files + gen-l10n, which is NOT done
+here and is not required for correct date/time. So a device set to Hindi shows
+Hindi dates/times with English UI labels — by design.
+
+**Platform caveat:** on iOS the app must also declare `CFBundleLocalizations` in
+Info.plist for the OS to report a given locale to the app; Android delivers the
+device locale regardless.
+
+### `CFBundleLocalizations` added — DONE, but UNTESTABLE until iOS is wired up (2026-07-22)
+
+Added the `CFBundleLocalizations` array to `ios/Runner/Info.plist`, listing the
+language codes `GlobalMaterialLocalizations` supports (en + ~80). This mirrors the
+"every Material-supported locale" `supportedLocales` policy so that, on iOS, the
+OS hands the app the user's actual preferred language and `Localizations.localeOf`
+resolves to it (Android already delivers the device locale without this key).
+
+**This is verification debt, not verified work.** There is **no iOS target wired
+up yet** (no configured Xcode signing / run target that we've built and launched),
+so this cannot be exercised: whether iOS actually reports, say, Bengali and dates
+render in Bengali digits is **unconfirmed on-device**. Logged here so it doesn't
+resurface later as a mystery — the entry is done in source; proving it is blocked
+on the iOS build existing. UI strings stay English-only regardless (by design,
+above); this only affects date/time locale resolution.
+
+## Timezone snapshot on relocation — v1 = pure snapshot, no re-anchor (decided 2026-07-22)
+
+**Decision: an approved item is a frozen snapshot and stays that way. Chosen
+option (1); no behaviour change.**
+
+An item created by `ScheduleRepository.createItem` freezes three fields together:
+`localWallTime` (the clock time as typed), `timezone` (the **target's** profile
+`homeTimezone` at creation), and `scheduledInstantUtc` (the absolute instant,
+resolved once against that zone). Every view renders
+`formatInstant(context, item.scheduledInstantUtc, item.timezone)` — the **stored**
+zone, never a live device zone — so the item is fully self-contained. Nothing
+recomputes when a profile's `homeTimezone` later changes; there is no code path
+that revisits an existing item on relocation.
+
+**Behaviour, by who moves:**
+- **Planner relocates → nothing changes, and that is correct.** The planner's zone
+  is never stored; wall times were always interpreted in the *target's* zone. No
+  decision needed for this direction.
+- **Target relocates (updates their profile tz) → existing approved items keep
+  their frozen instant and frozen zone label.** A "9am Asia/Karachi" item still
+  fires at that same absolute moment (05:00 wall-clock in London) and still renders
+  its `Asia/Karachi` label. New items use the new zone → a mixed schedule until old
+  items are manually recreated.
+
+**Alternatives considered and rejected for v1:**
+- **(2) Live re-anchor** (drop the frozen instant, re-resolve `localWallTime`
+  against the target's current zone at read/fire time so "9am stays 9am"):
+  **rejected — it breaks consent.** The target approved a *specific moment*; silently
+  moving it when a profile field changes is a re-consent regression, and it reopens
+  the DST gap/overlap edge cases at read time where no planner is present to see the
+  warning.
+- **(3) Snapshot + detect-and-re-approve** (keep the frozen instant as source of
+  truth, but when the target's zone changes, surface affected items and offer
+  "keep the moment / shift to same clock time in the new zone," where shifting
+  re-runs the resolver and sends the item back through per-item approval):
+  **this is the right eventual answer, but it is deferred to the alarm layer** —
+  "shift the fire time and re-approve" only fully matters once items arm alarms, and
+  it wants the same changed-zone detection plumbing built then. Building it now is
+  speculative UI ahead of loop validation.
+
+**Known limitation accepted for v1:** a relocated target's pre-move items fire at
+the old zone's clock time until recreated. Bounded, rare at N=2, and *visible* (the
+stale zone label makes a mis-timed ring traceable, not a mystery). Revisit as
+option (3) when alarm work lands.

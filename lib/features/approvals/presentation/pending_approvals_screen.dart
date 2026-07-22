@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/timezone/tz_resolver.dart';
+import '../../../core/format/datetime_format.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../scheduling/application/schedule_providers.dart';
@@ -57,7 +57,7 @@ class _ApprovalCard extends ConsumerWidget {
             Text(item.title,
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            Text(formatInZone(item.scheduledInstantUtc, item.timezone)),
+            Text(formatInstant(context, item.scheduledInstantUtc, item.timezone)),
             Text('${item.timezone} · from $plannerName',
                 style: const TextStyle(fontSize: 12, color: Colors.grey)),
             if (item.note != null && item.note!.isNotEmpty) ...[

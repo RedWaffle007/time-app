@@ -37,14 +37,26 @@ class ProfileRepository {
 
   /// Edits an existing profile. Merges the changed fields and bumps updatedAt —
   /// deliberately does NOT touch createdAt.
+  ///
+  /// [quietHoursStartMinutes]/[quietHoursEndMinutes] are minutes-since-midnight
+  /// in the user's own timezone. Pass both to set the window, or both null to
+  /// CLEAR it — a merge write can't blank a field, so nulls delete it.
   Future<void> updateProfile({
     required String uid,
     required String name,
     required String homeTimezone,
+    int? quietHoursStartMinutes,
+    int? quietHoursEndMinutes,
   }) async {
+    final quietSet =
+        quietHoursStartMinutes != null && quietHoursEndMinutes != null;
     await _users.doc(uid).set({
       'name': name.trim(),
       'homeTimezone': homeTimezone,
+      'quietHoursStartMinutes':
+          quietSet ? quietHoursStartMinutes : FieldValue.delete(),
+      'quietHoursEndMinutes':
+          quietSet ? quietHoursEndMinutes : FieldValue.delete(),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }

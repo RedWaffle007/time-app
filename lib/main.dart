@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 
 import 'app.dart';
@@ -24,6 +25,10 @@ Future<void> main() async {
   // Load the IANA timezone database into memory so we can (a) list zones in the
   // profile picker and (b) resolve local times later. Must run once at startup.
   tzdata.initializeTimeZones();
+
+  // Load locale date/time symbols so DateFormat can render in any device locale
+  // (see core/format/datetime_format.dart).
+  await initializeDateFormatting();
 
   // ProviderScope is the root of Riverpod — every provider lives under it.
   runApp(const ProviderScope(child: TimeApp()));

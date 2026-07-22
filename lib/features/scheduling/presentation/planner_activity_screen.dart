@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/timezone/tz_resolver.dart';
+import '../../../core/format/datetime_format.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../routing/app_router.dart';
 import '../../auth/application/auth_providers.dart';
@@ -33,10 +33,15 @@ class PlannerActivityScreen extends ConsumerWidget {
       body: AsyncView<List<ScheduleItem>>(
         value: itemsAsync,
         onRetry: () => ref.invalidate(myItemsAsPlannerProvider),
-        isEmpty: (items) => items.isEmpty,
-        emptyMessage: "You haven't planned anything yet.",
+        // Self-planned items (creator == target) live in My Schedule, not here —
+        // Activity is about people you plan FOR.
+        isEmpty: (items) =>
+            items.every((i) => i.createdByUid == i.targetUid),
+        emptyMessage: "You haven't planned anything for anyone yet.",
         builder: (context, items) {
-          final sorted = [...items]
+          final sorted = items
+              .where((i) => i.createdByUid != i.targetUid)
+              .toList()
             ..sort((a, b) => b.scheduledInstantUtc.compareTo(a.scheduledInstantUtc));
           return ListView(
             children: [for (final item in sorted) _ActivityCard(item: item)],
@@ -74,8 +79,15 @@ class _ActivityCard extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 4),
-            Text('for $targetName · ${formatInZone(item.scheduledInstantUtc, item.timezone)}',
-                style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            // Always name the zone: this time is in the TARGET's local time, not
+            // the planner's — a bare "09:00" here is the most misleading thing a
+            // planner could see.
+            Text(
+              'for $targetName · '
+              '${formatInstant(context, item.scheduledInstantUtc, item.timezone)} '
+              '(${item.timezone}, their local time)',
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
             ..._outcomeLine(),
           ],
         ),
