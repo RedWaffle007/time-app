@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/timezone/tz_resolver.dart';
+import '../../notifications/application/outcome_notifier.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
 
@@ -71,9 +72,7 @@ class _OutcomeCard extends ConsumerWidget {
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
-                    onPressed: () => ref
-                        .read(scheduleRepositoryProvider)
-                        .markDone(item.targetUid, item.id),
+                    onPressed: () => _markDone(ref),
                     child: const Text('Done'),
                   ),
                 ],
@@ -101,6 +100,17 @@ class _OutcomeCard extends ConsumerWidget {
     );
   }
 
+  /// Record completion, then fire the (best-effort) planner push. The write is
+  /// the source of truth; the push is additive (see DECISIONS.md).
+  Future<void> _markDone(WidgetRef ref) async {
+    await ref.read(scheduleRepositoryProvider).markDone(item.targetUid, item.id);
+    await ref.read(outcomeNotifierProvider).notifyOutcome(
+          targetUid: item.targetUid,
+          itemId: item.id,
+          outcome: OutcomeResult.done,
+        );
+  }
+
   Future<void> _skip(BuildContext context, WidgetRef ref) async {
     final controller = TextEditingController();
     final confirmed = await showDialog<bool>(
@@ -125,6 +135,11 @@ class _OutcomeCard extends ConsumerWidget {
             item.targetUid,
             item.id,
             reason: controller.text,
+          );
+      await ref.read(outcomeNotifierProvider).notifyOutcome(
+            targetUid: item.targetUid,
+            itemId: item.id,
+            outcome: OutcomeResult.skipped,
           );
     }
   }

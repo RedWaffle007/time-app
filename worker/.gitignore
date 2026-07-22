@@ -1,0 +1,13 @@
+# Never commit secrets or local wrangler state.
+.dev.vars
+.wrangler/
+node_modules/
+*.log
+
+# Service-account key files, whatever they get named — belt and suspenders.
+# The credential must only ever live in the encrypted `FIREBASE_SERVICE_ACCOUNT`
+# Cloudflare secret, never on disk in the repo.
+*service-account*.json
+*serviceaccount*.json
+*-firebase-adminsdk-*.json
+service-account*.json

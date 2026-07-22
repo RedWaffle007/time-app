@@ -1,0 +1,11 @@
+name = "time-app-notify"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# Non-secret config. The project id is a public identifier.
+[vars]
+PROJECT_ID = "time-app-1e1c9"
+
+# The service-account JSON is NOT here. It is set as an encrypted secret:
+#   wrangler secret put FIREBASE_SERVICE_ACCOUNT
+# and read at runtime as env.FIREBASE_SERVICE_ACCOUNT. It never lands in git.

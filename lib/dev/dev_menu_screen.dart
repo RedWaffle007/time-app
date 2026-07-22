@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../features/auth/application/auth_providers.dart';
+import '../features/notifications/application/messaging_service.dart';
 import '../routing/app_router.dart';
 
 /// ⚠️ DEV-ONLY SCAFFOLDING — NOT FOR PRODUCTION ⚠️
@@ -37,7 +37,7 @@ class DevMenuScreen extends ConsumerWidget {
           IconButton(
             tooltip: 'Sign out',
             icon: const Icon(Icons.logout),
-            onPressed: () => ref.read(authRepositoryProvider).signOut(),
+            onPressed: () => signOutWithTokenCleanup(ref),
           ),
         ],
       ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 
+import '../../notifications/application/messaging_service.dart';
 import '../application/auth_providers.dart';
 import 'timezone_picker.dart';
 
@@ -89,7 +90,7 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
         title: const Text('Complete your profile'),
         actions: [
           TextButton(
-            onPressed: () => ref.read(authRepositoryProvider).signOut(),
+            onPressed: () => signOutWithTokenCleanup(ref),
             child: const Text('Sign out'),
           ),
         ],

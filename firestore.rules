@@ -46,6 +46,15 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create, update: if signedIn() && request.auth.uid == uid;
       allow delete: if false;
+
+      // ---- users/{uid}/fcmTokens/{token} ----
+      // Per-device FCM tokens (doc id = the token). Owner-only: a user reads and
+      // writes only their OWN device tokens. The push Worker/Function reads and
+      // cleans these server-side via the service account, which bypasses rules —
+      // so no cross-user read is ever opened here.
+      match /fcmTokens/{token} {
+        allow read, write: if signedIn() && request.auth.uid == uid;
+      }
     }
 
     // ---- groups/{groupId} ----

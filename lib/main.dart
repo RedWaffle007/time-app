@@ -1,9 +1,11 @@
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 
 import 'app.dart';
+import 'features/notifications/application/messaging_service.dart';
 import 'firebase_options.dart';
 
 Future<void> main() async {
@@ -14,6 +16,10 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Must be registered before runApp so FCM can deliver to a backgrounded /
+  // terminated app. Handler is a top-level function (see messaging_service.dart).
+  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
   // Load the IANA timezone database into memory so we can (a) list zones in the
   // profile picker and (b) resolve local times later. Must run once at startup.
