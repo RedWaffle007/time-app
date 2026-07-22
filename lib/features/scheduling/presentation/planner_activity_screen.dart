@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/timezone/tz_resolver.dart';
 import '../../../core/widgets/async_view.dart';
+import '../../../routing/app_router.dart';
 import '../../auth/application/auth_providers.dart';
+import '../../home/presentation/account_button.dart';
 import '../application/schedule_providers.dart';
 import '../domain/schedule_item.dart';
 
@@ -18,7 +21,15 @@ class PlannerActivityScreen extends ConsumerWidget {
     final itemsAsync = ref.watch(myItemsAsPlannerProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Activity')),
+      appBar: AppBar(
+        title: const Text('Activity'),
+        actions: const [AccountButton()],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => context.push(Routes.scheduleBuilder),
+        icon: const Icon(Icons.add),
+        label: const Text('Plan an item'),
+      ),
       body: AsyncView<List<ScheduleItem>>(
         value: itemsAsync,
         onRetry: () => ref.invalidate(myItemsAsPlannerProvider),

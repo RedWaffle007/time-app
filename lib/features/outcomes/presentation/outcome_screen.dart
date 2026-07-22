@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/timezone/tz_resolver.dart';
 import '../../../core/widgets/async_view.dart';
+import '../../../routing/app_router.dart';
+import '../../home/presentation/account_button.dart';
 import '../../notifications/application/outcome_notifier.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
@@ -18,9 +21,27 @@ class OutcomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final itemsAsync = ref.watch(myItemsAsTargetProvider);
+    final pendingCount = itemsAsync.value
+            ?.where((i) => i.status == ScheduleItemStatus.pending)
+            .length ??
+        0;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('My Schedule')),
+      appBar: AppBar(
+        title: const Text('My Schedule'),
+        actions: [
+          IconButton(
+            tooltip: 'Pending approvals',
+            icon: Badge(
+              isLabelVisible: pendingCount > 0,
+              label: Text('$pendingCount'),
+              child: const Icon(Icons.inbox_outlined),
+            ),
+            onPressed: () => context.push(Routes.approvals),
+          ),
+          const AccountButton(),
+        ],
+      ),
       body: AsyncView<List<ScheduleItem>>(
         value: itemsAsync,
         onRetry: () => ref.invalidate(myItemsAsTargetProvider),

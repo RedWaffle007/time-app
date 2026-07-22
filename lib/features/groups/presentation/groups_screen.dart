@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/widgets/async_view.dart';
 import '../../auth/application/auth_providers.dart';
+import '../../home/presentation/account_button.dart';
 import '../application/group_providers.dart';
 import '../domain/group.dart';
 
@@ -24,6 +25,7 @@ class GroupsScreen extends ConsumerWidget {
             icon: const Icon(Icons.login),
             onPressed: () => _showJoinDialog(context, ref),
           ),
+          const AccountButton(),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(

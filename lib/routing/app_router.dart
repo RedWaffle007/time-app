@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../dev/dev_menu_screen.dart';
 import '../features/approvals/presentation/pending_approvals_screen.dart';
 import '../features/auth/application/auth_providers.dart';
 import '../features/auth/presentation/auth_screen.dart';
@@ -24,6 +25,7 @@ class Routes {
   static const approvals = '/approvals';
   static const outcome = '/outcome';
   static const plannerActivity = '/activity';
+  static const devMenu = '/dev'; // debug-only entry, reachable from AccountButton
 }
 
 /// The app's router. A single plain Provider (no family / autoDispose) since
@@ -86,6 +88,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.plannerActivity,
         builder: (context, state) => const PlannerActivityScreen(),
+      ),
+      GoRoute(
+        path: Routes.devMenu,
+        builder: (context, state) => const DevMenuScreen(),
       ),
     ],
   );

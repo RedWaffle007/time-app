@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../dev/dev_menu_screen.dart';
+import '../../../core/widgets/async_view.dart';
 import '../../auth/application/auth_providers.dart';
+import '../../auth/domain/user_profile.dart';
 import '../../auth/presentation/complete_profile_screen.dart';
+import 'home_shell.dart';
 
 /// The signed-in landing point. Decides between:
-///   - a spinner while the profile loads,
+///   - a loading state (with a 12s timeout → Retry, via AsyncView) while the
+///     profile loads — so a stuck profile read can't spin forever,
 ///   - the complete-profile screen if there's no (complete) profile yet,
-///   - the app home (the dev menu, for now) once the profile is ready.
+///   - the real app home (the bottom-nav [HomeShell]) once the profile is ready.
 ///
 /// The router already guarantees we're signed in before reaching here.
 class HomeGate extends ConsumerWidget {
@@ -18,21 +21,17 @@ class HomeGate extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final profileAsync = ref.watch(profileProvider);
 
-    return profileAsync.when(
-      loading: () => const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+    return Scaffold(
+      body: AsyncView<UserProfile?>(
+        value: profileAsync,
+        onRetry: () => ref.invalidate(profileProvider),
+        builder: (context, profile) {
+          if (profile == null || !profile.isComplete) {
+            return const CompleteProfileScreen();
+          }
+          return const HomeShell();
+        },
       ),
-      error: (e, _) => Scaffold(
-        body: Center(child: Text('Failed to load profile: $e')),
-      ),
-      data: (profile) {
-        if (profile == null || !profile.isComplete) {
-          return const CompleteProfileScreen();
-        }
-        // Profile ready — show the app home. DevMenuScreen is dev-only
-        // scaffolding standing in until real home screens land.
-        return const DevMenuScreen();
-      },
     );
   }
 }
