@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/timezone/tz_resolver.dart';
+import '../../../core/widgets/async_view.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
@@ -16,18 +17,17 @@ class PendingApprovalsScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Pending Approvals')),
-      body: itemsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
-        data: (items) {
+      body: AsyncView<List<ScheduleItem>>(
+        value: itemsAsync,
+        onRetry: () => ref.invalidate(myItemsAsTargetProvider),
+        isEmpty: (items) =>
+            !items.any((i) => i.status == ScheduleItemStatus.pending),
+        emptyMessage: 'Nothing waiting for approval.',
+        builder: (context, items) {
           final pending = items
               .where((i) => i.status == ScheduleItemStatus.pending)
               .toList()
             ..sort((a, b) => a.scheduledInstantUtc.compareTo(b.scheduledInstantUtc));
-
-          if (pending.isEmpty) {
-            return const Center(child: Text('Nothing waiting for approval.'));
-          }
           return ListView(
             children: [for (final item in pending) _ApprovalCard(item: item)],
           );

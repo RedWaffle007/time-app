@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/timezone/tz_resolver.dart';
+import '../../../core/widgets/async_view.dart';
 import '../../notifications/application/outcome_notifier.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
@@ -20,18 +21,17 @@ class OutcomeScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('My Schedule')),
-      body: itemsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
-        data: (items) {
+      body: AsyncView<List<ScheduleItem>>(
+        value: itemsAsync,
+        onRetry: () => ref.invalidate(myItemsAsTargetProvider),
+        isEmpty: (items) =>
+            !items.any((i) => i.status == ScheduleItemStatus.approved),
+        emptyMessage: 'No approved items yet.',
+        builder: (context, items) {
           final approved = items
               .where((i) => i.status == ScheduleItemStatus.approved)
               .toList()
             ..sort((a, b) => a.scheduledInstantUtc.compareTo(b.scheduledInstantUtc));
-
-          if (approved.isEmpty) {
-            return const Center(child: Text('No approved items yet.'));
-          }
           return ListView(
             children: [for (final item in approved) _OutcomeCard(item: item)],
           );

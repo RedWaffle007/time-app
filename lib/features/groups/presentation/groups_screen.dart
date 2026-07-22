@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/widgets/async_view.dart';
 import '../../auth/application/auth_providers.dart';
 import '../application/group_providers.dart';
+import '../domain/group.dart';
 
 /// Lists the user's groups; lets them create a new one or join by code.
 class GroupsScreen extends ConsumerWidget {
@@ -29,29 +31,23 @@ class GroupsScreen extends ConsumerWidget {
         icon: const Icon(Icons.add),
         label: const Text('New group'),
       ),
-      body: groupsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
-        data: (groups) {
-          if (groups.isEmpty) {
-            return const Center(
-              child: Text('No groups yet.\nCreate one or join by code.',
-                  textAlign: TextAlign.center),
-            );
-          }
-          return ListView(
-            children: [
-              for (final g in groups)
-                ListTile(
-                  leading: const Icon(Icons.group),
-                  title: Text(g.name),
-                  subtitle: Text('Code: ${g.joinCode} · ${g.memberUids.length} member(s)'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => context.push('/groups/${g.id}'),
-                ),
-            ],
-          );
-        },
+      body: AsyncView<List<Group>>(
+        value: groupsAsync,
+        onRetry: () => ref.invalidate(myGroupsProvider),
+        isEmpty: (groups) => groups.isEmpty,
+        emptyMessage: 'No groups yet.\nCreate one or join by code.',
+        builder: (context, groups) => ListView(
+          children: [
+            for (final g in groups)
+              ListTile(
+                leading: const Icon(Icons.group),
+                title: Text(g.name),
+                subtitle: Text('Code: ${g.joinCode} · ${g.memberUids.length} member(s)'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.push('/groups/${g.id}'),
+              ),
+          ],
+        ),
       ),
     );
   }

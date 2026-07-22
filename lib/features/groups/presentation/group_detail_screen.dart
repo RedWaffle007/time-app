@@ -3,8 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../../core/widgets/async_view.dart';
 import '../../auth/application/auth_providers.dart';
 import '../application/group_providers.dart';
+import '../domain/membership.dart';
 import '../domain/planner_grant.dart';
 
 /// Shows a group's invite code and members, and lets the signed-in user grant
@@ -27,10 +29,10 @@ class GroupDetailScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: Text(group?.name ?? 'Group')),
-      body: membersAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
-        data: (members) {
+      body: AsyncView<List<Membership>>(
+        value: membersAsync,
+        onRetry: () => ref.invalidate(membersProvider(groupId)),
+        builder: (context, members) {
           final grants = grantsAsync.value ?? const <PlannerGrant>[];
           bool grantsToMe(String plannerUid) => grants.any((g) =>
               g.plannerUid == plannerUid &&
