@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -48,15 +49,30 @@ class MessagingService {
     try {
       final token = await messaging.getToken();
       if (token != null) await _tokenRepo.saveToken(uid, token);
-    } catch (e) {
+    } catch (e, st) {
+      // If the token never lands in Firestore, the Worker has nothing to push
+      // to and EVERY outcome for this user silently misses forever — worse than
+      // a single dropped push. Record it so that blind spot becomes visible.
+      FirebaseCrashlytics.instance.recordError(
+        e,
+        st,
+        reason: 'FCM token register/save failed — device may never receive pushes',
+        fatal: false,
+      );
       debugPrint('MessagingService: getToken/save failed: $e');
     }
 
     await _refreshSub?.cancel();
     _refreshSub = messaging.onTokenRefresh.listen((t) {
-      _tokenRepo.saveToken(uid, t).catchError(
-            (e) => debugPrint('MessagingService: token refresh save failed: $e'),
-          );
+      _tokenRepo.saveToken(uid, t).catchError((Object e, StackTrace st) {
+        FirebaseCrashlytics.instance.recordError(
+          e,
+          st,
+          reason: 'FCM token refresh save failed — pushes may stop after rotation',
+          fatal: false,
+        );
+        debugPrint('MessagingService: token refresh save failed: $e');
+      });
     });
   }
 

@@ -91,6 +91,10 @@ export default {
         fcm: makeFcm(projectId, accessToken),
       };
       const res = await sendOutcomeNotification(ctx, { targetUid, itemId, outcome });
+      // Surface the decisive result in `wrangler tail` — HTTP 200 alone can't
+      // distinguish a real send from a "nothing to send" reason (no-tokens,
+      // already-notified, no-active-grant, …); the body's `reason`/`sent` can.
+      console.log(JSON.stringify(res));
       return json(res, 200);
     } catch (e) {
       // Fail closed — never emit a partial/half-formed push on error.

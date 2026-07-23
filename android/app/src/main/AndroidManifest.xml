@@ -1,4 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- REQUIRED IN RELEASE. Flutter only injects INTERNET into the debug/profile
+         manifests (for the Dart VM service), so a release build that relies on
+         those merges ships with NO network permission — Firebase/FCM/http then
+         fail (SecurityException) and the app crashes on launch. Declare it here
+         in the main manifest so release has it too. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <!-- Android 13+ runtime notification permission (requested at runtime by
          firebase_messaging). Declared explicitly for clarity. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>

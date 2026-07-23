@@ -49,6 +49,7 @@ dependencies:
   timezone: ^0.11.1
   share_plus: ^13.2.1
   http: ^1.2.2
+  firebase_crashlytics: ^5.2.6
 
 dev_dependencies:
   flutter_test:

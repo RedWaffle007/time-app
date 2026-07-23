@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
@@ -41,8 +42,17 @@ class HttpOutcomeNotifier implements OutcomeNotifier {
             }),
           )
           .timeout(const Duration(seconds: 10));
-    } catch (e) {
+    } catch (e, st) {
       // Safety net is the in-app outcomes view; a missed push is tolerable at N=2.
+      // Record it so an otherwise-silent push failure is visible remotely — this
+      // is the exact "friend marks done, planner never notified, I see nothing"
+      // case we could not diagnose without USB otherwise.
+      FirebaseCrashlytics.instance.recordError(
+        e,
+        st,
+        reason: 'outcome push to Worker failed (outcome still saved)',
+        fatal: false,
+      );
       debugPrint('OutcomeNotifier: push call failed (outcome still saved): $e');
     }
   }
