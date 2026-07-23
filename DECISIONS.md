@@ -1036,6 +1036,18 @@ Question was: does "seen" mean *opened the app* or *opened that specific item*?
 - **No push for "seen"** (a seen-ping would be noisy and is the creepy end). Passive
   field the planner reads. Independent of Group A.
 
+### Group B — the three states, incl. the ABSENT state (clarified 2026-07-23)
+The *absent* signal is the more valuable one — "she hasn't looked in three days" tells
+the planner more than "she looked and is sitting on it." Define all three, all showing
+elapsed time, none of them a nag (no reminder-to-respond; just legible state):
+- **Not seen:** `Sent 3d ago · not seen yet` ← the high-value one.
+- **Seen, pending:** `Seen 2h ago · not yet responded`.
+- **Decided:** seen-bit is moot; show the decision.
+**Elapsed time must go through the locale-aware helper** — extend
+`core/format/datetime_format.dart` with relative-time formatting; never hardcode an
+English "3d ago" (standing worldwide requirement). Note: Group B (pending-only) and
+Group D archive (terminal-only) are **disjoint by item state**, so they never interact.
+
 ## Group D — "delete for me" — RECOMMENDATION: do NOT build it; solve the real worry
 The user's dilemma is real and both horns are bad:
 - *If the planner still sees a target-deleted item* → "delete for me" **misleads** the
@@ -1057,8 +1069,82 @@ per-party delete are fundamentally incompatible.** So:
   → the target games stats by deleting misses. Either way deletion + stats is corrupt —
   another reason not to build it.
 - **If a genuine "this item is wrong" need arises,** serve it with Group C withdrawal
-  (before accept) or a future **mutual, logged** removal — never a silent unilateral
-  hide, and never wired to stats.
+  (before accept). *(The earlier "mutual, logged removal" future-out is **superseded**
+  by the per-user soft-archive below — no handshake needed.)*
+
+### Group D — CHOSEN: per-user, UI-only soft-archive of SETTLED items (decided 2026-07-23)
+Supersedes the mutual-clearing idea. Each user may **archive (hide from their own view)**
+a **settled** item; the Firestore document is **untouched**; the other party's view is
+unaffected and isn't told. This is honest in a way "delete for me" was not: the original
+objection was that the planner still saw an item the *target thought was gone* — but
+**post-outcome the outcome is already on the record and both parties already know it**,
+so hiding a settled item from your own view hides it from no one.
+
+**Why it beats the handshake:** no pending state, no notify, no accept/decline UI (far
+less to build); stats stay honest *for free* because they read the **record, not the
+view**; nobody can touch anyone else's data; and the data survives for a future summary.
+
+**Shape — CHOSEN: store the archive set in the archiver's OWN subtree, NOT on the shared
+item doc.** i.e. a per-user doc such as `users/{uid}/state/archived` holding an
+`itemId → archivedAt` map (one cheap read to filter; `archivedAt` comes free; unarchive =
+delete the key). This is a deliberate refinement of the "hiddenBy array on the item"
+sketch: keeping the flag **off** the shared doc means the planner never needs write access
+to the item to hide it, which is truer to "nobody can affect anyone else's data," and the
+rules become trivial. (Subcollection `users/{uid}/archivedItems/{itemId}` is the drop-in
+scale-up if the map ever gets large — not needed at this scale.)
+
+**Constraints (enforced):**
+- **Settled-only.** Archive is offered ONLY on `done`/`skipped` items — never `pending`
+  or `approved`-not-done. (Rationale: hiding a live item would let you bury a plan you
+  never responded to.) **Enforced at the UI** (surface the action only on settled items).
+  We accept client-only enforcement here because the flag is per-user and view-only, so a
+  bypass affects **only the bypasser's own view** — no cross-user and no stats impact; not
+  worth paying a rules `get()` on the item for. Server-enforcement is available if ever
+  wanted (rule reads the item's `outcome`), explicitly declined for now.
+- **Filter at the query/repository layer, once** — apply the archive filter in the shared
+  data layer so it covers EVERY surface a settled item appears on (target schedule,
+  planner activity feed, outcomes list). Per-screen filtering would leak.
+- **Never called "delete" anywhere** — action + view use **"Archive" / "Archived"** (or
+  "Hide"/"Hidden"); UI copy and code identifiers must not imply data is gone. "Archive"
+  is preferred: it connotes retrievable, which it is.
+- **Reversible — CHOSEN.** Not one-way. Provide a **"Show archived" / Archived view** to
+  unarchive (just remove the map key). One-way hiding would itself feel like the "delete"
+  we're avoiding; since the data is untouched, reversibility is free and reinforces
+  "archived ≠ deleted."
+- **Rules: own-flag only.** Owner-only read+write on the archiver's own subtree:
+  `match /users/{uid}/state/{doc} { allow read, write: if signedIn() && request.auth.uid == uid; }`
+  (mirrors the `fcmTokens` pattern). A user structurally cannot set the other party's
+  archive flag — it lives in their own subtree.
+
+**Answers to the three questions:**
+1. **Any reason it doesn't work?** No dealbreaker. Watch-items: enforce settled-only and
+   filter at the repo layer (both above); archiving a *terminal* item is stable (terminal
+   docs don't change, so nothing un-hides unexpectedly). The refinements above are the
+   whole of it.
+2. **Does it change the Group D known gap?** It **narrows but does not close** it, and the
+   gap stays as logged. Archive is **hide, not remove** — the record is still append-only
+   from the target's side, so "the target cannot remove an item from the shared record"
+   remains literally true. What changes: the target can now declutter their *view* of
+   *settled* items. The residual gap is **pre-settlement** — a target stuck with an
+   `approved`-not-done item they don't want, whose only exits are done/skip. See the
+   Known-gap note below.
+3. **Does it change how a future summary reads data?** Invisible to it — **as long as the
+   summary reads the canonical record (`scheduleItems`/outcomes), not the archive-filtered
+   view.** The archive flag lives in a user subtree the aggregator never joins. **Load-
+   bearing constraint on that future feature:** summaries MUST read the record layer, not
+   reuse the hidden-filtered list query — else archived items silently vanish from stats
+   and we've recreated the lie-by-omission we're avoiding. **The summary feature is a
+   benefit of this shape, not a dependency — we are NOT committing to building summaries.**
+
+### Group D — KNOWN GAP (named, not an oversight; clarified 2026-07-23)
+With app-lock chosen over delete-for-me, C's withdrawal being **planner-side only**, and
+archive being **settled-only + hide-not-remove**, **the target has no way to REMOVE an
+item from their own record.** Pending → they can reject; settled → they can archive (hide)
+but not remove; `approved`-not-done → the only exits are done/skip, no removal. This is
+append-only-from-the-target's-side working **as intended** — it's the accountability
+point, not a bug. **Accepted for v1, logged so it's already named if it surfaces in
+testing.** Future out (if ever needed): a target-initiated removal the planner confirms
+(mutual + logged) — deliberately NOT built now.
 
 **All of the above is design/logging only. No code until the user picks per group.**
 

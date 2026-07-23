@@ -20,6 +20,11 @@ class TimeApp extends ConsumerStatefulWidget {
 }
 
 class _TimeAppState extends ConsumerState<TimeApp> {
+  // Lets the FCM onMessage listener show a banner. That listener runs outside
+  // the widget tree, so it has no BuildContext / ScaffoldMessenger of its own —
+  // this key, attached to MaterialApp.router below, gives it one.
+  final _scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
+
   @override
   void initState() {
     super.initState();
@@ -34,11 +39,44 @@ class _TimeAppState extends ConsumerState<TimeApp> {
     // App in background → foreground via a notification tap.
     FirebaseMessaging.onMessageOpenedApp.listen(_handleTap);
 
-    // Foreground message. The in-app view already reflects the outcome, so we
-    // just log it — no need to surface a redundant banner for v1.
-    FirebaseMessaging.onMessage.listen((m) {
-      debugPrint('FCM foreground: ${m.data}');
-    });
+    // Foreground message. FCM auto-displays a system-tray notification ONLY when
+    // the app is backgrounded/terminated — while it's open, nothing appears
+    // unless we render it. So show an in-app banner (SnackBar) with a View
+    // action; without this, a recipient looking at the app sees nothing at all.
+    FirebaseMessaging.onMessage.listen(_showForegroundBanner);
+  }
+
+  void _showForegroundBanner(RemoteMessage message) {
+    debugPrint('FCM foreground: ${message.data}');
+    // In the foreground the `notification` block is delivered but NOT rendered
+    // by the OS; render it ourselves. Data-only messages have nothing to show.
+    final title = message.notification?.title;
+    final body = message.notification?.body;
+    if (title == null && body == null) return;
+
+    final messenger = _scaffoldMessengerKey.currentState;
+    if (messenger == null) return;
+
+    messenger.hideCurrentSnackBar(); // replace, don't stack, on rapid outcomes
+    messenger.showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 6),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (title != null)
+              Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+            if (body != null) Text(body),
+          ],
+        ),
+        action: SnackBarAction(
+          label: 'View',
+          // Same routing as tapping a tray notification (see _handleTap).
+          onPressed: () => _handleTap(message),
+        ),
+      ),
+    );
   }
 
   void _handleTap(RemoteMessage message) {
@@ -59,6 +97,7 @@ class _TimeAppState extends ConsumerState<TimeApp> {
 
     final router = ref.watch(routerProvider);
     return MaterialApp.router(
+      scaffoldMessengerKey: _scaffoldMessengerKey,
       title: 'time-app',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
