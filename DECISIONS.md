@@ -293,6 +293,16 @@ is validated and alarm work is explicitly directed.
 
 # Alarm permission & degradation model (decided 2026-07-18)
 
+> **⚠️ SUPERSEDED 2026-07-23 — see "Product decision: this is a reminder/
+> accountability app, NOT an alarm app" at the end of this file.** The whole
+> "Alarm mode vs Reminder mode" duality below collapses: **Reminder mode is the
+> only mode, on both platforms, by design.** There is no true-alarm path, no
+> `setAlarmClock`, no AlarmKit, no OEM alarm exemption, no "make your alarms real"
+> primer. The permission we ask for is the ordinary notification permission. The
+> parts of this section still true: ask contextually with a soft primer, never
+> work around a refusal. Everything framed as "true alarms with permission" is
+> dead. Kept for history only.
+
 **Decided constraint (do not violate):** alarms ring ONLY with explicit user
 permission. Without it, the app degrades gracefully to **notifications on both
 platforms** — an acceptable fallback, not a failure state. **Never work around a
@@ -517,7 +527,42 @@ outbound HTTP call.
   the push arriving (then attach the card and swap transport — do not build
   client retries).
 
+**Refinement (2026-07-23) — the miss window is narrower than "loses network."**
+Traced the actual call path (`outcome_screen.dart` → `markDone`/`markSkipped` →
+`notifyOutcome`). `markDone` is a Firestore `set()`, whose Future on mobile
+**only resolves once the server acks the write** (offline it stays pending), and
+`notifyOutcome`'s single HTTP POST is `await`ed *after* it. So the push attempt is
+**connectivity-gated for free**: a user who taps Done in a dead zone but stays in
+the app until signal returns gets the write synced *then* the POST fired — the
+common spotty-signal case self-heals, with no retry logic. The genuine silent-miss
+is therefore only: **tap Done while offline (or during an online blip on that one
+POST), then the app is killed / phone reboots before the POST completes** — the
+outcome still persists and syncs on next launch (never lost; visible in the in-app
+outcomes view), but the in-memory `notifyOutcome` continuation is gone and no push
+ever fires. Crashlytics `recordError` (added 2026-07-23) now surfaces the
+*online-but-failed* variant; the offline-then-killed variant leaves no client
+signal by construction.
+
+**Known limitation — logged, not being built.** The eventual client-side fix (if
+card-day's server-side Cloud Function isn't the chosen path) is a **persisted
+outbox**: enqueue the outcome-push intent to durable local storage at tap time and
+replay it on next app launch until the Worker 200s. This closes the offline-then-
+killed variant without waiting for Blaze. **Do NOT build it now** — disproportionate
+for N=2, and the server-side Cloud Function (card-day) retires this failure mode
+without any client work (see item 7 in the card-day plan above). This entry exists
+so the limitation and its fix are on record, not lost between sessions.
+
 # Alarm persistence across reboot — HARD REQUIREMENT (not an optimisation)
+
+> **⚠️ PARTIALLY SUPERSEDED 2026-07-23** by the reminder-app product decision (end
+> of file). The *requirement* still holds — a scheduled reminder must survive
+> reboot — but the *mechanism* changes: we are **not** using `AlarmManager` +
+> a hand-rolled `BOOT_COMPLETED` receiver as the primary substrate. **WorkManager
+> persists its scheduled work across reboot automatically** (its own DB, rescheduled
+> on boot), so it — not a custom BootReceiver — is the reboot-durability answer for
+> the inexact reminder layer. `BOOT_COMPLETED` is still relevant as a top-up hook
+> and is still OEM-blocked on Xiaomi without autostart. See the reminder-layer
+> write-up at the end for the current mechanism.
 
 **Requirement (must-build when alarm work lands, not a nice-to-have):** every
 pending alarm must be **durably stored** (its schedule survives process death and
@@ -832,3 +877,300 @@ that revisits an existing item on relocation.
 the old zone's clock time until recreated. Bounded, rare at N=2, and *visible* (the
 stale zone label makes a mis-timed ring traceable, not a mystery). Revisit as
 option (3) when alarm work lands.
+
+# Product decision: reminder / accountability app, NOT an alarm app (decided 2026-07-23)
+
+**This is the load-bearing decision. It supersedes every "alarm" framing earlier in
+this file** (see the banners on "Alarm permission & degradation model" and "Alarm
+persistence across reboot").
+
+**The product is an accountability / reminder / planner app. We are NOT trying to
+wake anyone up.** Push notifications and local reminders are the deliberate
+**ceiling on both platforms** — not a degraded fallback we're apologising for. There
+is no "true alarm" tier above them.
+
+**What this closes / changes:**
+- **We do NOT need `USE_EXACT_ALARM`** and do not have to qualify under Google Play's
+  alarm-clock/calendar exemption. (That restriction was the thing that looked like it
+  might make an *alarm* premise unshippable — see the 2026-07-23 notifications
+  diagnosis. As a *reminder* app the question is moot.)
+- **We do NOT need `SCHEDULE_EXACT_ALARM`** either (the user-granted exact-alarm
+  flow). Inexact scheduling is sufficient — see the reminder-layer write-up below.
+- **The earlier iOS finding (no third-party access to the native Clock / AlarmKit
+  gating on iOS 26) STOPS being a blocker.** We were never going to fire a true iOS
+  alarm; we don't need to. **iOS is back in scope for v1** as a first-class target
+  (local notifications via `UNUserNotificationCenter`).
+- **The "Android-only in v1" conclusion is withdrawn.** v1 is cross-platform again.
+- **iOS 26 is no longer a floor for anything.** Local notifications work far below it.
+
+**What stays true:** ask for the (ordinary notification) permission contextually with
+a soft primer; never work around a refusal; a target who declines degrades to
+in-app-only, which the loop already tolerates.
+
+# Reminder layer — how we build it with inexact scheduling only (research 2026-07-23)
+
+Framing above means: **no exact alarms.** Reminders may drift; the product tolerates
+it ("start your study block" 15 min late is fine; we are explicitly NOT doing "leave
+now for your interview"). Research, current docs, cited.
+
+## Android — mechanism, drift, reboot
+- **Mechanism:** inexact scheduling via **WorkManager** as the durable substrate,
+  optionally with a one-shot inexact `AlarmManager.set()` / `setWindow()` /
+  `setAndAllowWhileIdle()` near the fire time. We do **not** use
+  `setExactAndAllowWhileIdle` (that needs the exact-alarm permission we've dropped).
+- **Drift, and it gets worse under Doze:** in Doze, **alarms don't fire — they're
+  deferred to the next maintenance window**, and windows grow farther apart the
+  longer the device idles (minutes early on → up to hours in deep idle overnight).
+  `setAndAllowWhileIdle` is rate-limited to roughly **once every ~9–15 min per app**
+  in idle. WorkManager's minimum periodic interval is **15 min**. So realistic drift:
+  **a few minutes when the phone is in active use; tens of minutes to 1h+ in deep
+  Doze** (screen off, stationary, unplugged — i.e. overnight is the worst case).
+  ([Android — Schedule alarms / Doze](https://developer.android.com/develop/background-work/services/alarms),
+  [Exact-alarms denied by default on 14](https://developer.android.com/about/versions/14/changes/schedule-exact-alarms))
+- **Xiaomi/HyperOS makes it worse:** aggressive app-standby + background killing
+  throttle or drop WorkManager jobs AND block `BOOT_COMPLETED` unless **Autostart is
+  on and battery is "No restrictions."** ⇒ **the Group-3 Xiaomi onboarding primer is
+  a prerequisite for reliable reminders too, not just for push.**
+  ([Xiaomi FCM/background delivery](https://help.pushwoosh.com/hc/en-us/articles/26443659354653-Why-are-push-notifications-not-being-delivered-to-my-Xiaomi-device),
+  OEM `BOOT_COMPLETED` blocking is documented across Xiaomi/Samsung/Huawei/OnePlus.)
+- **Reboot survival:** **`AlarmManager` does NOT survive reboot** — the OS cancels
+  every alarm on shutdown; you'd need a `RECEIVE_BOOT_COMPLETED` receiver to
+  reschedule, and even then it won't run until the app has been launched once and is
+  OEM-blocked on Xiaomi. **WorkManager persists its work across reboot automatically**
+  (own DB, reschedules on boot) — so **WorkManager is the reboot-durability answer**;
+  the boot receiver becomes a top-up hook, not the primary mechanism.
+  ([AlarmManager cleared on reboot / BOOT_COMPLETED](https://developer.android.com/develop/background-work/services/alarms))
+- **Fallback when a local reminder is dropped/late:** the completion→planner FCM push
+  path already exists; the *server clock* is authoritative for "was this ever marked
+  done," so a missed local ring never corrupts the accountability record — it just
+  means the target got reminded late or not at all on-device. Acceptable at this tier.
+
+## iOS — mechanism, accuracy, reboot, and the one hard limit
+- **Mechanism:** local notifications via **`UNUserNotificationCenter`** with
+  `UNCalendarNotificationTrigger` / `UNTimeIntervalNotificationTrigger`. Same
+  notification-authorization permission as push; no special entitlement.
+- **Accuracy:** **fires on time.** No Doze equivalent; the system delivers scheduled
+  local notifications at the scheduled minute (minor delay only under Low Power Mode).
+  **iOS is the MORE precise platform here** — the inverse of Android.
+- **Reboot / app-not-running:** the notifications are **held by the system, not the
+  app process**, so they fire even if the app is never relaunched and persist across
+  app updates (same bundle id). Reboot delivery is generally preserved — **verify
+  on-device when iOS is wired up** (the docs are explicit about app-update/quit
+  persistence, less so about power-cycle).
+  ([Apple — scheduling local notifications](https://developer.apple.com/library/archive/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/SchedulingandHandlingLocalNotifications.html))
+- **The hard limit that shapes the design: 64 pending local notifications per app.**
+  iOS keeps only the **soonest-firing 64** and silently discards the rest (a repeating
+  trigger counts as 1). ⇒ we cannot "schedule everything up front." We need a
+  **rolling-window scheduler**: schedule the nearest N, and top up (on app open, and/or
+  when the completion push arrives) as they fire. This is the iOS analogue of Android's
+  Doze problem — different engineering, same UX goal.
+  ([64-limit, developer forums](https://developer.apple.com/forums/thread/811171),
+  [flutter_local_notifications #2312](https://github.com/MaikuB/flutter_local_notifications/issues/2312))
+
+## The honest cross-platform picture
+- **Android:** the hard problem is *"will it fire on time"* — Doze + OEM killing. Needs
+  WorkManager + the Xiaomi primer; accept minutes-to-an-hour drift in deep idle.
+- **iOS:** the hard problem is *"the 64-pending ceiling"* — timing itself is reliable
+  and reboot-durable for free. Needs a rolling-window top-up scheduler.
+- **Both are shippable as a reminder app.** Neither is shippable as an alarm app, which
+  is exactly why we made the product decision above. STILL PARKED until directed — this
+  is now a "how we'll build it" record, not a "can we ship it" open question.
+
+# New scope grouping + design decisions (2026-07-23) — DESIGN ONLY, no code yet
+
+Six requested features, grouped. Prerequisite that is not itself a group: the
+**foreground-banner fix** (old step 2 — `onMessage` currently only `debugPrint`s, so
+any push is invisible to someone with the app open). It gates Group A and is a real
+bug regardless. Build it first / alongside A.
+
+## Group A — notification events on ONE generalized path (agreed, with a design caveat)
+Generalize the Worker from outcome-only to an **event-discriminated** endpoint firing
+push for: (1) planner creates plan → **target** notified; (2) target approves/rejects
+→ **planner** notified; (3) target marks done/skip → **planner** notified (already
+live — fold in). Keep the existing dedup guard, grant check, token cleanup.
+
+**Caveat the "one endpoint" framing must account for — the events are NOT symmetric:**
+- The live Worker authorizes **caller == the item's target** and always notifies the
+  **planner (creator)**. That holds for events (2) and (3) — both are target-triggered.
+- **Event (1) is planner-triggered** (caller == `createdByUid`), notifying the
+  **target**. So the endpoint must **branch authz + recipient by event type**, not
+  assume caller==target. One endpoint, yes; one authz rule, no.
+- **Dedup:** `notifiedOutcome` is outcome-specific. Generalizing needs a per-event
+  guard (e.g. `notified.{created|decided|outcome}`) so one event firing doesn't
+  suppress another on the same item.
+- Recipient tokens: event (1) reads `users/{targetUid}/fcmTokens`; (2)/(3) read the
+  planner's. The `notify.js` recipient-resolution branch already centralizes this —
+  extend it, don't fork it.
+
+## Group C — cancel-before-accept — folds into A's path + needs a rules change
+Planner withdraws a still-**pending** plan; **refused once approved.** The domain enum
+already has `withdrawn`. Two moving parts:
+1. **Rules change (new):** today `scheduleItems/{targetUid}/items/{itemId}` allows
+   `update` **only by the target**. Withdrawal is a **creator/planner** write, so we
+   must add a narrow rule: the item's `createdByUid` may update **status `pending` →
+   `withdrawn` ONLY** (no other field, and denied if status != pending — that's what
+   enforces "refused once approved").
+2. **It's just event (4) on Group A's path:** "plan withdrawn → notify target."
+- **What the target sees — RECOMMENDATION: show as withdrawn, do NOT vanish silently.**
+  A pending item the target may have already read shouldn't disappear without a trace
+  (looks like a bug, erodes trust). Render it greyed as **"Withdrawn by {planner}"**,
+  non-actionable, dismissible/auto-expiring so the queue doesn't accrue tombstones.
+  Push: low-priority, and arguably only if the target had already *seen* it (ties to
+  Group B) — if they never saw it, silently removing from the queue is fine.
+⇒ **Grouping note: C is not a separate notification path. It's one rules change + one
+more event registered on A.** Sequence it right after A.
+
+## Group B — "seen" status — RECOMMENDATION: item-level, not app-level
+Question was: does "seen" mean *opened the app* or *opened that specific item*?
+**Recommend item-level ("she opened this plan"), for both usefulness and creepiness.**
+- **App-level = the WhatsApp "last seen online" pattern** — it leaks when you were on
+  your phone at all, which is ambient monitoring unrelated to any plan. This app
+  already sits near the surveillance line; app-level pushes it over.
+- **Item-level is scoped to the shared accountability object** — "has my plan reached
+  her / is she sitting on it" is exactly the signal the planner legitimately needs, and
+  nothing beyond it. Less surveillance-y *because* it's bounded to the artifact you both
+  already share, not the person's general activity.
+- **Scope it to pending items only:** store `seenByTargetAt` once, set when the target
+  opens the item detail while `status == pending`. After approve/reject the decision
+  supersedes "seen," so the bit is moot. Planner UI: "Seen · not yet responded."
+- **No push for "seen"** (a seen-ping would be noisy and is the creepy end). Passive
+  field the planner reads. Independent of Group A.
+
+## Group D — "delete for me" — RECOMMENDATION: do NOT build it; solve the real worry
+The user's dilemma is real and both horns are bad:
+- *If the planner still sees a target-deleted item* → "delete for me" **misleads** the
+  target the moment the planner references it.
+- *If the planner stops seeing it* → the target can **silently erase accountability
+  history**, which defeats the product.
+**These are unresolvable because a shared accountability ledger and a unilateral
+per-party delete are fundamentally incompatible.** So:
+- **The actual worry is access-control, not data-model:** "someone picks up my
+  *unlocked* phone." Solve it with an **app lock (biometric/PIN on open) + hide-in-
+  recents / `FLAG_SECURE`** so content isn't shown in the app switcher or
+  screenshotted. This addresses "someone opens my app" **without touching the shared
+  record** — no misleading, no erasure. **This is the recommended v1 answer.**
+- **Reject "delete for me" as history deletion.** Accountability data should be
+  **append-only from the target's side**: you can mark done/skip, you cannot make a
+  miss disappear.
+- **Streaks/stats seal it:** if deleted items still counted toward stats → a **lie by
+  omission** (the number reflects data the user was told was gone); if they DON'T count
+  → the target games stats by deleting misses. Either way deletion + stats is corrupt —
+  another reason not to build it.
+- **If a genuine "this item is wrong" need arises,** serve it with Group C withdrawal
+  (before accept) or a future **mutual, logged** removal — never a silent unilateral
+  hide, and never wired to stats.
+
+**All of the above is design/logging only. No code until the user picks per group.**
+
+# Notifications diagnosis — "nothing fires" (investigated 2026-07-23)
+
+First real-pair APK run: core loop validated (build/approve/mark-done all show on
+both sides via the **in-app** views). Reported symptom: **no notification of any
+kind ever fires, no error surfaced.** Split into the two independent systems and
+diagnosed each against the code + current vendor docs. **Nothing built was found
+broken; the gaps are things never built (correctly, per build order) plus a
+device-layer suspect. No code changed — diagnosis only, awaiting a transport pick.**
+
+## System 1 — LOCAL notifications (on-device scheduled reminders for your own items)
+**Verdict: NOT built. This is the parked alarm/reminder layer — its absence is by
+design, not a regression.** There is *no code path that could ever fire a local
+reminder.* Concretely:
+- No `flutter_local_notifications` dependency (pubspec has only `firebase_messaging`).
+- No `zonedSchedule` / `AlarmManager` / any scheduling call anywhere.
+- No notification channel is created in code. The manifest's
+  `high_importance_channel` id is only an **FCM fallback pointer**, never registered
+  by a plugin.
+- `SCHEDULE_EXACT_ALARM` / `USE_EXACT_ALARM` are **not declared** (only `INTERNET`
+  and `POST_NOTIFICATIONS` are).
+- `POST_NOTIFICATIONS` **is** requested at runtime — but incidentally, via
+  `firebase_messaging`'s `requestPermission()` on sign-in (for FCM). So the Android
+  13+ runtime prompt does appear; the permission is not the blocker.
+- No Xiaomi Autostart / battery-exemption prompting exists.
+
+Design note for when reminders ARE built (not now): under the Android 14 change,
+`SCHEDULE_EXACT_ALARM` is **denied by default** for newly installed apps targeting
+API 33+, and `USE_EXACT_ALARM` (auto-granted, non-revocable) is **restricted by
+Google Play policy to alarm-clock/calendar apps** — an accountability app likely
+does **not** qualify, so the reminder layer must be designed around either the
+user-granted `SCHEDULE_EXACT_ALARM` flow or inexact alarms. Flagged, not decided.
+(Sources: Android 14 "Schedule exact alarms are denied by default"; Play exact-alarm
+policy — cited in the session transcript.)
+
+## System 2 — PUSH notifications (planner pinged on outcome; target pinged on schedule)
+- **FCM is fully set up.** Permission requested on sign-in; token written to
+  `users/{uid}/fcmTokens/{token}`, refreshed on rotation, deleted on sign-out;
+  background handler + tap-routing wired.
+- **Already on FCM HTTP v1, not the deprecated legacy API.** The Worker mints an
+  OAuth2 access token from the service account (`google-auth.js` + `fcm-rest.js`).
+  The legacy HTTP/XMPP send API was deprecated 2023 and **shutdown began
+  2024-07-22** — it does not apply to us; we are on the correct API.
+- **Outcome push (target marks done → planner pinged) is built AND the Worker is
+  live.** Verified from here: `GET` → 405, `POST {}` → 400 `invalid-body` (the
+  Worker's own validation). Wired into `outcome_screen.dart` → `HttpOutcomeNotifier`
+  → live Worker.
+- **The OTHER direction — "I get pinged when the planner schedules something" — was
+  never built.** The Worker only handles outcomes; there is no push on item-create
+  or invite. That half of the reported symptom is a genuine missing feature.
+- **Foreground gap:** `onMessage` only `debugPrint`s — no in-app banner. FCM
+  `notification` payloads auto-display in the tray **only when backgrounded/
+  terminated**. If the recipient's app is open when the outcome lands, they see
+  nothing. Deliberate v1 choice, but it masks a working push during a live test.
+
+### Why the (built, live) outcome push shows nothing — ranked suspects
+1. **Xiaomi/HyperOS killing FCM (prime suspect — both test devices are Xiaomi).**
+   MIUI/HyperOS blacklists background delivery for apps without **Autostart** on and
+   battery set to **No restrictions**; FCM is well-documented as unreliable there
+   until the user enables both. The app does not prompt for either.
+2. **Recipient app foregrounded during the test** → no banner (see foreground gap).
+3. **Recipient FCM token never written** (`getToken` failed / permission declined) →
+   Worker returns `no-tokens`, silent no-op. Would show in Crashlytics as the
+   token-save failure we record.
+4. **Notification permission actually denied** on the recipient device.
+
+### The decisive diagnostic (no code, no USB) — run BEFORE changing anything
+`wrangler tail` on the Worker prints the per-call `reason` for every outcome. Have
+the friend mark an item done while tailing:
+- `reason:"sent"` but nothing appears → **device-side** (Xiaomi autostart/battery, or
+  foreground-only banner). Fix is settings + a foreground display, not the transport.
+- `reason:"no-tokens"` → recipient token never registered.
+- `reason:"no-active-grant"` / `"self-planned"` / `"already-notified"` → recipient/
+  dedup resolution, not delivery.
+- **No log line at all** → the app never reached the Worker → check Crashlytics for
+  the recorded "outcome push to Worker failed" error (permission/network/endpoint).
+
+## Transport options for the push side (free, no card) — comparison + migration cost
+Constraint restated: **no payment, prefer no card on file.** The app **already has
+option (c) built, deployed, live, and on HTTP v1.**
+
+- **(a) Client-side FCM HTTP v1 from the completing device** — service-account
+  private key ships inside the APK; anyone can extract it and push to any user / abuse
+  the project. No server-side dedup or dead-token cleanup. **Migration cost to
+  release: blocking** — must be ripped out and replaced with a server path. Reject.
+- **(b) Supabase Edge Functions** — free, no card, 500K invocations/mo, but **free
+  projects pause after 7 days idle** (fatal for an always-on push endpoint) and it is
+  a second vendor holding the service account on a different runtime (Deno/TS).
+  **Migration cost: lateral** — discards the working Worker and adds an idle-pause
+  failure mode. Reject.
+- **(c) Cloudflare Workers — RECOMMENDED.** Free, no card, 100K req/day, commercial
+  use allowed, never pauses. **Already built + live**, holds the key server-side, on
+  HTTP v1. **Migration cost: lowest** — the *policy* lives in transport-agnostic
+  `notify.js`; the card-day plan already swaps `outcomeNotifierProvider` →
+  `NoopOutcomeNotifier` and reuses `notify.js` verbatim in a Firestore-triggered
+  Cloud Function. Keep indefinitely, or swap only the trigger later.
+- **(d) Blaze with a $0 budget alert** — Cloud Functions free allowance (2M
+  invocations/mo etc.) almost certainly covers us at any realistic scale, and it is
+  the eventual "right" architecture (server-side trigger closes the N>2 silent-miss
+  gap). **But it requires a card on file — the exact thing to avoid — and a budget
+  alert only *notifies*, it does NOT cap spend.** This is the documented **card-day**
+  path, not a now-path.
+
+**Recommendation: stay on (c).** There is no transport problem to solve — the send
+path is live and on the modern API. The failure is almost certainly device-side
+(Xiaomi) or the foreground-banner gap. (c) is free, cardless, and was explicitly
+architected so the later move to (d)/Blaze is a one-line provider swap with zero
+rewrite of `notify.js`. Confirm with `wrangler tail` before building anything.
+
+**Awaiting user's pick before any code changes.** (Sources for this entry:
+Firebase FCM legacy→v1 migration notice; Android 13 POST_NOTIFICATIONS + Android 14
+exact-alarm behavior change; Cloudflare Workers, Supabase, and Firebase Blaze
+free-tier docs — all cited in the 2026-07-23 session transcript.)
