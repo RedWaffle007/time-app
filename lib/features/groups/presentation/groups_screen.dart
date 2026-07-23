@@ -29,6 +29,10 @@ class GroupsScreen extends ConsumerWidget {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
+        // Unique tag: HomeShell's IndexedStack keeps this tab AND the Activity
+        // tab (which also has a FAB) mounted at once, so the default shared FAB
+        // hero tag collides. See heroTag on PlannerActivityScreen's FAB too.
+        heroTag: 'groupsFab',
         onPressed: () => _showCreateDialog(context, ref),
         icon: const Icon(Icons.add),
         label: const Text('New group'),

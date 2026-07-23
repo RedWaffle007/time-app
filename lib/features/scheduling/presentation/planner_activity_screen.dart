@@ -26,6 +26,9 @@ class PlannerActivityScreen extends ConsumerWidget {
         actions: const [AccountButton()],
       ),
       floatingActionButton: FloatingActionButton.extended(
+        // Unique tag — this tab is mounted alongside GroupsScreen's FAB inside
+        // HomeShell's IndexedStack, so the default shared FAB hero tag collides.
+        heroTag: 'activityFab',
         onPressed: () => context.push(Routes.scheduleBuilder),
         icon: const Icon(Icons.add),
         label: const Text('Plan an item'),
