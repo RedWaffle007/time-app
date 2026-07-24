@@ -19,7 +19,7 @@ class TimeApp extends ConsumerStatefulWidget {
   ConsumerState<TimeApp> createState() => _TimeAppState();
 }
 
-class _TimeAppState extends ConsumerState<TimeApp> {
+class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
   // Lets the FCM onMessage listener show a banner. That listener runs outside
   // the widget tree, so it has no BuildContext / ScaffoldMessenger of its own —
   // this key, attached to MaterialApp.router below, gives it one.
@@ -29,6 +29,75 @@ class _TimeAppState extends ConsumerState<TimeApp> {
   void initState() {
     super.initState();
     _setupNotificationTaps();
+
+    // Retry trigger #1: app resume. If token registration failed earlier (e.g.
+    // the device was briefly offline), coming back to the foreground gives it a
+    // fresh attempt — the MessagingService cooldown keeps this from hammering
+    // Firestore if the device is still offline. (Retry trigger #2 — auth change
+    // — is handled in build(), which re-runs when authStateProvider changes.)
+    WidgetsBinding.instance.addObserver(this);
+
+    // Surface a token-registration FAILURE instead of it being silent. A silent
+    // no-token state is exactly what cost a whole debugging session
+    // (DECISIONS.md 2026-07-24) — this shows a dismissible banner with Retry.
+    ref.read(messagingServiceProvider).status.addListener(_onRegistrationStatus);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    ref.read(messagingServiceProvider).status.removeListener(_onRegistrationStatus);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      final uid = ref.read(authStateProvider).value?.uid;
+      if (uid != null) {
+        ref.read(messagingServiceProvider).registerForUser(uid);
+      }
+    }
+  }
+
+  void _onRegistrationStatus() {
+    final messenger = _scaffoldMessengerKey.currentState;
+    if (messenger == null) return;
+    final status = ref.read(messagingServiceProvider).status.value;
+
+    if (status != FcmRegistrationStatus.failed) {
+      messenger.hideCurrentMaterialBanner();
+      return;
+    }
+
+    messenger.hideCurrentMaterialBanner();
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        content: const Text(
+          "Couldn't set up notifications on this device — you may not be "
+          'notified when someone plans or completes an item.',
+        ),
+        leading: const Icon(Icons.notifications_off_outlined),
+        actions: [
+          TextButton(
+            onPressed: () {
+              messenger.hideCurrentMaterialBanner();
+            },
+            child: const Text('Dismiss'),
+          ),
+          TextButton(
+            onPressed: () {
+              messenger.hideCurrentMaterialBanner();
+              final uid = ref.read(authStateProvider).value?.uid;
+              if (uid != null) {
+                ref.read(messagingServiceProvider).retryRegistration(uid);
+              }
+            },
+            child: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _setupNotificationTaps() async {
