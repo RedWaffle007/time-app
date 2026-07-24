@@ -17,7 +17,7 @@ If a feature doesn't serve this loop, it's parked.
 
 **Completion/skip → notify planner is non-negotiable** — it's what closes the accountability loop; it ships, it does not get cut.
 
-## Status — where we actually are (as of 2026-07-22)
+## Status — where we actually are (as of 2026-07-24)
 
 **The non-alarm core loop is CODE-COMPLETE.** Every screen in the loop above is
 built: groups + invites, planner-grant consent, schedule builder (in the target's
@@ -44,11 +44,29 @@ names, or 24h. (Details: DECISIONS.md "Locale-aware date/time display.")
 Keep this current. Do not mark an item done until its run/decision is recorded here
 or in DECISIONS.md.
 
-**Unverified — built/deployed but never exercised end-to-end** (all block the
-friend hand-off per DECISIONS.md "Outstanding verification debt"):
-1. **Rules Test 2 — on-device happy path.** A creates group → B joins by code → A
-   grants B planner → B creates item → A approves + marks Done → B sees outcome.
-   Never run on a device.
+**VERIFIED 2026-07-24 — do not re-open these** (DECISIONS.md, 2026-07-24 entries):
+- **Rules Test 2 — on-device happy path. PASSED.** Run with a real second person on
+  a real device: group → join → grant → planner creates item → target approves →
+  marks Done → planner receives the outcome.
+- **Worker transport + `kNotifyEndpoint`. LIVE AND CORRECT.** A real outcome write
+  triggered a real push (`sent:1`). The Worker was never the problem.
+- **Firestore rules deployed.** Ruleset `45d5f8bc…` (2026-07-24T15:55:56Z) replaced
+  the 6-day-stale `57de3ae0…`. Both the `fcmTokens` block and the item-create
+  `status` constraint are confirmed present in the *deployed* source.
+- **Token registration.** `users/{uid}/fcmTokens` now populated for both accounts —
+  the first tokens ever written in this project.
+- **FOREGROUND push delivery.** Worker → FCM → device → in-app banner, rendered with
+  the View action while the recipient was foregrounded. The `c3b921e` banner fix
+  works. The "unverified delivery path" caveat is retired.
+
+**Unverified — still open:**
+1. **BACKGROUNDED / killed-app delivery.** The one that actually matters. The
+   verified run was *foregrounded*, which sidesteps OEM background policy entirely —
+   a live process gets the message via `onMessage` regardless of Xiaomi. System-tray
+   delivery to a backgrounded or process-killed app on HyperOS is **unproven**, and
+   is exactly what the Autostart/battery primer is for (primer placement in
+   onboarding should be decided from this test's result). Nothing in the foreground
+   result predicts this one.
 2. **Rules Test 3 — grant-off negative test.** With the planner grant revoked,
    confirm B's item-create is rejected `PERMISSION_DENIED`. Never run.
 3. **Real two-timezone loop (build step 5g).** A genuine two-people/two-devices run
@@ -57,10 +75,16 @@ friend hand-off per DECISIONS.md "Outstanding verification debt"):
 4. **iOS locale check.** Whether `CFBundleLocalizations` actually makes iOS report
    the user's language and render local digits — **blocked: no iOS target is wired
    up yet.** (DECISIONS.md, 2026-07-22.)
-5. **Worker deploy + `kNotifyEndpoint`.** Confirm the Cloudflare Worker is deployed
-   and the app's `kNotifyEndpoint` points at the live URL, and that a real outcome
-   write triggers a push. (Silent-miss gap at N=2 is knowingly accepted — see
-   DECISIONS.md; this item is just "is the transport actually wired and live?")
+
+**Queued build work (agreed order, 2026-07-24 — not started):**
+- **Next: `_registeredUid` latch fix.** Known defect, independent of the rules bug
+  that exposed it: the latch is set before the `await`, so ONE transient failure
+  disables token registration for the whole session with no retry and no
+  user-visible signal. Deploying the rules removed today's trigger, not the failure
+  mode. Four-part fix (latch only after a successful write; `requestPermission`
+  inside the `try`; timeout; retry on resume/auth-change) in DECISIONS.md (B).
+  **Ahead of Group A** — Group A puts three more event types on this same path.
+- **Then: Group A** generalized event endpoint + Group C withdrawal event.
 
 **Open product decisions — deferred until AFTER the first real loop test:**
 6. **Consent model: toggle vs. request-driven.** Current = target flips a

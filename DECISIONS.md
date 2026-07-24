@@ -1260,3 +1260,195 @@ rewrite of `notify.js`. Confirm with `wrangler tail` before building anything.
 Firebase FCM legacy→v1 migration notice; Android 13 POST_NOTIFICATIONS + Android 14
 exact-alarm behavior change; Cloudflare Workers, Supabase, and Firebase Blaze
 free-tier docs — all cited in the 2026-07-23 session transcript.)
+
+# PRODUCTION INCIDENT (2026-07-24) — deployed rules were stale for 6 days
+
+Found while diagnosing why the outcome push reported `no-tokens`. Root cause was
+not the push stack at all: **the deployed Firestore ruleset was six days behind
+`firestore.rules` in git.** A correct rules file in the repo proved nothing about
+what was being enforced.
+
+**Live ruleset:** `57de3ae0-a15a-4963-af6b-18fc2868e6d9`, deployed
+**2026-07-18T17:42:14Z**. It was the newest of only 6 rulesets, all pushed 7/15–7/18.
+Nothing was deployed after that until today.
+
+Two separate defects rode on that staleness.
+
+## (A) Consent bypass — LIVE 2026-07-18 → 2026-07-24. Severity: high.
+
+The deployed `scheduleItems/{targetUid}/items/{itemId}` create rule was:
+
+    allow create: if signedIn()
+      && request.resource.data.targetUid == targetUid
+      && request.resource.data.createdByUid == request.auth.uid
+      && (request.auth.uid == targetUid
+          || callerHasActiveGrant(targetUid, request.resource.data.groupId));
+
+**No constraint on `status`.** Any planner holding an active grant could create an
+item already `status: 'approved'`, skipping the target's per-item approval — the
+consent mechanic the entire product rests on ("A approves each item" in the core
+loop). Not a theoretical hole: the grant is exactly what a friend-planner holds.
+
+- **Never closed at:** `57de3ae0` deploy, 2026-07-18T17:42:14Z. (Earlier rulesets
+  had the same gap — the constraint has never been enforced in production.)
+- **Fixed locally in:** `ea87d6d`, 2026-07-21 22:14 -0500. Sat undeployed 3 days.
+- **Deployed:** 2026-07-24.
+
+The fix (now live) splits the two creation paths — planner may create `pending`
+only; self-planning may create `pending` or `approved`, since consent is inherent:
+
+    && (
+      (request.auth.uid == targetUid
+          && request.resource.data.status in ['pending', 'approved'])
+      || (callerHasActiveGrant(targetUid, request.resource.data.groupId)
+          && request.resource.data.status == 'pending')
+    )
+
+### Exploitation audit — result: NOT EXERCISED. No data integrity loss.
+
+Audited every `collectionGroup('items')` doc in `time-app-1e1c9` (read-only, via
+Firestore REST). **9 items total: 7 planner-created, 2 self-planned.**
+
+Discriminator: a pre-approved create writes `status:'approved'` and `decidedAt` in
+the *same* write as `createdAt` (identical server timestamps, `createTime ==
+updateTime`). A genuine approval writes `decidedAt` in a later update.
+
+**All 7 planner-created items show `decidedAt` strictly later than `createdAt`,
+with human-plausible gaps** (14s, 15s, 16s, 66min, 80s, 9h, plus one `rejected`).
+Every one went through a real target decision. Sample:
+
+| item | createdBy → target | status | createdAt → decidedAt |
+|---|---|---|---|
+| `gkqNGOnxckqg6tuLdvO7` "Namaz" | `42ml93AS…` → `P5eNrQfN…` | approved | 07-23 06:35:04 → 15:48:39 |
+| `rgo6xYwi2ab7FhxUDFTV` "Please do breakfast on time" | `P5eNrQfN…` → `42ml93AS…` | approved | 07-24 15:23:00 → 15:24:20 |
+| `0QHHr49nf18T9EF1ITU8` "test reject" | `brY8JaR7…` → `42ml93AS…` | rejected | 07-17 05:15:15 → 05:15:30 |
+
+**Conclusion: the bypass was reachable but never used.** No item in the database
+reached `approved` without its target approving it. The approval flow can be
+represented to the friend-tester as having behaved correctly throughout — the
+guarantee was unenforced, but it was never violated.
+
+## (B) `_registeredUid` latch — known defect, NOT fixed by the deploy
+
+`messaging_service.dart:41-42` sets the dedup latch *before* any `await`:
+
+    if (_registeredUid == uid) return;
+    _registeredUid = uid;          // set BEFORE the await that can fail
+
+`requestPermission()` (line 47) also sits **outside** the `try`. Consequences:
+
+- One failure — the rules denial, a network blip, any transient Firestore error,
+  or `requestPermission()` simply hanging — **disables token registration for the
+  entire app session.** No rebuild retries, because the latch already matches.
+- **Zero user-visible signal.** The app looks fine. The failure only surfaces much
+  later as a push that silently never arrives.
+- If `requestPermission()` *hangs* rather than throws, there is not even a
+  Crashlytics record — the silent no-token state with no evidence anywhere.
+
+**Deploying the rules removed today's trigger, not the failure mode.** The next
+transient error reproduces the identical silent state.
+
+**Proposed fix (NOT BUILT — queued, see below):**
+1. Set `_registeredUid` **only after** a confirmed successful token write.
+2. Move `requestPermission()` **inside** the `try`.
+3. Add a **timeout** on `requestPermission()` / `getToken()` so a hang fails loudly
+   instead of hanging forever.
+4. Add a **retry path** — on app resume and/or auth-state change — so a transient
+   failure self-heals instead of persisting for the session.
+
+**Queue position (user's call, 2026-07-24): immediately after the banner test,
+AHEAD of Group A.** Rationale: Group A adds three more event types on the same
+delivery path; shipping them on a registration path that can silently disable
+itself would multiply the blind spot rather than expose it.
+
+## (C) Process note — rules deploy separately from code
+
+**A correct `firestore.rules` in git proves nothing about what is enforced.** Rules
+ship via `firebase deploy`, not with the app build or the commit. This incident cost
+6 days of an unenforced consent guarantee and one fully misdiagnosed bug.
+
+Standing rules from here:
+
+- **Any change touching `firestore.rules` carries a deploy step in the same commit's
+  checklist.** The commit is not done until the ruleset is deployed and the new
+  ruleset id is confirmed live.
+- **On any unexplained `PERMISSION_DENIED`, check the deployed ruleset id FIRST** —
+  before reading the local rules file, and before forming any hypothesis from it.
+  Fetch it from the Rules API (`firebaserules.googleapis.com/v1/projects/
+  time-app-1e1c9/releases` → `rulesetName` → fetch source) or read it in console at
+  Firestore → Rules, which shows the *deployed* text plus its deploy timestamp.
+- **Diagnostic lesson from this session:** rules were eliminated as a cause by
+  reading `firestore.rules:56` in the repo. That elimination was wrong and cost a
+  full diagnostic round-trip. Reading a local config file is never evidence about a
+  separately-deployed system.
+
+# 2026-07-24 (later) — FOREGROUND DELIVERY VERIFIED; background still open
+
+## Rules deploy confirmed live
+
+Ruleset `57de3ae0-a15a-4963-af6b-18fc2868e6d9` (stale, 2026-07-18) replaced by
+**`45d5f8bc-73d7-463f-99f6-22100b790826`, deployed 2026-07-24T15:55:56Z**. Fetched
+the deployed source from the Rules API and confirmed **both** hunks are present in
+what is actually enforced, not just in git:
+
+- `match /fcmTokens/{token}` — deployed line 55.
+- `status in ['pending', 'approved']` create constraint — deployed line 145.
+
+The consent bypass in (A) above is closed **in production**, not merely in the repo.
+
+## Token registration works — the six-day blackout is over
+
+First tokens ever written to `users/{uid}/fcmTokens` in this project:
+
+| account | tokens | first write |
+|---|---|---|
+| `42ml93AS…` (owner) | 2 | 2026-07-24T15:57:57Z |
+| `P5eNrQfN…` (friend/planner) | 1 | 2026-07-24T16:06:11Z |
+
+Two docs on the owner account is expected, not a defect — one per device/registration
+(the doc id is the token, so a rotation or a second device adds a row). The Worker
+sends to all of them and deletes any that FCM rejects.
+
+**Note for the latch-fix commit (B):** `saveToken` writes `createdAt:
+serverTimestamp()` on every `merge` write, so `createdAt` is overwritten on each
+re-registration and actually means "last registered at" — hence `createdAt`
+(16:06:35Z) reading *later* than the doc's own `createTime` (15:57:57Z) above. Cosmetic,
+but if we're editing that file anyway, `createdAt` should be write-once.
+
+## FOREGROUND DELIVERY — VERIFIED END TO END (first time)
+
+**Full chain proven:** Worker (`sent:1`) → FCM → recipient device → `onMessage` →
+in-app banner rendered with the View action, recipient foregrounded at the time.
+
+The earlier "she saw nothing" report was a **reporting gap, not a failure** — it
+predated the token fix, and the later run did deliver. The foreground-banner fix
+from `c3b921e` **works**.
+
+**The "unverified delivery path" caveat is retired.** Delivery is no longer
+hypothetical: the transport, the Worker's authz/recipient resolution, the token
+lookup, and the foreground render are all now exercised against a real second person
+on a real device.
+
+## REMAINING OPEN QUESTION — backgrounded / killed-app delivery
+
+**Foregrounded is precisely the case that sidesteps Xiaomi.** An app in the
+foreground has a live process, so the message is handed to `onMessage` without ever
+depending on OEM background policy. That is *not* how the app is used: in real use
+nobody is sitting in the app when a plan arrives.
+
+**Still unproven: system-tray delivery to a backgrounded or process-killed app** on
+HyperOS. This is the case the whole reliability premise rests on, and it is exactly
+what the **Autostart / battery-optimization primer** exists to address — the primer's
+placement in the onboarding order should be decided from this test's result, not
+before it.
+
+Nothing about the foreground result predicts the background result. Do not treat
+delivery as "working" in the general sense until a backgrounded run is recorded here.
+
+## Revised build order (user's call, 2026-07-24)
+
+1. ~~Verify deploy + tokens landed~~ — **DONE, this entry.**
+2. **`_registeredUid` latch fix** — the four-part proposal in (B) above. Diff, one commit.
+3. **Group A** generalized endpoint (event discriminator, per-event dedup, authz
+   branched by event since plan-created is planner-triggered) **+ Group C's
+   withdrawal event**. Diff, one commit.
