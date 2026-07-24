@@ -1452,3 +1452,86 @@ delivery as "working" in the general sense until a backgrounded run is recorded 
 3. **Group A** generalized endpoint (event discriminator, per-event dedup, authz
    branched by event since plan-created is planner-triggered) **+ Group C's
    withdrawal event**. Diff, one commit.
+
+# 2026-07-24 (later still) — Group A SHIPPED: event-discriminated push + Group C withdraw
+
+Generalized the outcome-only Worker into one event-discriminated endpoint, and
+added Group C's withdraw event. Code committed; deploy is coupled (see below).
+
+## The four events — NOT symmetric
+
+`event` is a discriminator, never trusted as state: the Worker re-reads the item
+and DERIVES the sub-type from Firestore, so a caller cannot assert an
+outcome/decision that didn't happen.
+
+| event      | triggered by     | notifies         | sub-type (from Firestore)        |
+|------------|------------------|------------------|----------------------------------|
+| created    | planner (creator)| target           | —                                |
+| withdrawn  | planner (creator)| target           | —                                |
+| decided    | target           | planner (creator)| approved \| rejected (item.status)|
+| outcome    | target           | planner (creator)| done \| skipped (outcome.result) |
+
+Recipient is computed structurally (`NOTIFIES_TARGET.has(event) ? target :
+planner`), so the recipient is ALWAYS the party that did not act — the actor can
+never be notified about their own action. The one coincidence (self-planned,
+creator == target) is guarded three ways: the client skips the call, and the
+Worker returns `self-planned` for every event before sending.
+
+**Authz is branched, not uniform.** `index.js` requires caller == creator for
+planner-triggered events (created/withdrawn) and caller == target for
+target-triggered events (decided/outcome), plus `item.targetUid == targetUid` so
+a caller can't aim a push at another target's subtree. One endpoint, one authz
+BRANCH — the "one endpoint" framing explicitly does not mean one rule.
+
+## Per-event dedup — FLAT fields, deliberately not a nested map
+
+Each event has its own guard slot so one firing can't suppress another:
+`notifiedCreated` / `notifiedDecided` / `notifiedOutcome` / `notifiedWithdrawn`,
+each stamped only after `sent > 0`.
+
+These are FLAT top-level fields, not a nested `notified.{created|decided|...}`
+map, and that was a correctness choice, not a style one. The Worker's Firestore
+REST `patchDoc` builds its `updateMask` from top-level keys and the value encoder
+only handles flat scalars. Writing a nested `{notified: {...}}` under a top-level
+`notified` mask would REPLACE the whole map and clobber the sibling slots — the
+exact opposite of the guarantee. Flat fields are independent by construction.
+Bonus: `notifiedOutcome` keeps the old name, so items already outcome-notified by
+the pre-Group-A Worker stay deduped across the cutover.
+
+## Group C withdraw — the one non-target item write, and its rules dependency
+
+Planner may withdraw a plan they created while it is still `pending`
+(planner_activity → `withdraw()`), flipping status to `withdrawn`. This is the
+ONLY item write a non-target may make, gated by a tightly-scoped
+`firestore.rules` update branch: caller == `createdByUid`, current status
+`pending`, new status `withdrawn`, and `affectedKeys().hasOnly(['status',
+'withdrawnAt', 'updatedAt'])` — cannot resurrect a decided item or touch
+title/time. Planner edit is still deferred.
+
+## DEPLOY COUPLING — the lesson from earlier today, applied
+
+The POST body changed `{outcome}` → `{event}`, and withdraw needs the new rules.
+So this is a coordinated cutover, and rules/Worker MUST go live BEFORE any app
+install:
+
+1. Deploy `firestore.rules`, then VERIFY the deployed source (not the green
+   deploy) shows the withdraw branch and a new ruleset id.
+2. Deploy the Worker.
+3. Only then rebuild + install.
+
+Mismatch during the window is SAFE — analyzed exhaustively: neither version's
+body passes the other's input validation, so every mismatch fails closed at the
+400 gate before any Firestore/FCM work. Worst case is one missed push; no state
+corruption, no double-write, no double-send (the client writes state once, then
+fires the push as a separate best-effort call with no retry and no write-back).
+
+## Retest matrix (run once deployed + installed, `wrangler tail` throughout)
+
+Expect `sent:1` per event and the banner on the RIGHT device, foregrounded:
+- created:   she plans an item for me   → I am notified
+- decided:   I approve                  → she is notified
+- outcome:   I mark done                → she is notified (already proven)
+- withdrawn: she withdraws a pending item → I am notified
+
+Backgrounded delivery for all four remains the open question (foreground
+sidesteps HyperOS) — do not mark any event "reliable" on a foregrounded pass.
