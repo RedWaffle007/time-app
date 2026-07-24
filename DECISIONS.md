@@ -1535,3 +1535,41 @@ Expect `sent:1` per event and the banner on the RIGHT device, foregrounded:
 
 Backgrounded delivery for all four remains the open question (foreground
 sidesteps HyperOS) — do not mark any event "reliable" on a foregrounded pass.
+
+# 2026-07-24 (status stamp) — Group A deployed + verified; retest BLOCKED on friend
+
+Where we are, so nothing is lost until the pair session:
+
+**DONE + verified against deployed reality (not just green output):**
+- Firestore rules deployed — ruleset `1ced7bb3-ddc8-4dfe-ab27-ae35e60d4a63`
+  (2026-07-24T21:18Z). Withdraw branch confirmed IN the deployed source; the
+  earlier fcmTokens block + item-create status constraint did NOT regress.
+- Worker deployed on the `{event}` contract. Negative probe (old-shape
+  `{outcome}` body) now returns 400 invalid-body — positive proof the new
+  contract is live (the old Worker would have returned 401).
+- Owner token registered on the new build (`42ml93AS…`, token `eACQrpNW…`). The
+  latch-fix write-once schema is confirmed live: an existing token re-registered
+  with `createdAt` FROZEN and `lastRegisteredAt` advanced.
+- Install-over from the shared `app-debug.apk` file proven (not just USB).
+
+**BLOCKED — needs the friend online (two real people):**
+- The four-event foreground retest (created / decided / outcome / withdrawn).
+  ALL four require creator != target; self-planned items are skipped by the
+  self-planned guard, so none can be tested against oneself on one account.
+
+**Solo options assessed while waiting (2026-07-24):**
+1. Worker-contract happy path IS reachable solo, but needs a SECOND sender —
+   switching accounts on one phone deletes the target's live token via
+   `signOutWithTokenCleanup`, so single-device account-switch self-defeats. Clean
+   path: real Redmi stays signed in as target (foregrounded, live token); an
+   emulator signed in as `benbillclash` (active grant → `42ml93AS…`) sends a
+   `created`. You then see the banner on the real phone + `sent:1` in tail. The
+   emulator is SENDER-only, so the "never an emulator" rule (about background
+   delivery on real OEM devices) is not violated — the receiver is the real Redmi.
+2. **Backgrounded / killed-app delivery on HyperOS is the higher-value solo step
+   and the real open question.** Do NOT design the Autostart/battery primer yet —
+   it must target the MEASURED failure mode, not a guessed one. Right order:
+   send a push (via option 1's setup) → background, then separately swipe-kill,
+   the real phone's app → observe whether/when the tray notification arrives.
+   Design the primer FROM that result. Primer also brushes parked alarm-layer
+   scope (boot-persistence) — confirm scope before building regardless.
