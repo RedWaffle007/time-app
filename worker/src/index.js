@@ -15,10 +15,14 @@ import { verifyFirebaseIdToken, IdTokenError } from './verify-id-token.js';
 import { getAccessToken } from './google-auth.js';
 import { makeFirestoreDb } from './firestore-rest.js';
 import { makeFcm } from './fcm-rest.js';
-import { sendOutcomeNotification } from './notify.js';
+import { sendEventNotification } from './notify.js';
 
 const MAX_BODY_BYTES = 2048;
-const VALID_OUTCOMES = new Set(['done', 'skipped']);
+const EVENTS = new Set(['created', 'decided', 'outcome', 'withdrawn']);
+// Planner-triggered events (caller must be the item's CREATOR); the rest are
+// target-triggered (caller must be the target). This is the authz branch the
+// "one endpoint" framing requires — one endpoint, but NOT one authz rule.
+const PLANNER_TRIGGERED = new Set(['created', 'withdrawn']);
 
 export default {
   async fetch(request, env) {
@@ -44,11 +48,11 @@ export default {
       return json({ error: 'invalid-json' }, 400);
     }
 
-    const { targetUid, itemId, outcome } = body || {};
+    const { event, targetUid, itemId } = body || {};
     if (
       typeof targetUid !== 'string' ||
       typeof itemId !== 'string' ||
-      !VALID_OUTCOMES.has(outcome)
+      !EVENTS.has(event)
     ) {
       return json({ error: 'invalid-body' }, 400);
     }
@@ -78,10 +82,17 @@ export default {
       const accessToken = await getAccessToken(serviceAccount);
       const db = makeFirestoreDb(projectId, accessToken);
 
-      // --- authorize: the caller must be the item's target ---
+      // --- authorize: which party may trigger THIS event ---
+      // Planner-triggered (created/withdrawn): caller must be the creator.
+      // Target-triggered (decided/outcome):   caller must be the target.
+      // Either way the path's targetUid must match the item, so a caller can't
+      // aim the push at an item under a different target's subtree.
       const item = await db.getDoc(`scheduleItems/${targetUid}/items/${itemId}`);
       if (!item) return json({ error: 'item-not-found' }, 404);
-      if (item.targetUid !== callerUid || targetUid !== callerUid) {
+      const requiredCaller = PLANNER_TRIGGERED.has(event)
+        ? item.createdByUid
+        : item.targetUid;
+      if (item.targetUid !== targetUid || requiredCaller !== callerUid) {
         return json({ error: 'forbidden' }, 403);
       }
 
@@ -90,7 +101,7 @@ export default {
         db,
         fcm: makeFcm(projectId, accessToken),
       };
-      const res = await sendOutcomeNotification(ctx, { targetUid, itemId, outcome });
+      const res = await sendEventNotification(ctx, { event, targetUid, itemId });
       // Surface the decisive result in `wrangler tail` — HTTP 200 alone can't
       // distinguish a real send from a "nothing to send" reason (no-tokens,
       // already-notified, no-active-grant, …); the body's `reason`/`sent` can.

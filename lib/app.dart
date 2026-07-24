@@ -149,8 +149,22 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
   }
 
   void _handleTap(RemoteMessage message) {
-    if (message.data['type'] == 'outcome') {
-      ref.read(routerProvider).go(Routes.plannerActivity);
+    // Route to where the recipient acts on this event. Target-facing events
+    // (a plan created for them, or withdrawn) open their pending queue;
+    // planner-facing events (their plan was decided or its outcome recorded)
+    // open Activity. `type == 'outcome'` is the legacy payload, kept working.
+    final router = ref.read(routerProvider);
+    switch (message.data['event']) {
+      case 'created':
+      case 'withdrawn':
+        router.go(Routes.approvals);
+      case 'decided':
+      case 'outcome':
+        router.go(Routes.plannerActivity);
+      default:
+        if (message.data['type'] == 'outcome') {
+          router.go(Routes.plannerActivity);
+        }
     }
   }
 

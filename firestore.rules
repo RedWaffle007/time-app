@@ -132,8 +132,10 @@ service cloud.firestore {
     //     • planner path (grant): may create `pending` ONLY.
     //     • self path (creator == target): may create `pending` or `approved`
     //       (self-authored items skip the queue; consent is inherent).
-    // Update: TARGET only — approve / reject / mark done / mark skipped.
-    //   Planner cancel/edit is deferred (no code path yet; see DECISIONS.md).
+    // Update: TARGET does the full set — approve / reject / mark done / skipped.
+    //   The PLANNER (creator) gets ONE tightly-scoped write: withdraw a plan
+    //   they created while it is still `pending` (Group C). That is the only
+    //   item write a non-target may make. Planner edit is still deferred.
     match /scheduleItems/{targetUid}/items/{itemId} {
       allow read: if signedIn() && request.auth.uid == targetUid;
 
@@ -147,7 +149,21 @@ service cloud.firestore {
               && request.resource.data.status == 'pending')
         );
 
-      allow update: if signedIn() && request.auth.uid == targetUid;
+      allow update: if signedIn()
+        && (
+          // Target: unrestricted (approve / reject / done / skip).
+          request.auth.uid == targetUid
+          // Planner withdraw: creator flips a STILL-pending item to `withdrawn`,
+          // touching only these three keys. Cannot resurrect a decided item
+          // (must be `pending` now) and cannot alter title/time/anything else.
+          || (
+            request.auth.uid == resource.data.createdByUid
+            && resource.data.status == 'pending'
+            && request.resource.data.status == 'withdrawn'
+            && request.resource.data.diff(resource.data)
+                .affectedKeys().hasOnly(['status', 'withdrawnAt', 'updatedAt'])
+          )
+        );
 
       allow delete: if false;
     }

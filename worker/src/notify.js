@@ -1,4 +1,4 @@
-// notify.js — the portable, transport-agnostic completion→planner push logic.
+// notify.js — the portable, transport-agnostic notification policy.
 //
 // THIS FILE HOLDS ALL THE POLICY. It must not import anything Cloudflare- or
 // HTTP-specific. Both callers give it the same `ctx` interface:
@@ -20,22 +20,40 @@
 //   },
 // }
 //
-// args = { targetUid, itemId, outcome }  where outcome is a POINTER, not truth —
-// the real outcome is re-read from Firestore and must match before anything sends.
+// args = { event, targetUid, itemId }.
+//
+// ONE endpoint, FOUR events — but they are NOT symmetric (see DECISIONS.md
+// "Group A"). Two are planner-triggered and notify the TARGET; two are
+// target-triggered and notify the PLANNER (creator):
+//
+//   event       triggered by   notifies   sub-type (re-read from Firestore)
+//   ---------   ------------   --------   ---------------------------------
+//   created     planner        target     —
+//   withdrawn   planner        target     —
+//   decided     target         planner    approved | rejected  (item.status)
+//   outcome     target         planner    done | skipped       (outcome.result)
+//
+// `event` says WHICH transition this push is for; it is NOT trusted as the state.
+// The item is re-read and the sub-type is DERIVED from Firestore — the caller
+// cannot assert an outcome/decision that didn't actually happen.
 
-const VALID_OUTCOMES = new Set(['done', 'skipped']);
+const EVENTS = new Set(['created', 'decided', 'outcome', 'withdrawn']);
+
+// Which party each event notifies. The ACTOR is never the recipient: for a
+// planner-triggered event the recipient is the target, and vice versa — and the
+// self-planned guard below removes the one case where they'd coincide.
+const NOTIFIES_TARGET = new Set(['created', 'withdrawn']);
 
 /**
- * Resolve + send the completion/skip push for one item. Fails CLOSED: if any
- * lookup throws, it propagates (the caller returns an error) and NO push goes
- * out. A "nothing to send" condition (already-notified, no active grant, outcome
- * not yet written, no recipient token) is returned as a normal result, not an
- * error — the caller should NOT retry those.
+ * Resolve + send one notification. Fails CLOSED: if any lookup throws, it
+ * propagates (the caller returns an error) and NO push goes out. A "nothing to
+ * send" condition (already-notified, no active grant, state not yet written, no
+ * recipient token) is returned as a normal result, not an error — do NOT retry.
  *
  * @returns {Promise<{sent:number, cleaned:number, recipientUid:(string|null), reason:string}>}
  */
-export async function sendOutcomeNotification(ctx, { targetUid, itemId, outcome }) {
-  if (!targetUid || !itemId || !VALID_OUTCOMES.has(outcome)) {
+export async function sendEventNotification(ctx, { event, targetUid, itemId }) {
+  if (!targetUid || !itemId || !EVENTS.has(event)) {
     return result(0, 0, null, 'bad-args');
   }
 
@@ -43,48 +61,41 @@ export async function sendOutcomeNotification(ctx, { targetUid, itemId, outcome 
   const item = await ctx.db.getDoc(itemPath);
   if (!item) return result(0, 0, null, 'item-not-found');
 
-  // (2) Server-side outcome verification — trust Firestore, not the request body.
-  // The item's own `outcome.result` is the source of truth; the pointer in the
-  // request must agree, or we refuse to send a mismatched push.
-  const actualOutcome = item.outcome && item.outcome.result;
-  if (!VALID_OUTCOMES.has(actualOutcome)) {
-    return result(0, 0, null, 'outcome-not-recorded');
-  }
-  if (actualOutcome !== outcome) {
-    return result(0, 0, null, 'outcome-mismatch');
-  }
-
-  // (1) Duplicate / replay guard — cheap: a field already read off the item.
-  // Once we've delivered an outcome, re-posts of the same outcome are ignored,
-  // so a killed-then-relaunched app (or a malicious re-post) can't spam.
-  if (item.notifiedOutcome === actualOutcome) {
-    return result(0, 0, null, 'already-notified');
-  }
-
-  // Recipient resolution — creator ∩ active-grant. Current Firestore rules only
-  // entitle the item's CREATOR to read the item, so the creator is the only
-  // planner who may receive its contents; the grant must still be live (revoked
-  // grant ⇒ no push). If the rules ever widen to co-planner reads, THIS is the
-  // one place that broadens to the full grant set — and the two must move
-  // together (see DECISIONS.md).
   const plannerUid = item.createdByUid;
   const groupId = item.groupId;
   if (!plannerUid || !groupId) return result(0, 0, null, 'item-missing-fields');
 
-  // A target planning for themselves has no planner to notify.
+  // A self-planned item (creator == target) has no second party — nobody to
+  // notify, for ANY event.
   if (plannerUid === targetUid) return result(0, 0, null, 'self-planned');
 
+  // Derive + VERIFY the sub-type from Firestore, and pick this event's OWN dedup
+  // slot. Each event writes a distinct field, so one firing can never suppress
+  // another on the same item.
+  const derived = deriveEvent(event, item);
+  if (!derived.ok) return result(0, 0, null, derived.reason);
+
+  // Per-event duplicate / replay guard. Re-posts of an event already delivered
+  // (killed-then-relaunched app, or a malicious re-post) are ignored.
+  if (item[derived.field] === derived.value) {
+    return result(0, 0, null, 'already-notified');
+  }
+
+  const recipientUid = NOTIFIES_TARGET.has(event) ? targetUid : plannerUid;
+
+  // Active grant required in BOTH directions — a revoked grant means no push,
+  // whichever way the notification flows. The grant id is deterministic.
   const grantPath = `groups/${groupId}/plannerGrants/${plannerUid}_${targetUid}`;
   const grant = await ctx.db.getDoc(grantPath);
   if (!grant || grant.granted !== true) {
-    return result(0, 0, plannerUid, 'no-active-grant');
+    return result(0, 0, recipientUid, 'no-active-grant');
   }
 
   // Recipient's registered device tokens.
-  const tokens = await ctx.db.listDocIds(`users/${plannerUid}/fcmTokens`);
-  if (tokens.length === 0) return result(0, 0, plannerUid, 'no-tokens');
+  const tokens = await ctx.db.listDocIds(`users/${recipientUid}/fcmTokens`);
+  if (tokens.length === 0) return result(0, 0, recipientUid, 'no-tokens');
 
-  const message = buildMessage(item, actualOutcome, targetUid, itemId);
+  const message = buildMessage(event, derived.subtype, item, targetUid, itemId);
 
   let sent = 0;
   let cleaned = 0;
@@ -94,40 +105,90 @@ export async function sendOutcomeNotification(ctx, { targetUid, itemId, outcome 
       sent += 1;
     } else if (res.error === 'UNREGISTERED' || res.error === 'INVALID') {
       // Invalid-token cleanup lives here so BOTH callers inherit it.
-      await ctx.db.deleteDoc(`users/${plannerUid}/fcmTokens/${token}`);
+      await ctx.db.deleteDoc(`users/${recipientUid}/fcmTokens/${token}`);
       cleaned += 1;
     }
     // 'OTHER' (transient) errors are left alone — no send counted, not cleaned.
   }
 
-  // Only stamp the guard once a push actually went out, so a run that found no
-  // live token can still deliver on a later, genuine attempt.
+  // Only stamp this event's guard once a push actually went out, so a run that
+  // found no live token can still deliver on a later, genuine attempt.
   if (sent > 0) {
     await ctx.db.patchDoc(itemPath, {
-      notifiedOutcome: actualOutcome,
+      [derived.field]: derived.value,
       notifiedAt: new Date().toISOString(),
     });
   }
 
-  return result(sent, cleaned, plannerUid, sent > 0 ? 'sent' : 'no-delivery');
+  return result(sent, cleaned, recipientUid, sent > 0 ? 'sent' : 'no-delivery');
 }
 
-// Payload carries ONLY what the recipient planner is already entitled to see:
-// the item title (they created it) and the outcome verb. No note, no skip
-// reason, nothing beyond their own item. `data` drives tap-routing.
-function buildMessage(item, outcome, targetUid, itemId) {
-  const title = (item.title || 'Your scheduled item').toString();
-  const verb = outcome === 'done' ? 'marked done' : 'skipped';
+// Verify the event against the item's ACTUAL Firestore state and return this
+// event's dedup slot. `created` is the one event with no pre-existing state to
+// check — it fires right after the doc is written — so its guard is a simple
+// one-shot flag.
+function deriveEvent(event, item) {
+  switch (event) {
+    case 'created':
+      return { ok: true, subtype: null, field: 'notifiedCreated', value: true };
+    case 'withdrawn':
+      if (item.status !== 'withdrawn') return { ok: false, reason: 'not-withdrawn' };
+      return { ok: true, subtype: null, field: 'notifiedWithdrawn', value: true };
+    case 'decided': {
+      const st = item.status;
+      if (st !== 'approved' && st !== 'rejected') {
+        return { ok: false, reason: 'not-decided' };
+      }
+      return { ok: true, subtype: st, field: 'notifiedDecided', value: st };
+    }
+    case 'outcome': {
+      const r = item.outcome && item.outcome.result;
+      if (r !== 'done' && r !== 'skipped') {
+        return { ok: false, reason: 'outcome-not-recorded' };
+      }
+      return { ok: true, subtype: r, field: 'notifiedOutcome', value: r };
+    }
+    default:
+      return { ok: false, reason: 'bad-args' };
+  }
+}
+
+// Payload carries ONLY what the recipient is already entitled to see: the item
+// title (creator made it; target owns it) and the transition verb. No note, no
+// skip/reject reason beyond what the recipient already has. `data` drives
+// tap-routing (see app.dart _handleTap) — `type` is kept for back-compat with
+// the outcome-only payload; `event` is the discriminator going forward.
+function buildMessage(event, subtype, item, targetUid, itemId) {
+  const title = (item.title || 'your scheduled item').toString();
+
+  let notification;
+  switch (event) {
+    case 'created':
+      notification = { title: 'New plan for you', body: title };
+      break;
+    case 'withdrawn':
+      notification = { title: 'Plan withdrawn', body: title };
+      break;
+    case 'decided':
+      notification = subtype === 'approved'
+        ? { title: 'Plan approved', body: `Approved: ${title}` }
+        : { title: 'Plan rejected', body: `Rejected: ${title}` };
+      break;
+    case 'outcome':
+      notification = subtype === 'done'
+        ? { title: 'Task completed', body: `Marked done: ${title}` }
+        : { title: 'Task skipped', body: `Skipped: ${title}` };
+      break;
+  }
+
   return {
-    notification: {
-      title: outcome === 'done' ? 'Task completed' : 'Task skipped',
-      body: `${verb}: ${title}`,
-    },
+    notification,
     data: {
-      type: 'outcome',
+      type: event === 'outcome' ? 'outcome' : event,
+      event,
       targetUid,
       itemId,
-      outcome,
+      ...(subtype ? { subtype } : {}),
     },
   };
 }

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/format/datetime_format.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../auth/application/auth_providers.dart';
+import '../../notifications/application/outcome_notifier.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
 
@@ -74,9 +75,7 @@ class _ApprovalCard extends ConsumerWidget {
                 ),
                 const SizedBox(width: 8),
                 FilledButton(
-                  onPressed: () => ref
-                      .read(scheduleRepositoryProvider)
-                      .approve(item.targetUid, item.id),
+                  onPressed: () => _approve(ref),
                   child: const Text('Approve'),
                 ),
               ],
@@ -85,6 +84,17 @@ class _ApprovalCard extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  /// Approve, then notify the planner. The write is the source of truth; the
+  /// push is additive (a failed push never blocks the approval).
+  Future<void> _approve(WidgetRef ref) async {
+    await ref.read(scheduleRepositoryProvider).approve(item.targetUid, item.id);
+    await ref.read(notificationEventNotifierProvider).notify(
+          event: NotifyEvent.decided,
+          targetUid: item.targetUid,
+          itemId: item.id,
+        );
   }
 
   Future<void> _reject(BuildContext context, WidgetRef ref) async {
@@ -111,6 +121,11 @@ class _ApprovalCard extends ConsumerWidget {
             item.targetUid,
             item.id,
             reason: controller.text,
+          );
+      await ref.read(notificationEventNotifierProvider).notify(
+            event: NotifyEvent.decided,
+            targetUid: item.targetUid,
+            itemId: item.id,
           );
     }
   }

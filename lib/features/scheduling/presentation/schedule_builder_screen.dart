@@ -8,6 +8,7 @@ import '../../../core/widgets/async_view.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../groups/application/group_providers.dart';
 import '../../groups/domain/planner_grant.dart';
+import '../../notifications/application/outcome_notifier.dart';
 import '../application/schedule_providers.dart';
 import '../domain/schedule_item.dart';
 
@@ -75,7 +76,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     try {
       // Self-authored items are born approved (skip the queue); planner items
       // stay pending for the target to approve.
-      await ref.read(scheduleRepositoryProvider).createItem(
+      final itemId = await ref.read(scheduleRepositoryProvider).createItem(
             targetUid: _targetUid!,
             createdByUid: me.uid,
             groupId: _isSelf ? null : _groupId,
@@ -87,6 +88,15 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
                 ? ScheduleItemStatus.approved
                 : ScheduleItemStatus.pending,
           );
+      // Notify the target that a plan was created for them. Self-planned items
+      // have no one else to tell (the Worker would skip them anyway).
+      if (!_isSelf) {
+        await ref.read(notificationEventNotifierProvider).notify(
+              event: NotifyEvent.created,
+              targetUid: _targetUid!,
+              itemId: itemId,
+            );
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

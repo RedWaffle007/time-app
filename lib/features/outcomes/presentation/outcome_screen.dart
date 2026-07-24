@@ -130,10 +130,10 @@ class _OutcomeCard extends ConsumerWidget {
   Future<void> _markDone(WidgetRef ref) async {
     await ref.read(scheduleRepositoryProvider).markDone(item.targetUid, item.id);
     if (_isSelfPlanned) return; // no point notifying yourself
-    await ref.read(outcomeNotifierProvider).notifyOutcome(
+    await ref.read(notificationEventNotifierProvider).notify(
+          event: NotifyEvent.outcome,
           targetUid: item.targetUid,
           itemId: item.id,
-          outcome: OutcomeResult.done,
         );
   }
 
@@ -163,10 +163,10 @@ class _OutcomeCard extends ConsumerWidget {
             reason: controller.text,
           );
       if (_isSelfPlanned) return; // no point notifying yourself
-      await ref.read(outcomeNotifierProvider).notifyOutcome(
+      await ref.read(notificationEventNotifierProvider).notify(
+            event: NotifyEvent.outcome,
             targetUid: item.targetUid,
             itemId: item.id,
-            outcome: OutcomeResult.skipped,
           );
     }
   }

@@ -7,6 +7,7 @@ import '../../../core/widgets/async_view.dart';
 import '../../../routing/app_router.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../home/presentation/account_button.dart';
+import '../../notifications/application/outcome_notifier.dart';
 import '../application/schedule_providers.dart';
 import '../domain/schedule_item.dart';
 
@@ -92,10 +93,53 @@ class _ActivityCard extends ConsumerWidget {
               style: const TextStyle(fontSize: 12, color: Colors.grey),
             ),
             ..._outcomeLine(),
+            // A plan can be withdrawn only while it's still pending — once the
+            // target has decided, it's theirs to keep or reject.
+            if (item.status == ScheduleItemStatus.pending) ...[
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () => _withdraw(context, ref),
+                  child: const Text('Withdraw'),
+                ),
+              ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  /// Withdraw a still-pending plan, then notify the target it's gone. The write
+  /// is the source of truth; the push is additive (a failed push never blocks
+  /// the withdrawal).
+  Future<void> _withdraw(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Withdraw this plan?'),
+        content: const Text(
+          "It will be removed from the target's pending queue before they "
+          'decide on it.',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Withdraw')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await ref.read(scheduleRepositoryProvider).withdraw(item.targetUid, item.id);
+    await ref.read(notificationEventNotifierProvider).notify(
+          event: NotifyEvent.withdrawn,
+          targetUid: item.targetUid,
+          itemId: item.id,
+        );
   }
 
   /// The approval-status badge. Rejection is shown explicitly, never hidden.

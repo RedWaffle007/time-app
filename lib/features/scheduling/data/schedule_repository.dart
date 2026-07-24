@@ -21,7 +21,9 @@ class ScheduleRepository {
   ///   • a user planning for themselves — [groupId] is null (no group needed)
   ///     and [status] is `approved` (self-authored items skip the queue).
   /// The rules enforce that only the self path may create an `approved` item.
-  Future<void> createItem({
+  /// Returns the new item's id so the caller can fire the `created` push
+  /// (planner path only — self-planned items have no one to notify).
+  Future<String> createItem({
     required String targetUid,
     required String createdByUid,
     String? groupId,
@@ -32,7 +34,7 @@ class ScheduleRepository {
     ScheduleItemStatus status = ScheduleItemStatus.pending,
   }) async {
     final instant = resolveWallTimeToUtc(wall, timezone);
-    await _items(targetUid).add({
+    final ref = await _items(targetUid).add({
       'targetUid': targetUid,
       'createdByUid': createdByUid,
       'groupId': groupId ?? '',
@@ -49,6 +51,7 @@ class ScheduleRepository {
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
+    return ref.id;
   }
 
   /// All items belonging to a target (they filter by status in the UI).
@@ -85,6 +88,19 @@ class ScheduleRepository {
   Future<void> approve(String targetUid, String itemId) =>
       _setStatus(targetUid, itemId, ScheduleItemStatus.approved,
           extra: {'decidedAt': FieldValue.serverTimestamp()});
+
+  /// Planner withdraws a plan they created, BEFORE the target has decided on it
+  /// (Group C). Only a `pending` item can be withdrawn; the field set here must
+  /// match exactly what the withdraw branch of firestore.rules permits (status,
+  /// withdrawnAt, updatedAt) — the planner is not the target, so this is the one
+  /// item write a non-target is allowed, and it is tightly scoped.
+  Future<void> withdraw(String targetUid, String itemId) {
+    return _items(targetUid).doc(itemId).set({
+      'status': ScheduleItemStatus.withdrawn.name,
+      'withdrawnAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
 
   Future<void> reject(String targetUid, String itemId, {String? reason}) =>
       _setStatus(targetUid, itemId, ScheduleItemStatus.rejected, extra: {
