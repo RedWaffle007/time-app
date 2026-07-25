@@ -60,22 +60,7 @@ void main() {
   ];
 
   test('screens use design tokens, never raw values (UI-RULES.md §1)', () {
-    final governed = <FileSystemEntity>[
-      // Everything that renders UI. `lib/core/theme` is exempt: it is where the
-      // raw values are DEFINED.
-      File('lib/app.dart'),
-      ...[
-        Directory('lib/features'),
-        Directory('lib/core/widgets'),
-        Directory('lib/dev'),
-      ].expand((d) => d.existsSync() ? d.listSync(recursive: true) : const []),
-    ]
-        .whereType<File>()
-        .where((f) => f.path.endsWith('.dart'))
-        .toList()
-      ..sort((a, b) => a.path.compareTo(b.path));
-
-    expect(governed, isNotEmpty, reason: 'lint found no files to check');
+    final governed = _governedFiles();
 
     final violations = <String>[];
     for (final file in governed) {
@@ -105,6 +90,52 @@ void main() {
     );
   });
 
+  /// UI-RULES.md §2.7 — the filled-vs-line firewall.
+  ///
+  /// A filled shape is STATE; line work and text are STRUCTURE. "An orange
+  /// filled pill or panel means something is waiting on me" is the one colour
+  /// signal a user learns to trust, and it only stays true if nothing else
+  /// fills with orange.
+  ///
+  /// The rule falls straight out of the role names: a `*Container` role IS a
+  /// fill — that is what the M3 slot means — so the two container roles may only
+  /// appear in the two widgets that own state. `attention` itself is the
+  /// line-and-text role and is free everywhere: section rules, icons, counts.
+  ///
+  /// If you need a new orange fill, you have a new STATE. Add it to
+  /// `status_style.dart` rather than inlining it at a call site.
+  test('orange fills only exist inside the two state widgets (§2.7)', () {
+    const owners = <String>{
+      'lib/core/theme/status_style.dart',
+      'lib/core/widgets/warning_panel.dart',
+    };
+    // `tertiary*` is the Material alias for the same two roles (§2.2) — banning
+    // one spelling and not the other would be a firewall with a door in it.
+    final fillRole = RegExp(
+      r'\b(attentionContainer|attentionContainerStrong'
+      r'|tertiaryContainer|onTertiaryContainer)\b',
+    );
+
+    final violations = <String>[];
+    for (final file in _governedFiles()) {
+      final relative = file.path.replaceAll(r'\', '/');
+      if (owners.contains(relative)) continue;
+      final lines = file.readAsLinesSync();
+      for (var i = 0; i < lines.length; i++) {
+        final code = lines[i].split('//').first;
+        if (fillRole.hasMatch(code)) {
+          violations.add(
+            '$relative:${i + 1}  orange fill outside a state widget — '
+            'use `context.attention` for line work, or add the state to '
+            'status_style.dart\n    ${lines[i].trim()}',
+          );
+        }
+      }
+    }
+    expect(violations, isEmpty,
+        reason: 'UI-RULES.md §2.7 violations:\n\n${violations.join('\n')}\n');
+  });
+
   test('the migration backlog is empty', () {
     expect(
       pendingMigration,
@@ -112,6 +143,28 @@ void main() {
       reason: 'still unmigrated: ${pendingMigration.join(', ')}',
     );
   });
+}
+
+/// Everything that renders UI. `lib/core/theme` is exempt from §1: it is where
+/// the raw values are DEFINED. It is NOT exempt from §2.7 — `status_style.dart`
+/// is listed there by name, so a new file added to that directory is still
+/// governed by the firewall.
+List<File> _governedFiles() {
+  final files = <FileSystemEntity>[
+    File('lib/app.dart'),
+    ...[
+      Directory('lib/features'),
+      Directory('lib/core/widgets'),
+      Directory('lib/dev'),
+    ].expand((d) => d.existsSync() ? d.listSync(recursive: true) : const []),
+  ]
+      .whereType<File>()
+      .where((f) => f.path.endsWith('.dart'))
+      .toList()
+    ..sort((a, b) => a.path.compareTo(b.path));
+
+  expect(files, isNotEmpty, reason: 'lint found no files to check');
+  return files;
 }
 
 class _Rule {

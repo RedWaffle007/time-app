@@ -34,9 +34,19 @@ class DevMenuScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('DEV MENU — scaffolding only'),
-        // The dev banner is an attention surface, not a warning — same family.
-        backgroundColor: context.attentionContainer,
-        foregroundColor: context.onAttentionContainer,
+        // Line work, not a fill: an orange FILL means state (UI-RULES.md §2.7)
+        // and this banner is decoration. Orange text plus the rule below says
+        // "dev scaffolding" without spending the signal a Pending chip relies
+        // on. This screen is stripped from release builds anyway, but a rule
+        // with an exception for dev is a rule with a door in it.
+        foregroundColor: context.attention,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(Sizes.ruleWidth),
+          child: Container(
+            height: Sizes.ruleWidth,
+            color: context.attention,
+          ),
+        ),
         actions: [
           IconButton(
             tooltip: 'Sign out',
