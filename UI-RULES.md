@@ -84,6 +84,7 @@ Light:
 | `attention` | `#8A4A25` |
 | `onAttention` | `#FFFFFF` |
 | `attentionContainer` | `#F7E3D4` |
+| `attentionContainerStrong` | `#DD8643` |
 | `onAttentionContainer` | `#43220F` |
 | `error` | `#9C332C` |
 | `onError` | `#FFFFFF` |
@@ -110,6 +111,7 @@ saturated hues vibrate on dark surfaces.
 | `attention` | `#E3A47C` |
 | `onAttention` | `#3D1E0C` |
 | `attentionContainer` | `#9C531C` |
+| `attentionContainerStrong` | `#9C531C` *(same — see §2.4)* |
 | `onAttentionContainer` | `#FBEDE2` |
 | `error` | `#EBA49E` |
 | `onError` | `#57120F` |
@@ -153,6 +155,22 @@ up from pending: solid left rule + icon + heavier weight, versus pending's flat
 tint. Both mean "look at this," so they share a hue honestly.
 
 **Amber is banned.** It sits ~10° from our orange and reads as a muddy near-miss.
+
+**`attentionContainerStrong` is the panel's fill — never a badge's.** Same hue
+(26°) and saturation (69%) as `attentionContainer`; only lightness is pitched
+up. It exists because the panel is the largest attention fill in the app and
+needs the same separation from its background in both modes, while a badge at
+that strength would out-shout Approved. Measured pull over `primaryContainer`:
+
+| vs card | `primaryContainer` | `attentionContainer` | `attentionContainerStrong` |
+|---|---|---|---|
+| light | 1.30 | 1.24 | **2.78** |
+| dark | 1.71 | 2.78 | **2.78** *(same value)* |
+
+In **dark the two roles hold the same value** — dark already had the separation,
+so only light diverges. That is the seam where the modes legitimately differ
+(§8), not a redundant token. Text, rule and icon on either fill use
+`onAttentionContainer`; there is no separate `on*Strong`.
 
 ### 2.5 Red is rationed
 
@@ -312,14 +330,16 @@ tinted and solid variants carry no border.
 Always via `WarningPanel` from `core/widgets/warning_panel.dart` — never rebuilt
 inline, same rule as the status badge.
 
-Radius `Radii.sm`, fill `attentionContainer`, a 3px solid left rule and an icon —
-**both in `onAttentionContainer`, not `attention`** — text `bodySmall` in
-`onAttentionContainer`, padding `Space.md`, margin-top `Space.md`.
+Radius `Radii.sm`, fill **`attentionContainerStrong`** (§2.4 — not the badge
+tint), a 3px solid left rule and an icon — **both in `onAttentionContainer`, not
+`attention`** — text `bodySmall` in `onAttentionContainer`, padding `Space.md`,
+margin-top `Space.md`.
 
 The rule and icon match the text because they sit on the container fill, and
 `attention` on `attentionContainer` measures only 2.69:1 in dark since that
 container was raised — below even the 3:1 non-text floor. `onAttentionContainer`
-clears it in both modes (4.99 dark / 11.46 light).
+clears it on both fills and in both modes (4.99 dark / 5.13 light strong /
+11.46 light tint).
 
 ### 6.4 Buttons
 
@@ -354,13 +374,38 @@ Measured minimums:
 | `on*Container` on its container | 10.28 | 6.62 |
 | `primary` on `primaryContainer` | 5.43 | 4.77 |
 | `onAttentionContainer` on `attentionContainer` | 11.46 | **4.99** |
+| `onAttentionContainer` on `attentionContainerStrong` | 5.13 | **4.99** |
+| warning panel fill vs the card it sits on † | 2.78 | 2.78 |
 | Neutral badge text on card | 7.80 | 7.34 |
 | Neutral badge border on card (needs 3:1) | 4.55 | 4.43 |
 
 Verified against the rendered panel, not just computed: the light and dark values
 above were sampled pixel-by-pixel off a Redmi (HyperOS, Android 16) on
 2026-07-24 and matched spec exactly. Re-render before trusting a changed value —
-that render is what caught the Pending chip reading brown in dark.
+that render is what caught the Pending chip reading brown in dark, and rendering
+the panel *at size* is what caught light's warning panel being the weak mode.
+
+**Confirmed on-device 2026-07-24, both modes, zero drift.** Every value below was
+read off the Redmi's own framebuffer, not a software render — HyperOS applies no
+colour transform of its own:
+
+| Sampled on device | light | dark |
+|---|---|---|
+| warning panel fill | `#DD8643` | `#9C531C` |
+| panel vs card | 2.78 | 2.78 |
+| panel vs scaffold | 2.66 | 3.13 |
+| rule/icon on panel fill | 5.13 | 4.99 |
+| Pending badge fill | `#F7E3D4` (1.24 vs card) | `#9C531C` (2.78 vs card) |
+| Approved badge fill | `#D5E6DB` (1.30) | `#2A4E3F` (1.71) |
+| Done badge fill | `#356150` (7.05) | `#8CC6AB` (8.16) |
+| neutral badge border | — | `#8A8780` (4.43 vs card, 5.00 vs scaffold) |
+| neutral badge text | — | `#B3B0A9` (8.28 vs scaffold) |
+
+† The panel fill is **not** load-bearing and is not held to the 3:1 non-text
+floor: the panel's structure is its 3px left rule, which measures 5.13 (light) /
+4.99 (dark) against that fill. The fill's job is presence, and 2.78 is the value
+that makes it read the same in both modes. If the rule is ever dropped, the fill
+becomes the only structure and the 3:1 floor applies.
 
 Floors: **4.5:1** all text · **3:1** meaningful non-text · **48dp** touch targets.
 
@@ -378,6 +423,9 @@ Known-failing combinations, documented so they are never used:
   modes so one recipe serves both.
 - Old dark `onAttentionContainer` `#F3D3BC` on the raised container — 4.05.
   Replaced by `#FBEDE2`.
+- **`#D9792F` as the light `attentionContainerStrong`** — matches dark's 3.13:1
+  vs *scaffold* but its text pairing lands at **4.56**, 0.06 off the floor.
+  Rejected for `#DD8643` (2.78 vs card, text 5.13). See DECISIONS.md.
 
 ---
 

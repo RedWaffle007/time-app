@@ -1633,3 +1633,51 @@ needs none and runs under `flutter test`. Turned on only after screen one
 validated the token scale — the enforcement gap was never wider than one screen.
 
 Full spec: **UI-RULES.md**. Changing any token requires an entry here first.
+
+## New role: `attentionContainerStrong` — the warning panel's fill (2026-07-24)
+
+Rendering the warning panel at size (the harness's Panel tab) exposed an
+asymmetry the badge-sized checks could not: the panel separates from its
+background **3.13:1 in dark but only 1.19:1 in light**. In dark it reads as a
+solid orange block; in light it is a soft tint where only the 3px rule works. A
+warning is the single most important thing to notice on a screen, and light was
+the weak mode.
+
+**Why the shared token could not simply be raised.** Measuring the whole
+container family against the card exposed the real cause:
+
+| vs card | `primaryContainer` | `attentionContainer` | `errorContainer` |
+|---|---|---|---|
+| dark | 1.71 | **2.78** (1.63x pull over Approved) | 1.30 |
+| light | 1.30 | **1.24** (0.95x — no pull at all) | 1.28 |
+
+The 2026-07-24 Pending fix raised **dark only**. In light, Pending does not
+out-pull Approved by any margin — the same defect, still live in the other mode.
+Raising the shared `attentionContainer` to the 2.78 the panel needs would give
+the light Pending badge a **2.14x** pull over Approved, harder than dark's 1.63x
+— fixing the panel by over-loading the badge.
+
+**Decision: the panel takes its own role, the badge tint is untouched.**
+
+- `attentionContainerStrong` — light `#DD8643`, chosen to match dark's panel
+  separation exactly (2.78:1 vs card, 2.66:1 vs scaffold). Same hue (26 degrees)
+  and saturation (69%) as the tint it is pitched up from, so §2.4 still holds:
+  warning is attention pitched up, not a third hue.
+- In **dark it is `#9C531C`, identical to `attentionContainer`.** The two roles
+  coincide there because dark already had the separation; only light diverges.
+  A role that is the same value in one mode is not redundant — it is the seam
+  where the two modes legitimately differ.
+- `onAttentionContainer` (`#43220F` light / `#FBEDE2` dark) serves as the text,
+  rule and icon colour on **both** fills: 5.13:1 on the strong light fill, 11.46
+  on the light tint, 4.99 on dark. No new `on*` role is needed.
+
+**Rejected: `#D9792F`**, which matches dark's 3.13:1 vs *scaffold* rather than
+its 2.78:1 vs *card*. Its text pairing measures **4.56:1** — passing, but 0.06
+off the floor. This project has already rejected 4.43 and 4.05; a value that
+close to AA is not worth 0.35 of extra separation.
+
+**Still open, deliberately not changed here:** light's Pending badge remains at
+1.24:1, i.e. the dark Pending fix has never been applied to light. Correcting it
+means raising `attentionContainer` (light) to about `#E6A574` — 2.10:1 vs card,
+a 1.62x pull over Approved, matching dark's 1.63x almost exactly. That is a
+badge change, not a panel change, and it is the user's call.

@@ -53,6 +53,23 @@ abstract final class AppColors {
   static const lightAttention = Color(0xFF8A4A25);
   static const lightOnAttention = Color(0xFFFFFFFF);
   static const lightAttentionContainer = Color(0xFFF7E3D4);
+
+  /// The warning panel's fill — attention pitched up (UI-RULES.md §2.4).
+  ///
+  /// Same hue (26 degrees) and saturation (69%) as the tint above; only
+  /// lightness moves. Rendering the panel at size showed it separating 3.13:1
+  /// from the background in dark but only 1.19:1 in light — a warning is the
+  /// most important thing on a screen, and light was the weak mode. This value
+  /// matches dark's separation exactly (2.78:1 off the card).
+  ///
+  /// It is a SEPARATE role rather than a raise of [lightAttentionContainer]
+  /// because the badge shares that token: at 2.78 the light Pending chip would
+  /// pull 2.14x over Approved, harder than dark's 1.63x.
+  ///
+  /// `#D9792F` (matching dark's 3.13:1 off the *scaffold*) was rejected — its
+  /// text pairing measures 4.56:1, 0.06 off the floor.
+  static const lightAttentionContainerStrong = Color(0xFFDD8643);
+
   static const lightOnAttentionContainer = Color(0xFF43220F);
 
   // Red — rationed to destructive actions and system errors (UI-RULES.md §2.5).
@@ -93,6 +110,14 @@ abstract final class AppColors {
   /// well below Done (8.16:1), so the solid win state stays the heaviest badge.
   static const darkAttentionContainer = Color(0xFF9C531C);
 
+  /// **Deliberately identical to [darkAttentionContainer].** Dark already had
+  /// the separation the warning panel needs (2.78:1 off the card) once Pending
+  /// was raised; only light had to diverge. A role that holds the same value in
+  /// one mode is the seam where the two modes legitimately differ (UI-RULES.md
+  /// §2.4/§8), not a redundant token — and keeping it named means raising one
+  /// mode later can't silently drag the other with it.
+  static const darkAttentionContainerStrong = Color(0xFF9C531C);
+
   /// Brightened alongside the container: the old `#F3D3BC` drops to 4.05:1 on
   /// the lighter fill, under AA. This pairing measures 4.99:1.
   static const darkOnAttentionContainer = Color(0xFFFBEDE2);
@@ -114,18 +139,26 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
     required this.attention,
     required this.onAttention,
     required this.attentionContainer,
+    required this.attentionContainerStrong,
     required this.onAttentionContainer,
   });
 
   final Color attention;
   final Color onAttention;
   final Color attentionContainer;
+
+  /// The warning panel's fill. Badges use [attentionContainer]; only the panel
+  /// uses this. Text, rule and icon on BOTH fills are [onAttentionContainer] —
+  /// there is no separate `on*Strong`.
+  final Color attentionContainerStrong;
+
   final Color onAttentionContainer;
 
   static const light = AppSemanticColors(
     attention: AppColors.lightAttention,
     onAttention: AppColors.lightOnAttention,
     attentionContainer: AppColors.lightAttentionContainer,
+    attentionContainerStrong: AppColors.lightAttentionContainerStrong,
     onAttentionContainer: AppColors.lightOnAttentionContainer,
   );
 
@@ -133,6 +166,7 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
     attention: AppColors.darkAttention,
     onAttention: AppColors.darkOnAttention,
     attentionContainer: AppColors.darkAttentionContainer,
+    attentionContainerStrong: AppColors.darkAttentionContainerStrong,
     onAttentionContainer: AppColors.darkOnAttentionContainer,
   );
 
@@ -141,12 +175,15 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
     Color? attention,
     Color? onAttention,
     Color? attentionContainer,
+    Color? attentionContainerStrong,
     Color? onAttentionContainer,
   }) {
     return AppSemanticColors(
       attention: attention ?? this.attention,
       onAttention: onAttention ?? this.onAttention,
       attentionContainer: attentionContainer ?? this.attentionContainer,
+      attentionContainerStrong:
+          attentionContainerStrong ?? this.attentionContainerStrong,
       onAttentionContainer: onAttentionContainer ?? this.onAttentionContainer,
     );
   }
@@ -159,6 +196,8 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
       onAttention: Color.lerp(onAttention, other.onAttention, t)!,
       attentionContainer:
           Color.lerp(attentionContainer, other.attentionContainer, t)!,
+      attentionContainerStrong: Color.lerp(
+          attentionContainerStrong, other.attentionContainerStrong, t)!,
       onAttentionContainer:
           Color.lerp(onAttentionContainer, other.onAttentionContainer, t)!,
     );

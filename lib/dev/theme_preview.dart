@@ -145,10 +145,11 @@ class PanelPreview extends StatelessWidget {
           ),
           const SizedBox(height: Space.xl),
 
-          // The comparison that matters: the same `attentionContainer` fill as
-          // a large panel directly above a small Pending badge. This adjacency
-          // is the whole point of the tab.
-          _heading(context, 'Same fill, badge size'),
+          // The comparison that matters: the panel's fill directly above the
+          // badge tint it is pitched up from. In dark the two are the same
+          // value; in light the panel is stronger (UI-RULES.md §2.4). Seeing
+          // both adjacencies at once is the whole point of the tab.
+          _heading(context, 'Badge tint, for comparison'),
           Wrap(
             spacing: Space.sm,
             runSpacing: Space.sm,

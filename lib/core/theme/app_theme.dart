@@ -250,6 +250,7 @@ extension AppThemeContext on BuildContext {
   Color get attention => _semantic.attention;
   Color get onAttention => _semantic.onAttention;
   Color get attentionContainer => _semantic.attentionContainer;
+  Color get attentionContainerStrong => _semantic.attentionContainerStrong;
   Color get onAttentionContainer => _semantic.onAttentionContainer;
 
   TextStyle get codeDisplay =>

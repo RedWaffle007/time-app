@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_app/core/theme/app_colors.dart';
@@ -124,6 +126,44 @@ void main() {
     });
   });
 
+  group('contrast floor (UI-RULES.md §7)', () {
+    // §7 says every pairing is "verified by computation, not by eye". This is
+    // that computation — a colour change that breaks AA fails here instead of
+    // shipping and being caught on a phone, or not at all.
+    for (final (name, sem, cs) in [
+      ('light', AppSemanticColors.light, AppTheme.light.colorScheme),
+      ('dark', AppSemanticColors.dark, AppTheme.dark.colorScheme),
+    ]) {
+      test('$name — attention text pairings clear AA on both fills', () {
+        expect(_contrast(sem.onAttentionContainer, sem.attentionContainer),
+            greaterThanOrEqualTo(4.5),
+            reason: 'onAttentionContainer on the badge tint');
+        expect(_contrast(sem.onAttentionContainer, sem.attentionContainerStrong),
+            greaterThanOrEqualTo(4.5),
+            reason: 'onAttentionContainer on the warning panel fill');
+      });
+
+      test('$name — the panel fill is at least as strong as the badge tint', () {
+        // The panel is the largest attention surface; it may never separate
+        // from the card LESS than a badge does. In dark the two are the same
+        // value, so this is an inclusive bound by design.
+        expect(
+          _contrast(sem.attentionContainerStrong, cs.surface),
+          greaterThanOrEqualTo(_contrast(sem.attentionContainer, cs.surface)),
+        );
+      });
+
+      test('$name — Done stays the heaviest badge', () {
+        // The solid win state must out-weigh every attention surface, or the
+        // doctrine's "strongest badge" claim is false (UI-RULES.md §2.3).
+        expect(
+          _contrast(cs.primary, cs.surface),
+          greaterThan(_contrast(sem.attentionContainerStrong, cs.surface)),
+        );
+      });
+    }
+  });
+
   test('spacing stays on the 4pt grid', () {
     for (final v in [
       Space.xs, Space.sm, Space.md, Space.lg,
@@ -135,4 +175,20 @@ void main() {
     expect([Space.xs, Space.sm, Space.md, Space.lg, Space.xl],
         isNot(contains(6)));
   });
+}
+
+/// WCAG 2.x relative luminance.
+double _luminance(Color c) {
+  double channel(double v) =>
+      v <= 0.04045 ? v / 12.92 : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
+  return 0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b);
+}
+
+/// WCAG 2.x contrast ratio, 1.0–21.0. Both colours must be fully opaque —
+/// every value in `app_colors.dart` is.
+double _contrast(Color a, Color b) {
+  final la = _luminance(a);
+  final lb = _luminance(b);
+  final (hi, lo) = la > lb ? (la, lb) : (lb, la);
+  return (hi + 0.05) / (lo + 0.05);
 }
