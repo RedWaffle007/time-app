@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -25,7 +26,9 @@ class Routes {
   static const approvals = '/approvals';
   static const outcome = '/outcome';
   static const plannerActivity = '/activity';
-  static const devMenu = '/dev'; // debug-only entry, reachable from AccountButton
+  /// Debug-only. The route itself is registered only in debug builds — see the
+  /// `if (kDebugMode)` guard below. In release this path resolves to nothing.
+  static const devMenu = '/dev';
 }
 
 /// The app's router. A single plain Provider (no family / autoDispose) since
@@ -89,10 +92,23 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: Routes.plannerActivity,
         builder: (context, state) => const PlannerActivityScreen(),
       ),
-      GoRoute(
-        path: Routes.devMenu,
-        builder: (context, state) => const DevMenuScreen(),
-      ),
+      // Dev scaffolding, registered ONLY in debug builds.
+      //
+      // The menu item that pushes this is already behind `kDebugMode` in
+      // AccountButton, and no deep link reaches it (the manifest declares only
+      // MAIN/LAUNCHER). But that guard sits in another file: one future
+      // `context.push(Routes.devMenu)` written without it would make a dev
+      // screen live in production. Guarding the route keeps the invariant
+      // where the route is.
+      //
+      // `kDebugMode` is a compile-time constant, so in release this branch is
+      // eliminated and `DevMenuScreen` becomes unreferenced — it is dropped
+      // from the binary rather than merely being unreachable inside it.
+      if (kDebugMode)
+        GoRoute(
+          path: Routes.devMenu,
+          builder: (context, state) => const DevMenuScreen(),
+        ),
     ],
   );
 });
