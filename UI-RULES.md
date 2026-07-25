@@ -1,0 +1,406 @@
+# UI-RULES.md
+
+**This document governs every pixel in this app. Read it before writing any screen code.**
+
+`DECISIONS.md` records *why*. This file states *what you must do*. If a screen
+disagrees with this file, the screen is wrong.
+
+Approved 2026-07-24. Changing anything here requires a `DECISIONS.md` entry first
+(see §8).
+
+---
+
+## 1. The one-helper rule
+
+Every visual value comes from `lib/core/theme/`. There are no exceptions.
+
+```
+lib/core/theme/
+  app_colors.dart     raw hex values, light + dark — the ONLY file where a hex literal may appear
+  app_theme.dart      ThemeData light + dark, all component themes
+  app_tokens.dart     spacing, radius, elevation, duration
+  app_text.dart       the TextTheme
+  status_style.dart   status/outcome -> (label, colour, treatment) — the ONE mapping
+```
+
+**Banned in `lib/features/**` and `lib/core/widgets/**`:**
+
+| Never write | Write instead |
+|---|---|
+| `Colors.green`, `Colors.grey`, any `Colors.*` | a `colorScheme` role, or `context.attention` |
+| `Color(0xFF...)` | a role in `app_colors.dart` |
+| `fontSize: 17` | `Theme.of(context).textTheme.titleMedium` |
+| `fontWeight:` inline on a themed style | the token already carries its weight |
+| `EdgeInsets.all(16)` | `EdgeInsets.all(Space.lg)` |
+| `SizedBox(height: 12)` | `SizedBox(height: Space.md)` |
+| `BorderRadius.circular(12)` | `Radii.md` |
+| `elevation: 2` | see §5 — flat by default |
+| emoji as status (`✅`, `⏭️`) | an `Icon` from the status style |
+
+This mirrors the existing hard rule that all date/time rendering goes through
+`core/format/datetime_format.dart`. Same reasoning, same enforcement.
+
+---
+
+## 2. Colour
+
+### 2.1 The two-job doctrine
+
+The app has two colours of **equal presence** and **divided duty**.
+
+> **Green owns action and affirmation. Orange owns attention and pending state.**
+
+| | Green (`primary`) | Orange (`attention`) |
+|---|---|---|
+| **Job** | what you press; what went well | what is waiting on you; what to look at |
+| **Owns** | filled buttons, FAB, selected nav, Approve, Mark done, Approved + Done badges, success | Pending badges, needs-decision counts, DST + quiet-hours warnings, unread markers |
+| **Register** | resolved, settled | unresolved, live |
+
+Presence stays balanced without sprinkling: this app is *about* the gap between
+proposed and resolved, so pending states are as common on screen as actions are.
+
+**Green is not "primary" in the sense of outranking orange.** Neither colour is
+subordinate. If you find yourself reaching for orange to add emphasis to an
+action, or green to mark something as waiting, you have the doctrine backwards.
+
+### 2.2 Roles
+
+Light:
+
+| Role | Hex |
+|---|---|
+| `background` | `#FBFAF8` |
+| `surface` (cards, sheets) | `#FFFFFF` |
+| `surfaceContainer` | `#F2F0EB` |
+| `surfaceContainerHigh` | `#E9E6E0` |
+| `onSurface` | `#1B1A18` |
+| `onSurfaceVariant` | `#54524D` |
+| `outline` | `#78766F` |
+| `outlineVariant` | `#D5D2CB` |
+| `primary` | `#356150` |
+| `onPrimary` | `#FFFFFF` |
+| `primaryContainer` | `#D5E6DB` |
+| `onPrimaryContainer` | `#14352A` |
+| `attention` | `#8A4A25` |
+| `onAttention` | `#FFFFFF` |
+| `attentionContainer` | `#F7E3D4` |
+| `onAttentionContainer` | `#43220F` |
+| `error` | `#9C332C` |
+| `onError` | `#FFFFFF` |
+| `errorContainer` | `#F8DEDA` |
+| `onErrorContainer` | `#4A100D` |
+
+Dark — re-picked, not inverted. Chroma drops and lightness rises, because
+saturated hues vibrate on dark surfaces.
+
+| Role | Hex |
+|---|---|
+| `background` | `#16171A` |
+| `surface` (cards, sheets) | `#212226` |
+| `surfaceContainer` | `#212226` |
+| `surfaceContainerHigh` | `#2B2C31` |
+| `onSurface` | `#E9E7E2` |
+| `onSurfaceVariant` | `#B3B0A9` |
+| `outline` | `#8A8780` |
+| `outlineVariant` | `#3A3B3F` |
+| `primary` | `#8CC6AB` |
+| `onPrimary` | `#0A2419` |
+| `primaryContainer` | `#2A4E3F` |
+| `onPrimaryContainer` | `#B9E3CF` |
+| `attention` | `#E3A47C` |
+| `onAttention` | `#3D1E0C` |
+| `attentionContainer` | `#9C531C` |
+| `onAttentionContainer` | `#FBEDE2` |
+| `error` | `#EBA49E` |
+| `onError` | `#57120F` |
+| `errorContainer` | `#5C2320` |
+| `onErrorContainer` | `#F8D6D2` |
+
+**Note on `surface` in dark.** In light, cards are `#FFFFFF` on a `#FBFAF8`
+scaffold — a 1.04 tonal step, so the border carries the edge. In dark, cards are
+`#212226` on a `#16171A` scaffold — a 1.13 step. Both are deliberate: separation
+comes from the border, not from a large tonal jump.
+
+**`attention` is not a Material role.** M3 has no such slot. It is mapped onto
+`tertiary`/`tertiaryContainer` so Material widgets can reach it, and exposed as
+`attention` via a `ThemeExtension` so call sites read semantically. Prefer
+`context.attention`; never reach for `tertiary` by name.
+
+### 2.3 Status colours — one mapping, in `status_style.dart`
+
+| Status | Colour | Treatment |
+|---|---|---|
+| Pending | orange | `attentionContainer` fill + `onAttentionContainer` text |
+| Approved | green | `primaryContainer` fill + `onPrimaryContainer` text |
+| Done | green | **solid** `primary` fill + `onPrimary` text — strongest, this is the win state |
+| Rejected | neutral | transparent fill + `outline` border + `onSurfaceVariant` text |
+| Skipped | neutral | *(same as Rejected)* |
+| Cancelled | neutral | *(same as Rejected)* |
+| Withdrawn | neutral | *(same as Rejected)* |
+
+**All four neutral statuses share one treatment.** The label differentiates them;
+the colour does not need to. A "dimmed" variant was designed and **rejected** —
+it measured 4.43:1 in dark mode, under AA. Do not reintroduce tonal dimming to
+distinguish neutral statuses. (See §7.)
+
+Rejected and Skipped are **not** errors. A target rejecting a plan or skipping an
+item is a legitimate outcome — the consent model says so. Neither is ever red.
+
+### 2.4 Warning is orange, not a third hue
+
+DST gaps, overlaps, and quiet-hours warnings use the **attention** family, pitched
+up from pending: solid left rule + icon + heavier weight, versus pending's flat
+tint. Both mean "look at this," so they share a hue honestly.
+
+**Amber is banned.** It sits ~10° from our orange and reads as a muddy near-miss.
+
+### 2.5 Red is rationed
+
+`error` appears only for:
+
+- destructive confirmations (Withdraw, Leave group, Delete)
+- authentication and system failures
+- form validation errors
+
+**Red never appears as a status badge.** Rationing is what keeps it forceful.
+
+### 2.6 Hard colour constraints
+
+1. **`outline` is never a text colour.** It measures 3.65 (light) / 3.89 (dark)
+   against the darkest containers — fine for a border, a fail for text. Use
+   `onSurfaceVariant` for muted text.
+2. **`outlineVariant` is decorative only** (1.51 light / 1.60 dark). Hairline
+   dividers and card edges. Any border that carries meaning on its own — a
+   neutral badge's outline, a focus ring, a selected state — uses `outline`.
+   A neutral badge bordered in `outlineVariant` measures **1.42** in dark: its
+   only structure, invisible.
+3. **Never encode state in colour alone.** Every status badge carries a text
+   label. Colour reinforces; it does not inform.
+
+---
+
+## 3. Type
+
+System font. No custom family: `supportedLocales` covers ~80 locales, and the
+system font is the only thing guaranteed to have the glyphs.
+
+| Token | Size / line | Weight | Use |
+|---|---|---|---|
+| `displaySmall` | 32 / 40 | 700 | auth hero only |
+| `titleLarge` | 20 / 28 | 600 | screen section headers |
+| `titleMedium` | 17 / 24 | 600 | card titles |
+| `bodyLarge` | 16 / 24 | 400 | default body |
+| `bodyMedium` | 14 / 20 | 400 | dense body |
+| `labelLarge` | 14 / 20 | 600 | buttons |
+| `bodySmall` | 13 / 18 | 400 | hints, secondary prose |
+| `labelSmall` | 12 / 16 | 500 | timestamps, timezone labels, metadata |
+| `codeDisplay` | 22 / 28 | 700, ls 3 | invite codes and any code-like string |
+
+`codeDisplay` lives on the `AppTypeExtension`, reached via `context.codeDisplay`.
+
+**Rules:**
+
+- Never write `fontSize`. Never write `fontWeight` on a themed style — the token
+  carries it.
+- Card titles are `titleMedium`. All of them. (The old UI had 18 on two screens
+  and 17 on a third for the same element; that is the drift this prevents.)
+- Secondary prose is `bodySmall`. Metadata — timestamps, tz labels, counts — is
+  `labelSmall`. Do not use `labelSmall` for anything a user reads as a sentence.
+- **Prose wins.** When a line mixes metadata into a sentence — "for Sam · Tue 9:00
+  (Asia/Kolkata, their local time)" — it is prose, so it is `bodySmall`.
+  `labelSmall` is for bare metadata standing on its own: a timestamp in a corner,
+  a count on a badge.
+- **Italic is not in the scale.** Quoted user content — notes, skip reasons,
+  rejection reasons — is distinguished by `onSurfaceVariant` colour, not by
+  italics. Long italic runs hurt legibility and pile a second axis of emphasis on
+  top of a system that already has colour and weight.
+- Colour a text token by passing `.copyWith(color: ...)` with a role, never by
+  wrapping in a differently-styled `TextStyle`.
+
+---
+
+## 4. Spacing, radius, motion
+
+### Spacing — 4pt grid, `Space` in `app_tokens.dart`
+
+| Token | Value |
+|---|---|
+| `Space.xs` | 4 |
+| `Space.sm` | 8 |
+| `Space.md` | 12 |
+| `Space.lg` | 16 |
+| `Space.xl` | 24 |
+| `Space.xxl` | 32 |
+| `Space.xxxl` | 48 |
+
+`6`, `10`, and `20` are **off-grid and banned**. Migration: `6 → xs`, `10 → md`,
+`20 → xl`.
+
+Conventions: screen padding `xl` for forms, `lg` for lists. Card margin
+`symmetric(horizontal: md, vertical: sm)`. Card interior padding `lg`.
+
+### Radius — `Radii` in `app_tokens.dart`
+
+| Token | Value | Use |
+|---|---|---|
+| `Radii.sm` | 8 | inputs, small tints, warning panel |
+| `Radii.md` | 12 | cards, containers |
+| `Radii.lg` | 16 | dialogs, bottom sheets |
+| `Radii.pill` | 999 | badges, chips, filled buttons |
+
+### Motion
+
+`Motion.fast` 150ms, `Motion.normal` 250ms. Curve `Curves.easeOutCubic`.
+Calm means short and unfussy — no bounce, no overshoot.
+
+---
+
+## 5. Elevation — flat by default
+
+**Elevation 0 + a 1px `outlineVariant` border. Everywhere.**
+
+Definition comes from structure — border and spacing — not from shadow. Shadows
+are the fastest way to lose "calm," and a muted palette under drop shadows reads
+washed-out rather than deliberate.
+
+**The only exceptions.** Anything that floats *over* content gets a shadow;
+anything that sits *in* the flow does not.
+
+| Surface | Elevation |
+|---|---|
+| Cards, list rows, badges, panels, inputs | **0** + `outlineVariant` border |
+| Navigation bar | M3 tonal level 2 |
+| Dialogs | level 3 |
+| Bottom sheets | level 3 |
+| Snackbar | level 3 |
+
+`Card` must never be constructed bare — use the recipe in §6.1, which sets
+elevation 0 and the border. A bare `Card` inherits Material's default shadow.
+
+---
+
+## 6. Component recipes
+
+Copy these. Drift starts the moment someone rebuilds a card from scratch.
+
+### 6.1 Card
+
+```
+Card(
+  margin: EdgeInsets.symmetric(horizontal: Space.md, vertical: Space.sm),
+  elevation: 0,                                  // from cardTheme; never override
+  shape: RoundedRectangleBorder(
+    borderRadius: Radii.md,
+    side: BorderSide(color: colorScheme.outlineVariant),
+  ),
+  child: Padding(padding: EdgeInsets.all(Space.lg), child: ...),
+)
+```
+
+`app_theme.dart` sets this as the global `CardTheme`, so in practice a screen
+writes `Card(child: Padding(...))` and inherits the rest.
+
+### 6.2 Status badge
+
+Always via `statusStyle(status)` from `status_style.dart` — never a local
+`switch`. Padding `symmetric(horizontal: Space.md, vertical: Space.xs)`, radius
+`Radii.pill`, text `labelSmall`. Neutral variants carry a 1px `outline` border;
+tinted and solid variants carry no border.
+
+### 6.3 Warning panel
+
+Always via `WarningPanel` from `core/widgets/warning_panel.dart` — never rebuilt
+inline, same rule as the status badge.
+
+Radius `Radii.sm`, fill `attentionContainer`, a 3px solid left rule and an icon —
+**both in `onAttentionContainer`, not `attention`** — text `bodySmall` in
+`onAttentionContainer`, padding `Space.md`, margin-top `Space.md`.
+
+The rule and icon match the text because they sit on the container fill, and
+`attention` on `attentionContainer` measures only 2.69:1 in dark since that
+container was raised — below even the 3:1 non-text floor. `onAttentionContainer`
+clears it in both modes (4.99 dark / 11.46 light).
+
+### 6.4 Buttons
+
+- Primary action → `FilledButton` (green, `Radii.pill`)
+- Secondary → `OutlinedButton` (`outline` border)
+- Tertiary / inline → `TextButton`
+- Destructive → `FilledButton` with `error` fill, only per §2.5
+
+One primary action per screen. Minimum touch target 48dp.
+
+### 6.5 Empty state
+
+Icon at 40px in `onSurfaceVariant` (**not** `outline` — see §2.6), `Space.md` gap,
+`titleMedium` headline, `Space.sm` gap, `bodySmall` in `onSurfaceVariant`,
+`Space.lg` gap, then an optional action.
+
+---
+
+## 7. Accessibility floor
+
+**Every text pairing hits WCAG AA (4.5:1) in both modes. Verified by computation,
+not by eye.**
+
+Measured minimums:
+
+| Pairing | Light | Dark |
+|---|---|---|
+| `onSurface` on any surface | 13.96 | 11.27 |
+| `onSurfaceVariant` on any surface | 6.27 | 6.44 |
+| `primary` / `attention` / `error` on any surface | 5.46 | 6.55 |
+| Text on solid button fills | 6.80 | 6.90 |
+| `on*Container` on its container | 10.28 | 6.62 |
+| `primary` on `primaryContainer` | 5.43 | 4.77 |
+| `onAttentionContainer` on `attentionContainer` | 11.46 | **4.99** |
+| Neutral badge text on card | 7.80 | 7.34 |
+| Neutral badge border on card (needs 3:1) | 4.55 | 4.43 |
+
+Verified against the rendered panel, not just computed: the light and dark values
+above were sampled pixel-by-pixel off a Redmi (HyperOS, Android 16) on
+2026-07-24 and matched spec exactly. Re-render before trusting a changed value —
+that render is what caught the Pending chip reading brown in dark.
+
+Floors: **4.5:1** all text · **3:1** meaningful non-text · **48dp** touch targets.
+
+**Changing any colour value requires re-running the contrast check against this
+table.** A muted palette is exactly where this slips silently.
+
+Known-failing combinations, documented so they are never used:
+
+- `outline` as text on `surfaceContainerHigh` — 3.65 / 3.89. Banned by §2.6(1).
+- `outlineVariant` as a meaningful border — 1.51 / 1.60. Banned by §2.6(2).
+- Dimmed neutral badge text — 4.43 in dark. Rejected in §2.3.
+- **`attention` on `attentionContainer` — 2.69 in dark.** Fails even the non-text
+  floor. Use `onAttentionContainer` for anything drawn on that fill, including
+  icons and rules (§6.3). Valid in light (5.47), but the rule is uniform across
+  modes so one recipe serves both.
+- Old dark `onAttentionContainer` `#F3D3BC` on the raised container — 4.05.
+  Replaced by `#FBEDE2`.
+
+---
+
+## 8. Both modes, always
+
+Nothing ships light-only. Every new surface is checked in dark before review.
+Dark is not an inversion of light — the values are independently chosen, and a
+value that works in one mode proves nothing about the other.
+
+---
+
+## 9. Changing this document
+
+1. A new token, role, or hue requires a `DECISIONS.md` entry **first**, with the
+   reasoning and the contrast numbers.
+2. Then this file changes.
+3. Then the code conforms.
+
+Never the reverse. The document is the source of truth; the code is its
+implementation. This is the same lesson as the Firestore-rules incident — a rule
+that lives only in someone's head, or only in a deployed artifact nobody checked,
+is not a rule.
+
+**Enforcement.** A lint bans raw `Colors.*`, `fontSize:`, and literal spacing
+outside `lib/core/theme/`. It is switched on immediately after the first screen
+migration validates the token scale — see the build log in `DECISIONS.md`.

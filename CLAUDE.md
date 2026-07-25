@@ -39,6 +39,15 @@ setting; `supportedLocales` accepts every Material-supported locale. Any new
 time/date UI must use that helper — never hardcode a format, English month/day
 names, or 24h. (Details: DECISIONS.md "Locale-aware date/time display.")
 
+**Standing UI requirement (do not regress):** all UI conforms to
+[UI-RULES.md](UI-RULES.md) — the design system's source of truth (palette, type,
+spacing, radius, elevation, component recipes, accessibility floor). **Read it
+before writing any screen code.** Every visual value comes from
+`lib/core/theme/`; raw `Colors.*`, inline `fontSize`, and literal
+spacing/radius/elevation are banned in screens and mechanically blocked by
+`test/ui_rules_lint_test.dart`. Changing a token requires a DECISIONS.md entry
+first, then UI-RULES.md, then the code — never the reverse.
+
 ## Parked & unverified — the durable checklist (nothing gets lost between sessions)
 
 Keep this current. Do not mark an item done until its run/decision is recorded here

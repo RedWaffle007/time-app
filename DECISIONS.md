@@ -1573,3 +1573,63 @@ Where we are, so nothing is lost until the pair session:
    the real phone's app → observe whether/when the tray notification arrives.
    Design the primer FROM that result. Primer also brushes parked alarm-layer
    scope (boot-persistence) — confirm scope before building regardless.
+
+## Design system — green/orange balanced palette, tokens, and UI-RULES.md (2026-07-24)
+
+The app had no design system: one `ColorScheme.fromSeed(Colors.indigo)` line, no
+dark theme, 12 hardcoded `Colors.*` sites, 6 ad-hoc font sizes, 10 off-grid
+spacing values, and **two separate private `switch`es mapping the same domain
+statuses to different colours** (`planner_activity_screen` vs `outcome_screen`).
+
+**The doctrine: two colours of equal presence, divided duty.** Green (~157°,
+sage) owns action and affirmation; orange (~24°, terracotta) owns attention and
+pending state. Balanced presence falls out of the app itself — this app is about
+the gap between proposed and resolved, so pending states are as common as
+actions. Green is primary rather than orange because a saturated warm fill on
+every button, FAB and nav selection is the loudest surface in the app and fights
+the "calm, muted" target.
+
+Consequences accepted:
+- **Warning folds into orange.** Amber sat ~10° off our orange and read as a
+  muddy near-miss. Warning is attention pitched up (rule + icon + weight).
+- **Rejected and Skipped are neutral, never red.** A target rejecting or skipping
+  is the consent model working, not a failure. Red is rationed to destructive
+  actions and system errors, and never appears as a status badge.
+- **Flat by default** — elevation 0 + a 1px `outlineVariant` border everywhere;
+  shadows only on nav bar, dialogs and bottom sheets.
+
+**Order that earned its keep: document → tokens → migrate ONE screen → verify on
+device → only then enforce.** Migrating screen one surfaced three gaps before
+they could propagate: the `labelSmall`/`bodySmall` boundary was ambiguous for
+sentence-shaped metadata (resolved: prose wins, §3), italic had no token and 4
+screens depended on it (resolved: quoted content uses `onSurfaceVariant` colour,
+italic stays out of the scale), and showing both a status badge and an outcome
+badge stated the same fact twice (resolved: the outcome badge replaces it).
+
+**Two defects caught by measurement, not by eye:**
+1. The planned *dimmed* neutral badge variant measured **4.43:1** in dark — under
+   AA, passing in light. Dropped; all four neutral statuses now share one
+   treatment and the label differentiates them.
+2. A neutral badge bordered in `outlineVariant` measures **1.42:1** in dark — the
+   badge's only structure, invisible. Neutral borders use `outline`.
+
+**One defect caught only by rendering.** On the Redmi the Pending chip at
+`#5A3520` read as a muted brown, just 1.49:1 off the card — the app's core
+attention state, not pulling. Raised to `#9C531C` (2.8× luminance, chroma
+0.64→0.82, 2.78:1 off the card), with `onAttentionContainer` brightened to
+`#FBEDE2` because the old `#F3D3BC` drops to 4.05:1 on the lighter fill. Done
+(8.16:1) stays the heaviest badge. Knock-on: `attention` on `attentionContainer`
+fell to **2.69:1** in dark, below even the 3:1 non-text floor — so the warning
+panel's left rule and icon use `onAttentionContainer`, not `attention`.
+
+Pixel-sampling the rendered screenshots (rather than eyeballing) confirmed every
+value matched spec exactly on the real panel.
+
+**Enforcement:** `test/ui_rules_lint_test.dart` scans `lib/app.dart`,
+`lib/features`, `lib/core/widgets` and `lib/dev` for raw `Colors.*`, `Color(0x`,
+inline `fontSize`, literal spacing/radius/elevation, and emoji-as-status. An
+analyzer lint would need the `custom_lint` dependency; a source-scanning test
+needs none and runs under `flutter test`. Turned on only after screen one
+validated the token scale — the enforcement gap was never wider than one screen.
+
+Full spec: **UI-RULES.md**. Changing any token requires an entry here first.
