@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/widgets/async_view.dart';
+import '../../../core/widgets/section_header.dart';
 import '../../auth/application/auth_providers.dart';
 import '../application/group_providers.dart';
 import '../domain/membership.dart';
@@ -72,10 +73,9 @@ class GroupDetailScreen extends ConsumerWidget {
                   ),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                    Space.lg, Space.sm, Space.lg, Space.xs),
-                child: Text('Members', style: context.text.titleLarge),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: Space.lg),
+                child: SectionHeader('Members'),
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(

@@ -83,8 +83,12 @@ abstract final class Sizes {
   /// the label, so the button doesn't change height mid-action.
   static const double buttonSpinner = 20;
 
-  /// The warning panel's left rule (UI-RULES.md §6.3).
+  /// The warning panel's left rule (UI-RULES.md §6.3) and the section header's
+  /// rule (§2.7) — both are 3px line work.
   static const double ruleWidth = 3;
+
+  /// Length of a section header's rule (UI-RULES.md §2.7).
+  static const double sectionRuleWidth = 28;
 
   /// Hairline border used everywhere flat surfaces need an edge.
   static const double hairline = 1;

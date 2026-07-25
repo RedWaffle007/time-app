@@ -110,13 +110,18 @@ abstract final class AppTheme {
         ),
       ),
 
+      // STRUCTURE, not state (UI-RULES.md §2.7). The app bar is the largest
+      // persistent element on every screen and was entirely neutral, which is
+      // most of why the app read as "green-and-white". Green here is the app's
+      // identity in its chrome — text and icons, never a fill, so it can't be
+      // mistaken for a state signal.
       appBarTheme: AppBarTheme(
         backgroundColor: scaffoldBackground,
-        foregroundColor: cs.onSurface,
+        foregroundColor: cs.primary,
         elevation: Elevations.flat,
         scrolledUnderElevation: Elevations.flat,
         centerTitle: false,
-        titleTextStyle: AppText.titleLarge.copyWith(color: cs.onSurface),
+        titleTextStyle: AppText.titleLarge.copyWith(color: cs.primary),
       ),
 
       navigationBarTheme: NavigationBarThemeData(
@@ -205,7 +210,9 @@ abstract final class AppTheme {
       listTileTheme: ListTileThemeData(
         titleTextStyle: AppText.bodyLarge.copyWith(color: cs.onSurface),
         subtitleTextStyle: AppText.bodySmall.copyWith(color: cs.onSurfaceVariant),
-        iconColor: cs.onSurfaceVariant,
+        // A list icon marks a navigable affordance, and green owns action
+        // (UI-RULES.md §2.1/§2.7). Line work, so the firewall holds.
+        iconColor: cs.primary,
       ),
 
       // Floats over content — one of the three shadow exceptions.

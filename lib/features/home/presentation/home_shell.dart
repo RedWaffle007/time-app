@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/theme/status_style.dart';
 import '../../groups/presentation/groups_screen.dart';
 import '../../outcomes/presentation/outcome_screen.dart';
+import '../../scheduling/application/schedule_providers.dart';
+import '../../scheduling/domain/schedule_item.dart';
 import '../../scheduling/presentation/planner_activity_screen.dart';
 
 /// The real app home: a bottom-nav shell replacing the dev menu.
@@ -15,14 +19,14 @@ import '../../scheduling/presentation/planner_activity_screen.dart';
 /// Each tab keeps its own AppBar/title; the shell only owns the NavigationBar.
 /// An [IndexedStack] keeps all three mounted so their Firestore listeners stay
 /// live and tab state (scroll, selection) survives switching.
-class HomeShell extends StatefulWidget {
+class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
   @override
-  State<HomeShell> createState() => _HomeShellState();
+  ConsumerState<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends ConsumerState<HomeShell> {
   int _index = 0;
 
   static const _tabs = [
@@ -33,23 +37,34 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
+    // How many items are waiting on this user to decide. Drives the one
+    // always-legitimate orange on the shell (UI-RULES.md §2.7) — it renders
+    // nothing at zero, so orange never becomes decorative here.
+    final pending = ref.watch(myItemsAsTargetProvider).maybeWhen(
+          data: (items) => items
+              .where((i) => i.status == ScheduleItemStatus.pending)
+              .length,
+          orElse: () => 0,
+        );
+
     return Scaffold(
       body: IndexedStack(index: _index, children: _tabs),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (i) => setState(() => _index = i),
-        destinations: const [
-          NavigationDestination(
+        destinations: [
+          const NavigationDestination(
             icon: Icon(Icons.group_outlined),
             selectedIcon: Icon(Icons.group),
             label: 'Groups',
           ),
           NavigationDestination(
-            icon: Icon(Icons.event_outlined),
-            selectedIcon: Icon(Icons.event),
+            icon: PendingCountBadge(count: pending, child: const Icon(Icons.event_outlined)),
+            selectedIcon:
+                PendingCountBadge(count: pending, child: const Icon(Icons.event)),
             label: 'My Schedule',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.insights_outlined),
             selectedIcon: Icon(Icons.insights),
             label: 'Activity',

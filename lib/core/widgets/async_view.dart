@@ -25,6 +25,7 @@ class AsyncView<T> extends StatefulWidget {
     required this.builder,
     this.isEmpty,
     this.emptyMessage = 'Nothing here yet.',
+    this.emptyIcon = Icons.inbox_outlined,
     this.timeout = const Duration(seconds: 12),
   });
 
@@ -37,6 +38,11 @@ class AsyncView<T> extends StatefulWidget {
   /// Optional emptiness check for collection-shaped data.
   final bool Function(T data)? isEmpty;
   final String emptyMessage;
+
+  /// Icon for the empty state (UI-RULES.md §6.5). Screens should pass one that
+  /// fits what is missing; the default is a neutral inbox.
+  final IconData emptyIcon;
+
   final Duration timeout;
 
   @override
@@ -117,7 +123,9 @@ class _AsyncViewState<T> extends State<AsyncView<T>> {
       ),
       data: (data) {
         if (widget.isEmpty?.call(data) ?? false) {
-          return _Centered(child: _Message(text: widget.emptyMessage));
+          return _Centered(
+            child: _Empty(icon: widget.emptyIcon, message: widget.emptyMessage),
+          );
         }
         return widget.builder(context, data);
       },
@@ -134,12 +142,35 @@ class _Centered extends StatelessWidget {
       );
 }
 
-class _Message extends StatelessWidget {
-  const _Message({required this.text});
-  final String text;
+/// The empty-state recipe (UI-RULES.md §6.5).
+///
+/// Until 2026-07-25 the empty state was bare centred text — §6.5 was written
+/// but never actually implemented for the empty case; the only icon in this
+/// file lived in [_Retryable], which is the *error* state.
+///
+/// The icon is `primary`: an empty state is a resting state, not a failure, so
+/// green is honest there. STRUCTURE, not state — it is line work, so the
+/// firewall in §2.7 holds. [_Retryable] deliberately does **not** get this
+/// treatment: green means action and affirmation, and a failure is neither.
+class _Empty extends StatelessWidget {
+  const _Empty({required this.icon, required this.message});
+
+  final IconData icon;
+  final String message;
+
   @override
-  Widget build(BuildContext context) =>
-      Text(text, textAlign: TextAlign.center);
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon,
+            size: Sizes.emptyStateIcon, color: context.colors.primary),
+        const SizedBox(height: Space.md),
+        Text(message,
+            style: context.text.titleMedium, textAlign: TextAlign.center),
+      ],
+    );
+  }
 }
 
 class _Retryable extends StatelessWidget {

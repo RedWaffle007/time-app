@@ -9,10 +9,11 @@
 //          status and outcome, so a card in context can be eyeballed on a real
 //          panel without a signed-in pair or live Firestore.
 //   Panel  the REAL WarningPanel at its true width, stacked directly against the
-//          badges. The panel is the largest `attentionContainer` fill in the app
-//          and the only place that colour is seen at size; a value tuned on a
+//          badges. The panel is the largest orange fill in the app and the only
+//          place `attentionContainerStrong` is seen at size; a value tuned on a
 //          Pending badge is not proven until it is seen here. Both are on screen
-//          at once so the same fill can be compared small vs large.
+//          at once so the two fills can be compared small vs large — in dark
+//          they are the same value, in light the panel is stronger (§2.4).
 //
 // Follows ThemeMode.system, so `adb shell cmd uimode night yes|no` flips
 // light/dark. See UI-RULES.md §8: nothing ships light-only, and a value that

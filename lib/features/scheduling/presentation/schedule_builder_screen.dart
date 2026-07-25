@@ -7,6 +7,7 @@ import '../../../core/theme/app_tokens.dart';
 import '../../../core/timezone/quiet_hours.dart';
 import '../../../core/timezone/tz_resolver.dart';
 import '../../../core/widgets/async_view.dart';
+import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/warning_panel.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../groups/application/group_providers.dart';
@@ -151,8 +152,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       padding: Space.screenList,
       children: [
         // Target picker. "Myself" is always first, then anyone who granted you.
-        Text('Plan for', style: context.text.titleLarge),
-        const SizedBox(height: Space.sm),
+        const SectionHeader('Plan for'),
         _selfTile(),
         for (final grant in grants) _targetTile(grant),
         const Divider(height: Space.xxl),

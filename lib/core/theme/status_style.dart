@@ -115,6 +115,34 @@ StatusStyle _neutral(ColorScheme cs, String label, IconData icon) => StatusStyle
       icon: icon,
     );
 
+/// A count of things waiting on the user, drawn on a navigation destination.
+///
+/// This lives here, next to the status badge, because it is a **filled orange
+/// pill — state, not structure** (UI-RULES.md §2.7). The firewall says orange
+/// fills exist only in the widgets that own state, so putting it anywhere else
+/// would either break the rule or force an exception into the lint.
+///
+/// Renders nothing at zero: an empty count is not an attention state, and a
+/// permanently-visible orange dot would be exactly the decorative orange the
+/// doctrine rations.
+class PendingCountBadge extends StatelessWidget {
+  const PendingCountBadge({super.key, required this.count, required this.child});
+
+  final int count;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (count <= 0) return child;
+    return Badge(
+      backgroundColor: context.attentionContainerStrong,
+      textColor: context.onAttentionContainer,
+      label: Text('$count', style: context.text.labelSmall),
+      child: child,
+    );
+  }
+}
+
 /// The canonical status badge (UI-RULES.md §6.2).
 ///
 /// Always carries its text label: colour reinforces state, it never informs on

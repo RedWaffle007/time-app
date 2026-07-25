@@ -5,6 +5,7 @@ import '../../../core/format/datetime_format.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/widgets/async_view.dart';
+import '../../../core/widgets/section_header.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../notifications/application/outcome_notifier.dart';
 import '../../scheduling/application/schedule_providers.dart';
@@ -26,13 +27,22 @@ class PendingApprovalsScreen extends ConsumerWidget {
         isEmpty: (items) =>
             !items.any((i) => i.status == ScheduleItemStatus.pending),
         emptyMessage: 'Nothing waiting for approval.',
+        emptyIcon: Icons.inbox_outlined,
         builder: (context, items) {
           final pending = items
               .where((i) => i.status == ScheduleItemStatus.pending)
               .toList()
             ..sort((a, b) => a.scheduledInstantUtc.compareTo(b.scheduledInstantUtc));
           return ListView(
-            children: [for (final item in pending) _ApprovalCard(item: item)],
+            children: [
+              // The one place in the app where an orange section rule is
+              // honest: this list IS what's waiting on you (UI-RULES.md §2.7).
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: Space.md),
+                child: SectionHeader('Waiting on you', attention: true),
+              ),
+              for (final item in pending) _ApprovalCard(item: item),
+            ],
           );
         },
       ),
