@@ -1681,3 +1681,74 @@ close to AA is not worth 0.35 of extra separation.
 means raising `attentionContainer` (light) to about `#E6A574` — 2.10:1 vs card,
 a 1.62x pull over Approved, matching dark's 1.63x almost exactly. That is a
 badge change, not a panel change, and it is the user's call.
+
+## Colour presence: structure vs state, and the filled-vs-line firewall (2026-07-25)
+
+After using the built app, the verdict was that it reads "green-and-white in
+light, green-and-black in dark" — orange barely present, green not present
+enough either.
+
+**The cause was a missing category, not weak values.** Colour only ever entered
+the system as *state*. Every persistent surface was neutral by construction:
+`appBarTheme` used `onSurface` on the scaffold colour, `listTileTheme.iconColor`
+was `onSurfaceVariant`, dividers and card edges were `outlineVariant`. So on a
+screen with nothing pending, orange was not quiet — it was **absent**, and green
+was down to a single button. Raising saturation would have made the state
+colours louder without putting colour anywhere new.
+
+**The frame: three categories, with a firewall between two of them.**
+
+| Category | What it is | Rule |
+|---|---|---|
+| **State** | Pending, Approved, Done, warning | **filled shapes only** — pills and panels |
+| **Structure** | app bar, section rules, list icons, empty states | **line work and text only** — never a fill |
+| **Temperature** | the neutral ramp's own hue cast | not an element at all |
+
+**The firewall — filled = state, line/text = structure — is what protects the
+doctrine.** "An orange *filled pill or panel* means something is waiting on you"
+stays learnable and true, because structural orange never appears as a fill. It
+is a falsifiable rule, and `ui_rules_lint_test.dart` now enforces it: the
+`attention*` roles may not be used as a `BoxDecoration`/`Container` colour
+outside `status_style.dart` and `warning_panel.dart`.
+
+**What shipped (Tiers 1–3):**
+
+1. **Temperature (decorative, zero semantic cost).** The neutral ramps carry a
+   terracotta cast in both modes. This is the honest always-on orange: nothing
+   *becomes* orange, so nothing can be misread as state. Dark was pushed
+   deliberately hard — ~2.4x the warm chroma of the old ramp (bg `#16171A` ->
+   `#1F1916`) — after a subtler first pass rendered as barely distinguishable.
+2. **Green into structure.** App bar title and icons -> `primary` (the biggest
+   single win; it is on every screen). List-tile icons -> `primary`. Section
+   headers gain a 28x3 rule. Empty-state icon -> `primary`.
+3. **Orange, strictly semantic.** Light `attentionContainer` `#F7E3D4` ->
+   `#E6A574`, closing the fix that had been open since the dark Pending fix
+   (1.24 -> 2.05 vs card). The Pending/Approved pull is now **1.62x in both
+   modes** — previously 1.63x dark and 0.95x light. Section rules go orange only
+   for genuinely attention-bearing sections. The nav bar carries a pending count
+   badge.
+
+**Accepted limitation, stated plainly:** this does not put orange on every
+screen and nothing honest can. Orange means attention, so always-on orange is
+decorative by definition and spends the trust that makes the badge readable. A
+form screen with no pending state still shows orange only in temperature and in
+a warning panel. That was reviewed against mocks and accepted.
+
+**Held, not rejected: option O3** — a 2px always-on orange rule under the app
+bar. It is the one change that genuinely costs doctrine (§2.1 would need a
+clause giving orange a non-semantic chrome role). Deferred until the shipped
+Tiers 1–3 have been lived with on-device. The mock is kept for comparison.
+
+**§6.5 was amended rather than allowed to veto this.** It previously mandated
+`onSurfaceVariant` for the empty-state icon. That rule existed to keep `outline`
+out of a text-adjacent role, and `primary` does not reintroduce that problem
+(6.50 light / 8.92 dark on the scaffold, against a 3:1 non-text floor).
+
+**The error state is NOT green.** Implementing this exposed that `AsyncView`'s
+only icon lived in the *error/timeout* widget, while the genuine empty state was
+bare centred text with no icon at all — §6.5 was never actually implemented for
+the empty case. Green means action and affirmation; a failure is neither. So the
+empty state gained the §6.5 recipe with a `primary` icon, and the error/timeout
+icon stays `onSurfaceVariant`.
+
+Full values and the re-measured contrast table: **UI-RULES.md** §2.2, §2.7, §7.

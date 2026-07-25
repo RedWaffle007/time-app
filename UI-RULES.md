@@ -53,7 +53,7 @@ The app has two colours of **equal presence** and **divided duty**.
 | | Green (`primary`) | Orange (`attention`) |
 |---|---|---|
 | **Job** | what you press; what went well | what is waiting on you; what to look at |
-| **Owns** | filled buttons, FAB, selected nav, Approve, Mark done, Approved + Done badges, success | Pending badges, needs-decision counts, DST + quiet-hours warnings, unread markers |
+| **Owns** | filled buttons, FAB, selected nav, Approve, Mark done, Approved + Done badges, success — **plus structural chrome: app bar, list icons, section rules, empty states (§2.7)** | Pending badges, needs-decision counts, DST + quiet-hours warnings, unread markers — **and structure only where it labels real attention (§2.7)** |
 | **Register** | resolved, settled | unresolved, live |
 
 Presence stays balanced without sprinkling: this app is *about* the gap between
@@ -69,21 +69,21 @@ Light:
 
 | Role | Hex |
 |---|---|
-| `background` | `#FBFAF8` |
-| `surface` (cards, sheets) | `#FFFFFF` |
-| `surfaceContainer` | `#F2F0EB` |
-| `surfaceContainerHigh` | `#E9E6E0` |
-| `onSurface` | `#1B1A18` |
-| `onSurfaceVariant` | `#54524D` |
-| `outline` | `#78766F` |
-| `outlineVariant` | `#D5D2CB` |
+| `background` | `#FAF5EE` |
+| `surface` (cards, sheets) | `#FFFCF8` |
+| `surfaceContainer` | `#F4EDE3` |
+| `surfaceContainerHigh` | `#EDE3D6` |
+| `onSurface` | `#1C1A16` |
+| `onSurfaceVariant` | `#57534B` |
+| `outline` | `#7A7266` |
+| `outlineVariant` | `#DED3C3` |
 | `primary` | `#356150` |
 | `onPrimary` | `#FFFFFF` |
 | `primaryContainer` | `#D5E6DB` |
 | `onPrimaryContainer` | `#14352A` |
 | `attention` | `#8A4A25` |
 | `onAttention` | `#FFFFFF` |
-| `attentionContainer` | `#F7E3D4` |
+| `attentionContainer` | `#E6A574` |
 | `attentionContainerStrong` | `#DD8643` |
 | `onAttentionContainer` | `#43220F` |
 | `error` | `#9C332C` |
@@ -96,14 +96,14 @@ saturated hues vibrate on dark surfaces.
 
 | Role | Hex |
 |---|---|
-| `background` | `#16171A` |
-| `surface` (cards, sheets) | `#212226` |
-| `surfaceContainer` | `#212226` |
-| `surfaceContainerHigh` | `#2B2C31` |
-| `onSurface` | `#E9E7E2` |
-| `onSurfaceVariant` | `#B3B0A9` |
-| `outline` | `#8A8780` |
-| `outlineVariant` | `#3A3B3F` |
+| `background` | `#1F1916` |
+| `surface` (cards, sheets) | `#2B2421` |
+| `surfaceContainer` | `#2B2421` |
+| `surfaceContainerHigh` | `#392F2A` |
+| `onSurface` | `#F0E8DC` |
+| `onSurfaceVariant` | `#C0B4A4` |
+| `outline` | `#9C9083` |
+| `outlineVariant` | `#4C4139` |
 | `primary` | `#8CC6AB` |
 | `onPrimary` | `#0A2419` |
 | `primaryContainer` | `#2A4E3F` |
@@ -118,10 +118,15 @@ saturated hues vibrate on dark surfaces.
 | `errorContainer` | `#5C2320` |
 | `onErrorContainer` | `#F8D6D2` |
 
-**Note on `surface` in dark.** In light, cards are `#FFFFFF` on a `#FBFAF8`
-scaffold — a 1.04 tonal step, so the border carries the edge. In dark, cards are
-`#212226` on a `#16171A` scaffold — a 1.13 step. Both are deliberate: separation
-comes from the border, not from a large tonal jump.
+**Note on `surface`.** In light, cards are `#FFFCF8` on a `#FAF5EE` scaffold — a
+1.06 tonal step, so the border carries the edge. In dark, cards are `#2B2421` on
+a `#1F1916` scaffold — a 1.14 step. Both are deliberate: separation comes from
+the border, not from a large tonal jump.
+
+**Both neutral ramps carry a terracotta cast — this is deliberate (§2.7).** They
+are not grey. Dark's is roughly 2.4x the warm chroma of the original ramp; a
+subtler first pass rendered as indistinguishable from neutral, which defeated
+the point. Never "correct" these toward grey.
 
 **`attention` is not a Material role.** M3 has no such slot. It is mapped onto
 `tertiary`/`tertiaryContainer` so Material widgets can reach it, and exposed as
@@ -164,8 +169,8 @@ that strength would out-shout Approved. Measured pull over `primaryContainer`:
 
 | vs card | `primaryContainer` | `attentionContainer` | `attentionContainerStrong` |
 |---|---|---|---|
-| light | 1.30 | 1.24 | **2.78** |
-| dark | 1.71 | 2.78 | **2.78** *(same value)* |
+| light | 1.27 | 2.05 | **2.71** |
+| dark | 1.64 | 2.66 | **2.66** *(same value)* |
 
 In **dark the two roles hold the same value** — dark already had the separation,
 so only light diverges. That is the seam where the modes legitimately differ
@@ -194,6 +199,45 @@ so only light diverges. That is the seam where the modes legitimately differ
    only structure, invisible.
 3. **Never encode state in colour alone.** Every status badge carries a text
    label. Colour reinforces; it does not inform.
+
+### 2.7 Structure vs state — the filled-vs-line firewall
+
+Colour enters this app in **three** categories, not two. Know which one you are
+reaching for before you type a colour.
+
+| Category | What it is | Rule |
+|---|---|---|
+| **State** | Pending, Approved, Done, warning | **filled shapes only** — pills, panels |
+| **Structure** | app bar, section rules, list icons, empty-state icons, focus | **line work and text only** — never a fill |
+| **Temperature** | the neutral ramp's own terracotta cast (§2.2) | not an element at all |
+
+> **The firewall: a filled shape is state. Line work and text are structure.**
+
+This is what lets both colours be present everywhere without orange going
+decorative where it must stay semantic. "An orange **filled pill or panel** means
+something is waiting on you" stays true and learnable, because structural orange
+is never a fill.
+
+**Enforced.** `ui_rules_lint_test.dart` rejects any `attention*` role used as a
+`Container`/`BoxDecoration` colour outside `status_style.dart` and
+`warning_panel.dart`. If you need a new orange fill, it is a new *state* — add it
+to `status_style.dart`, don't inline it.
+
+**Which colour for structure.** Green by default: the app bar title and icons,
+list-tile icons, ordinary section rules, empty-state icons. Orange **only** where
+the structure labels genuinely attention-bearing content — a "Waiting on you"
+section rule, a pending count badge. Structure never invents a new meaning for
+orange; it only ever points at attention that is really there.
+
+**Temperature is the honest always-on orange.** Both neutral ramps are cast warm
+(§2.2). Nothing *becomes* orange, so nothing can be misread as state. This is
+where "orange is present on every screen" is actually paid for.
+
+**Accepted limitation.** A screen with no pending state and no warning shows
+orange only as temperature. That is correct, not a gap — orange means attention,
+so always-on orange elements would spend the trust that makes the badge readable.
+An always-on orange app-bar rule was mocked, costed, and **held** (DECISIONS.md,
+2026-07-25); taking it would require amending §2.1.
 
 ---
 
@@ -352,9 +396,19 @@ One primary action per screen. Minimum touch target 48dp.
 
 ### 6.5 Empty state
 
-Icon at 40px in `onSurfaceVariant` (**not** `outline` — see §2.6), `Space.md` gap,
-`titleMedium` headline, `Space.sm` gap, `bodySmall` in `onSurfaceVariant`,
-`Space.lg` gap, then an optional action.
+Icon at 40px in **`primary`** (structure — §2.7), `Space.md` gap, `titleMedium`
+headline, `Space.sm` gap, `bodySmall` in `onSurfaceVariant`, `Space.lg` gap, then
+an optional action.
+
+The icon was `onSurfaceVariant` until 2026-07-25. That rule existed to keep
+`outline` out of a text-adjacent role (§2.6); `primary` does not reintroduce that
+problem — it measures 6.50 (light) / 8.92 (dark) on the scaffold against a 3:1
+non-text floor. An empty state is a resting state, not a failure, so green is
+honest there.
+
+**The error and timeout states are NOT green.** Green means action and
+affirmation; a failure is neither. `AsyncView`'s `_Retryable` icon stays
+`onSurfaceVariant`. Only the genuine empty state takes `primary`.
 
 ---
 
@@ -367,17 +421,22 @@ Measured minimums:
 
 | Pairing | Light | Dark |
 |---|---|---|
-| `onSurface` on any surface | 13.96 | 11.27 |
-| `onSurfaceVariant` on any surface | 6.27 | 6.44 |
-| `primary` / `attention` / `error` on any surface | 5.46 | 6.55 |
-| Text on solid button fills | 6.80 | 6.90 |
-| `on*Container` on its container | 10.28 | 6.62 |
+| `onSurface` on any surface | 13.70 | 10.71 |
+| `onSurfaceVariant` on any surface | 6.03 | 6.39 |
+| `primary` / `attention` / `error` on any surface | 5.36 | 6.11 |
+| Text on solid button fills | 7.05 | 8.43 |
+| `on*Container` on its container | 6.78 | 6.62 |
 | `primary` on `primaryContainer` | 5.43 | 4.77 |
-| `onAttentionContainer` on `attentionContainer` | 11.46 | **4.99** |
+| `onAttentionContainer` on `attentionContainer` | 6.78 | **4.99** |
 | `onAttentionContainer` on `attentionContainerStrong` | 5.13 | **4.99** |
-| warning panel fill vs the card it sits on † | 2.78 | 2.78 |
-| Neutral badge text on card | 7.80 | 7.34 |
-| Neutral badge border on card (needs 3:1) | 4.55 | 4.43 |
+| warning panel fill vs the card it sits on † | 2.71 | 2.66 |
+| Neutral badge text on card | 7.48 | 7.48 |
+| Neutral badge border on card (needs 3:1) | 4.64 | 4.89 |
+| Pending tint vs card | 2.05 | 2.66 |
+| Approved tint vs card | 1.27 | 1.64 |
+| **Pending's pull over Approved** | **1.62x** | **1.62x** |
+| Structure: app bar title / section rule / empty icon in `primary` on scaffold (needs 3:1) | 6.50 | 8.92 |
+| Structure: attention section rule in `attention` on scaffold (needs 3:1) | 6.27 | 8.16 |
 
 Verified against the rendered panel, not just computed: the light and dark values
 above were sampled pixel-by-pixel off a Redmi (HyperOS, Android 16) on
@@ -385,21 +444,28 @@ above were sampled pixel-by-pixel off a Redmi (HyperOS, Android 16) on
 that render is what caught the Pending chip reading brown in dark, and rendering
 the panel *at size* is what caught light's warning panel being the weak mode.
 
-**Confirmed on-device 2026-07-24, both modes, zero drift.** Every value below was
-read off the Redmi's own framebuffer, not a software render — HyperOS applies no
-colour transform of its own:
+**Confirmed on-device 2026-07-25, both modes, zero drift.** Every role below was
+read off the Redmi's own framebuffer (HyperOS, Android 16) across both screens of
+the presence preview. HyperOS applies no colour transform of its own — each value
+appears as its exact spec hex.
 
-| Sampled on device | light | dark |
+| Role | light | dark |
 |---|---|---|
-| warning panel fill | `#DD8643` | `#9C531C` |
-| panel vs card | 2.78 | 2.78 |
-| panel vs scaffold | 2.66 | 3.13 |
-| rule/icon on panel fill | 5.13 | 4.99 |
-| Pending badge fill | `#F7E3D4` (1.24 vs card) | `#9C531C` (2.78 vs card) |
-| Approved badge fill | `#D5E6DB` (1.30) | `#2A4E3F` (1.71) |
-| Done badge fill | `#356150` (7.05) | `#8CC6AB` (8.16) |
-| neutral badge border | — | `#8A8780` (4.43 vs card, 5.00 vs scaffold) |
-| neutral badge text | — | `#B3B0A9` (8.28 vs scaffold) |
+| `background` | `#FAF5EE` | `#1F1916` |
+| `surface` | `#FFFCF8` | `#2B2421` |
+| `surfaceContainer` | `#F4EDE3` | `#2B2421` |
+| `outlineVariant` | `#DED3C3` | `#4C4139` |
+| `outline` | `#7A7266` | `#9C9083` |
+| `onSurface` | `#1C1A16` | `#F0E8DC` |
+| `onSurfaceVariant` | `#57534B` | `#C0B4A4` |
+| `primary` — app bar, section rule, list icons, empty icon | `#356150` | `#8CC6AB` |
+| `primaryContainer` | `#D5E6DB` | `#2A4E3F` |
+| `attention` — attention section rule | `#8A4A25` | `#E3A47C` |
+| `attentionContainer` — Pending badge | `#E6A574` | `#9C531C` |
+| `attentionContainerStrong` — panel, count badge | `#DD8643` | `#9C531C` |
+| `onAttentionContainer` | `#43220F` | `#FBEDE2` |
+
+This supersedes the 2026-07-24 run, which validated the pre-§2.7 ramp.
 
 † The panel fill is **not** load-bearing and is not held to the 3:1 non-text
 floor: the panel's structure is its 3px left rule, which measures 5.13 (light) /
