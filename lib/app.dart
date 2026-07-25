@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/theme/app_text.dart';
+import 'core/theme/app_theme.dart';
 import 'features/auth/application/auth_providers.dart';
 import 'features/notifications/application/messaging_service.dart';
 import 'routing/app_router.dart';
@@ -135,7 +137,7 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (title != null)
-              Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+              Text(title, style: AppText.labelLarge),
             if (body != null) Text(body),
           ],
         ),
@@ -182,10 +184,11 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     return MaterialApp.router(
       scaffoldMessengerKey: _scaffoldMessengerKey,
       title: 'time-app',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
-        useMaterial3: true,
-      ),
+      // All visual tokens live in core/theme — see UI-RULES.md. Dark is designed
+      // alongside light, not derived from it, and follows the device setting.
+      theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: ThemeMode.system,
       // Follow the device locale: these delegates localize Material chrome and
       // the date/time pickers, and make Localizations.localeOf(context) reflect
       // the user's locale (which every display in datetime_format.dart reads).

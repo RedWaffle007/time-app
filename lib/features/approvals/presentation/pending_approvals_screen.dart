@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/format/datetime_format.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/app_tokens.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../notifications/application/outcome_notifier.dart';
@@ -49,31 +51,39 @@ class _ApprovalCard extends ConsumerWidget {
         ref.watch(profileByUidProvider(item.createdByUid)).value?.name ?? 'Someone';
 
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: Space.cardPadding,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(item.title,
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 4),
+            Text(item.title, style: context.text.titleMedium),
+            const SizedBox(height: Space.xs),
             Text(formatInstant(context, item.scheduledInstantUtc, item.timezone)),
-            Text('${item.timezone} · from $plannerName',
-                style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            Text(
+              '${item.timezone} · from $plannerName',
+              style: context.text.bodySmall
+                  ?.copyWith(color: context.colors.onSurfaceVariant),
+            ),
             if (item.note != null && item.note!.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text('“${item.note}”', style: const TextStyle(fontStyle: FontStyle.italic)),
+              const SizedBox(height: Space.sm),
+              // Quoted user content is set apart by colour, not italics.
+              Text(
+                '“${item.note}”',
+                style: context.text.bodyMedium
+                    ?.copyWith(color: context.colors.onSurfaceVariant),
+              ),
             ],
-            const SizedBox(height: 12),
+            const SizedBox(height: Space.md),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                // Rejecting is a legitimate outcome, not a destructive act — it
+                // stays a plain TextButton and never turns red (UI-RULES.md §2.5).
                 TextButton(
                   onPressed: () => _reject(context, ref),
                   child: const Text('Reject'),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: Space.sm),
                 FilledButton(
                   onPressed: () => _approve(ref),
                   child: const Text('Approve'),

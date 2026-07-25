@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/app_tokens.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../auth/application/auth_providers.dart';
 import '../application/group_providers.dart';
@@ -43,15 +45,12 @@ class GroupDetailScreen extends ConsumerWidget {
             children: [
               // Invite code with one-tap copy + share.
               Card(
-                margin: const EdgeInsets.all(16),
                 child: ListTile(
                   leading: const Icon(Icons.key),
                   title: const Text('Invite code'),
-                  subtitle: Text(
-                    group?.joinCode ?? '—',
-                    style: const TextStyle(
-                        fontSize: 22, letterSpacing: 3, fontWeight: FontWeight.bold),
-                  ),
+                  // The one place codeDisplay exists for — a named token rather
+                  // than an inline exception to the no-font-sizes rule.
+                  subtitle: Text(group?.joinCode ?? '—', style: context.codeDisplay),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -73,16 +72,19 @@ class GroupDetailScreen extends ConsumerWidget {
                   ),
                 ),
               ),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
-                child: Text('Members', style: TextStyle(fontWeight: FontWeight.bold)),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                    Space.lg, Space.sm, Space.lg, Space.xs),
+                child: Text('Members', style: context.text.titleLarge),
               ),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                    Space.lg, 0, Space.lg, Space.sm),
                 child: Text(
                   'Turn on "can plan for me" to let a member build your schedule. '
                   'Only you can grant this.',
-                  style: TextStyle(fontSize: 12),
+                  style: context.text.bodySmall
+                      ?.copyWith(color: context.colors.onSurfaceVariant),
                 ),
               ),
               for (final m in members)

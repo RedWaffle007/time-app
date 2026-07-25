@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../theme/app_theme.dart';
+import '../theme/app_tokens.dart';
+
 /// Renders an [AsyncValue] so a stuck listener can never present as an infinite
 /// spinner. A Firestore listener can sit in `loading` forever (a query that
 /// never emits data OR an error), and a bare `.when(...)` would spin silently —
@@ -127,7 +130,7 @@ class _Centered extends StatelessWidget {
   final Widget child;
   @override
   Widget build(BuildContext context) => Center(
-        child: Padding(padding: const EdgeInsets.all(24), child: child),
+        child: Padding(padding: Space.screenForm, child: child),
       );
 }
 
@@ -158,16 +161,21 @@ class _Retryable extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 40, color: Theme.of(context).colorScheme.outline),
-          const SizedBox(height: 12),
-          Text(title,
-              style: Theme.of(context).textTheme.titleMedium,
-              textAlign: TextAlign.center),
-          const SizedBox(height: 8),
+          // The empty-state recipe, UI-RULES.md §6.5. Both the icon and the
+          // detail text use onSurfaceVariant: `outline` is a border role and
+          // measures 3.65:1 (light) / 3.89:1 (dark) as text, under AA. This
+          // widget was the audit's one live instance of that bug.
+          Icon(icon,
+              size: Sizes.emptyStateIcon,
+              color: context.colors.onSurfaceVariant),
+          const SizedBox(height: Space.md),
+          Text(title, style: context.text.titleMedium, textAlign: TextAlign.center),
+          const SizedBox(height: Space.sm),
           Text(detail,
               textAlign: TextAlign.center,
-              style: TextStyle(color: Theme.of(context).colorScheme.outline)),
-          const SizedBox(height: 16),
+              style: context.text.bodySmall
+                  ?.copyWith(color: context.colors.onSurfaceVariant)),
+          const SizedBox(height: Space.lg),
           FilledButton.tonalIcon(
             onPressed: onRetry,
             icon: const Icon(Icons.refresh),

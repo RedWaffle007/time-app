@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/format/datetime_format.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/app_tokens.dart';
+import '../../../core/theme/status_style.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../routing/app_router.dart';
 import '../../auth/application/auth_providers.dart';
@@ -66,23 +69,31 @@ class _ActivityCard extends ConsumerWidget {
     final targetName =
         ref.watch(profileByUidProvider(item.targetUid)).value?.name ?? 'target';
 
+    // Card margin, padding, radius, border and elevation all come from
+    // CardTheme (UI-RULES.md §6.1) — a bare Card would inherit Material's
+    // default shadow, which the flat-by-default rule forbids.
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: Space.cardPadding,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
                 Expanded(
-                  child: Text(item.title,
-                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                  child: Text(item.title, style: context.text.titleMedium),
                 ),
-                _statusBadge(),
+                const SizedBox(width: Space.sm),
+                // ONE badge. Once an outcome exists it replaces the approval
+                // status, because "Done" strictly implies "Approved" — showing
+                // both states the same fact twice.
+                if (item.outcome case final o?)
+                  StatusBadge.outcome(o.result, context)
+                else
+                  StatusBadge.status(item.status, context),
               ],
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: Space.xs),
             // Always name the zone: this time is in the TARGET's local time, not
             // the planner's — a bare "09:00" here is the most misleading thing a
             // planner could see.
@@ -90,13 +101,16 @@ class _ActivityCard extends ConsumerWidget {
               'for $targetName · '
               '${formatInstant(context, item.scheduledInstantUtc, item.timezone)} '
               '(${item.timezone}, their local time)',
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
+              // bodySmall, not labelSmall: this reads as a sentence even though
+              // it carries metadata (UI-RULES.md §3, prose-wins tiebreaker).
+              style: context.text.bodySmall
+                  ?.copyWith(color: context.colors.onSurfaceVariant),
             ),
-            ..._outcomeLine(),
+            ..._reasonLine(context),
             // A plan can be withdrawn only while it's still pending — once the
             // target has decided, it's theirs to keep or reject.
             if (item.status == ScheduleItemStatus.pending) ...[
-              const SizedBox(height: 4),
+              const SizedBox(height: Space.xs),
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
@@ -127,9 +141,15 @@ class _ActivityCard extends ConsumerWidget {
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancel')),
+          // Destructive — one of the rationed uses of red (UI-RULES.md §2.5).
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Withdraw')),
+            style: FilledButton.styleFrom(
+              backgroundColor: ctx.colors.error,
+              foregroundColor: ctx.colors.onError,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Withdraw'),
+          ),
         ],
       ),
     );
@@ -142,45 +162,29 @@ class _ActivityCard extends ConsumerWidget {
         );
   }
 
-  /// The approval-status badge. Rejection is shown explicitly, never hidden.
-  Widget _statusBadge() {
-    final (String label, Color color) = switch (item.status) {
-      ScheduleItemStatus.pending => ('Pending', Colors.blueGrey),
-      ScheduleItemStatus.approved => ('Approved', Colors.green),
-      ScheduleItemStatus.rejected => ('Rejected', Colors.red),
-      ScheduleItemStatus.cancelled => ('Cancelled', Colors.grey),
-      ScheduleItemStatus.withdrawn => ('Withdrawn', Colors.orange),
+  /// The reason line, when the target gave one.
+  ///
+  /// The outcome itself is carried by the badge in the header — this is only the
+  /// prose. Quoted user content is distinguished by `onSurfaceVariant` colour,
+  /// never italics (UI-RULES.md §3).
+  List<Widget> _reasonLine(BuildContext context) {
+    final reason = switch (item) {
+      // Surface the rejection reason so a rejection is never a silent
+      // disappearance.
+      ScheduleItem(status: ScheduleItemStatus.rejected, :final rejectionReason?) =>
+        'Reason: $rejectionReason',
+      ScheduleItem(outcome: ScheduleOutcome(:final skipReason?)) =>
+        'Reason: $skipReason',
+      _ => null,
     };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(12),
+    if (reason == null) return const [];
+    return [
+      const SizedBox(height: Space.xs),
+      Text(
+        reason,
+        style:
+            context.text.bodySmall?.copyWith(color: context.colors.onSurfaceVariant),
       ),
-      child: Text(label, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
-    );
-  }
-
-  /// Extra lines for the outcome (Done/Skip) once the target acts.
-  List<Widget> _outcomeLine() {
-    final o = item.outcome;
-    if (o != null) {
-      final text = o.result == OutcomeResult.done
-          ? '✅ Marked done'
-          : '⏭️ Skipped${o.skipReason != null ? ' — ${o.skipReason}' : ''}';
-      return [
-        const SizedBox(height: 6),
-        Text(text, style: const TextStyle(fontWeight: FontWeight.w500)),
-      ];
-    }
-    // Surface the rejection reason so a rejection is never a silent disappearance.
-    if (item.status == ScheduleItemStatus.rejected && item.rejectionReason != null) {
-      return [
-        const SizedBox(height: 6),
-        Text('Reason: ${item.rejectionReason}',
-            style: const TextStyle(fontStyle: FontStyle.italic)),
-      ];
-    }
-    return const [];
+    ];
   }
 }

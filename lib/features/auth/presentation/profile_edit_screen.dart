@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/app_tokens.dart';
 import '../../../core/format/datetime_format.dart';
 import '../application/auth_providers.dart';
 import 'timezone_picker.dart';
@@ -108,30 +110,25 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Edit profile')),
       body: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: Space.screenForm,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             TextField(
               controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: 'Your name',
-                border: OutlineInputBorder(),
-              ),
+              // Border, fill and radius come from InputDecorationTheme.
+              decoration: const InputDecoration(labelText: 'Your name'),
               onChanged: (_) => setState(() {}),
             ),
-            const SizedBox(height: 20),
-            Text(
-              'Home timezone (required)',
-              style: Theme.of(context).textTheme.labelLarge,
-            ),
-            const SizedBox(height: 8),
+            const SizedBox(height: Space.xl),
+            Text('Home timezone (required)', style: context.text.labelLarge),
+            const SizedBox(height: Space.sm),
             OutlinedButton.icon(
               onPressed: _pickTimezone,
               icon: const Icon(Icons.public),
               label: Text(_timezone ?? 'Tap to choose'),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: Space.xl),
             const Divider(),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
@@ -153,7 +150,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                       label: Text('From ${formatTimeOfDay(context, _quietStart)}'),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: Space.md),
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: _pickQuietEnd,
@@ -163,22 +160,23 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                   ),
                 ],
               ),
-            const SizedBox(height: 32),
+            const SizedBox(height: Space.xxl),
             FilledButton(
               onPressed: _canSave ? _save : null,
               child: _saving
                   ? const SizedBox(
-                      height: 20,
-                      width: 20,
+                      height: Sizes.buttonSpinner,
+                      width: Sizes.buttonSpinner,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Text('Save changes'),
             ),
             if (_error != null) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: Space.lg),
               Text(
                 _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+                style: context.text.bodyMedium
+                    ?.copyWith(color: context.colors.error),
               ),
             ],
           ],

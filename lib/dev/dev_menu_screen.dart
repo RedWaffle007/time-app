@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../features/notifications/application/messaging_service.dart';
 import '../routing/app_router.dart';
+import '../core/theme/app_theme.dart';
+import '../core/theme/app_tokens.dart';
 
 /// ⚠️ DEV-ONLY SCAFFOLDING — NOT FOR PRODUCTION ⚠️
 ///
@@ -32,7 +34,9 @@ class DevMenuScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('DEV MENU — scaffolding only'),
-        backgroundColor: Colors.amber.shade200,
+        // The dev banner is an attention surface, not a warning — same family.
+        backgroundColor: context.attentionContainer,
+        foregroundColor: context.onAttentionContainer,
         actions: [
           IconButton(
             tooltip: 'Sign out',
@@ -43,12 +47,13 @@ class DevMenuScreen extends ConsumerWidget {
       ),
       body: ListView(
         children: [
-          const Padding(
-            padding: EdgeInsets.all(16),
+          Padding(
+            padding: const EdgeInsets.all(Space.lg),
             child: Text(
               'Dev-only launcher. Not part of a real build.\n'
               'Tap a screen to navigate the skeleton.',
-              style: TextStyle(fontStyle: FontStyle.italic),
+              style: context.text.bodySmall
+                  ?.copyWith(color: context.colors.onSurfaceVariant),
             ),
           ),
           for (final (label, route) in destinations)

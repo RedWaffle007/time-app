@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/format/datetime_format.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/app_tokens.dart';
 import '../../../core/timezone/quiet_hours.dart';
 import '../../../core/timezone/tz_resolver.dart';
 import '../../../core/widgets/async_view.dart';
+import '../../../core/widgets/warning_panel.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../groups/application/group_providers.dart';
 import '../../groups/domain/planner_grant.dart';
@@ -145,41 +148,41 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     final timezone = selectedProfile?.homeTimezone;
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: Space.screenList,
       children: [
         // Target picker. "Myself" is always first, then anyone who granted you.
-        const Text('Plan for', style: TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
+        Text('Plan for', style: context.text.titleLarge),
+        const SizedBox(height: Space.sm),
         _selfTile(),
         for (final grant in grants) _targetTile(grant),
-        const Divider(height: 32),
+        const Divider(height: Space.xxl),
 
         if (_targetUid != null) ...[
           if (timezone != null)
+            // Neutral, not a doctrine colour: this is orientation, neither an
+            // action (green) nor something waiting on you (orange).
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(Space.md),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.secondaryContainer,
-                borderRadius: BorderRadius.circular(8),
+                color: context.colors.surfaceContainer,
+                borderRadius: Radii.sm,
               ),
               child: Text(
                 _isSelf
                     ? "You're building in your local time — $timezone."
                     : "You're building in ${selectedProfile?.name ?? 'their'} "
                         "local time — $timezone.",
-                style: const TextStyle(fontSize: 13),
+                style: context.text.bodySmall
+                    ?.copyWith(color: context.colors.onSurfaceVariant),
               ),
             ),
-          const SizedBox(height: 16),
+          const SizedBox(height: Space.lg),
           TextField(
             controller: _titleController,
-            decoration: const InputDecoration(
-              labelText: 'Title (what to do)',
-              border: OutlineInputBorder(),
-            ),
+            decoration: const InputDecoration(labelText: 'Title (what to do)'),
             onChanged: (_) => setState(() {}),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: Space.lg),
           Row(
             children: [
               Expanded(
@@ -191,7 +194,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
                       : formatWallDate(context, _date!)),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: Space.md),
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: _pickTime,
@@ -203,19 +206,17 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: Space.lg),
           TextField(
             controller: _noteController,
-            decoration: const InputDecoration(
-              labelText: 'Note (optional)',
-              border: OutlineInputBorder(),
-            ),
+            decoration: const InputDecoration(labelText: 'Note (optional)'),
           ),
           if (timezone != null && _date != null && _time != null) ...[
-            const SizedBox(height: 16),
+            const SizedBox(height: Space.lg),
             Text(
               'Fires at: ${_previewLocal(context, timezone)}  ($timezone)',
-              style: const TextStyle(fontStyle: FontStyle.italic),
+              style: context.text.bodySmall
+                  ?.copyWith(color: context.colors.onSurfaceVariant),
             ),
             _dstBanner(timezone),
             _warningBanner(
@@ -224,13 +225,13 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
               selectedProfile?.quietHoursEndMinutes,
             ),
           ],
-          const SizedBox(height: 24),
+          const SizedBox(height: Space.xl),
           FilledButton(
             onPressed: (_canSave && timezone != null) ? () => _save(timezone) : null,
             child: _saving
                 ? const SizedBox(
-                    height: 20,
-                    width: 20,
+                    height: Sizes.buttonSpinner,
+                    width: Sizes.buttonSpinner,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Text('Send for approval'),
@@ -319,7 +320,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       if (warnings.lateNight) 'late night (11pm–6am)',
     ];
 
-    return _amberNote(
+    return WarningPanel(
       'This falls in ${reasons.join(' and ')}. '
       'You can still send it — they approve every item.',
     );
@@ -337,25 +338,6 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       DstAnomaly.ambiguous => 'That clock time happens twice on this date — '
           'clocks fall back. It\'ll use the first: $actual.',
     };
-    return text == null ? const SizedBox.shrink() : _amberNote(text);
-  }
-
-  Widget _amberNote(String text) {
-    return Container(
-      margin: const EdgeInsets.only(top: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.amber.withValues(alpha: 0.18),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 20),
-          const SizedBox(width: 8),
-          Expanded(child: Text(text, style: const TextStyle(fontSize: 13))),
-        ],
-      ),
-    );
+    return text == null ? const SizedBox.shrink() : WarningPanel(text);
   }
 }

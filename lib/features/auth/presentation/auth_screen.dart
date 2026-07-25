@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/app_tokens.dart';
 import '../application/auth_providers.dart';
 
 /// Sign-in screen. Google is the only provider in v1.
@@ -36,20 +38,18 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     return Scaffold(
       body: Center(
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: Space.screenForm,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                'time-app',
-                style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
+              // The only use of displaySmall in the app.
+              Text('time-app', style: context.text.displaySmall),
+              const SizedBox(height: Space.sm),
               const Text(
                 'Let a trusted friend help plan your time.',
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 48),
+              const SizedBox(height: Space.xxxl),
               if (_busy)
                 const CircularProgressIndicator()
               else
@@ -59,10 +59,13 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                   label: const Text('Continue with Google'),
                 ),
               if (_error != null) ...[
-                const SizedBox(height: 24),
+                const SizedBox(height: Space.xl),
                 Text(
                   _error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                  // An auth failure is a real error — one of the rationed uses
+                  // of red (UI-RULES.md §2.5).
+                  style: context.text.bodyMedium
+                      ?.copyWith(color: context.colors.error),
                   textAlign: TextAlign.center,
                 ),
               ],

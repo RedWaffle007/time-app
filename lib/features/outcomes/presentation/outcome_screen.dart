@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/format/datetime_format.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/app_tokens.dart';
+import '../../../core/theme/status_style.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../routing/app_router.dart';
 import '../../home/presentation/account_button.dart';
@@ -76,26 +79,26 @@ class _OutcomeCard extends ConsumerWidget {
     final outcome = item.outcome;
 
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: Space.cardPadding,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(item.title,
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 4),
+            Text(item.title, style: context.text.titleMedium),
+            const SizedBox(height: Space.xs),
             Text(formatInstant(context, item.scheduledInstantUtc, item.timezone)),
-            const SizedBox(height: 12),
+            const SizedBox(height: Space.md),
             if (outcome == null)
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
+                  // Skipping is a legitimate outcome, so it gets the neutral
+                  // secondary treatment — never red (UI-RULES.md §2.5).
                   OutlinedButton(
                     onPressed: () => _skip(context, ref),
                     child: const Text('Skip'),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: Space.sm),
                   FilledButton(
                     onPressed: () => _markDone(ref),
                     child: const Text('Done'),
@@ -103,25 +106,31 @@ class _OutcomeCard extends ConsumerWidget {
                 ],
               )
             else
-              _outcomeChip(outcome),
+              _outcomeLine(context, outcome),
           ],
         ),
       ),
     );
   }
 
-  Widget _outcomeChip(ScheduleOutcome outcome) {
-    if (outcome.result == OutcomeResult.done) {
-      return const Chip(
-        avatar: Icon(Icons.check, color: Colors.green),
-        label: Text('Done'),
-      );
-    }
-    return Chip(
-      avatar: const Icon(Icons.skip_next, color: Colors.orange),
-      label: Text(outcome.skipReason == null
-          ? 'Skipped'
-          : 'Skipped — ${outcome.skipReason}'),
+  /// The recorded outcome. This used to be a second, private status→colour
+  /// mapping that disagreed with the planner's view; both now read the one
+  /// mapping in `status_style.dart` (UI-RULES.md §2.3).
+  Widget _outcomeLine(BuildContext context, ScheduleOutcome outcome) {
+    return Row(
+      children: [
+        StatusBadge.outcome(outcome.result, context),
+        if (outcome.skipReason case final reason?) ...[
+          const SizedBox(width: Space.sm),
+          Expanded(
+            child: Text(
+              reason,
+              style: context.text.bodySmall
+                  ?.copyWith(color: context.colors.onSurfaceVariant),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
