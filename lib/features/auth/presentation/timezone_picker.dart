@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:timezone/timezone.dart' as tz;
 
+import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_tokens.dart';
 
 /// A full-screen searchable list of IANA timezone names. Returns the chosen
@@ -37,7 +38,7 @@ class _TimezonePickerState extends State<TimezonePicker> {
             child: TextField(
               autofocus: true,
               decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search),
+                prefixIcon: Icon(AppIcons.search),
                 hintText: 'Search e.g. Karachi, London, New_York',
               ),
               onChanged: (v) => setState(() => _query = v),

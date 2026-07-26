@@ -1752,3 +1752,147 @@ empty state gained the §6.5 recipe with a `primary` icon, and the error/timeout
 icon stays `onSurfaceVariant`.
 
 Full values and the re-measured contrast table: **UI-RULES.md** §2.2, §2.7, §7.
+
+## Icon system — one vocabulary, two rules, and a shipped notification defect (2026-07-25)
+
+Icons were the last uncodified visual axis. Colour got `status_style.dart`, type
+got the `TextTheme`, spacing got `Space` — icons had nothing, so 47 `Icons.*`
+literals sat at call sites across 17 files with no rule about which glyph meant
+what. This is the same drift the type scale was fixed for (18 on two screens, 17
+on a third, for one element), caught earlier because the palette work made the
+pattern recognisable.
+
+### What the audit found — the reason this is a system, not a catalogue
+
+**One glyph doing several jobs** (the damaging direction):
+- **`Icons.check` had three jobs** — the Approved badge, the Done badge, and "this
+  row is selected" in the schedule builder (twice). Affirmation and selection are
+  not the same thing, and a user who learns the check as "agreed" is then shown it
+  as "highlighted."
+- **`Icons.inbox_outlined` had three jobs** — `AsyncView`'s default empty icon,
+  the pending-approvals empty state, and the app-bar **action** that navigates to
+  the approvals queue. The same glyph meant "there is nothing here" and "go to
+  your queue" — opposite messages.
+- **`Icons.login` had two jobs** — sign in, and join a group.
+
+**Several glyphs for one concept:** three clock/calendar glyphs (`schedule`,
+`access_time`, `event`) with no rule about which belongs where. Worse,
+`Icons.schedule` and `Icons.access_time` are the *same drawing* in Material, so
+the Pending badge and the time picker were already rendering an identical glyph
+under two different names.
+
+**Fill weight silently encoding a third meaning.** The nav bar uses
+outlined-unselected / filled-selected correctly. But `groups_screen.dart` used
+filled `Icons.group` in a list tile where nav uses `group_outlined` for the same
+concept; and the schedule builder used `person_outline` for "Myself" versus
+`person` for other targets — **fill weight encoding self-vs-other**, a convention
+that exists nowhere else in the app and that no user could decode.
+
+**A name that contradicts §2.4.** `warning_panel.dart` used
+`Icons.warning_amber_rounded` while UI-RULES §2.4 states "Amber is banned." The
+rendered colour was always correct (`onAttentionContainer`); the collision is in
+the *name*, which is a Material naming artifact, not our hue. Resolved by naming
+the concept `AppIcons.warning` so no call site ever types "amber" again.
+
+### Decided — `lib/core/theme/app_icons.dart`, the one vocabulary
+
+Same shape as `status_style.dart`: one file, and no call site names a glyph.
+Names are **semantic, never glyph-named** — `AppIcons.pending`, not
+`AppIcons.schedule`. Same reasoning as `attention` versus `tertiary`: the call
+site reads the meaning, and the glyph can be re-picked without touching a screen.
+`status_style.dart` now pulls its icons from `AppIcons` too, so there is genuinely
+one source rather than two files that happen to agree.
+
+**Rule 1 — one concept, one glyph.** Resolutions taken:
+- `approved` = `check` (they agreed) · `done` = `task_alt` (they did it) ·
+  `selected` = `check_circle` (filled — see rule 2). Three concepts, three glyphs.
+- `pending` = `pending_outlined`, NOT `schedule`. This also breaks the accidental
+  tie with `time` = `access_time`, which was the same drawing.
+- `approvals` (the queue destination) = `assignment_turned_in_outlined`, distinct
+  from `emptyGeneric` = `inbox_outlined`. An empty inbox and a queue you are being
+  sent to are different messages and no longer share a glyph.
+- `joinGroup` = `group_add_outlined`, distinct from `signIn` = `login`.
+
+**Rule 2 — filled = selected or active; outlined = available or at rest.** Only
+the nav bar has a selected state today, so in practice nav destinations carry both
+variants and everything else is outlined. This is the same instinct as the §2.7
+firewall — a visual weight is allowed to carry exactly one meaning — applied to
+the fill axis of a glyph instead of the fill of a shape.
+
+Consequence, accepted deliberately: **"Myself" and other targets in the schedule
+builder now render the same person glyph.** The distinction is carried by the
+label ("Myself" versus the person's name) and the subtitle, both of which are
+legible. Fill weight was not — it was a private convention. This is the icon-axis
+version of §2.6(3), "never encode state in colour alone."
+
+**Colour of icons — no new rules, just §2.7 restated in icon terms.** Structural
+icons are `primary` (already delivered by `listTileTheme.iconColor` and
+`appBarTheme`); status icons take their colour from `statusStyle`; `AsyncView`'s
+error and timeout icons stay `onSurfaceVariant` (§6.5's deliberate carve-out —
+green means affirmation and a failure is neither); the warning panel's icon stays
+`onAttentionContainer` (§6.3). **No icon is given an inline colour at a call
+site.** This feature cannot touch the palette and does not.
+
+**Tokens.** `Sizes.listIcon` and `Sizes.appBarIcon` (both 24) added, so the two
+most common icon sizes in the app are stated rather than inherited implicitly from
+Material.
+
+**Enforced.** `ui_rules_lint_test.dart` gains a rule banning bare `Icons.` in every
+governed file. Deliberately strict: "it's a one-off" is exactly how the type-scale
+drift started. The escape hatch is adding a name to `app_icons.dart`, which costs
+one line and forces the concept question — which is the point. `lib/dev/` is
+inside the governed set, on the same reasoning as the colour firewall: the preview
+harness demonstrates the system rather than sitting outside it, and a rule with a
+door in it is not a rule.
+
+### Notification icon — a real defect in already-shipped push
+
+Found while scoping the launcher work, and worth separating from the design system
+because it affects users of a feature that is already deployed and verified:
+
+`AndroidManifest.xml` declared `default_notification_channel_id` but **no
+`com.google.firebase.messaging.default_notification_icon`**. FCM therefore fell
+back to `@mipmap/ic_launcher`, and since Android 5.0 the notification small icon
+is rendered as an **alpha-channel silhouette** — a full-colour launcher PNG
+becomes a white blob. Every tray notification the shipped Worker has ever
+triggered would have rendered that way. The foreground verification on 2026-07-24
+did not catch it because a foreground message is drawn by our own in-app banner
+and never touches the system small-icon path at all.
+
+Fixed with a **vector** `res/drawable/ic_notification.xml` (white on transparent,
+a simple clock ring plus hands — simple enough to survive silhouetting at 24dp),
+one file instead of five PNG densities, plus
+`default_notification_color` → `@color/notification_accent` so the silhouette
+tints our green instead of system grey.
+
+**Tint value = the LIGHT `primary`, `#356150`, as a single fixed value.** The tray
+sits on the *system's* surface, not ours, so our light/dark pair does not map onto
+it — there is no "dark mode" for us to answer there, only the OS's. Held to the
+same standard as everything else: **verify on the Redmi in both system themes
+before calling it done** (§8), by the same framebuffer sampling that caught the
+Pending chip reading brown.
+
+### Deliberately NOT done in this pass — logged so they are not lost
+- **Launcher artwork (adaptive icon + `<monochrome>` themed-icon layer).** The app
+  still ships the stock Flutter demo icon: five `mipmap-*/ic_launcher.png`, no
+  `mipmap-anydpi-v26/ic_launcher.xml`, so no adaptive icon and no themed-icon
+  support on Android 13+. Deferred as its own piece: designing a brand mark must
+  not gate the blob fix.
+- **`android:label` is still `time_app`** — the raw project name, underscore and
+  all, is what shows under the launcher icon. **Blocked on the product name**,
+  which the user has explicitly not settled and is not rushing to unblock a build
+  step. Left untouched on purpose.
+- **Per-item category icons (icon-system reading (i))** — deferred and co-designed
+  with goal tracking so `ScheduleItem` migrates once. When built, the stored value
+  must be a **stable string key**, never a raw codepoint: codepoints are not stable
+  across Flutter versions and defeat icon tree-shaking.
+
+### Enforcement gap found while writing the lint (not fixed here)
+`_governedFiles()` scans `lib/app.dart`, `lib/features`, `lib/core/widgets` and
+`lib/dev` — it does **not** scan `lib/core/theme`. So the §2.7 firewall test's
+owners set listing `lib/core/theme/status_style.dart` is dead code: that file was
+never scanned to begin with, and its doc comment claiming "a new file added to that
+directory is still governed by the firewall" is false. Harmless today (the theme
+directory is where the roles are legitimately defined, which is why it is exempt
+from §1), but the comment overstates the guarantee. Left as-is rather than widened
+silently — changing what the firewall covers is a doctrine change, not a cleanup.

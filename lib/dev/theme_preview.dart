@@ -24,6 +24,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 
+import '../core/theme/app_icons.dart';
 import '../core/theme/app_theme.dart';
 import '../core/theme/app_tokens.dart';
 import '../core/theme/status_style.dart';
@@ -101,11 +102,11 @@ class _PreviewHomeState extends State<_PreviewHome> {
         onDestinationSelected: (i) => setState(() => _index = i),
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.warning_amber_rounded),
+            icon: Icon(AppIcons.devPanels),
             label: 'Panel',
           ),
           NavigationDestination(
-            icon: Icon(Icons.view_agenda_outlined),
+            icon: Icon(AppIcons.devCards),
             label: 'Cards',
           ),
         ],

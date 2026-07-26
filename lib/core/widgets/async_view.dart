@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../theme/app_icons.dart';
 import '../theme/app_theme.dart';
 import '../theme/app_tokens.dart';
 
@@ -25,7 +26,7 @@ class AsyncView<T> extends StatefulWidget {
     required this.builder,
     this.isEmpty,
     this.emptyMessage = 'Nothing here yet.',
-    this.emptyIcon = Icons.inbox_outlined,
+    this.emptyIcon = AppIcons.emptyGeneric,
     this.timeout = const Duration(seconds: 12),
   });
 
@@ -103,7 +104,7 @@ class _AsyncViewState<T> extends State<AsyncView<T>> {
   Widget build(BuildContext context) {
     if (_timedOut && _initialLoading) {
       return _Retryable(
-        icon: Icons.hourglass_empty,
+        icon: AppIcons.timeout,
         title: 'Taking longer than expected',
         detail:
             'Still no response. Check your connection and try again — if it '
@@ -116,7 +117,7 @@ class _AsyncViewState<T> extends State<AsyncView<T>> {
       skipLoadingOnRefresh: true,
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => _Retryable(
-        icon: Icons.error_outline,
+        icon: AppIcons.error,
         title: 'Something went wrong',
         detail: '$e',
         onRetry: _retry,
@@ -209,7 +210,7 @@ class _Retryable extends StatelessWidget {
           const SizedBox(height: Space.lg),
           FilledButton.tonalIcon(
             onPressed: onRetry,
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(AppIcons.retry),
             label: const Text('Retry'),
           ),
         ],

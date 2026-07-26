@@ -20,6 +20,7 @@ lib/core/theme/
   app_theme.dart      ThemeData light + dark, all component themes
   app_tokens.dart     spacing, radius, elevation, duration
   app_text.dart       the TextTheme
+  app_icons.dart      concept -> glyph — the ONE icon vocabulary (§6.6)
   status_style.dart   status/outcome -> (label, colour, treatment) — the ONE mapping
 ```
 
@@ -36,6 +37,7 @@ lib/core/theme/
 | `BorderRadius.circular(12)` | `Radii.md` |
 | `elevation: 2` | see §5 — flat by default |
 | emoji as status (`✅`, `⏭️`) | an `Icon` from the status style |
+| `Icons.check`, any bare `Icons.*` | a concept from `AppIcons` — see §6.6 |
 
 This mirrors the existing hard rule that all date/time rendering goes through
 `core/format/datetime_format.dart`. Same reasoning, same enforcement.
@@ -409,6 +411,55 @@ honest there.
 **The error and timeout states are NOT green.** Green means action and
 affirmation; a failure is neither. `AsyncView`'s `_Retryable` icon stays
 `onSurfaceVariant`. Only the genuine empty state takes `primary`.
+
+### 6.6 Icons
+
+Always via a concept name from `app_icons.dart` — **never a bare `Icons.*` at a
+call site**, same rule as the status badge and the warning panel. Names are
+semantic, not glyph-named: `AppIcons.pending`, never `AppIcons.schedule`. The call
+site reads the meaning; the glyph can be re-picked without touching a screen.
+
+**Two rules govern the vocabulary.**
+
+> **1. One concept, one glyph.** A glyph means exactly one thing in this app.
+
+Before this file existed, `Icons.check` was the Approved badge, the Done badge and
+"this row is selected"; `Icons.inbox_outlined` was both "there is nothing here"
+and "go to your queue"; and `Icons.login` was both sign-in and join-a-group. If
+you need a glyph for a new concept, add the concept — do not reuse a neighbour.
+
+> **2. Filled = selected or active. Outlined = available or at rest.**
+
+Only the navigation bar has a selected state today, so in practice nav
+destinations carry both variants and **everything else is outlined**. Fill weight
+is not available to encode anything else — the schedule builder previously used
+`person_outline` vs `person` to mean *self vs other*, a private convention no user
+could decode. This is the icon-axis form of §2.6(3): the label informs, the glyph
+reinforces.
+
+**Colour** — §2.7 restated, no new rules:
+
+| Icon | Colour | From |
+|---|---|---|
+| Structural (app bar, list tiles, empty state) | `primary` | `appBarTheme` / `listTileTheme` / §6.5 |
+| Status and outcome badges | per status | `statusStyle()` |
+| Error and timeout | `onSurfaceVariant` | §6.5 — a failure is not affirmation |
+| Warning panel | `onAttentionContainer` | §6.3 |
+
+**No icon is given an inline colour at a call site.**
+
+**Size** — `Sizes.listIcon` / `Sizes.appBarIcon` (24), `Sizes.emptyStateIcon` (40),
+`Sizes.inlineIcon` (20), `Sizes.badgeIcon` (14). Never a literal.
+
+**Note on `AppIcons.warning`.** Its glyph is Material's
+`warning_amber_rounded`. The name is a Material naming artifact and has nothing to
+do with the amber banned in §2.4 — the icon renders in `onAttentionContainer` on
+the attention fill. Naming the concept `warning` is precisely so no call site ever
+types "amber" again.
+
+**Enforced.** `ui_rules_lint_test.dart` rejects any bare `Icons.` in a governed
+file, `lib/dev/` included — the preview harness demonstrates the system rather than
+sitting outside it.
 
 ---
 

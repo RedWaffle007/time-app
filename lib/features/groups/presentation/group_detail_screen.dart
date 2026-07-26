@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/widgets/async_view.dart';
@@ -47,7 +48,7 @@ class GroupDetailScreen extends ConsumerWidget {
               // Invite code with one-tap copy + share.
               Card(
                 child: ListTile(
-                  leading: const Icon(Icons.key),
+                  leading: const Icon(AppIcons.inviteCode),
                   title: const Text('Invite code'),
                   // The one place codeDisplay exists for — a named token rather
                   // than an inline exception to the no-font-sizes rule.
@@ -57,14 +58,14 @@ class GroupDetailScreen extends ConsumerWidget {
                     children: [
                       IconButton(
                         tooltip: 'Copy code',
-                        icon: const Icon(Icons.copy),
+                        icon: const Icon(AppIcons.copy),
                         onPressed: group == null
                             ? null
                             : () => _copyCode(context, group.joinCode),
                       ),
                       IconButton(
                         tooltip: 'Share invite',
-                        icon: const Icon(Icons.share),
+                        icon: const Icon(AppIcons.share),
                         onPressed: group == null
                             ? null
                             : () => _shareCode(group.joinCode, group.name),

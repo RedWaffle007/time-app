@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 
+import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../notifications/application/messaging_service.dart';
@@ -114,7 +115,7 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
             const SizedBox(height: Space.sm),
             OutlinedButton.icon(
               onPressed: _pickTimezone,
-              icon: const Icon(Icons.public),
+              icon: const Icon(AppIcons.timezone),
               label: Text(_timezone ?? 'Detecting… tap to choose'),
             ),
             const SizedBox(height: Space.sm),

@@ -8,6 +8,10 @@
 
 - **`mvp-spec.md` is the source of truth for what to build.** Read it before implementing anything.
 - **`feature-ideas.md` is the parked backlog and is NOT part of this build.** Do not implement from it.
+  - **One exception, explicitly directed by the user on 2026-07-25: goal / effort
+    tracking is UNPARKED** and is queued build item 3 below. Its "Decided (not open
+    questions)" block in feature-ideas.md is binding. Nothing else in that file is
+    unparked by this — the rule still holds for every other entry.
 
 ## The core loop (everything in v1 serves this)
 
@@ -17,7 +21,7 @@ If a feature doesn't serve this loop, it's parked.
 
 **Completion/skip → notify planner is non-negotiable** — it's what closes the accountability loop; it ships, it does not get cut.
 
-## Status — where we actually are (as of 2026-07-24)
+## Status — where we actually are (as of 2026-07-25)
 
 **The non-alarm core loop is CODE-COMPLETE.** Every screen in the loop above is
 built: groups + invites, planner-grant consent, schedule builder (in the target's
@@ -68,7 +72,35 @@ or in DECISIONS.md.
   the View action while the recipient was foregrounded. The `c3b921e` banner fix
   works. The "unverified delivery path" caveat is retired.
 
-**Unverified — still open:**
+**ALSO SHIPPED 2026-07-24 (later) — do not re-open as "queued"**
+(DECISIONS.md 2026-07-24 "Group A SHIPPED" + "status stamp"):
+- **`_registeredUid` latch fix. SHIPPED** (`41f7182`). All four parts landed: the
+  latch is set only after a successful token write, `requestPermission` moved
+  inside the `try`, a 15s timeout on both FCM calls, and retry on
+  resume/auth-change with a 30s cooldown plus a user-visible `failed` status. The
+  write-once schema is confirmed live on-device (`createdAt` frozen,
+  `lastRegisteredAt` advancing).
+- **Group A — event-discriminated push endpoint. SHIPPED + DEPLOYED**
+  (`8f103e6`, `95fe62c`). Four events (created / withdrawn / decided / outcome),
+  authz **branched by event**, recipient computed structurally, per-event dedup in
+  FLAT fields. Worker deployed on the `{event}` contract; a negative probe with an
+  old-shape `{outcome}` body returns 400, proving the new contract is live.
+- **Group C — planner withdraw. SHIPPED + DEPLOYED** (same commits). Rules ruleset
+  `1ced7bb3-ddc8-4dfe-ab27-ae35e60d4a63` (2026-07-24T21:18Z); the withdraw branch
+  is confirmed in the *deployed* source and the earlier fcmTokens + item-create
+  `status` blocks did not regress.
+- **Design system + UI-RULES.md. SHIPPED** (`c43a4a3` → `c87012b`). Tokens, the
+  one status mapping, the lint, the structure/state/temperature doctrine and the
+  filled-vs-line firewall. Colour is **committed and closed** — see the standing UI
+  requirement above.
+
+**Unverified — still open.** Ahead of the numbered list:
+**Group A/C four-event foreground retest — BLOCKED on the friend.** All four events
+require creator != target, so none can be tested on one account (self-planned items
+are skipped by the self-planned guard). Expect `sent:1` per event with
+`wrangler tail` running: created / decided / outcome / withdrawn. Foreground only —
+passing it does NOT close item 1.
+
 1. **BACKGROUNDED / killed-app delivery.** The one that actually matters. The
    verified run was *foregrounded*, which sidesteps OEM background policy entirely —
    a live process gets the message via `onMessage` regardless of Xiaomi. System-tray
@@ -85,15 +117,57 @@ or in DECISIONS.md.
    the user's language and render local digits — **blocked: no iOS target is wired
    up yet.** (DECISIONS.md, 2026-07-22.)
 
-**Queued build work (agreed order, 2026-07-24 — not started):**
-- **Next: `_registeredUid` latch fix.** Known defect, independent of the rules bug
-  that exposed it: the latch is set before the `await`, so ONE transient failure
-  disables token registration for the whole session with no retry and no
-  user-visible signal. Deploying the rules removed today's trigger, not the failure
-  mode. Four-part fix (latch only after a successful write; `requestPermission`
-  inside the `try`; timeout; retry on resume/auth-change) in DECISIONS.md (B).
-  **Ahead of Group A** — Group A puts three more event types on this same path.
-- **Then: Group A** generalized event endpoint + Group C withdrawal event.
+**Queued build work (agreed order, 2026-07-25 feature-planning pass — not started).**
+One feature at a time, plan → sign-off → build. Most strictly for goals.
+1. **Icon system (ii)+(iii).** (ii) Codify icon usage the way `status_style.dart`
+   codified colour — one `app_icons.dart` vocabulary, a UI-RULES section, a
+   mechanical lint. Icons are currently ad hoc across screens and
+   outlined-vs-filled is inconsistent outside the nav bar. (iii) Launcher +
+   **notification small icon** — the white-on-transparent tray icon is missing, so
+   Android falls back to the launcher icon and renders a blob. This is a real
+   defect in already-shipped push. **First** because archive introduces new icons
+   and the vocabulary should be settled before they land.
+2. **Archive + app lock — one feature, the privacy story.** Archive = Group D's
+   per-user, UI-only soft-archive of **settled** items (design already fully
+   decided, DECISIONS.md "Group D — CHOSEN"; this is pure implementation). App lock
+   = biometric/PIN on open + `FLAG_SECURE`/hide-in-recents, which DECISIONS.md
+   named as **the recommended v1 answer** to the delete-for-me worry. Archive
+   declutters; app lock answers "someone picks up my unlocked phone." The user's
+   concern was privacy, not just decluttering — **they ship together.**
+   Decided: **one shared Archived screen** from the account menu, not per-tab.
+   Needs a rules change (`users/{uid}/state/{doc}`, owner-only) → **coordinated
+   deploy**: rules first, verify the *deployed source*, then install.
+3. **Goal / effort tracking.** The big one. Needs its own doctrine pass BEFORE any
+   code (see the carried constraints below). Unparks the feature-ideas.md
+   entry — see the note under "Source of truth".
+
+**Carried into the goals phase (agreed 2026-07-25 — do not lose):**
+- **`ScheduleItem` has NO duration field.** It carries an instant, not a span, so
+  feature-ideas.md's "log its planned duration" presumes a field that does not
+  exist. Decide first: (a) add `durationMinutes` to `ScheduleItem` — model, builder
+  UI, create-rules, three card screens — or (b) effort is logged separately.
+- **Icon-system (i) — per-item category icons — is DEFERRED and co-designed with
+  goals**, so `ScheduleItem` migrates ONCE, not twice. Use a stable string key,
+  never a raw codepoint.
+- **Answer "who can see my goal stats" TOGETHER with the deferred share-a-group
+  profile-scoping question (item 7 below).** Same question; do not solve it twice.
+- **If goals includes charts, write the UI-RULES progress/chart sections FIRST** —
+  doctrine then code, same order as the theme. UI-RULES.md today has no data-viz
+  section and no progress recipe, and `app_theme.dart` themes no progress
+  indicator.
+- Already decided in feature-ideas.md, not open: effort unit is **minutes**;
+  visibility is **owner-controlled, private by default, its own share list — NOT a
+  reuse of `plannerGrants`**; items count only via an explicit `goalId` set at
+  creation, never retroactively.
+
+**Explicitly DEFERRED, not dropped (2026-07-25) — logged so it isn't lost again:**
+- **Group B — "seen" status.** Fully designed 2026-07-23 (DECISIONS.md "Group B"),
+  never built: item-level not app-level, pending-only, three states including the
+  high-value *absent* one (`Sent 3d ago · not seen yet`), no push. **Deferred to
+  keep this pass from ballooning — it is a separate feature, not a cut.** Note its
+  dependency: it needs locale-aware **relative-time** formatting added to
+  `core/format/datetime_format.dart`, which does not exist yet (goals will likely
+  want it too).
 
 **Open product decisions — deferred until AFTER the first real loop test:**
 6. **Consent model: toggle vs. request-driven.** Current = target flips a

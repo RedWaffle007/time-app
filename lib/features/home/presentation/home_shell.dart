@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/status_style.dart';
 import '../../groups/presentation/groups_screen.dart';
 import '../../outcomes/presentation/outcome_screen.dart';
@@ -54,19 +55,20 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         onDestinationSelected: (i) => setState(() => _index = i),
         destinations: [
           const NavigationDestination(
-            icon: Icon(Icons.group_outlined),
-            selectedIcon: Icon(Icons.group),
+            icon: Icon(AppIcons.navGroups),
+            selectedIcon: Icon(AppIcons.navGroupsSelected),
             label: 'Groups',
           ),
           NavigationDestination(
-            icon: PendingCountBadge(count: pending, child: const Icon(Icons.event_outlined)),
-            selectedIcon:
-                PendingCountBadge(count: pending, child: const Icon(Icons.event)),
+            icon: PendingCountBadge(
+                count: pending, child: const Icon(AppIcons.navSchedule)),
+            selectedIcon: PendingCountBadge(
+                count: pending, child: const Icon(AppIcons.navScheduleSelected)),
             label: 'My Schedule',
           ),
           const NavigationDestination(
-            icon: Icon(Icons.insights_outlined),
-            selectedIcon: Icon(Icons.insights),
+            icon: Icon(AppIcons.navActivity),
+            selectedIcon: Icon(AppIcons.navActivitySelected),
             label: 'Activity',
           ),
         ],

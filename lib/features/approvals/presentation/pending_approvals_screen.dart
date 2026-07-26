@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/format/datetime_format.dart';
+import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/widgets/async_view.dart';
@@ -27,7 +28,7 @@ class PendingApprovalsScreen extends ConsumerWidget {
         isEmpty: (items) =>
             !items.any((i) => i.status == ScheduleItemStatus.pending),
         emptyMessage: 'Nothing waiting for approval.',
-        emptyIcon: Icons.inbox_outlined,
+        emptyIcon: AppIcons.emptyGeneric,
         builder: (context, items) {
           final pending = items
               .where((i) => i.status == ScheduleItemStatus.pending)

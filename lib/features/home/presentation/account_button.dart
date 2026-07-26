@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/theme/app_icons.dart';
 import '../../../routing/app_router.dart';
 import '../../notifications/application/messaging_service.dart';
 
@@ -18,7 +19,7 @@ class AccountButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return PopupMenuButton<String>(
-      icon: const Icon(Icons.account_circle),
+      icon: const Icon(AppIcons.account),
       tooltip: 'Account',
       onSelected: (value) {
         switch (value) {

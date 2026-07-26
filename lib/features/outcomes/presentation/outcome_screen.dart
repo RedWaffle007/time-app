@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/format/datetime_format.dart';
+import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/theme/status_style.dart';
@@ -38,7 +39,7 @@ class OutcomeScreen extends ConsumerWidget {
             icon: Badge(
               isLabelVisible: pendingCount > 0,
               label: Text('$pendingCount'),
-              child: const Icon(Icons.inbox_outlined),
+              child: const Icon(AppIcons.approvals),
             ),
             onPressed: () => context.push(Routes.approvals),
           ),

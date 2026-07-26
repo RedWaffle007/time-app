@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/format/datetime_format.dart';
+import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/theme/status_style.dart';
@@ -34,7 +35,7 @@ class PlannerActivityScreen extends ConsumerWidget {
         // HomeShell's IndexedStack, so the default shared FAB hero tag collides.
         heroTag: 'activityFab',
         onPressed: () => context.push(Routes.scheduleBuilder),
-        icon: const Icon(Icons.add),
+        icon: const Icon(AppIcons.add),
         label: const Text('Plan an item'),
       ),
       body: AsyncView<List<ScheduleItem>>(

@@ -57,6 +57,21 @@ void main() {
           unicode: true),
       fix: 'use an Icon from status_style.dart',
     ),
+    // UI-RULES.md §6.6 — the icon vocabulary.
+    //
+    // A bare glyph at a call site is how `Icons.check` ended up meaning
+    // "approved" AND "done" AND "selected" at once, and how one inbox glyph came
+    // to mean both "nothing here" and "go to your queue". Naming the CONCEPT
+    // forces the question "is this actually a new thing?" exactly where it is
+    // cheapest to answer.
+    //
+    // `\b` does not match inside `AppIcons.`, so the vocabulary's own call sites
+    // pass while bare `Icons.` does not.
+    _Rule(
+      name: 'bare Material icon',
+      pattern: RegExp(r'\bIcons\.'),
+      fix: 'add the concept to app_icons.dart and use AppIcons.*',
+    ),
   ];
 
   test('screens use design tokens, never raw values (UI-RULES.md §1)', () {

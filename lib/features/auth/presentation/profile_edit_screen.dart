@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/format/datetime_format.dart';
@@ -125,7 +126,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
             const SizedBox(height: Space.sm),
             OutlinedButton.icon(
               onPressed: _pickTimezone,
-              icon: const Icon(Icons.public),
+              icon: const Icon(AppIcons.timezone),
               label: Text(_timezone ?? 'Tap to choose'),
             ),
             const SizedBox(height: Space.xl),
@@ -146,7 +147,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: _pickQuietStart,
-                      icon: const Icon(Icons.bedtime_outlined),
+                      icon: const Icon(AppIcons.quietHoursStart),
                       label: Text('From ${formatTimeOfDay(context, _quietStart)}'),
                     ),
                   ),
@@ -154,7 +155,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: _pickQuietEnd,
-                      icon: const Icon(Icons.wb_sunny_outlined),
+                      icon: const Icon(AppIcons.quietHoursEnd),
                       label: Text('To ${formatTimeOfDay(context, _quietEnd)}'),
                     ),
                   ),

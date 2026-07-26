@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_icons.dart';
 import '../theme/app_theme.dart';
 import '../theme/app_tokens.dart';
 
@@ -42,7 +43,7 @@ class WarningPanel extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.warning_amber_rounded, color: fg, size: Sizes.inlineIcon),
+          Icon(AppIcons.warning, color: fg, size: Sizes.inlineIcon),
           const SizedBox(width: Space.sm),
           Expanded(
             child: Text(text, style: context.text.bodySmall?.copyWith(color: fg)),

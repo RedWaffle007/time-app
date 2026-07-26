@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../application/auth_providers.dart';
@@ -55,7 +56,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
               else
                 FilledButton.icon(
                   onPressed: _signIn,
-                  icon: const Icon(Icons.login),
+                  icon: const Icon(AppIcons.signIn),
                   label: const Text('Continue with Google'),
                 ),
               if (_error != null) ...[

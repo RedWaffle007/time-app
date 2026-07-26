@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../features/notifications/application/messaging_service.dart';
 import '../routing/app_router.dart';
+import '../core/theme/app_icons.dart';
 import '../core/theme/app_theme.dart';
 import '../core/theme/app_tokens.dart';
 
@@ -50,7 +51,7 @@ class DevMenuScreen extends ConsumerWidget {
         actions: [
           IconButton(
             tooltip: 'Sign out',
-            icon: const Icon(Icons.logout),
+            icon: const Icon(AppIcons.signOut),
             onPressed: () => signOutWithTokenCleanup(ref),
           ),
         ],
@@ -69,7 +70,7 @@ class DevMenuScreen extends ConsumerWidget {
           for (final (label, route) in destinations)
             ListTile(
               title: Text(label),
-              trailing: const Icon(Icons.chevron_right),
+              trailing: const Icon(AppIcons.openRow),
               onTap: () => context.push(route),
             ),
         ],

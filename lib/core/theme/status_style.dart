@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../features/scheduling/domain/schedule_item.dart';
+import 'app_icons.dart';
 import 'app_theme.dart';
 import 'app_tokens.dart';
 
@@ -67,7 +68,7 @@ StatusStyle statusStyle(BuildContext context, ScheduleItemStatus status) {
         treatment: StatusTreatment.tinted,
         foreground: context.onAttentionContainer,
         background: context.attentionContainer,
-        icon: Icons.schedule,
+        icon: AppIcons.pending,
       );
     case ScheduleItemStatus.approved:
       return StatusStyle(
@@ -75,15 +76,15 @@ StatusStyle statusStyle(BuildContext context, ScheduleItemStatus status) {
         treatment: StatusTreatment.tinted,
         foreground: cs.onPrimaryContainer,
         background: cs.primaryContainer,
-        icon: Icons.check,
+        icon: AppIcons.approved,
       );
     // Neutral, not red: rejecting a plan is the consent model working.
     case ScheduleItemStatus.rejected:
-      return _neutral(cs, 'Rejected', Icons.close);
+      return _neutral(cs, 'Rejected', AppIcons.rejected);
     case ScheduleItemStatus.cancelled:
-      return _neutral(cs, 'Cancelled', Icons.remove_circle_outline);
+      return _neutral(cs, 'Cancelled', AppIcons.cancelled);
     case ScheduleItemStatus.withdrawn:
-      return _neutral(cs, 'Withdrawn', Icons.undo);
+      return _neutral(cs, 'Withdrawn', AppIcons.withdrawn);
   }
 }
 
@@ -98,11 +99,11 @@ StatusStyle outcomeStyle(BuildContext context, OutcomeResult result) {
         treatment: StatusTreatment.solid,
         foreground: cs.onPrimary,
         background: cs.primary,
-        icon: Icons.check,
+        icon: AppIcons.done,
       );
     // Skipping is a legitimate outcome, not a failure. Neutral, never red.
     case OutcomeResult.skipped:
-      return _neutral(cs, 'Skipped', Icons.skip_next);
+      return _neutral(cs, 'Skipped', AppIcons.skipped);
   }
 }
 

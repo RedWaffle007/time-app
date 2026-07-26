@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/theme/app_icons.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../home/presentation/account_button.dart';
@@ -22,7 +23,7 @@ class GroupsScreen extends ConsumerWidget {
         actions: [
           IconButton(
             tooltip: 'Join by code',
-            icon: const Icon(Icons.login),
+            icon: const Icon(AppIcons.joinGroup),
             onPressed: () => _showJoinDialog(context, ref),
           ),
           const AccountButton(),
@@ -34,7 +35,7 @@ class GroupsScreen extends ConsumerWidget {
         // hero tag collides. See heroTag on PlannerActivityScreen's FAB too.
         heroTag: 'groupsFab',
         onPressed: () => _showCreateDialog(context, ref),
-        icon: const Icon(Icons.add),
+        icon: const Icon(AppIcons.add),
         label: const Text('New group'),
       ),
       body: AsyncView<List<Group>>(
@@ -46,10 +47,10 @@ class GroupsScreen extends ConsumerWidget {
           children: [
             for (final g in groups)
               ListTile(
-                leading: const Icon(Icons.group),
+                leading: const Icon(AppIcons.group),
                 title: Text(g.name),
                 subtitle: Text('Code: ${g.joinCode} · ${g.memberUids.length} member(s)'),
-                trailing: const Icon(Icons.chevron_right),
+                trailing: const Icon(AppIcons.openRow),
                 onTap: () => context.push('/groups/${g.id}'),
               ),
           ],

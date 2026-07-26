@@ -73,6 +73,12 @@ abstract final class Sizes {
   /// Empty-state icon (UI-RULES.md §6.5).
   static const double emptyStateIcon = 40;
 
+  /// A list-tile leading icon and an app-bar action icon (UI-RULES.md §6.6).
+  /// Both are Material's default 24 — named so the value is stated rather than
+  /// inherited implicitly, and so changing it is one edit.
+  static const double listIcon = 24;
+  static const double appBarIcon = 24;
+
   /// Inline icon paired with body text, e.g. the warning panel.
   static const double inlineIcon = 20;
 

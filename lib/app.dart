@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/theme/app_icons.dart';
 import 'core/theme/app_text.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/application/auth_providers.dart';
@@ -79,7 +80,7 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
           "Couldn't set up notifications on this device — you may not be "
           'notified when someone plans or completes an item.',
         ),
-        leading: const Icon(Icons.notifications_off_outlined),
+        leading: const Icon(AppIcons.notificationsOff),
         actions: [
           TextButton(
             onPressed: () {

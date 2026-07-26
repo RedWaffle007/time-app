@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/format/datetime_format.dart';
+import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/timezone/quiet_hours.dart';
@@ -188,7 +189,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: _pickDate,
-                  icon: const Icon(Icons.calendar_today),
+                  icon: const Icon(AppIcons.date),
                   label: Text(_date == null
                       ? 'Pick date'
                       : formatWallDate(context, _date!)),
@@ -198,7 +199,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: _pickTime,
-                  icon: const Icon(Icons.access_time),
+                  icon: const Icon(AppIcons.time),
                   label: Text(_time == null
                       ? 'Pick time'
                       : formatTimeOfDay(context, _time!)),
@@ -250,10 +251,10 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     return Card(
       color: selected ? Theme.of(context).colorScheme.primaryContainer : null,
       child: ListTile(
-        leading: const Icon(Icons.person_outline),
+        leading: const Icon(AppIcons.person),
         title: const Text('Myself'),
         subtitle: profile == null ? null : Text(profile.homeTimezone),
-        trailing: selected ? const Icon(Icons.check) : null,
+        trailing: selected ? const Icon(AppIcons.selected) : null,
         onTap: () => setState(() {
           _isSelf = true;
           _targetUid = me.uid;
@@ -269,10 +270,10 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     return Card(
       color: selected ? Theme.of(context).colorScheme.primaryContainer : null,
       child: ListTile(
-        leading: const Icon(Icons.person),
+        leading: const Icon(AppIcons.person),
         title: Text(profile?.name ?? grant.targetUid),
         subtitle: profile == null ? null : Text(profile.homeTimezone),
-        trailing: selected ? const Icon(Icons.check) : null,
+        trailing: selected ? const Icon(AppIcons.selected) : null,
         onTap: () => setState(() {
           _isSelf = false;
           _targetUid = grant.targetUid;
