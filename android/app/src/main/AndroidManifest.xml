@@ -18,6 +18,21 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="high_importance_channel" />
+        <!-- Small icon + tint for tray notifications.
+
+             WITHOUT the icon line, FCM falls back to @mipmap/ic_launcher — and
+             because Android renders the small icon as an alpha silhouette, a
+             full-colour launcher PNG shows up as a white blob. That was the
+             behaviour of every tray notification this app has ever sent; the
+             2026-07-24 delivery verification did not catch it because a
+             FOREGROUND message is drawn by our own in-app banner and never
+             touches the system small-icon path. See DECISIONS.md 2026-07-25. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_notification" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/notification_accent" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        The tint Android applies to the notification small-icon silhouette and to
+        the app name in the notification shade.
+
+        This is the LIGHT `primary` from UI-RULES.md §2.2 (#356150), used as a
+        single fixed value rather than a light/dark pair. The tray is the
+        SYSTEM's surface, not ours — our two modes do not apply there, only the
+        OS's, so there is no second value for us to supply. Held to the same
+        standard as every other colour in the app: verify on-device in both
+        system themes (UI-RULES.md §8).
+
+        Keep in step with `primary` in lib/core/theme/app_colors.dart. This is
+        the one place a palette hex legitimately lives outside that file, because
+        the Android resource system cannot read Dart.
+    -->
+    <color name="notification_accent">#FF356150</color>
+</resources>
