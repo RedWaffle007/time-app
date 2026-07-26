@@ -55,6 +55,27 @@ service cloud.firestore {
       match /fcmTokens/{token} {
         allow read, write: if signedIn() && request.auth.uid == uid;
       }
+
+      // ---- users/{uid}/state/{doc} ----
+      // Per-user, view-only client state. Today the only doc is `archived`
+      // (Group D soft-archive): an `items` map of itemId → archivedAt naming
+      // the settled items this user has hidden from their OWN views.
+      //
+      // Owner-only, exactly like fcmTokens above, and that is the whole point of
+      // the shape: the archive flag lives in the ARCHIVER's subtree, never on the
+      // shared item doc, so a user structurally cannot hide (or un-hide) anything
+      // in someone else's view. No cross-user read is opened, and no item write
+      // is needed to archive — which is why this rule can be this small.
+      //
+      // Settled-only is NOT enforced here, deliberately (DECISIONS.md
+      // "Group D — CHOSEN"): the flag is per-user and view-only, so a bypass
+      // affects only the bypasser's own view — no cross-user and no stats impact.
+      // Paying a get() on the item per write to enforce it was explicitly
+      // declined. Stats/summaries must read the RECORD (`scheduleItems`), never
+      // this filtered view.
+      match /state/{doc} {
+        allow read, write: if signedIn() && request.auth.uid == uid;
+      }
     }
 
     // ---- groups/{groupId} ----

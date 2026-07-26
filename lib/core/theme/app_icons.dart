@@ -89,6 +89,23 @@ abstract final class AppIcons {
   /// same `Icons.login` glyph until this file existed.
   static const IconData joinGroup = Icons.group_add_outlined;
 
+  /// Hide a settled item from your own views (Group D). Never "delete" — the
+  /// record is untouched and the other party is unaffected, and the glyph has
+  /// to say so as plainly as the label does. A bin icon here would be a lie in
+  /// exactly the way the copy rule forbids.
+  static const IconData archive = Icons.archive_outlined;
+
+  /// Put an archived item back. Distinct concept, distinct glyph — reversibility
+  /// is the point of the feature, so it does not share [archive]'s.
+  static const IconData unarchive = Icons.unarchive_outlined;
+
+  /// Secondary actions on a card, folded into a menu.
+  ///
+  /// Cards live in scrollable lists, where an always-visible inline action
+  /// invites a mis-tap mid-scroll. Anything that is not the card's primary
+  /// action belongs behind this.
+  static const IconData overflow = Icons.more_vert;
+
   /// Drill into a row.
   static const IconData openRow = Icons.chevron_right;
 
@@ -106,6 +123,13 @@ abstract final class AppIcons {
 
   /// Default empty state — nothing in this container yet (UI-RULES.md §6.5).
   static const IconData emptyGeneric = Icons.inbox_outlined;
+
+  /// The Archived view with nothing in it.
+  ///
+  /// Deliberately not [archive]: "hide this item" and "you have hidden nothing"
+  /// are opposite messages, and letting them share a glyph is the same mistake
+  /// `inbox_outlined` made for [emptyGeneric] versus [approvals].
+  static const IconData emptyArchive = Icons.inventory_2_outlined;
 
   static const IconData error = Icons.error_outline;
   static const IconData timeout = Icons.hourglass_empty;

@@ -9,6 +9,7 @@ import '../../../core/theme/app_tokens.dart';
 import '../../../core/theme/status_style.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../routing/app_router.dart';
+import '../../archive/presentation/archive_menu_button.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../home/presentation/account_button.dart';
 import '../../notifications/application/outcome_notifier.dart';
@@ -40,7 +41,10 @@ class PlannerActivityScreen extends ConsumerWidget {
       ),
       body: AsyncView<List<ScheduleItem>>(
         value: itemsAsync,
-        onRetry: () => ref.invalidate(myItemsAsPlannerProvider),
+        // Retry the SOURCE stream. `myItemsAsPlannerProvider` is a derived
+        // Provider; invalidating it would recompute the filter without ever
+        // reconnecting the Firestore listener that actually failed.
+        onRetry: () => ref.invalidate(allItemsAsPlannerProvider),
         // Self-planned items (creator == target) live in My Schedule, not here —
         // Activity is about people you plan FOR.
         isEmpty: (items) =>
@@ -92,6 +96,12 @@ class _ActivityCard extends ConsumerWidget {
                   StatusBadge.outcome(o.result, context)
                 else
                   StatusBadge.status(item.status, context),
+                // Done or skipped — the planner may clear it from their own
+                // feed when they're ready, from the card overflow. Rejected and
+                // withdrawn rows never render here at all: they are auto-hidden
+                // the moment their status is set, so this feed no longer
+                // accumulates them.
+                if (item.isManuallyArchivable) ArchiveMenuButton(item: item),
               ],
             ),
             const SizedBox(height: Space.xs),
@@ -168,10 +178,14 @@ class _ActivityCard extends ConsumerWidget {
   /// The outcome itself is carried by the badge in the header — this is only the
   /// prose. Quoted user content is distinguished by `onSurfaceVariant` colour,
   /// never italics (UI-RULES.md §3).
+  ///
+  /// In practice only the skip arm is reachable from this screen now: rejected
+  /// items are auto-hidden before they can render here, and their reason is
+  /// shown on the Archived screen instead. The rejected arm is kept rather than
+  /// deleted because it is the correct rendering for the state, and narrowing
+  /// the auto-hide rule would need it back immediately.
   List<Widget> _reasonLine(BuildContext context) {
     final reason = switch (item) {
-      // Surface the rejection reason so a rejection is never a silent
-      // disappearance.
       ScheduleItem(status: ScheduleItemStatus.rejected, :final rejectionReason?) =>
         'Reason: $rejectionReason',
       ScheduleItem(outcome: ScheduleOutcome(:final skipReason?)) =>

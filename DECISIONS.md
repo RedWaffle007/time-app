@@ -1896,3 +1896,173 @@ directory is still governed by the firewall" is false. Harmless today (the theme
 directory is where the roles are legitimately defined, which is why it is exempt
 from §1), but the comment overstates the guarantee. Left as-is rather than widened
 silently — changing what the firewall covers is a doctrine change, not a cleanup.
+
+# Archive — Group D shipped (2026-07-26)
+
+The per-user, UI-only soft-archive of settled items, built exactly to the shape
+chosen 2026-07-23 ("Group D — CHOSEN"). Nothing in that design was reopened. What
+follows is what the implementation added on top of it.
+
+## Deploy order held
+Rules first, verified before the client that writes archives existed on any
+device. Ruleset **`d4b82acc-d9d0-4dd8-8845-fe2b5528382b`**, released
+**2026-07-26T01:17:42Z**, replacing `1ced7bb3-…`. The *deployed source* was
+fetched back from the Rules API and diffed against `firestore.rules`: identical,
+`match /state/{doc}` present, and the `fcmTokens` block, the item-create `status`
+constraint and the planner-withdraw branch all confirmed unregressed. This is the
+third consecutive deploy verified by reading back the live ruleset rather than
+trusting the CLI's success line — the 2026-07-18 incident's standing lesson.
+
+## The archive read is ISOLATED from the schedule — the one thing designed beyond spec
+Archive is a **join** onto My Schedule and Activity, which makes it a new way for
+those screens to fail. If an archive read error propagated, `AsyncView` would drop
+into its error state and a *view convenience* would take down the product — on
+every offline cold start, and on any device running before this ruleset went live.
+
+**Archive can hide rows. It must never be able to hide the schedule.** Two layers,
+because one is a single edit away from being removed by someone who doesn't know
+why it's there:
+
+1. `archivedIdsStreamProvider` transforms an error event into an empty-set **data**
+   event, so the provider cannot hold an error at all.
+2. `archivedIdsProvider` exposes a plain `Set<String>`, reading `.value ?? {}` —
+   so loading *and* error both mean "nothing is archived".
+
+The filtered views use `.whenData`, which keeps the **items** stream's own loading
+and error states intact. A genuine schedule failure still reaches `AsyncView`, as
+it must; an archive failure structurally cannot.
+
+**Verified, not asserted.** `test/archive_isolation_test.dart` covers the errored
+read, the never-emitting read, both hide routes, and the record-layer constraint.
+**Every rule is mutation-checked** — asserted by making the test go red, not by
+claiming it: removing isolation layer 1 turns one test red; removing both turns
+four red, including "My Schedule still shows every item"; removing the auto-hide
+rule turns two red. The tests are pure Dart, which is why
+`currentUidProvider` now exists (a `String?` projection of `authStateProvider`, so
+the join is exercisable with no Firebase in the test).
+
+**The cost, named:** during the first frames of a cold start the archive hasn't
+resolved, so archived rows are briefly visible before filtering out. That is the
+correct direction to fail. Archive is decluttering; **app lock is the privacy
+answer**. A flash of a settled item beats a schedule that won't load.
+
+## Record layer vs view layer, made explicit in the code
+`allItemsAsTarget/PlannerProvider` are the record; `myItemsAsTarget/PlannerProvider`
+are the record minus this user's archive. The filter is applied **once**, at the
+provider seam, so it covers every surface a settled item reaches (My Schedule, the
+pending queue, Activity) — per-screen filtering would leak the first time a screen
+was forgotten. The `whenData` derivation means the "my" providers are now plain
+`Provider<AsyncValue<…>>`, not `StreamProvider`s, so **every `onRetry` was
+repointed at the source stream**: invalidating a derived Provider recomputes a
+filter without reconnecting the Firestore listener that actually failed. Three
+screens plus the theme preview's override were updated for the type change.
+
+### The records-vs-UI split, and who is bound by it
+**Every summary, stats, streak, goal-progress or records-generation consumer MUST
+read `allItemsAsTargetProvider` / `allItemsAsPlannerProvider` — never `myItemsAs*`
+or `archivedItemsProvider`.**
+
+A consumer that counted a filtered view would silently drop *every rejected item*
+(auto-hidden the instant it is rejected) and every manually archived one, out of
+that user's own numbers — with no error to trace, discoverable only by noticing the
+totals look wrong. That is the lie-by-omission "delete for me" was rejected over,
+reintroduced through the back door. Archived means **hidden from view, fully intact
+in Firestore**; the record layer is where that promise is kept.
+
+**Audited 2026-07-26: there is currently NO such consumer.** The only readers of
+item data are the four screens and the pending-count badge, all of which correctly
+want the filtered view. So this is written down as a **constraint for the
+goals/effort-tracking phase**, which is where the first record-layer consumer will
+be written. The constraint is stated in a comment at the top of the record-layer
+providers, i.e. where it can be violated, and `archive_isolation_test.dart` asserts
+that rejected and archived items are still present in the raw streams.
+
+## The terminal-state split — RESOLVED (2026-07-26, supersedes both earlier readings)
+The 2026-07-23 entry contradicted itself: the constraint block said archive is
+offered "ONLY on `done`/`skipped`", while the same entry called it "terminal-only".
+**Both are wrong.** Corrected by the user on 2026-07-26, and this is the rule:
+
+**Terminal states split two ways.**
+
+| | route | why |
+|---|---|---|
+| `rejected`, `withdrawn` | **AUTO**-hidden on entry, no tap | Rejecting *is* the clearing action. A rejected row must never sit in the Activity feed piling up. |
+| `done`, `skipped` | **MANUAL**, via the card action | Not clutter the instant they happen. Hide them when you're ready. |
+
+`pending` and `approved`-not-done are hideable by **neither** route — the
+constraint that always mattered. In the model: `isAutoArchived`,
+`isManuallyArchivable`, `isSettled`. (`cancelled` rides with the auto pair; no
+code path sets it today.)
+
+### AUTO-archive CANNOT be a write — this is structural, not a shortcut
+The obvious implementation (write an archive entry when the reject lands) is
+impossible, and the reason is worth keeping:
+
+**The person who rejects is not the person whose feed is cluttered.** A rejected
+item never appears in the *target's* own views at all — My Schedule filters
+`approved`, the pending queue filters `pending`. The pile-up is entirely in the
+**planner's** Activity feed. So for the target's reject to clear it, the target
+would need write access to the planner's `users/{uid}/state` subtree — destroying
+the single property that makes this whole shape safe: *nobody can affect anyone
+else's data.*
+
+So auto-archive is a **pure view rule** in the filtered providers: no write, no
+stored flag, no rules change, applied identically for both parties. It also cannot
+half-fail, and it survives a broken archive read — the rule reads a field already
+in hand, so a rejected row cannot reappear just because the archive doc is
+unreachable. The `users/{uid}/state/archived` set stays exclusively for manual
+done/skipped archives.
+
+### Reject-undo vs auto-archive — no collision, by construction
+**There is no reject-undo today** and none was added here: `_reject` writes and
+notifies, with no snackbar and no undo affordance. Un-rejecting is a
+*decision-reversal* feature, not an archive feature, and is not in this pass.
+
+The collision risk was creating the *wrong* undo — one that un-hides an item while
+it stays rejected, putting the clutter straight back. It cannot arise: auto-archive
+writes nothing, so there is no archive entry to undo, and the only undo that could
+ever be built is un-rejecting. Concretely, **auto-hide fires silently** — the Undo
+snackbar belongs to the manual route alone.
+
+### Consequences that had to be handled
+- **Auto-hidden items DO appear on the Archived screen, read-only** (no Unarchive).
+  Listing them keeps their record reachable; offering Unarchive would restore
+  exactly the clutter rejecting had cleared. Manual archives keep Unarchive.
+- **The Archived screen is now the SYSTEM OF RECORD for rejection reasons.** Say
+  this plainly so no future reader thinks the reason was lost: rejected rows no
+  longer render in Activity, so `_reasonLine` on the Archived screen is **the only
+  place in the app a rejection reason is readable.** This is the deliberate,
+  accepted consequence of rejected rows leaving the feed — the reason is intact in
+  Firestore and intact on screen, just in one place instead of two. Anything that
+  changes what the Archived screen lists, or stops listing auto-hidden items there,
+  **takes the reject reasons down with it.** The now-unreachable rejected arm of
+  Activity's own `_reasonLine` was kept, not deleted: it is the correct rendering
+  for the state if the auto rule is ever narrowed.
+
+## Copy and icons
+Never "delete", never a bin glyph — `AppIcons.archive` / `unarchive` are the
+archive-box pair, and `emptyArchive` is a **third** glyph so "hide this" and "you
+have hidden nothing" don't share one (the `inbox_outlined` mistake §6.6 names).
+Archiving shows a snackbar reading "Archived — hidden from your views only." with
+Undo; no confirmation dialog, because a dialog would frame as consequential
+something that is one tap from reversed. The Archived screen's empty state states
+the honesty guarantee outright rather than leaving the user to infer it.
+
+**Manual Archive lives in a card overflow menu (`AppIcons.overflow`), not an
+inline button.** Settled cards sit in scrollable lists, and an always-visible
+control whose whole job is to make a row vanish is a mis-tap waiting to happen
+mid-scroll. Archive is a *secondary* action on the card, so it goes behind the ⋮.
+
+**Unarchive on the Archived screen stays inline, and the asymmetry is deliberate.**
+There, putting a row back is the card's *primary* action — the reason you opened
+the screen — and burying a screen's primary action behind an overflow is the
+opposite trade. Same list shape, different role.
+
+## Shape as built
+- `users/{uid}/state/archived`, one `items` map of `itemId → archivedAt`.
+- Keys are raw auto-ids, not `targetUid_itemId`. A planner's archive spans several
+  targets' subcollections, so the key space is a union in principle — but two
+  20-char auto-ids colliding is not a thing that happens, and a composite key
+  would have to be threaded through every call site to buy nothing.
+- One shared **Archived** screen from the account menu, both roles, deduped by id
+  (a self-planned item is in both source streams).

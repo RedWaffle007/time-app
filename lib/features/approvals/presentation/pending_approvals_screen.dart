@@ -24,7 +24,8 @@ class PendingApprovalsScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('Pending Approvals')),
       body: AsyncView<List<ScheduleItem>>(
         value: itemsAsync,
-        onRetry: () => ref.invalidate(myItemsAsTargetProvider),
+        // Retry the SOURCE stream — see the note in planner_activity_screen.
+        onRetry: () => ref.invalidate(allItemsAsTargetProvider),
         isEmpty: (items) =>
             !items.any((i) => i.status == ScheduleItemStatus.pending),
         emptyMessage: 'Nothing waiting for approval.',

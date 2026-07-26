@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../dev/dev_menu_screen.dart';
 import '../features/approvals/presentation/pending_approvals_screen.dart';
+import '../features/archive/presentation/archived_screen.dart';
 import '../features/auth/application/auth_providers.dart';
 import '../features/auth/presentation/auth_screen.dart';
 import '../features/groups/presentation/group_detail_screen.dart';
@@ -26,6 +27,7 @@ class Routes {
   static const approvals = '/approvals';
   static const outcome = '/outcome';
   static const plannerActivity = '/activity';
+  static const archived = '/archived';
   /// Debug-only. The route itself is registered only in debug builds — see the
   /// `if (kDebugMode)` guard below. In release this path resolves to nothing.
   static const devMenu = '/dev';
@@ -91,6 +93,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.plannerActivity,
         builder: (context, state) => const PlannerActivityScreen(),
+      ),
+      // One shared Archived view for both roles, reached from the account menu
+      // rather than a per-tab control — a user archives items, not
+      // items-as-target and items-as-planner.
+      GoRoute(
+        path: Routes.archived,
+        builder: (context, state) => const ArchivedScreen(),
       ),
       // Dev scaffolding, registered ONLY in debug builds.
       //

@@ -45,7 +45,10 @@ Future<void> main() async {
   runApp(
     ProviderScope(
       overrides: [
-        myItemsAsPlannerProvider.overrideWith((ref) => Stream.value(_items)),
+        // `myItemsAsPlannerProvider` is the archive-FILTERED view, so it is a
+        // plain Provider holding an AsyncValue, not a StreamProvider. The
+        // preview feeds it directly; there is no archive in a static harness.
+        myItemsAsPlannerProvider.overrideWith((ref) => AsyncData(_items)),
         profileByUidProvider.overrideWith(
           (ref, uid) => Stream.value(
             const UserProfile(

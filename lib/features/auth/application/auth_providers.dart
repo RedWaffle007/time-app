@@ -23,6 +23,14 @@ final authStateProvider = StreamProvider<User?>((ref) {
   return ref.watch(authRepositoryProvider).authStateChanges();
 });
 
+/// The signed-in user's uid, or null. A one-line projection of
+/// [authStateProvider] that exists so everything downstream depends on a plain
+/// `String?` instead of a `firebase_auth` `User` — which makes those providers
+/// testable by overriding this, with no Firebase in the test at all.
+final currentUidProvider = Provider<String?>((ref) {
+  return ref.watch(authStateProvider).value?.uid;
+});
+
 /// Emits the current user's profile:
 ///   - null when signed out, OR signed in but no profile doc yet
 ///   - a UserProfile once the profile exists

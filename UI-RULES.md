@@ -448,6 +448,19 @@ reinforces.
 
 **No icon is given an inline colour at a call site.**
 
+**Archive is never drawn or worded as deletion.** `AppIcons.archive` /
+`AppIcons.unarchive` are the archive-box pair, and no archive affordance may use a
+bin glyph or the word "Delete"/"Remove". The document is untouched and the other
+party still sees it — copy or a glyph implying otherwise would be the exact
+dishonesty "delete for me" was rejected for (DECISIONS.md "Group D").
+`AppIcons.emptyArchive` is a **third** glyph on purpose: "hide this" and "you have
+hidden nothing" are opposite messages, and rule 1 applies.
+
+**Secondary card actions go behind `AppIcons.overflow` (⋮), not inline.** Cards
+live in scrollable lists, so an exposed control — especially one that makes the row
+disappear — is a mis-tap waiting to happen. Inline is for a card's *primary*
+action only.
+
 **Size** — `Sizes.listIcon` / `Sizes.appBarIcon` (24), `Sizes.emptyStateIcon` (40),
 `Sizes.inlineIcon` (20), `Sizes.badgeIcon` (14). Never a literal.
 

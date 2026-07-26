@@ -9,6 +9,7 @@ import '../../../core/theme/app_tokens.dart';
 import '../../../core/theme/status_style.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../routing/app_router.dart';
+import '../../archive/presentation/archive_menu_button.dart';
 import '../../home/presentation/account_button.dart';
 import '../../notifications/application/outcome_notifier.dart';
 import '../../scheduling/application/schedule_providers.dart';
@@ -48,7 +49,8 @@ class OutcomeScreen extends ConsumerWidget {
       ),
       body: AsyncView<List<ScheduleItem>>(
         value: itemsAsync,
-        onRetry: () => ref.invalidate(myItemsAsTargetProvider),
+        // Retry the SOURCE stream — see the note in planner_activity_screen.
+        onRetry: () => ref.invalidate(allItemsAsTargetProvider),
         isEmpty: (items) =>
             !items.any((i) => i.status == ScheduleItemStatus.approved),
         emptyMessage: 'No approved items yet.',
@@ -85,7 +87,18 @@ class _OutcomeCard extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(item.title, style: context.text.titleMedium),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(item.title, style: context.text.titleMedium),
+                ),
+                // Archive lives in the card overflow, not inline: this list
+                // scrolls, and an exposed control that makes a row vanish is a
+                // mis-tap waiting to happen. Present only once an outcome is
+                // recorded — a live item is hideable by no route at all.
+                if (item.isManuallyArchivable) ArchiveMenuButton(item: item),
+              ],
+            ),
             const SizedBox(height: Space.xs),
             Text(formatInstant(context, item.scheduledInstantUtc, item.timezone)),
             const SizedBox(height: Space.md),
