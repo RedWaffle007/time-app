@@ -7,6 +7,8 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 
 import 'app.dart';
+import 'features/applock/application/app_lock_providers.dart';
+import 'features/applock/data/app_lock_store.dart';
 import 'features/notifications/application/messaging_service.dart';
 import 'firebase_options.dart';
 
@@ -41,6 +43,42 @@ Future<void> main() async {
   // (see core/format/datetime_format.dart).
   await initializeDateFormatting();
 
+  // The app-lock setting, read BEFORE runApp. It has to be known synchronously
+  // by the time the first frame builds — see appLockInitiallyEnabledProvider for
+  // why an async read is not acceptable here.
+  final appLockEnabled = await _readAppLockSetting();
+
   // ProviderScope is the root of Riverpod — every provider lives under it.
-  runApp(const ProviderScope(child: TimeApp()));
+  runApp(
+    ProviderScope(
+      overrides: [
+        appLockInitiallyEnabledProvider.overrideWithValue(appLockEnabled),
+      ],
+      child: const TimeApp(),
+    ),
+  );
+}
+
+/// Reads the persisted app-lock flag, **failing SECURE**.
+///
+/// If `shared_preferences` cannot be read we must still pick an answer, and the
+/// two wrong answers are not equally wrong:
+///
+///   * guess OFF for a user who had it ON → the app opens unlocked exactly once,
+///     which is the whole failure the feature exists to prevent;
+///   * guess ON for a user who had it OFF → they get one lock screen and open it
+///     with the credential they already have.
+///
+/// The second is recoverable and the first is not, so we guess ON. It also
+/// self-heals on the one device where that guess would otherwise sting: with no
+/// biometric and no device credential, `AppLockController.unlock` finds it cannot
+/// authenticate, turns the lock off and explains — the same refuse-and-explain
+/// path the toggle uses. Nobody is locked out by this default.
+Future<bool> _readAppLockSetting() async {
+  try {
+    return await const SharedPrefsAppLockStore().isEnabled();
+  } catch (e, stack) {
+    FirebaseCrashlytics.instance.recordError(e, stack, fatal: false);
+    return true;
+  }
 }

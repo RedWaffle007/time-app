@@ -75,6 +75,17 @@ abstract final class AppIcons {
   static const IconData quietHoursEnd = Icons.wb_sunny_outlined;
   static const IconData account = Icons.account_circle;
 
+  /// The app lock, wherever it is named — the setting and the lock screen.
+  ///
+  /// Outlined, per rule 2: the lock screen is a state of the app, but this glyph
+  /// is not encoding *selected vs not*, it is naming a thing. Nothing here has a
+  /// second variant to contrast with.
+  static const IconData appLock = Icons.lock_outline;
+
+  /// The action that opens it. Distinct from [appLock]: "the lock" and "open the
+  /// lock" are different concepts, and rule 1 gives them different glyphs.
+  static const IconData unlock = Icons.lock_open_outlined;
+
   // ---- actions ----
 
   static const IconData add = Icons.add;

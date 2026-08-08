@@ -51,6 +51,15 @@ dependencies:
   http: ^1.2.2
   firebase_crashlytics: ^5.2.6
 
+  # App lock. `local_auth` prompts biometrics AND falls back to the device
+  # credential (PIN/pattern/password); `shared_preferences` holds the on/off
+  # flag. The flag is a DEVICE concern and deliberately does NOT live on the
+  # Firestore profile — locking this phone must not lock a second one. No secret
+  # is stored here: the real security is the OS keystore behind local_auth, and
+  # this is a boolean.
+  local_auth: ^2.3.0
+  shared_preferences: ^2.3.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

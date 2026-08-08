@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme/app_icons.dart';
 import 'core/theme/app_text.dart';
 import 'core/theme/app_theme.dart';
+import 'features/applock/presentation/app_lock_gate.dart';
 import 'features/auth/application/auth_providers.dart';
 import 'features/notifications/application/messaging_service.dart';
 import 'routing/app_router.dart';
@@ -185,6 +186,22 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     return MaterialApp.router(
       scaffoldMessengerKey: _scaffoldMessengerKey,
       title: 'time-app',
+      // THE APP LOCK GOES HERE — `builder`, not HomeGate, not a route.
+      //
+      // `builder` wraps the Router and the root Navigator itself, so the gate
+      // sits above EVERY route and above the navigator that `showDialog` and
+      // `showModalBottomSheet` push onto. A gate at HomeGate would cover the
+      // home screen and leave Archived, Edit profile, the schedule builder and
+      // every dialog reachable if the app was backgrounded while one was on
+      // top. A lock with a reachable door is not a lock.
+      //
+      // Snackbars and the FCM registration banner are safe for the same reason:
+      // both render inside a `Scaffold`, every Scaffold lives in a route, and
+      // every route is under `child` here — so neither can paint over the lock.
+      // `LockScreen` deliberately uses `Material` rather than `Scaffold`, so
+      // nothing can be posted onto it either.
+      builder: (context, child) =>
+          AppLockGate(child: child ?? const SizedBox.shrink()),
       // All visual tokens live in core/theme — see UI-RULES.md. Dark is designed
       // alongside light, not derived from it, and follows the device setting.
       theme: AppTheme.light,

@@ -5,6 +5,8 @@ import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/format/datetime_format.dart';
+import '../../../core/widgets/section_header.dart';
+import '../../applock/presentation/app_lock_tile.dart';
 import '../application/auth_providers.dart';
 import 'timezone_picker.dart';
 
@@ -110,7 +112,10 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Edit profile')),
-      body: Padding(
+      // Scrollable now that Privacy is here: name + timezone + quiet hours +
+      // two time buttons + Save + the lock tile overflow a short screen, and
+      // an overflowing Column would clip the new section rather than reveal it.
+      body: SingleChildScrollView(
         padding: Space.screenForm,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -180,6 +185,12 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                     ?.copyWith(color: context.colors.error),
               ),
             ],
+            // Below the Save button on purpose: everything above is a draft the
+            // user commits, the app lock applies the instant it is flipped. A
+            // switch that looked like it needed saving would be a lock people
+            // think is on when it is not.
+            const SectionHeader('Privacy'),
+            const AppLockTile(),
           ],
         ),
       ),
