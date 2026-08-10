@@ -57,3 +57,11 @@ ios/Runner/GoogleService-Info.plist
 .env
 *.env
 .env.*
+
+# Node deps for the Firestore rules tests (firestore-tests/).
+# package-lock.json is deliberately NOT ignored — it pins the emulator harness.
+node_modules/
+
+# Firestore emulator output (already untracked at the repo root; the rules
+# tests produce their own copy in firestore-tests/).
+firestore-debug.log

@@ -15,6 +15,13 @@ class GroupRepository {
   CollectionReference<Map<String, dynamic>> get _groups =>
       _db.collection('groups');
 
+  /// Invite-code → groupId lookup (`joinCodes/{CODE}`). Exists so joining needs
+  /// no read on the group doc, which is what lets `groups` be members-only:
+  /// resolving a code by querying `groups` also allowed listing every group and
+  /// every invite code. See firestore.rules.
+  CollectionReference<Map<String, dynamic>> get _joinCodes =>
+      _db.collection('joinCodes');
+
   // --- Groups & membership ---
 
   /// Groups the given user belongs to (via the denormalized memberUids array).
@@ -52,6 +59,12 @@ class GroupRepository {
       'name': ownerName,
       'joinedAt': FieldValue.serverTimestamp(),
     });
+    // Register the code so joinByCode can resolve it without reading `groups`.
+    // Written AFTER the group doc because the rule checks the caller owns that
+    // group. Rules deny update/delete here, so a code collision (~1 in 10^9,
+    // since _generateJoinCode doesn't check) now fails loudly at creation
+    // instead of silently sending a joiner to whichever group came back first.
+    await _joinCodes.doc(code).set({'groupId': ref.id});
     return Group(
       id: ref.id,
       name: name.trim(),
@@ -63,26 +76,33 @@ class GroupRepository {
 
   /// Join a group by its invite code. Returns the group, or null if no group
   /// has that code.
+  ///
+  /// Resolves the code through `joinCodes/{CODE}` rather than by querying
+  /// `groups` — the group doc is readable by members only, and the caller isn't
+  /// one yet. The self-join update deliberately needs no read permission, which
+  /// is what makes this order work.
   Future<Group?> joinByCode({
     required String code,
     required String uid,
     required String name,
   }) async {
-    final query = await _groups
-        .where('joinCode', isEqualTo: code.trim().toUpperCase())
-        .limit(1)
-        .get();
-    if (query.docs.isEmpty) return null;
+    final lookup = await _joinCodes.doc(code.trim().toUpperCase()).get();
+    final groupId = lookup.data()?['groupId'] as String?;
+    if (groupId == null || groupId.isEmpty) return null;
 
-    final doc = query.docs.first;
-    await doc.reference.update({
+    final ref = _groups.doc(groupId);
+    await ref.update({
       'memberUids': FieldValue.arrayUnion([uid]),
     });
-    await doc.reference.collection('members').doc(uid).set({
+    await ref.collection('members').doc(uid).set({
       'name': name,
       'joinedAt': FieldValue.serverTimestamp(),
     });
-    return Group.fromDoc(doc);
+    // Re-read AFTER joining: the caller is a member now, so the group doc is
+    // readable — and this snapshot has their own uid in memberUids. The old code
+    // returned the pre-join snapshot, whose memberUids was already stale.
+    final joined = await ref.get();
+    return joined.exists ? Group.fromDoc(joined) : null;
   }
 
   // --- Planner consent grants ---

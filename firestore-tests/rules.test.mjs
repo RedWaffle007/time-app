@@ -1,0 +1,558 @@
+// Security-rules unit tests for ../firestore.rules.
+//
+// These cover the two findings in ARCHITECTURE.md §4.1 that the rules were
+// changed to close:
+//
+//   ISSUE 1 — collection enumeration. `allow read: if signedIn()` on `users`
+//             and `groups` authorised LIST, so any signed-in account could dump
+//             every profile (name / timezone / quiet hours) and every group
+//             (name / roster / invite code).
+//   ISSUE 2 — notification suppression. The item update rule was
+//             document-level, so a target could pre-write the push Worker's
+//             `notified*` dedup fields and silence the planner's notification.
+//
+// Every denial case is paired with the legitimate write it must NOT break —
+// a rule that denies everything would pass the first half of this file.
+//
+// Run: npm test   (starts the Firestore emulator via firebase-tools)
+
+import { readFileSync } from 'node:fs';
+import { after, before, beforeEach, describe, it } from 'node:test';
+
+import {
+  assertFails,
+  assertSucceeds,
+  initializeTestEnvironment,
+} from '@firebase/rules-unit-testing';
+import {
+  addDoc,
+  collection,
+  collectionGroup,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  serverTimestamp,
+  setDoc,
+  Timestamp,
+  where,
+} from 'firebase/firestore';
+
+// --- fixtures -------------------------------------------------------------
+
+const ALICE = 'uid_alice'; // the TARGET — items live under her subtree
+const BOB = 'uid_bob'; // the PLANNER — holds an active grant over Alice
+const MALLORY = 'uid_mallory'; // signed in, in no group with anyone
+
+const GROUP = 'group_1';
+const JOIN_CODE = 'HJK234';
+const PENDING_ITEM = 'item_pending';
+const APPROVED_ITEM = 'item_approved';
+
+let testEnv;
+
+/** The exact field set ScheduleRepository.createItem writes. */
+function newItemFields(overrides = {}) {
+  return {
+    targetUid: ALICE,
+    createdByUid: BOB,
+    groupId: GROUP,
+    title: 'Morning run',
+    note: 'bring water',
+    localWallTime: '2026-08-11 07:00',
+    timezone: 'Asia/Kolkata',
+    scheduledInstantUtc: Timestamp.fromDate(new Date('2026-08-11T01:30:00Z')),
+    status: 'pending',
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    ...overrides,
+  };
+}
+
+/** Reset to a known world: one group, one grant, two items, three profiles. */
+async function seed() {
+  await testEnv.clearFirestore();
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+
+    for (const uid of [ALICE, BOB, MALLORY]) {
+      await setDoc(doc(db, 'users', uid), {
+        name: uid,
+        homeTimezone: 'Asia/Kolkata',
+        quietHoursStartMinutes: 1380,
+        quietHoursEndMinutes: 360,
+      });
+    }
+
+    await setDoc(doc(db, 'groups', GROUP), {
+      name: 'The group',
+      ownerUid: ALICE,
+      joinCode: JOIN_CODE,
+      memberUids: [ALICE, BOB],
+    });
+    await setDoc(doc(db, 'groups', GROUP, 'members', ALICE), { name: 'Alice' });
+    await setDoc(doc(db, 'groups', GROUP, 'members', BOB), { name: 'Bob' });
+    await setDoc(doc(db, 'groups', GROUP, 'plannerGrants', `${BOB}_${ALICE}`), {
+      plannerUid: BOB,
+      targetUid: ALICE,
+      groupId: GROUP,
+      granted: true,
+      grantedByUid: ALICE,
+    });
+    await setDoc(doc(db, 'joinCodes', JOIN_CODE), { groupId: GROUP });
+
+    const items = collection(db, 'scheduleItems', ALICE, 'items');
+    await setDoc(doc(items, PENDING_ITEM), {
+      targetUid: ALICE,
+      createdByUid: BOB,
+      groupId: GROUP,
+      title: 'Morning run',
+      localWallTime: '2026-08-11 07:00',
+      timezone: 'Asia/Kolkata',
+      scheduledInstantUtc: Timestamp.fromDate(new Date('2026-08-11T01:30:00Z')),
+      status: 'pending',
+    });
+    await setDoc(doc(items, APPROVED_ITEM), {
+      targetUid: ALICE,
+      createdByUid: BOB,
+      groupId: GROUP,
+      title: 'Evening study',
+      localWallTime: '2026-08-11 19:00',
+      timezone: 'Asia/Kolkata',
+      scheduledInstantUtc: Timestamp.fromDate(new Date('2026-08-11T13:30:00Z')),
+      status: 'approved',
+    });
+  });
+}
+
+const as = (uid) => testEnv.authenticatedContext(uid).firestore();
+const itemRef = (db, id) => doc(db, 'scheduleItems', ALICE, 'items', id);
+
+before(async () => {
+  const host = process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080';
+  const [emulatorHost, emulatorPort] = host.split(':');
+  testEnv = await initializeTestEnvironment({
+    projectId: 'demo-time-app',
+    firestore: {
+      rules: readFileSync('../firestore.rules', 'utf8'),
+      host: emulatorHost,
+      port: Number(emulatorPort),
+    },
+  });
+});
+
+after(async () => {
+  await testEnv?.cleanup();
+});
+
+beforeEach(seed);
+
+// --- ISSUE 1: enumeration -------------------------------------------------
+
+describe('issue 1 — users are not enumerable', () => {
+  it('DENIES a non-member listing the users collection', async () => {
+    // The finding itself: this used to return every profile in the project.
+    await assertFails(getDocs(collection(as(MALLORY), 'users')));
+  });
+
+  it('DENIES listing users even to a legitimate member', async () => {
+    // `list` is off for everyone — no client path queries this collection.
+    await assertFails(getDocs(collection(as(BOB), 'users')));
+  });
+
+  it('DENIES a filtered query that tries to sweep quiet-hours windows', async () => {
+    await assertFails(
+      getDocs(
+        query(
+          collection(as(MALLORY), 'users'),
+          where('homeTimezone', '==', 'Asia/Kolkata'),
+        ),
+      ),
+    );
+  });
+
+  it('ALLOWS reading one profile by uid (the planner needs name + timezone)', async () => {
+    await assertSucceeds(getDoc(doc(as(BOB), 'users', ALICE)));
+  });
+
+  it('documents the ACCEPTED RESIDUAL: a known uid can still be read', async () => {
+    // Not a bug being asserted as correct — a limit being pinned down. Strict
+    // shared-group scoping needs a denormalized index (see the rules comment).
+    // It holds only because no uid leaks to a stranger any more.
+    await assertSucceeds(getDoc(doc(as(MALLORY), 'users', ALICE)));
+  });
+});
+
+describe('issue 1 — groups are not enumerable', () => {
+  it('DENIES a non-member reading a group document', async () => {
+    await assertFails(getDoc(doc(as(MALLORY), 'groups', GROUP)));
+  });
+
+  it('DENIES a non-member listing every group', async () => {
+    await assertFails(getDocs(collection(as(MALLORY), 'groups')));
+  });
+
+  it('DENIES the join-by-code query, which is how invite codes leaked', async () => {
+    // This is ALSO the client breakage: GroupRepository.joinByCode runs exactly
+    // this query. The join flow moves onto joinCodes/{code} below.
+    await assertFails(
+      getDocs(
+        query(
+          collection(as(MALLORY), 'groups'),
+          where('joinCode', '==', JOIN_CODE),
+        ),
+      ),
+    );
+  });
+
+  it('DENIES a non-member reading the member roster', async () => {
+    await assertFails(
+      getDocs(collection(as(MALLORY), 'groups', GROUP, 'members')),
+    );
+  });
+
+  it('ALLOWS a member to read their own group', async () => {
+    await assertSucceeds(getDoc(doc(as(BOB), 'groups', GROUP)));
+  });
+
+  it('ALLOWS watchMyGroups (array-contains on memberUids)', async () => {
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(as(BOB), 'groups'),
+          where('memberUids', 'array-contains', BOB),
+        ),
+      ),
+    );
+  });
+
+  it('ALLOWS creating a group as its owner and sole member', async () => {
+    await assertSucceeds(
+      setDoc(doc(as(MALLORY), 'groups', 'group_new'), {
+        name: 'Mallory only',
+        ownerUid: MALLORY,
+        joinCode: 'ZZZ999',
+        memberUids: [MALLORY],
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('ALLOWS a self-join update without any read on the group', async () => {
+    await assertSucceeds(
+      setDoc(
+        doc(as(MALLORY), 'groups', GROUP),
+        { memberUids: [ALICE, BOB, MALLORY] },
+        { merge: true },
+      ),
+    );
+  });
+});
+
+describe('issue 1 — the joinCodes lookup replaces the group query', () => {
+  it('ALLOWS resolving a code you were given', async () => {
+    await assertSucceeds(getDoc(doc(as(MALLORY), 'joinCodes', JOIN_CODE)));
+  });
+
+  it('DENIES listing codes, so they cannot be swept in bulk', async () => {
+    await assertFails(getDocs(collection(as(MALLORY), 'joinCodes')));
+  });
+
+  it('ALLOWS the group owner to register their code', async () => {
+    await assertSucceeds(
+      setDoc(doc(as(ALICE), 'joinCodes', 'NEWCODE'), { groupId: GROUP }),
+    );
+  });
+
+  it('DENIES a non-owner registering a code for that group', async () => {
+    await assertFails(
+      setDoc(doc(as(BOB), 'joinCodes', 'NEWCODE'), { groupId: GROUP }),
+    );
+  });
+
+  it('DENIES repointing an existing code at another group', async () => {
+    await assertFails(
+      setDoc(doc(as(ALICE), 'joinCodes', JOIN_CODE), { groupId: 'group_other' }),
+    );
+  });
+
+  it('ALLOWS the whole join sequence, in the order the client runs it', async () => {
+    // GroupRepository.joinByCode, step by step, as a total outsider. Each step
+    // depends on the one before: the self-join update needs no read permission,
+    // the member doc needs memberUids to already contain the caller, and the
+    // final read needs the join to have happened. Get the order wrong and the
+    // flow dies at whichever step ran too early.
+    const db = as(MALLORY);
+
+    // 1. resolve the code — the only thing a non-member may read here
+    const lookup = await assertSucceeds(getDoc(doc(db, 'joinCodes', JOIN_CODE)));
+    const groupId = lookup.data().groupId;
+
+    // 2. self-join: add yourself to memberUids, touching nothing else
+    await assertSucceeds(
+      setDoc(
+        doc(db, 'groups', groupId),
+        { memberUids: [ALICE, BOB, MALLORY] },
+        { merge: true },
+      ),
+    );
+
+    // 3. write your own member doc (passes only because step 2 landed first)
+    await assertSucceeds(
+      setDoc(doc(db, 'groups', groupId, 'members', MALLORY), {
+        name: 'Mallory',
+        joinedAt: serverTimestamp(),
+      }),
+    );
+
+    // 4. re-read the group, now as a member — this is the return value, and it
+    //    is why the stale-memberUids bug is gone
+    await assertSucceeds(getDoc(doc(db, 'groups', groupId)));
+  });
+});
+
+// --- ISSUE 2: notification suppression ------------------------------------
+
+describe('issue 2 — no client may write the Worker dedup fields', () => {
+  it('DENIES the target pre-writing notifiedOutcome to suppress the push', async () => {
+    // The finding itself: with this field set, notify.js answers
+    // `already-notified` and the planner never hears that the item was done.
+    await assertFails(
+      setDoc(
+        itemRef(as(ALICE), APPROVED_ITEM),
+        {
+          outcome: { result: 'done', completedAt: serverTimestamp() },
+          notifiedOutcome: 'done',
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      ),
+    );
+  });
+
+  it('DENIES the target writing notifiedOutcome on its own', async () => {
+    await assertFails(
+      setDoc(
+        itemRef(as(ALICE), APPROVED_ITEM),
+        { notifiedOutcome: 'done' },
+        { merge: true },
+      ),
+    );
+  });
+
+  it('DENIES the target writing notifiedDecided', async () => {
+    await assertFails(
+      setDoc(
+        itemRef(as(ALICE), PENDING_ITEM),
+        {
+          status: 'approved',
+          decidedAt: serverTimestamp(),
+          notifiedDecided: 'approved',
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      ),
+    );
+  });
+
+  it('DENIES the target writing notifiedCreated or notifiedAt', async () => {
+    await assertFails(
+      setDoc(
+        itemRef(as(ALICE), PENDING_ITEM),
+        { notifiedCreated: true, notifiedAt: 'now', updatedAt: serverTimestamp() },
+        { merge: true },
+      ),
+    );
+  });
+
+  it('DENIES the planner pre-stamping notifiedCreated at CREATE time', async () => {
+    // The same hole through the other door: an item born pre-silenced would
+    // never fire its `created` push.
+    await assertFails(
+      addDoc(
+        collection(as(BOB), 'scheduleItems', ALICE, 'items'),
+        newItemFields({ notifiedCreated: true }),
+      ),
+    );
+  });
+
+  it('DENIES the planner writing notifiedWithdrawn while withdrawing', async () => {
+    await assertFails(
+      setDoc(
+        itemRef(as(BOB), PENDING_ITEM),
+        {
+          status: 'withdrawn',
+          withdrawnAt: serverTimestamp(),
+          notifiedWithdrawn: true,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      ),
+    );
+  });
+});
+
+describe('issue 2 — the target cannot rewrite the plan itself', () => {
+  it('DENIES the target editing the title', async () => {
+    await assertFails(
+      setDoc(
+        itemRef(as(ALICE), PENDING_ITEM),
+        { title: 'something else', updatedAt: serverTimestamp() },
+        { merge: true },
+      ),
+    );
+  });
+
+  it('DENIES the target moving scheduledInstantUtc', async () => {
+    await assertFails(
+      setDoc(
+        itemRef(as(ALICE), PENDING_ITEM),
+        {
+          scheduledInstantUtc: Timestamp.fromDate(new Date('2027-01-01T00:00:00Z')),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      ),
+    );
+  });
+
+  it('DENIES the target reassigning createdByUid', async () => {
+    await assertFails(
+      setDoc(
+        itemRef(as(ALICE), PENDING_ITEM),
+        { createdByUid: ALICE, updatedAt: serverTimestamp() },
+        { merge: true },
+      ),
+    );
+  });
+
+  it('DENIES the target reviving an approved item back to pending', async () => {
+    await assertFails(
+      setDoc(
+        itemRef(as(ALICE), APPROVED_ITEM),
+        { status: 'pending', updatedAt: serverTimestamp() },
+        { merge: true },
+      ),
+    );
+  });
+
+  it('DENIES the target faking a planner withdrawal', async () => {
+    await assertFails(
+      setDoc(
+        itemRef(as(ALICE), PENDING_ITEM),
+        { status: 'withdrawn', updatedAt: serverTimestamp() },
+        { merge: true },
+      ),
+    );
+  });
+});
+
+describe('issue 2 — every legitimate write still works', () => {
+  it('ALLOWS the planner to create a pending item under an active grant', async () => {
+    await assertSucceeds(
+      addDoc(
+        collection(as(BOB), 'scheduleItems', ALICE, 'items'),
+        newItemFields(),
+      ),
+    );
+  });
+
+  it('ALLOWS a self-planned approved item', async () => {
+    await assertSucceeds(
+      addDoc(
+        collection(as(ALICE), 'scheduleItems', ALICE, 'items'),
+        newItemFields({
+          createdByUid: ALICE,
+          groupId: '',
+          status: 'approved',
+          decidedAt: serverTimestamp(),
+        }),
+      ),
+    );
+  });
+
+  it('ALLOWS the target to approve', async () => {
+    await assertSucceeds(
+      setDoc(
+        itemRef(as(ALICE), PENDING_ITEM),
+        { status: 'approved', decidedAt: serverTimestamp(), updatedAt: serverTimestamp() },
+        { merge: true },
+      ),
+    );
+  });
+
+  it('ALLOWS the target to reject with a reason', async () => {
+    await assertSucceeds(
+      setDoc(
+        itemRef(as(ALICE), PENDING_ITEM),
+        {
+          status: 'rejected',
+          decidedAt: serverTimestamp(),
+          rejectionReason: 'clashes with work',
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      ),
+    );
+  });
+
+  it('ALLOWS the target to mark done', async () => {
+    await assertSucceeds(
+      setDoc(
+        itemRef(as(ALICE), APPROVED_ITEM),
+        {
+          outcome: { result: 'done', completedAt: serverTimestamp() },
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      ),
+    );
+  });
+
+  it('ALLOWS the target to mark skipped with a reason', async () => {
+    await assertSucceeds(
+      setDoc(
+        itemRef(as(ALICE), APPROVED_ITEM),
+        {
+          outcome: {
+            result: 'skipped',
+            skippedAt: serverTimestamp(),
+            skipReason: 'was ill',
+          },
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      ),
+    );
+  });
+
+  it('ALLOWS the planner to withdraw a still-pending item', async () => {
+    await assertSucceeds(
+      setDoc(
+        itemRef(as(BOB), PENDING_ITEM),
+        {
+          status: 'withdrawn',
+          withdrawnAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      ),
+    );
+  });
+
+  it('ALLOWS the planner their cross-target collection-group read', async () => {
+    // watchItemsByPlanner — matched only by the /{path=**}/items rule.
+    await assertSucceeds(
+      getDocs(
+        query(
+          collectionGroup(as(BOB), 'items'),
+          where('createdByUid', '==', BOB),
+        ),
+      ),
+    );
+  });
+
+  it('DENIES an outsider the same collection-group read', async () => {
+    await assertFails(getDocs(collectionGroup(as(MALLORY), 'items')));
+  });
+});

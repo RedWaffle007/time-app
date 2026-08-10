@@ -2,14 +2,32 @@ rules_version = '2';
 
 // time-app Firestore security rules (v1).
 //
-// Model in one line: membership ≠ permission to plan. Reading a profile is open
-// to any signed-in user; everything relationship-sensitive (rosters, grants,
-// schedules) is gated on group membership or on being the planner/target of the
-// specific record. Consent to be planned for is the TARGET's to give.
+// Model in one line: membership ≠ permission to plan. Everything
+// relationship-sensitive (rosters, grants, schedules, group docs) is gated on
+// group membership or on being the planner/target of the specific record.
+// Consent to be planned for is the TARGET's to give.
 //
 // These rules are written to exactly match the app's real read/write paths
-// (see lib/**/data/*_repository.dart). Deferred hardening is logged in
-// DECISIONS.md (Cloud-Function-mediated join; "share-a-group" profile scoping).
+// (see lib/**/data/*_repository.dart).
+//
+// TWO RULES OF THUMB THIS FILE NOW ENFORCES EVERYWHERE — keep them:
+//
+//   1. `get` and `list` are DIFFERENT permissions, and `read` grants both. An
+//      unconditional `allow read` on a collection authorises an unfiltered
+//      LIST — i.e. dumping the whole collection — not just fetching one doc by
+//      id. Enumeration was the actual hole here (ARCHITECTURE.md §4.1 a/b), so
+//      every collection-level rule below spells the two out separately.
+//
+//   2. Write rules constrain the FIELD SET, not just the document. A rule that
+//      says "the target may update their own item" also says "the target may
+//      write ANY field on it" — including the `notified*` fields the push
+//      Worker uses as its dedup guard, which let a target silently suppress the
+//      notification that closes the accountability loop (§4.1 c). Every write
+//      rule below whitelists keys.
+//
+// Anything the SERVER writes and no client may write (the `notified*` guards)
+// is simply absent from every client whitelist: the Worker reaches Firestore
+// with a service-account token, which bypasses these rules entirely.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -38,12 +56,37 @@ service cloud.firestore {
       return exists(grant) && get(grant).data.granted == true;
     }
 
+    // Keys whose value this write actually CHANGES (added, removed or altered).
+    // A field rewritten with the value it already had does not appear — so an
+    // idempotent re-approve is not mistaken for a status transition, while
+    // `updatedAt` (a serverTimestamp) always does appear.
+    function changedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
     // ---- users/{uid} ----
-    // Decision ①: any signed-in user may read profiles (name / avatar / home tz).
-    // Writes are owner-only. Tighter "share-a-group" read scoping is deferred
-    // (DECISIONS.md).
+    // Decision ①: a signed-in user may GET one profile by uid (name / avatar /
+    // home tz) — the planner needs the target's name and home timezone, and the
+    // target needs the planner's name. Writes are owner-only.
+    //
+    // LIST IS DENIED. `allow read: if signedIn()` used to authorise an
+    // unfiltered query over this collection, so any Google account could dump
+    // every user's name, home timezone and QUIET-HOURS WINDOW — i.e. when each
+    // person sleeps (ARCHITECTURE.md §4.1a). No client path queries this
+    // collection: every read in the app is `_users.doc(uid)`
+    // (profile_repository.dart), so denying `list` costs nothing.
+    //
+    // Residual, accepted knowingly: a caller who ALREADY KNOWS a uid can still
+    // get that profile. Strict "readable only by users who share a group" is
+    // not expressible here — rules cannot run queries, so it would need a
+    // denormalized `groupIds` on every user doc plus a backfill. What closes it
+    // in practice is that no uid leaks to a stranger any more: group docs and
+    // rosters are member-gated below, and both collection-group rules at the
+    // bottom are resource-scoped to the caller. Firebase uids are 28 random
+    // chars, so there is no path to obtain one to try.
     match /users/{uid} {
-      allow read: if signedIn();
+      allow get: if signedIn();
+      allow list: if false;
       allow create, update: if signedIn() && request.auth.uid == uid;
       allow delete: if false;
 
@@ -79,12 +122,33 @@ service cloud.firestore {
     }
 
     // ---- groups/{groupId} ----
-    // Decision ②: the group doc (name, joinCode, memberUids) is readable by any
-    // signed-in user so join-by-code can look it up. Anyone may create a group
-    // as its owner + sole first member. The only permitted UPDATE by a
-    // non-member is a self-join that adds ONLY themselves to memberUids.
+    // Decision ② (REVISED): the group doc carries name, memberUids and the
+    // invite `joinCode`, so it is readable by MEMBERS ONLY. It used to be
+    // readable by any signed-in user "so join-by-code can look it up", which
+    // authorised listing every group in the project — names, rosters, and every
+    // invite code (ARCHITECTURE.md §4.1b). The invite mechanism assumes codes
+    // are secret; they were being handed out in bulk.
+    //
+    // get  — one group by id, members only.
+    // list — same predicate, which makes the ONLY satisfiable query
+    //        `where('memberUids', array-contains: me)` (watchMyGroups). Both
+    //        forms can read `resource.data`, so neither needs a get().
+    //
+    // THE COST, STATED PLAINLY: joinByCode() queries
+    // `where('joinCode', ==, CODE)` as a NON-MEMBER. That is exactly the
+    // operation being closed, and it will now be denied. There is no rules-only
+    // way to keep it — rules cannot see a query's where-clauses, so any rule
+    // permissive enough to pass that query also permits enumerating the
+    // collection. The join flow is restructured onto the `joinCodes/{code}`
+    // lookup below; see that block.
+    //
+    // Anyone may still create a group as its owner + sole first member, and the
+    // only permitted UPDATE by a non-member is a self-join that adds ONLY
+    // themselves to memberUids. Note that self-join deliberately needs no read
+    // permission — that is what keeps joining possible at all.
     match /groups/{groupId} {
-      allow read: if signedIn();
+      allow get: if signedIn() && request.auth.uid in resource.data.memberUids;
+      allow list: if signedIn() && request.auth.uid in resource.data.memberUids;
 
       allow create: if signedIn()
         && request.resource.data.ownerUid == request.auth.uid
@@ -137,6 +201,40 @@ service cloud.firestore {
       }
     }
 
+    // ---- joinCodes/{code} ----
+    // Invite-code → groupId lookup. This exists so join-by-code needs NO read
+    // on the group doc, which is what lets the group doc go members-only above.
+    // The code itself is the capability: you can resolve a code you already
+    // hold, and nothing else.
+    //
+    // get    — resolve one code you were given. A resolved code yields ONLY a
+    //          group id, which grants nothing on its own: the group doc, its
+    //          roster and its grants are all member-gated. Joining still runs
+    //          through the self-join update on the group doc.
+    // list   — DENIED, so codes can never be swept in bulk. This is the whole
+    //          point: brute-forcing 6 chars from a 32-char no-lookalike
+    //          alphabet is ~10^9 single gets, versus one query before.
+    // create — the group's OWNER registers their own code.
+    // update/delete — never. A code must not be repointed at another group.
+    //
+    // NOT YET WIRED UP: no client writes or reads this collection today
+    // (GroupRepository still queries groups by joinCode, which the rule above
+    // now denies). The server contract lands here first so the remaining work
+    // is client-only — see ARCHITECTURE.md §6.
+    match /joinCodes/{code} {
+      allow get: if signedIn();
+      allow list: if false;
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['groupId'])
+        && request.resource.data.groupId is string
+        && exists(/databases/$(database)/documents/groups/$(request.resource.data.groupId))
+        && get(/databases/$(database)/documents/groups/$(request.resource.data.groupId))
+             .data.ownerUid == request.auth.uid;
+
+      allow update, delete: if false;
+    }
+
     // ---- scheduleItems/{targetUid}/items/{itemId} ----
     // This SPECIFIC-path rule serves the TARGET's own subtree (their pending
     // queue / approved items) via direct, path-scoped reads, plus item writes.
@@ -157,10 +255,32 @@ service cloud.firestore {
     //   The PLANNER (creator) gets ONE tightly-scoped write: withdraw a plan
     //   they created while it is still `pending` (Group C). That is the only
     //   item write a non-target may make. Planner edit is still deferred.
+    //
+    // EVERY write here is FIELD-SCOPED, and the reason is the push Worker. Its
+    // duplicate guard reads `notifiedCreated` / `notifiedDecided` /
+    // `notifiedOutcome` / `notifiedWithdrawn` off THIS document (notify.js).
+    // While the rules only checked WHO was writing, a target could pre-write
+    // `notifiedOutcome: 'done'` — or a planner could create an item already
+    // stamped `notifiedCreated: true` — and the Worker would answer
+    // `already-notified` and send nothing. In an accountability app, silently
+    // suppressing the notification is the one thing the design must not allow
+    // (ARCHITECTURE.md §4.1c).
+    //
+    // So the `notified*` fields appear in NO whitelist below. Only the Worker
+    // writes them, via a service-account token that bypasses these rules. The
+    // field scoping also stops a target rewriting `title`,
+    // `scheduledInstantUtc` or `createdByUid` after the fact.
     match /scheduleItems/{targetUid}/items/{itemId} {
       allow read: if signedIn() && request.auth.uid == targetUid;
 
       allow create: if signedIn()
+        // The full key set a creator may write (note/decidedAt are optional).
+        // `notified*` is absent, so an item cannot be born pre-silenced.
+        && request.resource.data.keys().hasOnly([
+             'targetUid', 'createdByUid', 'groupId', 'title', 'note',
+             'localWallTime', 'timezone', 'scheduledInstantUtc', 'status',
+             'decidedAt', 'createdAt', 'updatedAt'
+           ])
         && request.resource.data.targetUid == targetUid
         && request.resource.data.createdByUid == request.auth.uid
         && (
@@ -172,8 +292,24 @@ service cloud.firestore {
 
       allow update: if signedIn()
         && (
-          // Target: unrestricted (approve / reject / done / skip).
-          request.auth.uid == targetUid
+          // Target: approve / reject / mark done / mark skipped — and NOTHING
+          // else. The whitelist is exactly the fields those four transitions
+          // write (schedule_repository.dart: approve / reject / markDone /
+          // markSkipped); `outcome` is the whole map, written wholesale.
+          (
+            request.auth.uid == targetUid
+            && changedKeys().hasOnly(
+                 ['status', 'decidedAt', 'rejectionReason', 'outcome', 'updatedAt'])
+            // Changing `status` is a DECISION, and a decision is only ever made
+            // once, on a pending item: pending → approved | rejected. This stops
+            // a target reviving a withdrawn/rejected item or faking a withdrawal.
+            // markDone/markSkipped don't touch `status`, so they skip this test.
+            && (
+              !changedKeys().hasAny(['status'])
+              || (resource.data.status == 'pending'
+                  && request.resource.data.status in ['approved', 'rejected'])
+            )
+          )
           // Planner withdraw: creator flips a STILL-pending item to `withdrawn`,
           // touching only these three keys. Cannot resurrect a decided item
           // (must be `pending` now) and cannot alter title/time/anything else.
