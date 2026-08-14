@@ -2066,3 +2066,16 @@ opposite trade. Same list shape, different role.
   would have to be threaded through every call site to buy nothing.
 - One shared **Archived** screen from the account menu, both roles, deduped by id
   (a self-planned item is in both source streams).
+
+# Security hardening DEPLOYED (2026-08-10) — recorded 2026-08-13
+
+The §6/§6.1 rules + join-code work is **live**; only the record was missing.
+
+- Ruleset `1cff4c97-3dbf-4e6b-abec-8d3d9a048a8e` — created 2026-08-10T18:40:30Z,
+  released to `cloud.firestore` 18:40:31Z.
+- Backfill ran first, per the deploy order: 4 `joinCodes` docs written
+  18:38:32–36Z, one per group (4 groups, every one carrying a `joinCode`).
+- Verified 2026-08-13 by fetching the **deployed** source via the Rules API and
+  diffing against `firestore.rules`: byte-identical (md5 `9e72bc5f…`), that file
+  committed and unmodified at HEAD. Never trust the local file — this project
+  shipped a 6-day-stale ruleset once (2026-07-24).
