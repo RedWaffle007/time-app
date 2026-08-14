@@ -2,7 +2,7 @@ package com.timeapp.time_app
 
 import android.util.Log
 import android.view.WindowManager
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
@@ -23,8 +23,30 @@ import io.flutter.plugin.common.MethodChannel
  * death, so it has to be re-applied every launch — and that is already
  * `AppLockController.start()`'s job. This side deliberately persists nothing and
  * reads no setting; two sources of truth for one flag is how it drifts.
+ *
+ * ---
+ *
+ * SUPERCLASS: MUST be [FlutterFragmentActivity], not `FlutterActivity`.
+ *
+ * `local_auth` refuses to prompt unless the host is an AndroidX `FragmentActivity`
+ * — `LocalAuthPlugin.java:124` returns `ERROR_NOT_FRAGMENT_ACTIVITY` *before* it
+ * ever builds a BiometricPrompt. `FlutterActivity` extends `android.app.Activity`,
+ * so tapping Unlock did nothing at all: the plugin bailed early, the resulting
+ * `PlatformException('no_fragment_activity')` was swallowed by `device_auth.dart`,
+ * and the user was locked out of the app permanently (found on-device 2026-08-14).
+ *
+ * Turning the lock ON kept working the whole time, which is what hid it —
+ * `setEnabled` only calls `canAuthenticate()` (a capability query with no such
+ * guard). `authenticate()` is reached from exactly one place, `unlock()`, so the
+ * prompt was first *required* on the first relaunch.
+ *
+ * Trade accepted: AndroidX `FragmentActivity` reserves the upper 16 bits of
+ * `onActivityResult` request codes, which can break plugins using the legacy
+ * activity-result path. Google Sign-In is the exposure here; it routes through
+ * CredentialManager (`google_sign_in_android` 7.2.15), not that path — but a
+ * sign-out/sign-in still needs exercising on-device to prove it.
  */
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterFragmentActivity() {
 
     private companion object {
         const val CHANNEL = "time_app/secure_window"
