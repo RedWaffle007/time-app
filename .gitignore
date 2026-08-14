@@ -58,6 +58,21 @@ ios/Runner/GoogleService-Info.plist
 *.env
 .env.*
 
+# Service-account key files at the REPO ROOT. `worker/.gitignore` already covers
+# these inside worker/, but the backfill script is documented as being run from
+# the root — `node scripts/backfill-join-codes.mjs --key sa.json`
+# (ARCHITECTURE.md, WORK_PLAN.md) — so the key lands HERE, where nothing was
+# ignoring it. An admin key bypasses every Firestore rule; committing one is
+# unrecoverable by rules changes and can only be fixed by revoking the key.
+sa.json
+*firebase-adminsdk*.json
+*service-account*.json
+service-account*.json
+
+# Local scratch/analysis files (e.g. scratchpad/check.mjs). Untracked working
+# notes, never part of the build.
+scratchpad/
+
 # Node deps for the Firestore rules tests (firestore-tests/).
 # package-lock.json is deliberately NOT ignored — it pins the emulator harness.
 node_modules/

@@ -89,6 +89,11 @@ or in DECISIONS.md.
   `1ced7bb3-ddc8-4dfe-ab27-ae35e60d4a63` (2026-07-24T21:18Z); the withdraw branch
   is confirmed in the *deployed* source and the earlier fcmTokens + item-create
   `status` blocks did not regress.
+  **SUPERSEDED — `1ced7bb3…` is NOT the live ruleset.** The current deployed
+  ruleset is `1cff4c97-3dbf-4e6b-abec-8d3d9a048a8e` (released 2026-08-10T18:40:31Z),
+  which carries the §6/§6.1 hardening on top of the above. Quote that id, not
+  `1ced7bb3…`, when reasoning about what is live. (DECISIONS.md → "Security
+  hardening DEPLOYED (2026-08-10)".)
 - **Design system + UI-RULES.md. SHIPPED** (`c43a4a3` → `c87012b`). Tokens, the
   one status mapping, the lint, the structure/state/temperature doctrine and the
   filled-vs-line firewall. Colour is **committed and closed** — see the standing UI

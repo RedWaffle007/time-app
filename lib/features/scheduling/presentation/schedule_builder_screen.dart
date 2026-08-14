@@ -235,7 +235,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
                     width: Sizes.buttonSpinner,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text('Send for approval'),
+                : Text(_isSelf ? 'Add to my schedule' : 'Send for approval'),
           ),
         ],
       ],
@@ -302,7 +302,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       );
 
   /// Non-blocking warning if the chosen time lands in the target's quiet hours
-  /// or the fixed 11pm–6am band. Warning-only — "Send for approval" still works;
+  /// or the fixed 11pm–6am band. Warning-only — the save button still works;
   /// enforcement arrives with the alarm layer.
   Widget _warningBanner(String timezone, int? quietStart, int? quietEnd) {
     final utc = resolveWallTimeToUtc(_wall(), timezone);
@@ -316,14 +316,15 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
 
     final reasons = <String>[
       if (warnings.quietHours && quietStart != null && quietEnd != null)
-        'their quiet hours (${formatMinutesOfDayLocalized(context, quietStart)}'
+        '${_isSelf ? 'your' : 'their'} quiet hours '
+            '(${formatMinutesOfDayLocalized(context, quietStart)}'
             '–${formatMinutesOfDayLocalized(context, quietEnd)})',
       if (warnings.lateNight) 'late night (11pm–6am)',
     ];
 
     return WarningPanel(
       'This falls in ${reasons.join(' and ')}. '
-      'You can still send it — they approve every item.',
+      '${_isSelf ? 'You can still add it.' : 'You can still send it — they approve every item.'}',
     );
   }
 

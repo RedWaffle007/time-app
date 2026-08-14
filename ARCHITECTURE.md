@@ -990,8 +990,16 @@ re-run, collision left untouched, group with no code skipped).
   **§4.5** the `FLAG_SECURE` no-op, **§4.6** notification-tap dead end — all
   untouched, all still open. §4.5 remains the most consequential: it is a privacy
   claim the app does not honour.
-- **Nothing here is deployed.** Rules, client and backfill all sit in the working
-  tree; see the deploy order below.
+- ~~**Nothing here is deployed.** Rules, client and backfill all sit in the working
+  tree; see the deploy order below.~~
+  **AMENDED 2026-08-14 — this is no longer true.** The rules and the backfill
+  shipped on 2026-08-10 (ruleset `1cff4c97-3dbf-4e6b-abec-8d3d9a048a8e`, released
+  18:40:31Z; 4 `joinCodes` docs backfilled 18:38:32–36Z), verified against the
+  **deployed** source on 2026-08-13, and the five on-device steps passed against
+  live rules on 2026-08-14. See DECISIONS.md → "Security hardening DEPLOYED
+  (2026-08-10)" and "Device verification CLOSED (2026-08-14)". The deploy order
+  below is retained as the procedure for the *next* rules change, not as
+  outstanding work.
 
 ### Deploying — order matters
 

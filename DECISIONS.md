@@ -2079,3 +2079,69 @@ The §6/§6.1 rules + join-code work is **live**; only the record was missing.
   diffing against `firestore.rules`: byte-identical (md5 `9e72bc5f…`), that file
   committed and unmodified at HEAD. Never trust the local file — this project
   shipped a 6-day-stale ruleset once (2026-07-24).
+
+# Device verification CLOSED (2026-08-14)
+
+**All five on-device steps passed against the live rules.** This closes the loop
+opened by the 2026-08-10 deploy: the hardening is not just released, it is
+confirmed to work from the client, on real devices, under the ruleset actually in
+force (`1cff4c97-3dbf-4e6b-abec-8d3d9a048a8e`).
+
+This retires the concern in WORK_PLAN.md §0.3 — *"the app on the devices is either
+running old client code (with three live security holes) or new client code that
+is broken."* Neither is true any more: the current client and the current rules
+are the pair that is deployed, and they were exercised together rather than
+assumed compatible. `createGroup`'s `joinCodes/{CODE}` write — the specific thing
+that would fail closed under the old rules — is among what passed.
+
+ARCHITECTURE.md's "Nothing here is deployed" bullet is amended in place rather
+than deleted, so the false claim stays visible next to its correction instead of
+vanishing from the record.
+
+# Worker service-account key VERIFIED, rotation complete (2026-08-14)
+
+The rotated `FIREBASE_SERVICE_ACCOUNT` secret is **confirmed working in
+production**, and the service account is now down to **one key** (the two older
+admin keys deleted by the user on the strength of this run).
+
+**The evidence** — a `created`-event push for a real planner→target pair returned:
+
+```
+{"sent":0,"cleaned":2,"recipientUid":"42ml93…","reason":"no-delivery"}
+```
+
+`sent:0` is a *recipient-device* result, not a credential result. Reaching that
+line at all exercises the whole credential chain, and every link had to succeed
+to produce it:
+
+1. `getAccessToken()` minted an OAuth2 token — an RS256 sign with the private key
+   plus a live token exchange. A bad key throws here → HTTP 500
+   `send-failed / "OAuth token exchange failed"`. It didn't.
+2. Firestore REST **read** the item doc, the grant doc, and listed `fcmTokens`
+   (returned 2) — scope `datastore`, authenticated.
+3. FCM v1 **accepted the caller** and rejected the two *tokens* specifically.
+   An auth failure at FCM (401/403) maps to `OTHER` in `fcm-rest.js` and is
+   never cleaned; `cleaned:2` means both responses were `UNREGISTERED` or
+   `INVALID` — per-token verdicts FCM only issues *after* authenticating the
+   sender. Scope `firebase.messaging` confirmed.
+4. Firestore REST **wrote** — two `deleteDoc` calls succeeded. `deleteDoc` throws
+   on any non-ok, non-404 status, which would have propagated to a 500. So the
+   key is proven for datastore **writes**, not just reads.
+
+Both scopes, both directions, one request. That is a stronger verification than a
+successful `sent:1` would have been on its own, since `sent:1` proves only the
+FCM leg.
+
+**What `no-delivery` actually was:** stale tokens. Both were written 2026-07-24
+and the recipient's app had been reinstalled repeatedly across the archive +
+app-lock work in the three weeks since; a reinstall invalidates the FCM token
+(`UNREGISTERED`). The Worker did the right thing — sent nothing, cleaned both,
+and left `notifiedCreated` **unstamped** (`notify.js` stamps the dedup guard only
+`if (sent > 0)`), so the same item stays deliverable on a genuine later attempt.
+
+**Caveat recorded, not resolved:** `cleaned` collapses `UNREGISTERED` (stale) and
+`INVALID`/`SENDER_ID_MISMATCH` (token belongs to a different Firebase sender)
+into one counter, so the log line alone cannot distinguish "reinstall the app"
+from "wrong `google-services.json`". Staleness is near-certain here given the
+dates. If a freshly-registered token ever cleans again, that ambiguity is the
+first thing to break — the two causes have completely different fixes.
