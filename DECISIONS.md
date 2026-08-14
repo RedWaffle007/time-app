@@ -2145,3 +2145,75 @@ into one counter, so the log line alone cannot distinguish "reinstall the app"
 from "wrong `google-services.json`". Staleness is near-certain here given the
 dates. If a freshly-registered token ever cleans again, that ambiguity is the
 first thing to break — the two causes have completely different fixes.
+
+# D1 — app lock VERIFIED ON DEVICE (2026-08-14, Redmi / HyperOS, Android 16)
+
+The privacy claim the app had been making since the lock shipped is now **true and
+observed**, not inferred. Run on the primary test device, against a real install.
+Commits `bb52989` (FLAG_SECURE handler, subtitle, test deletion) and `50b2113`
+(the FragmentActivity fix found *by* this run).
+
+**FLAG_SECURE applies on EVERY launch — the thing the deleted test only pretended
+to cover.** `setSecure(true) → FLAG_SECURE applied=true` observed across **three
+separate process launches (PIDs 29212, 7734, 29556)**. `applied` is read back off
+the window in `MainActivity.kt`, so this is the OS's answer, not an echo of the
+request. Three distinct PIDs is the load-bearing evidence: the flag is per-window
+and dies with the process, so one launch proves nothing about the next.
+`setSecure(false) → applied=false` on toggle off.
+
+- **Screenshot: blocked while ON, restored while OFF.** Both directions checked —
+  a flag that never clears would be its own bug.
+- **Recents thumbnail: blank** on the kill-and-reopen path.
+
+**Known limit, recorded rather than buried.** With the lock ON, tapping the
+recents *button* (not a full kill) shows app content for **~1 second** before it
+blanks. This is OS-level and not a defect in this code: the system animates the
+**live window surface** into the card, and FLAG_SECURE governs snapshot capture,
+not a surface that is legitimately on screen. Once the live surface is swapped for
+the stored snapshot, the flag takes effect — which is why the full-kill path is
+blank from the first frame. **Deliberately not fixed.** A cover-on-`inactive`
+widget would close it, but that is a different mechanism, not FLAG_SECURE, and the
+threat model does not justify it: the flash is only visible to someone already
+holding the phone with the app open in front of them, so it leaks nothing they
+cannot already see.
+
+## The lock-out bug this run found — and why nothing caught it earlier
+
+**The app was permanently unopenable and no test, build or review had noticed.**
+`MainActivity` extended `FlutterActivity`; `local_auth` returns
+`ERROR_NOT_FRAGMENT_ACTIVITY` (`LocalAuthPlugin.java:124`) *before* constructing a
+BiometricPrompt unless the host is an AndroidX `FragmentActivity`. The resulting
+`PlatformException('no_fragment_activity')` was swallowed by the blanket
+`on PlatformException → return false` in `device_auth.dart`, so tapping Unlock
+produced a brief spinner and nothing else, forever.
+
+**What hid it is worth keeping.** Enabling the lock kept working the whole time,
+because `setEnabled` only calls `canAuthenticate()` — a capability query with no
+FragmentActivity guard. `authenticate()` is reached from exactly one place,
+`unlock()`, so the prompt was first *required* on the first relaunch. Every
+cheaper check passed: the unit suite, `flutter analyze`, and a successful Kotlin
+compile. **Only a real device on the real path could find it**, which is the same
+lesson as the deleted fake-based test, arriving twice in one session.
+
+**Fixed and verified:** `FlutterFragmentActivity` (`50b2113`). Unlock now raises
+the biometric/PIN prompt on relaunch.
+
+**Trade accepted, and CLOSED — not left open.** AndroidX `FragmentActivity`
+reserves the upper 16 bits of `onActivityResult` request codes, which can break
+plugins on the legacy activity-result path; Google Sign-In was the exposure, and
+it is the only way into this app. **Verified by a real sign-out and sign-in on the
+Redmi: no error, no regression.** The CredentialManager path in
+`google_sign_in_android` 7.2.15 survives the superclass change. This item is
+closed; do not re-open it as a risk.
+
+**Lock coupling observed correct on-device.** With the lock ON, signing out
+prompted for unlock first; with it OFF, it did not. The coupling asserted at
+`app_lock_test.dart:214` — *"FLAG_SECURE rides the same switch, not a second
+one"* — now has a real-device observation behind it, not only a fake.
+
+**Native changes need a full uninstall.** `flutter install` / `flutter run` did
+not replace `MainActivity`; only `adb uninstall` + `flutter run` did. `flutter run`
+skips installation when the device sha1 stamp matches
+(`android_device.dart:400`), and hot reload never replaces native code at all.
+**Rule for any `.kt` / manifest / Gradle / plugin change: uninstall first.** Cost
+each time: signed out, app-lock setting reset, and the FCM token invalidated.
