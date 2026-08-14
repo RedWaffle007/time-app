@@ -299,16 +299,18 @@ void main() {
       expect(c.isLocked, isFalse);
     });
 
-    test('start() re-applies FLAG_SECURE to match the setting', () async {
-      // Per-window and lost on process death, so it is re-applied every launch
-      // rather than only when the toggle moves.
-      await build(enabled: true).start();
-      expect(secure.calls, [true]);
-
-      secure.calls.clear();
-      await build(enabled: false).start();
-      expect(secure.calls, [false]);
-    });
+    // DELETED 2026-08-14: 'start() re-applies FLAG_SECURE to match the setting'.
+    //
+    // It asserted that `start()` forwards the setting to a _FakeSecureWindow —
+    // i.e. that Dart called a method on a Dart object. The thing it appeared to
+    // cover, and did not, is whether FLAG_SECURE actually reaches the OS window.
+    // For the entire life of the feature there was no native handler at all
+    // (MainActivity.kt was five lines), every call threw MissingPluginException,
+    // and this test passed the whole time — making a broken feature look covered.
+    //
+    // Not replaced with another fake, deliberately: a fake can only ever re-assert
+    // the same thing. The real effect is verified on-device and recorded, dated,
+    // in DECISIONS.md. Never let a fake stand in for an unverified native effect.
   });
 
   // -------------------------------------------------------------------------

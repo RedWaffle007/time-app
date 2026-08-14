@@ -80,10 +80,21 @@ class _AppLockTileState extends ConsumerState<AppLockTile> {
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Require unlock to open time-app'),
+              // PLATFORM-HONEST, deliberately. The recents/screenshot half is
+              // Android-only: it is `FLAG_SECURE`, applied by the
+              // `time_app/secure_window` handler in MainActivity.kt. iOS has no
+              // FLAG_SECURE equivalent and no handler, so `PlatformSecureWindow`
+              // swallows a MissingPluginException there and nothing happens.
+              //
+              // Scoped in WORDS rather than by a `Platform.isAndroid` branch: one
+              // string is true on both platforms, and a runtime branch would ship
+              // an untested path for a target that is not wired up yet (CLAUDE.md
+              // open item 4 — no iOS build exists). The unlock half IS both-platform,
+              // so only the second sentence carries the qualifier.
               subtitle: const Text(
                 'Ask for your fingerprint, face or device PIN when you open the '
-                'app. Also hides the app from the recents switcher and blocks '
-                'screenshots.',
+                'app. On Android it also hides the app from the recents switcher '
+                'and blocks screenshots.',
               ),
               secondary: const Icon(AppIcons.appLock),
               // The switch reads the CONTROLLER, never local state. A refused
