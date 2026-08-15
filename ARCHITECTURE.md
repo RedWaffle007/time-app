@@ -50,8 +50,8 @@ Per-directory Dart line counts:
 | `lib/core/timezone` | 2 | 152 | DST-aware wall-time resolver, quiet-hours math |
 | `lib/core/format` | 1 | 46 | The single locale-aware date/time formatter |
 | `lib/core/config`, `lib/core/firebase` | 2 | 15 | Two constants (Worker URL, OAuth client ID) |
-| `lib/routing` | 2 | 143 | go_router config + stream→Listenable bridge |
-| `lib/dev` | 2 | 360 | Dev menu + a standalone theme-preview app |
+| `lib/routing` | 2 | 217 | go_router config + stream→Listenable bridge |
+| `lib/dev` | 2 | 381 | Dev menu + a standalone theme-preview app |
 | `lib/features/scheduling` | 5 | 823 | The core domain: items, repository, providers, 2 screens |
 | `lib/features/applock` | 8 | 697 | Biometric app lock (controller, store, gate, screens) |
 | `lib/features/auth` | 8 | 712 | Google sign-in, profile CRUD, timezone picker |
@@ -77,7 +77,7 @@ Dart SDK `^3.12.2`. Every dependency below is a direct dependency.
 | Package | Version | What it does | Verdict |
 |---|---|---|---|
 | `flutter_riverpod` | ^3.3.2 | State management / DI container | **Core.** Every provider in the app. |
-| `go_router` | ^17.3.0 | Declarative routing | **Core**, though barely used (10 flat routes, no nesting, no deep links). |
+| `go_router` | ^17.3.0 | Declarative routing | **Core.** Eleven routes over a three-branch `StatefulShellRoute`; one path parameter, no deep links. |
 | `firebase_core` | ^4.12.1 | Firebase bootstrap | **Core.** |
 | `firebase_auth` | ^6.5.6 | Auth session, ID tokens | **Core.** |
 | `cloud_firestore` | ^6.7.1 | The entire database and the entire realtime layer | **Core.** This *is* the data layer. |
@@ -246,21 +246,27 @@ whoever touches these next.
 
 ## 2.3 Navigation
 
-**go_router 17**, configured in one 123-line file. Ten flat routes, one of them
-parameterised (`/groups/:groupId`), one registered only under `kDebugMode`.
+**go_router 17**, configured in one 197-line file. Eleven routes, one of them
+parameterised (`/groups/:groupId`), one registered only under `kDebugMode`. The
+three tabs are the branches of a `StatefulShellRoute.indexedStack`, and each
+tab's detail screens are **sub-routes of that branch** — so every screen is
+registered exactly once and a screen's location names the tab it belongs to.
 
 ```
-/                → HomeGate  (profile-complete? → HomeShell : CompleteProfileScreen)
+/                → redirect → /groups
 /auth            → AuthScreen
-/profile         → ProfileEditScreen
-/groups          → GroupsScreen
-/groups/:groupId → GroupDetailScreen
-/schedule-builder→ ScheduleBuilderScreen
-/approvals       → PendingApprovalsScreen
-/outcome         → OutcomeScreen
-/activity        → PlannerActivityScreen
-/archived        → ArchivedScreen
-/dev             → DevMenuScreen   (debug builds only)
+
+StatefulShellRoute.indexedStack   (wrapped by HomeGate, chrome from HomeShell)
+├── branch 1  /groups                        → GroupsScreen
+│              └── /groups/:groupId          → GroupDetailScreen
+├── branch 2  /outcome                       → OutcomeScreen
+│              └── /outcome/approvals        → PendingApprovalsScreen
+└── branch 3  /activity                      → PlannerActivityScreen
+               └── /activity/schedule-builder → ScheduleBuilderScreen
+
+/profile         → ProfileEditScreen     ⎫ account-level: reached from the
+/archived        → ArchivedScreen        ⎬ account menu on any tab, so they
+/dev             → DevMenuScreen (debug) ⎭ belong to no branch and stay root
 ```
 
 Auth gating is a synchronous `redirect` driven by `FirebaseAuth.instance.currentUser`,
@@ -270,16 +276,15 @@ That split is sensible.
 
 **Deep links: none.** The Android manifest declares only `MAIN`/`LAUNCHER` — no
 intent filters, no `android:scheme`. The only "deep link" is a push notification
-tap, handled in Dart (`app.dart:155-173`) by switching on `message.data['event']`
-and calling `router.go(...)`.
+tap, handled in Dart (`app.dart:160-183`) by switching on `message.data['event']`
+and calling `router.go(...)` — which is shell-aware, because every destination is
+a branch location.
 
-**This is where navigation is actually broken.** `GroupsScreen`, `OutcomeScreen`
-and `PlannerActivityScreen` are each *both* a tab inside `HomeShell` **and** a
-standalone top-level route. A notification tap calls `router.go(Routes.activity)`,
-which **replaces the whole stack** with a bare `PlannerActivityScreen` — no bottom
-navigation bar, no back button, no route to anywhere else. The user taps a
-notification and lands in a room with no doors; only killing and relaunching the
-app recovers. Same for `/approvals`. See §4.6.
+**This used to be where navigation was broken** — the same three screens were
+registered twice, as tabs *and* as flat top-level routes, so a notification tap
+replaced the whole stack with a bare screen that had no nav bar and no back
+button. Fixed 2026-08-14 by the shell conversion above; see §4.6 for what the
+defect was and what is still unverified.
 
 ## 2.4 Data layer
 
@@ -308,9 +313,10 @@ checks they agree.
 or `.freezed.dart` files. At 5 models this is the right call; the cost is that
 `ScheduleItem.fromDoc` silently papers over bad data (see §4.4).
 
-**Caching:** Firestore's cache only. Note that `HomeShell` uses an `IndexedStack`
-specifically so all three tabs stay mounted and their listeners stay live — a
-deliberate trade of memory and read-count for instant tab switching.
+**Caching:** Firestore's cache only. Note that the tab shell is a
+`StatefulShellRoute.indexedStack`, so all three branches stay mounted and their
+listeners stay live — a deliberate trade of memory and read-count for instant
+tab switching, preserved when the tabs became routes.
 
 ## 2.5 Backend / API surface
 
@@ -414,11 +420,13 @@ IANA zone from the in-memory tz database. Returns the identifier via `pop`.
 and renders either the loading/timeout view, `CompleteProfileScreen`, or
 `HomeShell`.
 
-**`HomeShell`** (78 lines) — The real home. `IndexedStack` of three tabs behind a
-`NavigationBar`. The "My Schedule" destination carries an orange count badge of
-items pending the user's decision, which renders nothing at zero.
+**`HomeShell`** (83 lines) — The real home. Renders the `StatefulNavigationShell`
+go_router hands it, behind a `NavigationBar`; the shell owns tab state, and
+`goBranch` is the only correct way to switch. The "My Schedule" destination
+carries an orange count badge of items pending the user's decision, which renders
+nothing at zero.
 
-**`GroupsScreen`** (tab 1 + `/groups`, 133 lines) — Lists the user's groups (name,
+**`GroupsScreen`** (tab 1, `/groups`, 133 lines) — Lists the user's groups (name,
 join code, member count). FAB creates a group (dialog → name → 6-char code from a
 no-O/0/I/1 alphabet). App-bar action joins by code (dialog → uppercase code →
 lookup → arrayUnion). Empty state tells you to create or join.
@@ -429,7 +437,7 @@ card with copy-to-clipboard and share-sheet buttons, then the member roster. Eac
 of the whole product, and it is one `Switch` on a `ListTile`. Flipping it writes
 `groups/{g}/plannerGrants/{planner}_{me}`.
 
-**`ScheduleBuilderScreen`** (`/schedule-builder`, 344 lines — the largest screen)
+**`ScheduleBuilderScreen`** (`/activity/schedule-builder`, 344 lines — the largest screen)
 — The planner's compose form. A target picker listing "Myself" first, then every
 person who granted them permission (from the cross-group collection-group query).
 Once a target is chosen: a neutral banner naming *whose* timezone you are
@@ -439,20 +447,20 @@ gap/overlap, one for quiet hours / the fixed 11pm–6am band. Both warnings are
 non-blocking. Submitting resets the form but keeps the target, so you can plan a
 whole day in sequence.
 
-**`PendingApprovalsScreen`** (`/approvals`, 154 lines) — The target's queue,
+**`PendingApprovalsScreen`** (`/outcome/approvals`, 154 lines) — The target's queue,
 sorted soonest-first, under an orange "Waiting on you" section rule. Each card:
 title, the instant in its own timezone, who it's from, the planner's note in
 quotes, and Reject / Approve buttons. Reject opens a dialog with an optional
 reason. Neither button is red — rejecting is treated as a legitimate outcome, not
 a destructive act.
 
-**`OutcomeScreen`** ("My Schedule" tab + `/outcome`, 196 lines) — The target's
+**`OutcomeScreen`** ("My Schedule" tab, `/outcome`, 196 lines) — The target's
 approved items, soonest-first. Each card offers Skip (dialog + optional reason)
 and Done. Once an outcome exists, the buttons are replaced by a status badge and
 the skip reason. Settled cards grow a `⋮` overflow with Archive. The app bar
 carries a badge-counted shortcut into the approvals queue.
 
-**`PlannerActivityScreen`** ("Activity" tab + `/activity`, 205 lines) — The
+**`PlannerActivityScreen`** ("Activity" tab, `/activity`, 205 lines) — The
 planner's mirror: everything they created *for other people* (self-planned items
 are filtered out — those live in My Schedule), newest first. Each card shows one
 status badge (an outcome badge replaces the approval badge, because "Done" implies
@@ -619,7 +627,8 @@ application-service layer.
 # 4. HEALTH CHECK
 
 **Baseline, verified now:** `flutter analyze` → *No issues found*.
-`flutter test` → **66/66 passing** in ~2s.
+`flutter test` → **65/65 passing** in ~2s. (66 until the fake `FLAG_SECURE`
+assertion was deleted in `bb52989` — a test that proved nothing is not coverage.)
 
 ## 4.1 Security-rules problems (the most serious findings)
 
@@ -711,46 +720,64 @@ but it means a fresh clone does not compile until someone runs
   free. At a year of daily items it is a growing cold-start cost and a growing
   Firestore bill, and there is no pagination seam to add later without touching
   every screen.
-- **`GoRouterRefreshStream` never gets disposed.** It's constructed inline in
-  `routerProvider` and no `ref.onDispose` cancels it. Harmless in a single-router
-  app that lives for the process, but it is a leak by construction.
+- ~~**`GoRouterRefreshStream` never gets disposed.**~~ **Fixed 2026-08-14.**
+  `routerProvider` now holds the stream in a local and registers
+  `ref.onDispose(refresh.dispose)`, which cancels the `authStateChanges()`
+  subscription. go_router never disposes a `refreshListenable` itself — it only
+  calls `removeListener` (`information_provider.dart:318`) — so this was always
+  the caller's job. Defensive rather than a live leak: the provider is never
+  invalidated today, but a scoped override in a test would strand the listener.
 - **Side effects in `build()`** — `app.dart:180`, `profile_edit_screen.dart:96`.
 - **The invite code has no uniqueness check.** `_generateJoinCode()` picks 6 chars
   from a 32-char alphabet (~10⁹ combinations) and never checks for a collision.
   `joinByCode` does `.limit(1)`, so a collision silently sends the joiner to
   whichever group Firestore returns first. Very unlikely; completely unhandled.
 
-## 4.5 Broken: the app lock's screenshot/recents protection does nothing
+## 4.5 FIXED 2026-08-14: the app lock's screenshot/recents protection did nothing
 
-`AppLockTile`'s subtitle promises the user: *"Also hides the app from the recents
-switcher and blocks screenshots."*
+**The defect.** `AppLockTile`'s subtitle promised *"Also hides the app from the
+recents switcher and blocks screenshots"*, while `secure_window.dart` invoked a
+`MethodChannel('time_app/secure_window')` that **had no Kotlin handler** —
+`MainActivity.kt` was the bare 5-line default. Every call threw
+`MissingPluginException`, caught and logged as `'secure_window: no platform
+handler (expected off Android)'`, a message that read as benign on the one
+platform where it was a defect. It was a privacy claim the app did not honour.
 
-The implementation (`secure_window.dart`) invokes `MethodChannel('time_app/secure_window')`.
-**There is no Kotlin handler for that channel.** `MainActivity.kt` is the bare
-5-line default; nothing anywhere registers the channel. Every call throws
-`MissingPluginException`, which is caught and logged as
-`'secure_window: no platform handler (expected off Android)'` — a message that
-reads as benign on the one platform where it is a defect.
+**The fix.** `MainActivity.kt` now registers the channel and applies/clears
+`FLAG_SECURE` on the window, and the subtitle is scoped to Android (iOS has no
+API for either behaviour). The `app_lock_test.dart` assertions that "proved"
+FLAG_SECURE against a *fake* `SecureWindow` were **deleted**, not repaired —
+never let a fake stand in for an unverified native effect — which is why the
+suite went from 66 tests to 65.
 
-So: screenshots are not blocked, the recents thumbnail is not blanked, and the UI
-tells the user otherwise. Worse, the tests reinforce the illusion — `app_lock_test.dart`
-asserts `start()` "re-applies FLAG_SECURE" against a *fake* `SecureWindow`, so the
-suite proves the Dart side calls a method that lands nowhere. This is the single
-most consequential half-finished thing in the repo: it is a privacy claim the app
-does not honour.
+**Verified on device**, unlike §4.6: turned the lock on, attempted a screenshot,
+checked the recents thumbnail, on the Redmi (HyperOS, Android 16) on 2026-08-14.
+Recorded in DECISIONS.md.
 
-## 4.6 Broken: notification taps strand the user
+## 4.6 FIXED 2026-08-14: notification taps stranded the user
 
-`app.dart:155-173` routes a tap with `router.go(...)`, which replaces the
-navigation stack. `/activity` and `/approvals` are registered as bare top-level
-routes, so the user lands on a screen with **no bottom nav bar and no back
-button**. `PlannerActivityScreen`'s only exits are its FAB (Schedule Builder) and
-the account menu (Edit profile / Archived / Sign out) — none of which return to
-the shell. `PendingApprovalsScreen` has no exit at all. The user must kill the app.
+**The defect.** `app.dart` routed a tap with `router.go(...)`, which replaces the
+navigation stack. `/activity` and `/approvals` were registered as bare top-level
+routes, so the user landed on a screen with **no bottom nav bar and no back
+button**. `PlannerActivityScreen`'s only exits were its FAB and the account menu;
+`PendingApprovalsScreen` had no exit at all. The user had to kill the app. The
+root cause was the same three screens being both tabs and routes — not
+`_handleTap`.
 
-This is a direct consequence of the same three screens being both tabs and routes.
-The fix is a `StatefulShellRoute` (or `go` to `/` plus a tab-index parameter), not
-a patch to `_handleTap`.
+**The fix**, in three commits: the tabs became branches of a
+`StatefulShellRoute.indexedStack` (so a screen is registered exactly once); each
+tab's detail screens became sub-routes of their branch, which is what makes
+`go('/outcome/approvals')` select the My Schedule tab and stack the queue on it
+with the bar beneath; and the dev menu learned to `go` to in-shell destinations
+instead of pushing them. `_handleTap` itself needed no code change — a plain
+`go()` is shell-aware once the destinations are branch locations.
+
+**Still unverified.** `flutter analyze` is clean and 65 tests pass, but **routing
+has zero automated coverage** (§4.9, D18) — no test exercises any of this. The
+real verification is the manual device matrix in WORK_PLAN.md "Session 3 manual
+device checklist" (tabs, pushed routes, all four notification events, dev menu,
+auth edges), which **has not been run yet**. Treat this section as fixed-in-tree,
+not proven-on-device, until that pass is recorded.
 
 ## 4.7 Files over 300 lines
 
@@ -782,16 +809,19 @@ Everything else in `lib/` is under 300, most under 200. Genuinely good.
   screens), a local `String? _error` rendered in red (auth, profile), and a
   `SnackBar` with the raw exception (schedule builder, groups). Users are shown
   raw `Exception.toString()` output in several places.
-- **The dev menu's route list is stale** — it links to screens that are now tabs,
-  so tapping "Groups & Invite" from it pushes a nav-less `GroupsScreen`, the same
-  dead-end as §4.6.
+- ~~**The dev menu's route list is stale.**~~ **Fixed 2026-08-14.** Each entry
+  now carries an `inShell` flag: the five in-shell destinations use `go`, and
+  only genuinely root-level `/profile` is pushed. Pushing a branch location from
+  `/dev` made go_router *clone* the shell rather than reuse it, duplicating the
+  branch-navigator `GlobalKey`s. The trade: `go` drops the dev menu from the
+  stack, so Back returns to the tab, not to the menu.
 - **`README.md` is still the unmodified Flutter template.** For a project with
   3,364 lines of design documentation, the one file a newcomer opens first says
   "A new Flutter project."
 
 ## 4.9 Test coverage
 
-**5 files, 1,354 lines, 66 tests, all passing.** Coverage is deep in a few places
+**5 files, 1,356 lines, 65 tests, all passing.** Coverage is deep in a few places
 and absent everywhere else.
 
 | Area | Coverage |
@@ -803,6 +833,7 @@ and absent everywhere else.
 | DST resolver | **Good** — 62 lines, 5 cases including southern hemisphere. |
 | **Repositories** (all 5) | **Zero.** No fake Firestore, no `mockito`. |
 | **Every screen except the lock** | **Zero.** No widget tests for approve, reject, done, skip, withdraw, create. |
+| **Routing / navigation** | **Zero.** Nothing builds the router. The shell, the per-branch sub-routes and notification-tap destinations (§4.6) are verified by hand only. |
 | **The Worker** (all notification policy) | **Zero.** No JS test runner, no `package.json`. |
 | **Quiet-hours math** | **Zero**, despite being pure functions with a wrap-past-midnight edge case. |
 | **`write → notify` pairing** | **Zero.** |
@@ -839,11 +870,10 @@ tested not at all. If the core loop regresses, nothing catches it.
 2. **Constrain the target's item-update rule** to the fields they legitimately
    set. As written, a target can suppress the notification that closes the
    accountability loop — which defeats the product.
-3. **Write the `secure_window` Kotlin handler**, or delete the sentence in the UI
-   that promises what it doesn't do. Shipping a false privacy claim is worse than
-   shipping no feature.
-4. **Fix notification-tap navigation** (`StatefulShellRoute`, or `go('/')` plus a
-   tab index). Today a tapped notification requires killing the app.
+3. ~~**Write the `secure_window` Kotlin handler.**~~ **Done 2026-08-14** and
+   verified on the Redmi (§4.5); the UI copy is now scoped to Android.
+4. ~~**Fix notification-tap navigation.**~~ **Done 2026-08-14** via
+   `StatefulShellRoute` + per-branch sub-routes (§4.6). Device matrix not yet run.
 5. **Move `write → notify` into the repository.** Six call sites remembering to
    pair two awaits is one forgotten paste away from a silent event-type outage.
 6. **Add widget tests for the core loop** — approve, reject, done, skip, withdraw.

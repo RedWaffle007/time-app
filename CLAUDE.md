@@ -100,6 +100,15 @@ or in DECISIONS.md.
   requirement above.
 
 **Unverified — still open.** Ahead of the numbered list:
+**Session 3 routing refactor (D2 + D11) — FIXED IN TREE 2026-08-14, NOT RUN ON
+DEVICE.** The three tabs are now branches of a `StatefulShellRoute` and each
+tab's detail screens are sub-routes of their branch, so a notification tap can no
+longer strand the user. `flutter analyze` is clean and 65 tests pass, but
+**routing has zero automated coverage** — nothing here is proven until the
+"Session 3 manual device checklist" in WORK_PLAN.md (sections A–E: tabs, pushed
+routes, all four notification events, dev menu, auth edges) is run on the Redmi
+and its result recorded. Do not treat D2 as closed before then.
+
 **Group A/C four-event foreground retest — BLOCKED on the friend.** All four events
 require creator != target, so none can be tested on one account (self-planned items
 are skipped by the self-planned guard). Expect `sent:1` per event with

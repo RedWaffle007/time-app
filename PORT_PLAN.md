@@ -499,6 +499,27 @@ it's written where it can be violated.
 
 ## 3.3 Navigation — and how it structurally fixes §4.6
 
+> **AMENDMENT 2026-08-14.** This document is a point-in-time analysis and is left
+> as written, but three of its factual premises have since changed in the Flutter
+> tree, and they cut *against* the port:
+>
+> - **§4.6 is fixed in Dart.** The tabs are branches of a
+>   `StatefulShellRoute.indexedStack` and each tab's detail screens are
+>   sub-routes of their branch, so a screen is registered exactly once and a
+>   notification `go()` lands in the right tab with the bar and a back stack.
+>   The "tab-vs-route duplication" this section is built on no longer exists —
+>   it took about half a day in Flutter, not a framework change. (Fixed in tree;
+>   the device matrix has not been run.)
+> - **The `GoRouterRefreshStream` leak is closed** — `ref.onDispose` cancels the
+>   subscription. It was defensive rather than live in any case.
+> - **The test count is 65, not 66**, everywhere this document says 66: the
+>   deleted one was a fake `FLAG_SECURE` assertion, and `FLAG_SECURE` itself now
+>   has a real Kotlin handler that is device-verified — so the "`FLAG_SECURE`
+>   really applies on Android" line in the benefits table is also settled in
+>   Dart.
+>
+> Read the argument below with those three corrections applied.
+
 The current bug: `GroupsScreen`, `OutcomeScreen` and `PlannerActivityScreen` are
 each *both* a tab inside `HomeShell` **and** a standalone top-level route. A
 notification tap calls `router.go(Routes.activity)`, which replaces the whole
@@ -888,6 +909,8 @@ If you're going to abandon the port, you will abandon it here.
 - **Several current defects vanish by construction**, not by being fixed: the
   controller leaks (React state), the tab/route duplication behind the
   notification dead-end (file-based routing), the `GoRouterRefreshStream` leak.
+  *(Amended 2026-08-14: the last two were since fixed in Dart — see the
+  amendment in §3.3. Only the controller leaks remain on this bullet.)*
 
 ## 5.2 The case AGAINST
 
@@ -1009,7 +1032,8 @@ of Kotlin in the app you already have.
    it is the cheapest information available to you.
 2. **(2–4 days) Clear ARCHITECTURE.md §5 items 3–8.** Write the `secure_window`
    Kotlin handler (or change the copy — either is honest, silence is not). Fix
-   notification-tap navigation with a `StatefulShellRoute`. Move `write → notify`
+   notification-tap navigation with a `StatefulShellRoute`. *(Both done
+   2026-08-14 — see §3.3 amendment.)* Move `write → notify`
    into the repository. Put `limit()` on the item queries. Make `fromDoc` stop
    inventing a timestamp. Dispose the four dialog controllers and extract
    `_reasonLine` and the pending-count filter.

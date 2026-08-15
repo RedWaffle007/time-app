@@ -240,6 +240,9 @@ would show it. Look for the damage: 800-line god-screens, dead branches,
 inconsistent layering, analyzer noise, abandoned half-features.
 
 It isn't there. `flutter analyze` reports no issues. 66/66 tests pass in ~2s.
+*(Amended 2026-08-14: 65/65 — the deleted test was a fake `FLAG_SECURE`
+assertion, and the routing dead end this review discusses is now fixed in Dart.
+This document is otherwise left as written, as a point-in-time review.)*
 Sixty-two files, and exactly **one** production file exceeds 300 lines
 (`schedule_builder_screen.dart`, 344). Nine features, all shaped identically as
 `domain/data/application/presentation`, with layers omitted only where they'd be

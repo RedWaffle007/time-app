@@ -13,7 +13,8 @@ deployed,"* and that is tracked below as **D20**, because written-but-unshipped
 is not fixed.
 
 **Baseline, measured now:** `flutter analyze` → *No issues found* (4.8s).
-`flutter test` → **66/66 passing**. `flutter pub outdated` → **25 upgradable but
+`flutter test` → **65/65 passing** (66 before `bb52989` deleted the fake
+`FLAG_SECURE` assertion). `flutter pub outdated` → **25 upgradable but
 locked**, **4 constrained below a resolvable version** (ARCHITECTURE.md §1.2's
 "41" is stale).
 
@@ -92,8 +93,8 @@ misled.
 | # | Defect | Location | Why it matters | Effort | User-facing |
 |---|---|---|---|---|---|
 | **D20** | **Rules + client hardening written, committed, not deployed** | `firestore.rules`; `lib/features/groups/data/group_repository.dart:49,151`; `scripts/backfill-join-codes.mjs`; deploy order at `ARCHITECTURE.md:996` | Three findings (user enumeration, group/joinCode enumeration, notification suppression) are closed in the tree and possibly still open in the real project. Worse, the two halves are coupled: the tree's `createGroup` writes `joinCodes/{CODE}`, which old rules deny — so group creation is broken until rules land. Deploying breaks join-by-code for anyone still on an old client, so device installs must follow immediately. | **1–2h** (mostly verification + a backfill run) | Yes — group create/join |
-| **D1** | **`FLAG_SECURE` is a no-op and the UI claims otherwise** | `lib/features/applock/data/secure_window.dart:22` declares `MethodChannel('time_app/secure_window')`; `android/app/src/main/kotlin/.../MainActivity.kt` is 5 lines with no handler (grep confirms the channel name appears only in Dart + one test import); the promise is `app_lock_tile.dart:83-86` — *"Also hides the app from the recents switcher and blocks screenshots."* | A privacy claim the app does not honour. Every call throws `MissingPluginException`, caught and logged as *"expected off Android"* — a message that reads benign on the one platform where it is a defect. Compounded: `test/app_lock_test.dart` asserts `start()` re-applies FLAG_SECURE against a **fake**, so the suite makes a broken feature look covered. | **1–2h** (Kotlin handler) or **15 min** (honest copy) — plus retiring the fake-based assertions | **Yes** |
-| **D2** | **A notification tap strands the user with no way out** | `lib/app.dart:155-172` (`_handleTap` calls `router.go(...)`); `lib/routing/app_router.dart` registers `/groups`, `/outcome`, `/activity` as flat top-level routes; `home_shell.dart:33-37` renders the same three screens as tabs | `go()` replaces the whole stack, so the user lands on a bare `PendingApprovalsScreen` or `PlannerActivityScreen` — no bottom nav, no back button. `PendingApprovalsScreen` has no exit at all. Only killing the app recovers. Root cause is the tab/route duplication, not `_handleTap`. `dev_menu_screen.dart:27-32` walks into the same trap in debug. | **3–4h** (`StatefulShellRoute`) | **Yes, severe** |
+| **D1** | ✅ **FIXED 2026-08-14** (`bb52989`, `50b2113`; device-verified `061a4e3`) — ~~**`FLAG_SECURE` is a no-op and the UI claims otherwise**~~ | `lib/features/applock/data/secure_window.dart:22` declares `MethodChannel('time_app/secure_window')`; `android/app/src/main/kotlin/.../MainActivity.kt` is 5 lines with no handler (grep confirms the channel name appears only in Dart + one test import); the promise is `app_lock_tile.dart:83-86` — *"Also hides the app from the recents switcher and blocks screenshots."* | A privacy claim the app does not honour. Every call throws `MissingPluginException`, caught and logged as *"expected off Android"* — a message that reads benign on the one platform where it is a defect. Compounded: `test/app_lock_test.dart` asserts `start()` re-applies FLAG_SECURE against a **fake**, so the suite makes a broken feature look covered. | **1–2h** (Kotlin handler) or **15 min** (honest copy) — plus retiring the fake-based assertions | **Yes** |
+| **D2** | ✅ **FIXED IN TREE 2026-08-14** (`6c31364` + branch nesting + dev-menu commits; **device matrix not yet run**) — ~~**A notification tap strands the user with no way out**~~ | `lib/app.dart:155-172` (`_handleTap` calls `router.go(...)`); `lib/routing/app_router.dart` registers `/groups`, `/outcome`, `/activity` as flat top-level routes; `home_shell.dart:33-37` renders the same three screens as tabs | `go()` replaces the whole stack, so the user lands on a bare `PendingApprovalsScreen` or `PlannerActivityScreen` — no bottom nav, no back button. `PendingApprovalsScreen` has no exit at all. Only killing the app recovers. Root cause is the tab/route duplication, not `_handleTap`. `dev_menu_screen.dart:27-32` walks into the same trap in debug. | **3–4h** (`StatefulShellRoute`) | **Yes, severe** |
 
 ## 1.2 Correctness and architecture
 
@@ -104,7 +105,7 @@ misled.
 | **D5** | No `limit()` and no server-side `orderBy` on any query | Zero `limit(` in `lib/features/*/data/` (verified). `watchItemsForTarget`, `watchItemsByPlanner`, `watchMyGroups`, `watchMembers`, `watchGrants` are all unbounded; sorting and filtering happen in `build()` | Free at two users; a growing cold-start cost and Firestore bill at a year of daily items, with **no pagination seam** — adding one later touches every screen. Adding `orderBy` to the `collectionGroup('items')` query will need a composite index in `firestore.indexes.json`. | **2h** for the seam | Eventually |
 | **D13** | Two idioms for "get the current uid" | `currentUidProvider` (used by archive + schedule providers) vs. `ref.watch(authStateProvider).value?.uid` / `authRepository.currentUser` (groups, group detail, both profile screens, schedule builder) | The first exists specifically to make things testable without Firebase; half the app bypasses it, which is exactly why the repositories have no tests. | **1–2h** | No |
 | **D10** | Side effects inside `build()` | `lib/app.dart:182` (`registerForUser` during build); `profile_edit_screen.dart:96-110` (assigns controllers and flips `_initialised` during build) | Both are idempotent and commented, so harmless today — and both are a trap for the next person. | **1h** | No |
-| **D11** | `GoRouterRefreshStream` is never disposed | Constructed inline in `routerProvider` (`app_router.dart`); the class has a `dispose()` (`go_router_refresh_stream.dart:16`) that nothing calls — no `ref.onDispose` | A leak by construction. Harmless in a single-router app that lives for the process; wrong as a pattern. | **5 min** | No |
+| **D11** | ✅ **FIXED 2026-08-14** — ~~`GoRouterRefreshStream` is never disposed~~ | Constructed inline in `routerProvider` (`app_router.dart`); the class has a `dispose()` (`go_router_refresh_stream.dart:16`) that nothing calls — no `ref.onDispose` | A leak by construction. Harmless in a single-router app that lives for the process; wrong as a pattern. | **5 min** | No |
 
 ## 1.3 Duplication and consistency
 
@@ -437,6 +438,23 @@ always exists. Switch `_handleTap` from `go()` to the shell-aware navigation.
 Update `dev_menu_screen.dart:27-32` so the dev menu stops walking into the same
 trap. Add `ref.onDispose` for `GoRouterRefreshStream` while you are in the file.
 
+**AS BUILT (2026-08-14) — three commits, and it diverged from the plan above in
+three ways worth knowing:**
+
+1. **`/approvals`, `/schedule-builder` and `/groups/:groupId` were *nested*, not
+   "pushed on top of the shell".** They are sub-routes of the branch they belong
+   to, so their locations changed: `/outcome/approvals` and
+   `/activity/schedule-builder` (group detail kept its path). That is what makes
+   a bare `go()` land in the right tab. `/profile` and `/archived` did stay
+   top-level — they are account-level and belong to no branch.
+2. **`_handleTap` needed no code change.** Once both destinations are branch
+   locations, a plain `go()` *is* the shell-aware navigation.
+3. **The dev menu could not simply be "fixed to push".** Pushing a branch
+   location from `/dev` makes go_router clone the shell instead of reusing it
+   (duplicating the branch-navigator `GlobalKey`s), so the five in-shell
+   destinations use `go` and only `/profile` is pushed. This is what changed
+   section D below.
+
 *Ends with:* tapping a notification lands you somewhere with doors.
 
 ### D15 — UNRESOLVED, not dropped
@@ -518,12 +536,21 @@ one must land on a screen with the nav bar and a way back.
 
 **D. Dev menu — all six destinations**
 
-Each pushes and must return to the dev menu on Back.
+**Two different behaviours by design** (see "AS BUILT" item 3): `/profile` is a
+root-level route and is **pushed**, so Back returns to the dev menu. The other
+five are in-shell and are reached with **`go`**, which drops the dev menu from
+the stack — Back returns to the *tab*, not to the menu. Both are correct; a
+destination that returns to the wrong one of those two places is a failure.
 
-- [ ] D1 Edit Profile · [ ] D2 Groups & Invite · [ ] D3 Schedule Builder
-- [ ] D4 Activity (planner) · [ ] D5 Pending Approvals · [ ] D6 My Schedule /
-      Outcomes
-- [ ] D7 From any of the six, Back → dev menu → Back → the tab you launched from.
+- [ ] D1 Edit Profile → pushed; Back → **dev menu**.
+- [ ] D2 Groups & Invite · [ ] D3 Schedule Builder · [ ] D4 Activity (planner) ·
+      [ ] D5 Pending Approvals · [ ] D6 My Schedule / Outcomes — each lands in
+      its **tab** with the nav bar visible, and the dev menu is gone from the
+      stack.
+- [ ] D7 From D2–D6, Back → the tab (**not** the dev menu), and the tab bar
+      still works. From D1, Back → dev menu → Back → the tab you launched from.
+- [ ] D8 None of the six produces a duplicate-`GlobalKey` crash or a second nav
+      bar — that is the specific failure `go` exists to prevent here.
 
 **E. Auth edges**
 
