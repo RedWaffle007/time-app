@@ -12,6 +12,7 @@ import '../features/groups/presentation/group_detail_screen.dart';
 import '../features/groups/presentation/groups_screen.dart';
 import '../features/auth/presentation/profile_edit_screen.dart';
 import '../features/home/presentation/home_gate.dart';
+import '../features/home/presentation/home_shell.dart';
 import '../features/outcomes/presentation/outcome_screen.dart';
 import '../features/scheduling/presentation/planner_activity_screen.dart';
 import '../features/scheduling/presentation/schedule_builder_screen.dart';
@@ -57,21 +58,57 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null; // no redirect
     },
     routes: [
+      // `/` is a pure redirect: the shell's first branch IS the landing screen,
+      // so home is an alias for it rather than a fourth screen. Keeping the path
+      // registered means `redirect` (and any saved `/` link) still resolves.
       GoRoute(
         path: Routes.home,
-        builder: (context, state) => const HomeGate(),
+        redirect: (context, state) => Routes.groups,
       ),
       GoRoute(
         path: Routes.auth,
         builder: (context, state) => const AuthScreen(),
       ),
+      // The tabbed home. Each tab is a BRANCH with its own navigator, so a
+      // screen is registered exactly once (D2 was the same three screens being
+      // registered twice — as tabs here and as flat top-level paths below) and
+      // anything pushed inside a branch keeps the NavigationBar beneath it.
+      //
+      // HomeGate wraps the shell rather than gating in `redirect` — see the
+      // synchronous-redirect note above and HomeGate's own doc comment.
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) =>
+            HomeGate(child: HomeShell(navigationShell: navigationShell)),
+        branches: [
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: Routes.groups,
+                builder: (context, state) => const GroupsScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: Routes.outcome,
+                builder: (context, state) => const OutcomeScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: Routes.plannerActivity,
+                builder: (context, state) => const PlannerActivityScreen(),
+              ),
+            ],
+          ),
+        ],
+      ),
       GoRoute(
         path: Routes.profile,
         builder: (context, state) => const ProfileEditScreen(),
-      ),
-      GoRoute(
-        path: Routes.groups,
-        builder: (context, state) => const GroupsScreen(),
       ),
       GoRoute(
         path: '/groups/:groupId',
@@ -85,14 +122,6 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.approvals,
         builder: (context, state) => const PendingApprovalsScreen(),
-      ),
-      GoRoute(
-        path: Routes.outcome,
-        builder: (context, state) => const OutcomeScreen(),
-      ),
-      GoRoute(
-        path: Routes.plannerActivity,
-        builder: (context, state) => const PlannerActivityScreen(),
       ),
       // One shared Archived view for both roles, reached from the account menu
       // rather than a per-tab control — a user archives items, not
