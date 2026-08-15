@@ -27,6 +27,15 @@ import '../application/archive_providers.dart';
 class ArchiveMenuButton extends ConsumerWidget {
   const ArchiveMenuButton({super.key, required this.item});
 
+  /// How long Undo stays on offer.
+  ///
+  /// Longer than the SnackBar default of 4s, and deliberately the same 6s the
+  /// FCM foreground banner uses (`app.dart`): both are messages the user is
+  /// expected to *act* on, not read in passing, so they get one consistent
+  /// window. Undo also earns it — it is the only affordance that reverses the
+  /// archive, and 4s is short for a control the user has to notice first.
+  static const undoWindow = Duration(seconds: 6);
+
   final ScheduleItem item;
 
   @override
@@ -86,6 +95,7 @@ class ArchiveMenuButton extends ConsumerWidget {
     messenger.showSnackBar(
       SnackBar(
         persist: false,
+        duration: undoWindow,
         content: const Text('Archived — hidden from your views only.'),
         action: SnackBarAction(
           label: 'Undo',
