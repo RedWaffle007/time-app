@@ -2307,5 +2307,166 @@ symptom to catch it by later.
 
 **Routing has zero automated coverage.** Nothing in the suite builds the router;
 `flutter analyze` clean and 65/65 passing say nothing about any of the above. The
-verification is the manual device matrix in WORK_PLAN.md, sections A–E. **It has
-not been run.** Until its result is recorded here, D2 is fixed-in-tree only.
+verification is the manual device matrix in WORK_PLAN.md, sections A–E.
+**RESOLVED — run 2026-08-15, see the next entry.** Sections A, B and D pass; C and
+E3–E5 remain unrun. Automated coverage is still zero and that has not changed.
+
+# Session 3 device pass (2026-08-15) — D2 verified, five defects found
+
+Redmi / HyperOS, Android 16, debug build. Device restored to its prior build and
+theme afterwards.
+
+## The verdict on D2
+
+**The routing work is correct.** Tabs, tab-state persistence, pushed detail
+screens over the nav bar with working back arrows, nested routes, and all six dev
+menu destinations — every one behaved as designed (A1–A3, A5, A6, B1–B9, D1–D8).
+The notification dead end that D2 was about is closed *as far as navigation goes*;
+the notification events themselves (C) are still unrun.
+
+**A4 is recorded as "behaves as written, spec superseded" — not as a failure.**
+The checklist itself asked that Back at a tab root exit the app. It does. The
+expectation was wrong, and reversing it is a product decision taken today, not a
+defect found against the design. Keeping this distinction matters: if A4 were
+filed as a failure, the shell conversion would carry blame for behaviour it never
+touched.
+
+**Not run, and not to be treated as passing:** C1–C8 (needs a second device with a
+live FCM token) and E3–E5. The `wrangler tail` showing no delivery is the expected
+no-tokens progression following the stale-token cleanup — the Worker and the admin
+service-account key are fine (verified 2026-07-24, unchanged). The notification
+retest must re-register a device token before section C means anything.
+
+## The five defects — every one pre-existing
+
+Stated up front because it decides how each is filed: **none of these is a Session
+3 regression.** The pass found them because it was the first end-to-end drive of
+the app in one sitting, not because the refactor caused them. All five are fixed
+in the commits following this entry, one per commit.
+
+### 1. Back exits the app from a tab root, with no confirmation
+
+`GoRouterDelegate.popRoute()` (`go_router-17.3.0/lib/src/delegate.dart:57-79`)
+walks the current navigators calling `maybePop()`. At a tab root the branch
+navigator has a single route and declines; the root navigator holds only the shell
+route and declines; no `onExit` is defined; it returns `false`, and the engine
+finishes the activity. Silent exit.
+
+**Pre-existing.** `grep -rn "PopScope\|WillPopScope\|onPopInvoked\|SystemNavigator"
+lib/` is empty — the app has never had back handling. Before the refactor
+(`git show 6c31364^:lib/features/home/presentation/home_shell.dart`) the tabs were
+a local `int _index` over an `IndexedStack`; switching tabs pushed no route, so
+Back at any tab exited identically. The refactor changed the mechanism, not the
+outcome — and it is what makes the fix clean, since `goBranch(0)` now exists.
+
+**Decision: Back returns to the Groups tab from any other tab; Groups itself takes
+a "press again to exit" confirmation (~2s window).** Implemented as a `PopScope` in
+`HomeShell`. Placement is load-bearing: the shell route is built on the **root**
+navigator, so the `PopScope` registers there and is consulted only after the
+branch navigator has declined — which is the order that makes "Back inside a tab's
+own stack still pops that stack" keep working.
+
+### 2. The Archived–Undo snackbar outlives sign-out — two independent causes
+
+**(a) It never auto-dismisses, and adding a `duration` would not help.**
+Flutter 3.44.6 (`snack_bar.dart:303`):
+
+```dart
+persist = persist ?? action != null;
+```
+
+**Any `SnackBar` carrying a `SnackBarAction` defaults to `persist: true`**, and the
+dismiss timer then fires into a no-op (`scaffold.dart:619-626`):
+
+```dart
+_snackBarTimer = Timer(snackBar.duration, () {
+  if (snackBar.persist) { return; }   // never dismisses
+  hideCurrentSnackBar(reason: SnackBarClosedReason.timeout);
+});
+```
+
+Blast radius is exactly the two actioned snackbars in the app:
+`archive_menu_button.dart:65-73` (Undo), and the FCM foreground banner
+`app.dart:134-152` (View) — **whose explicit `duration: 6s` at `app.dart:135` has
+been dead code the whole time.** The three action-less snackbars
+(`groups_screen.dart:127`, `schedule_builder_screen.dart:106,123`) dismiss
+normally, which is why this was never noticed.
+
+**(b) It survives an auth change, because it lives outside the navigation tree.**
+`MaterialApp` builds the `ScaffoldMessenger` **above** the Router:
+`flutter/packages/flutter/lib/src/material/app.dart:1047` wraps a `childWidget`
+that already contains our `builder` (`AppLockGate`) and the `Router`. So no route
+change, branch switch, or sign-out can reach the snackbar queue. Worse,
+`scaffold.dart:211-222` `_register()` hands the live snackbar to any **newly
+mounted** root `Scaffold` — so `AuthScreen`'s fresh Scaffold re-renders it on
+sign-out, and the next account's shell does it again. Combined with (a), only the
+process ends it. Nothing in `signOutWithTokenCleanup`
+(`messaging_service.dart:182-188`) tears down UI.
+
+**The sharp edge is not cosmetic.** The `Undo` closure
+(`archive_menu_button.dart:70`) captures `uid` at show time, so a stale snackbar
+tapped after switching accounts writes to the **previous** account's archive doc.
+A UI element crossing an account boundary is a state-scoping leak, and this one has
+a write on the end of it.
+
+**Pre-existing** — `archive_menu_button.dart` last changed in `ec25862`
+(2026-07-25), three weeks before the refactor.
+
+### 3. Edit Profile discards silently on Back; empty name is a reachable state
+
+Draft state is local (`profile_edit_screen.dart:23-33`); Back is a plain
+`Navigator.pop` with no `PopScope`, no dirty check, no confirmation; reopening
+re-prefills from `profileProvider` behind the `_initialised` latch (`:94-111`).
+**No decision was ever recorded for this** — `grep -rn "unsaved\|discard"` over
+DECISIONS.md and UI-RULES.md finds nothing on topic. It was default behaviour, not
+a choice.
+
+Clearing the name greys out **Save changes** (`:62-65`, `:171`) with no `errorText`
+on the field (`:123-128`) — a dead button and no stated reason.
+
+**Can an empty name be saved?** Not through today's client: both writers gate on
+the same non-empty check (`profile_edit_screen.dart:62-65`,
+`complete_profile_screen.dart:62-64`). But `ProfileRepository` only calls
+`name.trim()` (`profile_repository.dart:30,54`), and **`firestore.rules:90` is
+ownership-only with zero field validation.** So the invariant lives entirely in two
+widget getters. If it were ever bypassed, `Text(m.name)` in the roster
+(`group_detail_screen.dart:94`) renders blank, and the join path denormalizes the
+empty string into the member doc via `profile?.name ?? user.displayName ?? 'Me'`
+(`groups_screen.dart:124`), where `''` is non-null and beats both fallbacks. The
+`?? 'someone'` fallbacks elsewhere are null-guards; an empty string sails through
+all of them. `_initial()` (`group_detail_screen.dart:124-125`) is the one place
+that handles it.
+
+**Decisions: (i) confirm-on-back — a "Discard changes?" dialog when the draft is
+dirty**, not silent discard and not a hard block on Back; **(ii) the server
+enforces a non-empty name.** A required field the server does not enforce is a real
+gap, so the rules change ships — but as its **own commit**, because it is a
+coordinated deploy (rules first, verify the *deployed source*, then install).
+
+### 4 / 5. Archive copy is too long
+
+`archived_screen.dart:44-46` (three lines) and `archive_menu_button.dart:67`.
+Rewritten to keep the one honest point — hidden from you, unchanged for everyone
+else — and **within UI-RULES.md**: neither string uses the word "delete" or a bin
+glyph, per the standing rule at `archive_menu_button.dart:18-21`. "Everyone else
+still sees it" carries the honesty as a positive statement rather than by negating
+"deleted", which is why it was preferred over "not deleted".
+
+### 6. A cancelled sign-in shows a red error with a raw exception
+
+`auth_screen.dart:30-32` catches every throw into `_error = 'Sign-in failed: $e'`,
+rendered in `context.colors.error` at `:62-72`.
+`GoogleSignIn.instance.authenticate()` (`auth_repository.dart:33`) throws
+`GoogleSignInException(code: canceled)` when the user backs out — and
+`auth_repository.dart:27-28` already documents that it "throws on failure (e.g.
+user cancels)". The caller just never discriminated.
+
+**This is not debug-only.** It is our own widget; there is no `kDebugMode` guard
+anywhere near it (`main.dart` holds only the Crashlytics wiring at `:28`). A
+release build shows the same red text with the same raw SDK `toString()`. The
+initial assumption that debug was hiding it in release was wrong, and the fix is
+therefore a release-affecting fix, not a debug nicety.
+
+**Decision: a cancel is a user decision, not a failure** — catch the `canceled`
+code and return silently to the sign-in screen. Red stays rationed for genuine
+failures (UI-RULES.md §2.5) and gets a human message instead of a `toString()`.

@@ -99,15 +99,31 @@ or in DECISIONS.md.
   filled-vs-line firewall. Colour is **committed and closed** — see the standing UI
   requirement above.
 
-**Unverified — still open.** Ahead of the numbered list:
-**Session 3 routing refactor (D2 + D11) — FIXED IN TREE 2026-08-14, NOT RUN ON
-DEVICE.** The three tabs are now branches of a `StatefulShellRoute` and each
-tab's detail screens are sub-routes of their branch, so a notification tap can no
-longer strand the user. `flutter analyze` is clean and 65 tests pass, but
-**routing has zero automated coverage** — nothing here is proven until the
-"Session 3 manual device checklist" in WORK_PLAN.md (sections A–E: tabs, pushed
-routes, all four notification events, dev menu, auth edges) is run on the Redmi
-and its result recorded. Do not treat D2 as closed before then.
+**VERIFIED 2026-08-15 — Session 3 routing refactor (D2 + D11). Do not re-open the
+routing itself.** The three tabs are branches of a `StatefulShellRoute` and each
+tab's detail screens are sub-routes of their branch. The device pass on the Redmi
+(HyperOS, Android 16, debug) cleared sections **A, B and D** of the "Session 3
+manual device checklist" — tabs, tab-state persistence, pushed detail routes with
+working back arrows, nested routes, and all six dev-menu destinations. The
+notification dead end is closed as far as navigation goes. (DECISIONS.md "Session
+3 device pass (2026-08-15)".)
+
+**Still open from that pass, and NOT to be counted as done:**
+- **Section C — the four notification events — NOT RUN.** Needs a second device
+  holding a live FCM token; folded into the notification retest below. The
+  `wrangler tail` no-delivery is the expected no-tokens state after the
+  stale-token cleanup, not a Worker or key fault.
+- **Section E — only E1/E2 run** (sign out; sign in as a different account).
+  E3–E5 not run.
+- **Routing still has zero automated coverage.** The pass was by hand; the next
+  refactor gets no warning from the suite.
+- **Five defects surfaced by the pass**, all pre-existing, none a regression from
+  the refactor: tab-root Back exiting the app silently; the archive-undo snackbar
+  outliving sign-out *and* an account switch (a stale `Undo` closure writes to the
+  previous account); Edit Profile discarding silently on Back with no server-side
+  name validation; over-long archive copy; and a cancelled sign-in rendering a raw
+  exception in red **in release, not just debug**. Diagnosis and decisions are in
+  DECISIONS.md "Session 3 device pass (2026-08-15)".
 
 **Group A/C four-event foreground retest — BLOCKED on the friend.** All four events
 require creator != target, so none can be tested on one account (self-planned items

@@ -276,7 +276,7 @@ That split is sensible.
 
 **Deep links: none.** The Android manifest declares only `MAIN`/`LAUNCHER` — no
 intent filters, no `android:scheme`. The only "deep link" is a push notification
-tap, handled in Dart (`app.dart:160-183`) by switching on `message.data['event']`
+tap, handled in Dart (`app.dart:155-178`) by switching on `message.data['event']`
 and calling `router.go(...)` — which is shell-aware, because every destination is
 a branch location.
 
@@ -727,7 +727,9 @@ but it means a fresh clone does not compile until someone runs
   calls `removeListener` (`information_provider.dart:318`) — so this was always
   the caller's job. Defensive rather than a live leak: the provider is never
   invalidated today, but a scoped override in a test would strand the listener.
-- **Side effects in `build()`** — `app.dart:180`, `profile_edit_screen.dart:96`.
+- **Side effects in `build()`** — `app.dart:185-188` (FCM registration on every
+  rebuild, deduped inside `MessagingService`), `profile_edit_screen.dart:94-111`
+  (one-shot prefill behind an `_initialised` latch).
 - **The invite code has no uniqueness check.** `_generateJoinCode()` picks 6 chars
   from a 32-char alphabet (~10⁹ combinations) and never checks for a collision.
   `joinByCode` does `.limit(1)`, so a collision silently sends the joiner to
@@ -772,12 +774,36 @@ with the bar beneath; and the dev menu learned to `go` to in-shell destinations
 instead of pushing them. `_handleTap` itself needed no code change — a plain
 `go()` is shell-aware once the destinations are branch locations.
 
-**Still unverified.** `flutter analyze` is clean and 65 tests pass, but **routing
-has zero automated coverage** (§4.9, D18) — no test exercises any of this. The
-real verification is the manual device matrix in WORK_PLAN.md "Session 3 manual
-device checklist" (tabs, pushed routes, all four notification events, dev menu,
-auth edges), which **has not been run yet**. Treat this section as fixed-in-tree,
-not proven-on-device, until that pass is recorded.
+**VERIFIED ON DEVICE 2026-08-15** — Redmi / HyperOS, Android 16, debug build.
+The routing itself passes: the tab shell (**A1–A3, A5, A6**), every pushed route
+and its back arrow (**B1–B9**), and all six dev-menu destinations including the
+deliberate `go`-vs-`push` split (**D1–D8**). Tab state survives switching, nested
+routes resolve into their branch, and detail screens stack over the nav bar with
+a working back arrow. The dead end this section is about is gone.
+
+**Still no automated coverage.** `flutter analyze` is clean and 65 tests pass, but
+nothing here is exercised by a test (§4.9, D18). This is a hand-run matrix, not a
+regression net — the next refactor gets no warning from it.
+
+**A4 — behaves as written; the written expectation is superseded.** The checklist
+asked that Back at a tab root exit the app, and it does. That expectation is now
+rejected as a product decision, not recorded as a failure: Back returns to the
+Groups tab from any other tab, and Groups itself takes a "press again to exit"
+confirmation. This is not a regression — the app has never had back handling of
+any kind (`grep -rn "PopScope\|WillPopScope" lib/` is empty, before the refactor
+and after).
+
+**NOT RUN — do not treat as passing.** **C1–C8** (all four notification events,
+foreground and tray) needs a second device holding a live FCM token, and is
+deferred with the notification retest; the current `wrangler tail` no-delivery is
+the expected no-tokens progression after stale-token cleanup, not a new fault —
+the Worker and the admin key are fine. Of section E only **E1/E2** were exercised
+(sign out; sign in as a different account); **E3–E5 were not run**.
+
+**Five defects surfaced by the pass. None is a regression** — every one pre-dates
+the refactor, and the pass found them only because it was the first time anyone
+drove the whole app in one sitting. Diagnosis and fixes recorded in DECISIONS.md
+"Session 3 device pass (2026-08-15)".
 
 ## 4.7 Files over 300 lines
 

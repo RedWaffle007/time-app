@@ -487,15 +487,30 @@ Run top to bottom in one sitting. An unticked line is a failure, not an omission
 "Nav bar present" means the three-tab `NavigationBar` is visible; "Back" means the
 system back gesture/button.
 
+**RUN 2026-08-15** (Redmi / HyperOS, Android 16, debug build). Sections A, B and D
+pass. **C was not run** (needs a second device with a live FCM token — deferred
+with the notification retest). **Of E, only E1/E2 were run.** A4 needs reading:
+it behaves exactly as written, and the written expectation has been superseded —
+see the note under it. Unticked below means *not run*, not *failed*; every line
+that failed would say so.
+
 **A. Tabs — the shell itself**
 
-- [ ] A1 Cold start signed in → lands on **Groups** with the nav bar visible.
-- [ ] A2 Tap **My Schedule** → switches; Groups' scroll position survives.
-- [ ] A3 Tap **Activity** → switches; nav bar still visible.
-- [ ] A4 Back from a tab at its root → **exits the app** (does not cycle tabs).
-- [ ] A5 The pending-count badge on My Schedule still renders (and shows nothing
+- [x] A1 Cold start signed in → lands on **Groups** with the nav bar visible.
+- [x] A2 Tap **My Schedule** → switches; Groups' scroll position survives.
+- [x] A3 Tap **Activity** → switches; nav bar still visible.
+- [~] A4 Back from a tab at its root → **exits the app** (does not cycle tabs).
+      **Behaves as written — spec superseded 2026-08-15, NOT a failure.** An
+      immediate silent exit from a tab root was judged wrong for the product.
+      Back now returns to the **Groups** tab from any other tab, and Groups takes
+      a "press again to exit" (~2s) confirmation. Not a regression from the shell
+      conversion: the app never had back handling, before or after (the old
+      `IndexedStack` + local `_index` exited identically). Cause is
+      `GoRouterDelegate.popRoute()` returning `false` when neither the branch nor
+      the root navigator can pop, which lets the engine finish the activity.
+- [x] A5 The pending-count badge on My Schedule still renders (and shows nothing
       at zero).
-- [ ] A6 Switch tabs 10× rapidly → no rebuild flash, no lost Firestore listeners
+- [x] A6 Switch tabs 10× rapidly → no rebuild flash, no lost Firestore listeners
       (lists stay populated).
 
 **B. Pushed routes — each must keep a door**
@@ -503,23 +518,34 @@ system back gesture/button.
 For every row: push it, confirm the AppBar back arrow exists, press Back, confirm
 you return to the stated place with the nav bar visible.
 
-- [ ] B1 Groups → tap a group → **Group detail** → Back → Groups tab.
-- [ ] B2 My Schedule → **Pending approvals** → Back → My Schedule tab.
-- [ ] B3 Activity → FAB → **Schedule builder** → Back → Activity tab.
-- [ ] B4 Account menu → **Edit profile** → Back → the tab you launched from.
-- [ ] B5 Account menu → **Archived** → Back → the tab you launched from.
-- [ ] B6 Account menu → **Dev menu** (debug only) → Back → the tab you launched
+- [x] B1 Groups → tap a group → **Group detail** → Back → Groups tab.
+- [x] B2 My Schedule → **Pending approvals** → Back → My Schedule tab.
+- [x] B3 Activity → FAB → **Schedule builder** → Back → Activity tab.
+- [x] B4 Account menu → **Edit profile** → Back → the tab you launched from.
+- [x] B5 Account menu → **Archived** → Back → the tab you launched from.
+- [x] B6 Account menu → **Dev menu** (debug only) → Back → the tab you launched
       from.
-- [ ] B7 B4/B5 launched from **each** of the three tabs → Back returns to *that*
+- [x] B7 B4/B5 launched from **each** of the three tabs → Back returns to *that*
       tab, not always Groups.
-- [ ] B8 Save on Edit profile (`Navigator.pop`) → returns to the launching tab.
-- [ ] B9 Deep stack: Groups → group detail → account menu → Archived → Back →
+- [x] B8 Save on Edit profile (`Navigator.pop`) → returns to the launching tab.
+- [x] B9 Deep stack: Groups → group detail → account menu → Archived → Back →
       group detail → Back → Groups tab.
+
+*B4 passed as a navigation line and surfaced a separate content defect: Back
+discards an edit silently, with no confirmation. Logged below, not a B-line
+failure.*
 
 **C. Notification paths — all four events (needs the second person)**
 
 Foreground (in-app banner → **View**) and background (tray tap) for each. Every
 one must land on a screen with the nav bar and a way back.
+
+**NOT RUN as of 2026-08-15 — every line below is untested.** All four events need
+`creator != target`, so none can be produced on one account, and the device
+currently holds no live FCM token: the `wrangler tail` no-delivery is the expected
+no-tokens progression after the stale-token cleanup, **not** a Worker or
+admin-key fault (both verified 2026-07-24). Section C is deferred to the
+notification retest, which must re-register a token first.
 
 - [ ] C1 `created` → Pending approvals, pushed over My Schedule; Back → My
       Schedule tab.
@@ -542,29 +568,57 @@ five are in-shell and are reached with **`go`**, which drops the dev menu from
 the stack — Back returns to the *tab*, not to the menu. Both are correct; a
 destination that returns to the wrong one of those two places is a failure.
 
-- [ ] D1 Edit Profile → pushed; Back → **dev menu**.
-- [ ] D2 Groups & Invite · [ ] D3 Schedule Builder · [ ] D4 Activity (planner) ·
-      [ ] D5 Pending Approvals · [ ] D6 My Schedule / Outcomes — each lands in
+- [x] D1 Edit Profile → pushed; Back → **dev menu**.
+- [x] D2 Groups & Invite · [x] D3 Schedule Builder · [x] D4 Activity (planner) ·
+      [x] D5 Pending Approvals · [x] D6 My Schedule / Outcomes — each lands in
       its **tab** with the nav bar visible, and the dev menu is gone from the
       stack.
-- [ ] D7 From D2–D6, Back → the tab (**not** the dev menu), and the tab bar
+- [x] D7 From D2–D6, Back → the tab (**not** the dev menu), and the tab bar
       still works. From D1, Back → dev menu → Back → the tab you launched from.
-- [ ] D8 None of the six produces a duplicate-`GlobalKey` crash or a second nav
+- [x] D8 None of the six produces a duplicate-`GlobalKey` crash or a second nav
       bar — that is the specific failure `go` exists to prevent here.
 
 **E. Auth edges**
 
-- [ ] E1 Sign out from the account menu → auth screen, no stranded shell beneath.
-- [ ] E2 Sign back in → Groups tab, nav bar present.
+- [x] E1 Sign out from the account menu → auth screen, no stranded shell beneath.
+- [x] E2 Sign back in → Groups tab, nav bar present. *(Run as sign-in to a
+      **different** account, which is how the snackbar leak below was found.)*
 - [ ] E3 Sign out while a pushed route is open (e.g. Archived) → auth screen, and
-      Back does not reveal the signed-in stack.
+      Back does not reveal the signed-in stack. **NOT RUN.**
 - [ ] E4 A signed-in user with an **incomplete** profile still sees the
-      complete-profile screen instead of the tabs (decision 2 above).
+      complete-profile screen instead of the tabs (decision 2 above). **NOT RUN.**
 - [ ] E5 App lock (D1, shipped) still gates everything: background → foreground on
-      a pushed route → lock screen, not the route.
+      a pushed route → lock screen, not the route. **NOT RUN.**
 
 *Record the date, the build, and any failing line in DECISIONS.md when the pass is
 run. Restore the device to its prior build/theme afterwards.*
+
+### Session 3 pass result (2026-08-15) — five defects, zero regressions
+
+The pass cleared the routing work and surfaced five unrelated defects, **all
+pre-existing**. Full diagnosis in DECISIONS.md "Session 3 device pass
+(2026-08-15)"; fixed one-per-commit immediately after this record.
+
+1. **Back exits the app from a tab root, silently.** See A4 above. Product
+   decision reversed; `home_shell.dart` gains the branch-aware back handling.
+2. **The Archived–Undo snackbar never dies.** Two independent causes: Flutter
+   3.44.6 defaults `SnackBar.persist` to `true` whenever a `SnackBarAction` is
+   present (`snack_bar.dart:303`), so the dismiss timer fires and returns without
+   acting (`scaffold.dart:619-626`); and `MaterialApp` builds the
+   `ScaffoldMessenger` **above** the Router (`material/app.dart:1047`), so no
+   route change or auth transition can tear a snackbar down — a newly mounted
+   `Scaffold` is handed the live one on register (`scaffold.dart:211-222`). It
+   therefore outlives sign-out *and* sign-in as another account. The stale `Undo`
+   closure still captures the **previous** account's uid, which is the sharp edge.
+   Same bug silently voids the explicit `duration: 6s` on the FCM foreground
+   banner (`app.dart:134-152`) — the app's only other actioned snackbar.
+3. **Edit Profile discards silently on Back**, and an empty required name is a
+   reachable state with no visible reason for the dead Save button. The client
+   gates on `_canSave`; **`firestore.rules:90` validates nothing**, so an empty
+   name is one bad caller from being persisted and rendering blank in the roster.
+4. **Empty-archive copy is three lines long** (`archived_screen.dart:44-46`).
+5. **A cancelled sign-in shows a red error with a raw `toString()`**
+   (`auth_screen.dart:30-32, 62-72`). Not debug-gated — it ships in release.
 
 ## Session 4 — Repository tests on the emulator you already run · 3–4h · [D18, V2]
 
