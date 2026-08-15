@@ -22,14 +22,35 @@ class DevMenuScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Each entry: label + the route it pushes.
-    final destinations = <(String, String)>[
-      ('Edit Profile', Routes.profile),
-      ('Groups & Invite', Routes.groups),
-      ('Schedule Builder (planner)', Routes.scheduleBuilder),
-      ('Activity (planner)', Routes.plannerActivity),
-      ('Pending Approvals (target)', Routes.approvals),
-      ('My Schedule / Outcomes (target)', Routes.outcome),
+    // Each entry: label, route, and whether that route lives INSIDE the tab
+    // shell — which decides `go` vs `push`, and is not cosmetic.
+    //
+    // This screen is itself a root-level page pushed over the shell. Pushing a
+    // shell location from here makes go_router CLONE the shell rather than
+    // reuse the one already on screen: `RouteMatchList`'s
+    // `_createNewMatchUntilIncompatible` only reuses the existing shell when
+    // the top of the current stack is that same shell route, and the top here
+    // is `/dev`. It falls through to
+    // `_cloneBranchAndInsertImperativeMatch`, leaving two matches for one
+    // StatefulShellRoute — and because the branch navigators are GlobalKeys,
+    // that is a duplicate-GlobalKey crash, not a cosmetic second nav bar.
+    //
+    // So in-shell destinations use `go`: it rewrites the location, so exactly
+    // one shell exists, the nav bar is there and Back works inside the branch.
+    // The trade is that `go` drops this menu from the stack — Back returns to
+    // the tab, not here. Only genuinely root-level routes can still be pushed.
+    //
+    // The alternative — registering these screens a second time as dev-only
+    // root-level aliases so `push` works — is exactly the duplicate
+    // registration D2 removed. Debug-only does not make it not a second
+    // registration.
+    final destinations = <(String label, String route, bool inShell)>[
+      ('Edit Profile', Routes.profile, false),
+      ('Groups & Invite', Routes.groups, true),
+      ('Schedule Builder (planner)', Routes.scheduleBuilder, true),
+      ('Activity (planner)', Routes.plannerActivity, true),
+      ('Pending Approvals (target)', Routes.approvals, true),
+      ('My Schedule / Outcomes (target)', Routes.outcome, true),
     ];
 
     return Scaffold(
@@ -67,11 +88,11 @@ class DevMenuScreen extends ConsumerWidget {
                   ?.copyWith(color: context.colors.onSurfaceVariant),
             ),
           ),
-          for (final (label, route) in destinations)
+          for (final (label, route, inShell) in destinations)
             ListTile(
               title: Text(label),
               trailing: const Icon(AppIcons.openRow),
-              onTap: () => context.push(route),
+              onTap: () => inShell ? context.go(route) : context.push(route),
             ),
         ],
       ),
