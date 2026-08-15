@@ -32,6 +32,40 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
   TimeOfDay _quietStart = const TimeOfDay(hour: 22, minute: 0);
   TimeOfDay _quietEnd = const TimeOfDay(hour: 7, minute: 0);
 
+  // What was loaded from the profile, kept so [_isDirty] can tell an actual
+  // edit from a screen the user merely opened. Captured by the same one-shot
+  // prefill that seeds the fields above.
+  String _savedName = '';
+  String? _savedTimezone;
+  bool _savedQuietEnabled = false;
+  TimeOfDay _savedQuietStart = const TimeOfDay(hour: 22, minute: 0);
+  TimeOfDay _savedQuietEnd = const TimeOfDay(hour: 7, minute: 0);
+
+  /// Whether leaving now would lose something.
+  ///
+  /// The name is compared **trimmed**, because that is what a save would write
+  /// (`profile_repository.dart` trims): typing a trailing space changes nothing,
+  /// so prompting about it would be a lie. The quiet-hours times only count when
+  /// the window is enabled — the pickers keep their defaults while the switch is
+  /// off, and those defaults are not an edit.
+  bool get _isDirty {
+    if (_nameController.text.trim() != _savedName.trim()) return true;
+    if (_timezone != _savedTimezone) return true;
+    if (_quietEnabled != _savedQuietEnabled) return true;
+    if (!_quietEnabled) return false;
+    return _quietStart != _savedQuietStart || _quietEnd != _savedQuietEnd;
+  }
+
+  /// The name is required, so an empty box needs to SAY so.
+  ///
+  /// Clearing it used to just grey out Save with no stated reason — a dead
+  /// button and no explanation (found on device 2026-08-15). Null while the
+  /// field is untouched-and-empty would be friendlier still, but this screen
+  /// always opens on an existing profile, so empty here always means the user
+  /// cleared it themselves.
+  String? get _nameError =>
+      _nameController.text.trim().isEmpty ? 'Your name is required' : null;
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -58,6 +92,34 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
   }
 
   int _minutes(TimeOfDay t) => t.hour * 60 + t.minute;
+
+  /// Back with unsaved edits asks before throwing them away.
+  ///
+  /// Previously Back discarded silently — no confirmation, no trace, and the
+  /// old values back on reopen. Deliberately a confirm, NOT a block: the user
+  /// must always be able to leave, including out of an invalid state such as an
+  /// empty name. Saving is unaffected — [_save] calls `Navigator.pop` directly,
+  /// and a direct `pop()` does not consult [PopScope].
+  Future<void> _confirmDiscard() async {
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Discard changes?'),
+        content: const Text("Your edits to this profile won't be saved."),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Keep editing'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+    if (discard == true && mounted) Navigator.of(context).pop();
+  }
 
   bool get _canSave =>
       _nameController.text.trim().isNotEmpty &&
@@ -107,91 +169,108 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
           minute: profile.quietHoursEndMinutes! % 60,
         );
       }
+      // Snapshot what was loaded, in the same one-shot block, so the baseline
+      // can never drift from the fields it is compared against.
+      _savedName = _nameController.text;
+      _savedTimezone = _timezone;
+      _savedQuietEnabled = _quietEnabled;
+      _savedQuietStart = _quietStart;
+      _savedQuietEnd = _quietEnd;
       _initialised = true;
     }
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Edit profile')),
-      // Scrollable now that Privacy is here: name + timezone + quiet hours +
-      // two time buttons + Save + the lock tile overflow a short screen, and
-      // an overflowing Column would clip the new section rather than reveal it.
-      body: SingleChildScrollView(
-        padding: Space.screenForm,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              controller: _nameController,
-              // Border, fill and radius come from InputDecorationTheme.
-              decoration: const InputDecoration(labelText: 'Your name'),
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: Space.xl),
-            Text('Home timezone (required)', style: context.text.labelLarge),
-            const SizedBox(height: Space.sm),
-            OutlinedButton.icon(
-              onPressed: _pickTimezone,
-              icon: const Icon(AppIcons.timezone),
-              label: Text(_timezone ?? 'Tap to choose'),
-            ),
-            const SizedBox(height: Space.xl),
-            const Divider(),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Quiet hours'),
-              subtitle: const Text(
-                'Planners are warned before scheduling in this window. '
-                '(11pm–6am is always flagged.)',
+    return PopScope(
+      canPop: !_isDirty,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _confirmDiscard();
+      },
+      child: Scaffold(
+        appBar: AppBar(title: const Text('Edit profile')),
+        // Scrollable now that Privacy is here: name + timezone + quiet hours +
+        // two time buttons + Save + the lock tile overflow a short screen, and
+        // an overflowing Column would clip the new section rather than reveal it.
+        body: SingleChildScrollView(
+          padding: Space.screenForm,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: _nameController,
+                // Border, fill and radius come from InputDecorationTheme.
+                decoration: InputDecoration(
+                  labelText: 'Your name',
+                  errorText: _nameError,
+                ),
+                onChanged: (_) => setState(() {}),
               ),
-              value: _quietEnabled,
-              onChanged: (v) => setState(() => _quietEnabled = v),
-            ),
-            if (_quietEnabled)
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _pickQuietStart,
-                      icon: const Icon(AppIcons.quietHoursStart),
-                      label: Text('From ${formatTimeOfDay(context, _quietStart)}'),
+              const SizedBox(height: Space.xl),
+              Text('Home timezone (required)', style: context.text.labelLarge),
+              const SizedBox(height: Space.sm),
+              OutlinedButton.icon(
+                onPressed: _pickTimezone,
+                icon: const Icon(AppIcons.timezone),
+                label: Text(_timezone ?? 'Tap to choose'),
+              ),
+              const SizedBox(height: Space.xl),
+              const Divider(),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Quiet hours'),
+                subtitle: const Text(
+                  'Planners are warned before scheduling in this window. '
+                  '(11pm–6am is always flagged.)',
+                ),
+                value: _quietEnabled,
+                onChanged: (v) => setState(() => _quietEnabled = v),
+              ),
+              if (_quietEnabled)
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _pickQuietStart,
+                        icon: const Icon(AppIcons.quietHoursStart),
+                        label:
+                            Text('From ${formatTimeOfDay(context, _quietStart)}'),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: Space.md),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _pickQuietEnd,
-                      icon: const Icon(AppIcons.quietHoursEnd),
-                      label: Text('To ${formatTimeOfDay(context, _quietEnd)}'),
+                    const SizedBox(width: Space.md),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _pickQuietEnd,
+                        icon: const Icon(AppIcons.quietHoursEnd),
+                        label: Text('To ${formatTimeOfDay(context, _quietEnd)}'),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
+              const SizedBox(height: Space.xxl),
+              FilledButton(
+                onPressed: _canSave ? _save : null,
+                child: _saving
+                    ? const SizedBox(
+                        height: Sizes.buttonSpinner,
+                        width: Sizes.buttonSpinner,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Save changes'),
               ),
-            const SizedBox(height: Space.xxl),
-            FilledButton(
-              onPressed: _canSave ? _save : null,
-              child: _saving
-                  ? const SizedBox(
-                      height: Sizes.buttonSpinner,
-                      width: Sizes.buttonSpinner,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Save changes'),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: Space.lg),
-              Text(
-                _error!,
-                style: context.text.bodyMedium
-                    ?.copyWith(color: context.colors.error),
-              ),
+              if (_error != null) ...[
+                const SizedBox(height: Space.lg),
+                Text(
+                  _error!,
+                  style: context.text.bodyMedium
+                      ?.copyWith(color: context.colors.error),
+                ),
+              ],
+              // Below the Save button on purpose: everything above is a draft
+              // the user commits, the app lock applies the instant it is
+              // flipped. A switch that looked like it needed saving would be a
+              // lock people think is on when it is not.
+              const SectionHeader('Privacy'),
+              const AppLockTile(),
             ],
-            // Below the Save button on purpose: everything above is a draft the
-            // user commits, the app lock applies the instant it is flipped. A
-            // switch that looked like it needed saving would be a lock people
-            // think is on when it is not.
-            const SectionHeader('Privacy'),
-            const AppLockTile(),
-          ],
+          ),
         ),
       ),
     );
