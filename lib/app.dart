@@ -190,7 +190,7 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    // Drop the previous session's snackbars when one ENDS.
+    // Drop the previous session's snackbars AND banners when one ENDS.
     //
     // The ScaffoldMessenger is built above the Router (`material/app.dart:1047`
     // wraps the Router and this widget's `builder`), so its queue is outside the
@@ -208,12 +208,22 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     // the same user is skipped (`endedUid == nextUid`). Any snackbar in flight
     // at that moment belongs to the session being torn down, which is precisely
     // what has to go.
+    //
+    // The registration banner needs the same treatment and does NOT get it for
+    // free: `clearSnackBars()` deliberately leaves banners alone, and they are
+    // the more account-scoped of the two — "Couldn't set up notifications on
+    // this device" is a statement about ONE user's token, and it outlived
+    // sign-out for the same above-the-Router reason. Cleared on the same hook
+    // rather than a second listener, so there is one place that decides what a
+    // session ending means to the messenger.
     ref.listen(authStateProvider, (previous, next) {
       final nextUid = next.value?.uid;
       final endedUid = _sessionUid;
       _sessionUid = nextUid;
       if (endedUid == null || endedUid == nextUid) return;
-      _scaffoldMessengerKey.currentState?.clearSnackBars();
+      _scaffoldMessengerKey.currentState
+        ?..clearSnackBars()
+        ..clearMaterialBanners();
     });
 
     // Register / refresh the device token whenever a user is signed in. The
