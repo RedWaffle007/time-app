@@ -19,16 +19,25 @@ import '../features/scheduling/presentation/schedule_builder_screen.dart';
 import 'go_router_refresh_stream.dart';
 
 /// Central list of route paths/names, so screens don't hardcode strings.
+///
+/// The three tab roots are `/groups`, `/outcome` and `/activity`. A route that
+/// belongs *to* a tab is nested under that tab's path, so its location names
+/// the branch it lives in — `go()` from a notification therefore lands inside
+/// the right tab with the nav bar and a back stack, not on a bare screen.
+/// Account-level routes (`/profile`, `/archived`, `/dev`) stay top-level: they
+/// are reached from the account menu on any tab and belong to no tab.
 class Routes {
   static const home = '/'; // HomeGate: profile-completion or app home.
   static const auth = '/auth';
   static const profile = '/profile';
   static const groups = '/groups';
-  static const scheduleBuilder = '/schedule-builder';
-  static const approvals = '/approvals';
   static const outcome = '/outcome';
   static const plannerActivity = '/activity';
+  // Nested under the tab each one belongs to (see the class doc).
+  static const scheduleBuilder = '$plannerActivity/schedule-builder';
+  static const approvals = '$outcome/approvals';
   static const archived = '/archived';
+
   /// Debug-only. The route itself is registered only in debug builds — see the
   /// `if (kDebugMode)` guard below. In release this path resolves to nothing.
   static const devMenu = '/dev';
@@ -74,6 +83,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       // registered twice — as tabs here and as flat top-level paths below) and
       // anything pushed inside a branch keeps the NavigationBar beneath it.
       //
+      // Each tab's detail screens are SUB-ROUTES of that tab, so they resolve
+      // into the branch's own navigator: the bar stays, Back returns to the
+      // tab, and every branch keeps its own stack. Sub-route paths are relative
+      // (go_router forbids a leading `/` below the root), so the full location
+      // is the tab path plus the segment — which is what the `Routes` constants
+      // spell out.
+      //
       // HomeGate wraps the shell rather than gating in `redirect` — see the
       // synchronous-redirect note above and HomeGate's own doc comment.
       StatefulShellRoute.indexedStack(
@@ -85,6 +101,14 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: Routes.groups,
                 builder: (context, state) => const GroupsScreen(),
+                routes: [
+                  GoRoute(
+                    path: ':groupId',
+                    builder: (context, state) => GroupDetailScreen(
+                      groupId: state.pathParameters['groupId']!,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -93,6 +117,15 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: Routes.outcome,
                 builder: (context, state) => const OutcomeScreen(),
+                routes: [
+                  // The target's inbox belongs to My Schedule: the AppBar
+                  // shortcut and the `created`/`withdrawn` notifications both
+                  // land here, and Back drops to the tab either way.
+                  GoRoute(
+                    path: 'approvals',
+                    builder: (context, state) => const PendingApprovalsScreen(),
+                  ),
+                ],
               ),
             ],
           ),
@@ -101,27 +134,26 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: Routes.plannerActivity,
                 builder: (context, state) => const PlannerActivityScreen(),
+                routes: [
+                  // Reached from Activity's FAB; planning an item is the
+                  // planner's own flow, so it stacks over the planner tab.
+                  GoRoute(
+                    path: 'schedule-builder',
+                    builder: (context, state) => const ScheduleBuilderScreen(),
+                  ),
+                ],
               ),
             ],
           ),
         ],
       ),
+      // Account-level, deliberately NOT nested: both are opened from the
+      // account menu, which every tab shows, so neither belongs to one branch.
+      // Pushed on the root navigator, they cover the bar and return to
+      // whichever tab launched them.
       GoRoute(
         path: Routes.profile,
         builder: (context, state) => const ProfileEditScreen(),
-      ),
-      GoRoute(
-        path: '/groups/:groupId',
-        builder: (context, state) =>
-            GroupDetailScreen(groupId: state.pathParameters['groupId']!),
-      ),
-      GoRoute(
-        path: Routes.scheduleBuilder,
-        builder: (context, state) => const ScheduleBuilderScreen(),
-      ),
-      GoRoute(
-        path: Routes.approvals,
-        builder: (context, state) => const PendingApprovalsScreen(),
       ),
       // One shared Archived view for both roles, reached from the account menu
       // rather than a per-tab control — a user archives items, not

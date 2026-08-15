@@ -157,6 +157,11 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     // (a plan created for them, or withdrawn) open their pending queue;
     // planner-facing events (their plan was decided or its outcome recorded)
     // open Activity. `type == 'outcome'` is the legacy payload, kept working.
+    //
+    // A plain `go()` is shell-aware now that both destinations are branch
+    // locations: `Routes.approvals` is nested under the My Schedule tab, so it
+    // selects that branch and stacks the queue on top of it (Back → the tab),
+    // and `Routes.plannerActivity` is a branch root, so it is a tab switch.
     final router = ref.read(routerProvider);
     switch (message.data['event']) {
       case 'created':
