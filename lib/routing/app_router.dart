@@ -52,10 +52,23 @@ class Routes {
 final routerProvider = Provider<GoRouter>((ref) {
   final authRepository = ref.watch(authRepositoryProvider);
 
+  // Rebuild routing whenever the Firebase auth state changes.
+  //
+  // go_router never disposes a `refreshListenable` — GoRouteInformationProvider
+  // only calls `removeListener` on it (information_provider.dart:318) — so the
+  // StreamSubscription inside it is ours to cancel. Without this, a rebuilt or
+  // discarded provider would leave a live listener on `authStateChanges()`.
+  //
+  // Defensive, not a live bug: this provider is never invalidated and
+  // `authRepositoryProvider` never rebuilds, so today the only dispose is app
+  // teardown. It matters the moment a scoped container or a test overrides
+  // either provider, and the leak has no symptom to catch it by later.
+  final refresh = GoRouterRefreshStream(authRepository.authStateChanges());
+  ref.onDispose(refresh.dispose);
+
   return GoRouter(
     initialLocation: Routes.home,
-    // Rebuild routing whenever the Firebase auth state changes.
-    refreshListenable: GoRouterRefreshStream(authRepository.authStateChanges()),
+    refreshListenable: refresh,
     redirect: (context, state) {
       final loggedIn = FirebaseAuth.instance.currentUser != null;
       final atAuth = state.matchedLocation == Routes.auth;
