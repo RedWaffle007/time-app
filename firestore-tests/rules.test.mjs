@@ -183,6 +183,112 @@ describe('issue 1 — users are not enumerable', () => {
   });
 });
 
+// --- the profile name is required, server-side ----------------------------
+//
+// It used to be enforced only by two widget getters. These cases pin the rule
+// to the client's own check (`name.trim().isNotEmpty`) and, more importantly,
+// prove the repair path: the constraint is evaluated on the POST-WRITE
+// document, so it can never block the write that fixes an empty name.
+
+describe('the profile name is required', () => {
+  const NEWBIE = 'uid_newbie'; // no user doc — writes here are CREATEs
+
+  /** Give a uid an empty stored name, bypassing rules. */
+  async function withStoredName(uid, name) {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', uid), {
+        name,
+        homeTimezone: 'Asia/Kolkata',
+      });
+    });
+  }
+
+  it('ALLOWS create with a real name', async () => {
+    await assertSucceeds(
+      setDoc(doc(as(NEWBIE), 'users', NEWBIE), {
+        name: 'Newbie',
+        homeTimezone: 'Asia/Kolkata',
+      }),
+    );
+  });
+
+  it('DENIES create with an empty name', async () => {
+    await assertFails(
+      setDoc(doc(as(NEWBIE), 'users', NEWBIE), {
+        name: '',
+        homeTimezone: 'Asia/Kolkata',
+      }),
+    );
+  });
+
+  it('DENIES create with a whitespace-only name', async () => {
+    await assertFails(
+      setDoc(doc(as(NEWBIE), 'users', NEWBIE), {
+        name: '   ',
+        homeTimezone: 'Asia/Kolkata',
+      }),
+    );
+  });
+
+  it('DENIES create with no name field at all', async () => {
+    await assertFails(
+      setDoc(doc(as(NEWBIE), 'users', NEWBIE), {
+        homeTimezone: 'Asia/Kolkata',
+      }),
+    );
+  });
+
+  it('ALLOWS update to a new name', async () => {
+    await assertSucceeds(
+      setDoc(doc(as(ALICE), 'users', ALICE), { name: 'Alice A.' }, { merge: true }),
+    );
+  });
+
+  it('ALLOWS update FROM an empty name to a real one — the repair path', async () => {
+    // The case the whole design turns on. `request.resource.data` is the
+    // post-write document, so the corrective write satisfies the rule by
+    // construction and nobody is locked out of their own profile.
+    await withStoredName(ALICE, '');
+    await assertSucceeds(
+      setDoc(doc(as(ALICE), 'users', ALICE), { name: 'Alice' }, { merge: true }),
+    );
+  });
+
+  it('DENIES an update that blanks an existing name', async () => {
+    await assertFails(
+      setDoc(doc(as(ALICE), 'users', ALICE), { name: '' }, { merge: true }),
+    );
+  });
+
+  it('ALLOWS a merge update that does not touch the name', async () => {
+    // The legitimate operation the rule must not break: a partial write
+    // inherits the stored name, which is already valid.
+    await assertSucceeds(
+      setDoc(
+        doc(as(ALICE), 'users', ALICE),
+        { quietHoursStartMinutes: 1320 },
+        { merge: true },
+      ),
+    );
+  });
+
+  it('documents the CONSEQUENCE: a partial write is denied while the stored name is empty', async () => {
+    // Not a bug asserted as correct — the known edge of checking the post-write
+    // document, pinned so it cannot surprise anyone later. A write that does not
+    // carry `name` inherits the empty stored one and is denied by a field it
+    // never touched. Retired in practice by verifying no such document exists
+    // (2026-08-15); this is what would happen if one did.
+    await withStoredName(ALICE, '');
+    await assertFails(
+      setDoc(
+        doc(as(ALICE), 'users', ALICE),
+        { quietHoursStartMinutes: 1320 },
+        { merge: true },
+      ),
+    );
+  });
+});
+
 describe('issue 1 — groups are not enumerable', () => {
   it('DENIES a non-member reading a group document', async () => {
     await assertFails(getDoc(doc(as(MALLORY), 'groups', GROUP)));

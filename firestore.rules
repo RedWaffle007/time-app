@@ -85,9 +85,46 @@ service cloud.firestore {
     // bottom are resource-scoped to the caller. Firebase uids are 28 random
     // chars, so there is no path to obtain one to try.
     match /users/{uid} {
+      // The name is REQUIRED and the server now says so. It used to be enforced
+      // only by two widget getters (`_canSave` in profile_edit_screen.dart and
+      // complete_profile_screen.dart) — a required field with no server-side
+      // enforcement at all, which is the same shape of gap as rule of thumb 2
+      // above: the client is not where an invariant lives.
+      //
+      // Checked on the POST-WRITE document, which is what makes this safe to
+      // deploy: `request.resource.data` on an update is the document as it will
+      // exist afterwards, so this can only ever block a write that LEAVES the
+      // name empty — never the write that repairs one. A user sitting with an
+      // empty name is routed to CompleteProfileScreen by `HomeGate` (an empty
+      // name fails `UserProfile.isComplete`), whose merge-set on an existing doc
+      // is evaluated here as an `update`, and passes the moment it carries a
+      // real name.
+      //
+      // Consequence to know before adding any future write to this document: a
+      // merge update that does NOT carry `name` inherits the stored one, so such
+      // a write is denied while the stored name is empty — blocked by a field it
+      // never touched. Verified 2026-08-15 that no such document exists.
+      //
+      // `trim()` matches the client's `name.trim().isNotEmpty`. Dart trims the
+      // full Unicode whitespace set and this trims less, so a name of exotic
+      // whitespace could pass here while the client refuses it — accepted
+      // knowingly: the client is the stricter of the two, so the daylight
+      // produces no false denials and cannot lock anyone out.
+      //
+      // No length bound, deliberately. An upper bound here without a matching
+      // `maxLength` on the field would turn a valid-looking Save into
+      // PERMISSION_DENIED; if one is wanted it lands on both sides together.
+      function nameIsPresent() {
+        return 'name' in request.resource.data
+          && request.resource.data.name is string
+          && request.resource.data.name.trim().size() > 0;
+      }
+
       allow get: if signedIn();
       allow list: if false;
-      allow create, update: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn()
+        && request.auth.uid == uid
+        && nameIsPresent();
       allow delete: if false;
 
       // ---- users/{uid}/fcmTokens/{token} ----
