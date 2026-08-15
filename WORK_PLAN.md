@@ -427,7 +427,7 @@ fake stand in for an unverified native effect.*
 *Ends with:* the privacy claim is true on Android and honest on iOS, and the one
 test in the repo that was actively misleading is gone.
 
-## Session 3 — Fix the notification dead end · 3–4h · [D2, D11, D15]
+## Session 3 — Fix the notification dead end · 3–4h · [D2, D11, D15 — see note]
 
 Convert the shell to a `StatefulShellRoute`. Remove `/groups`, `/outcome` and
 `/activity` as duplicate top-level routes so a screen cannot be registered
@@ -438,6 +438,106 @@ Update `dev_menu_screen.dart:27-32` so the dev menu stops walking into the same
 trap. Add `ref.onDispose` for `GoRouterRefreshStream` while you are in the file.
 
 *Ends with:* tapping a notification lands you somewhere with doors.
+
+### D15 — UNRESOLVED, not dropped
+
+**There is no definition of D15 anywhere in this repository.** `grep -rn "D15"`
+over `*.md`, `*.dart` and `*.mjs` returns exactly one hit: the Session 3 heading
+above. The defect tables in §1.1–§1.5 run D1–D14, D16–D22, D24, D25 — **D15 and
+D23 are both missing rows**, so this is almost certainly a row dropped during the
+dedup pass rather than a typo for an existing id. Session 3 was executed as
+**D2 + D11 only**. If the original D15 is remembered later, add its row to §1.1–§1.5
+and re-open a session for it; do not assume Session 3 covered it.
+
+### Session 3 decisions (2026-08-14, taken before implementation)
+
+1. **Notification routing splits by who acts.** `decided` / `outcome` are
+   planner-facing → `go()` the Activity **branch** (a tab switch, no stack push).
+   `created` / `withdrawn` are target-facing → `/approvals` **pushed on top of the
+   My Schedule branch**, so Back returns to a tab rather than exiting.
+2. **The profile-completion check stays in the shell's `builder`**, wrapping the
+   navigation shell above the tabs. It is *not* moved into `redirect` — that would
+   reverse the documented decision to keep `redirect` synchronous
+   (`app_router.dart:39-41`).
+3. **Verification is by hand on the Redmi, no new automated test scope.** Because
+   routing coverage is zero (D18), the device pass runs the explicit matrix below
+   rather than a glance.
+
+### Session 3 manual device checklist (Redmi / HyperOS, debug build)
+
+Run top to bottom in one sitting. An unticked line is a failure, not an omission.
+"Nav bar present" means the three-tab `NavigationBar` is visible; "Back" means the
+system back gesture/button.
+
+**A. Tabs — the shell itself**
+
+- [ ] A1 Cold start signed in → lands on **Groups** with the nav bar visible.
+- [ ] A2 Tap **My Schedule** → switches; Groups' scroll position survives.
+- [ ] A3 Tap **Activity** → switches; nav bar still visible.
+- [ ] A4 Back from a tab at its root → **exits the app** (does not cycle tabs).
+- [ ] A5 The pending-count badge on My Schedule still renders (and shows nothing
+      at zero).
+- [ ] A6 Switch tabs 10× rapidly → no rebuild flash, no lost Firestore listeners
+      (lists stay populated).
+
+**B. Pushed routes — each must keep a door**
+
+For every row: push it, confirm the AppBar back arrow exists, press Back, confirm
+you return to the stated place with the nav bar visible.
+
+- [ ] B1 Groups → tap a group → **Group detail** → Back → Groups tab.
+- [ ] B2 My Schedule → **Pending approvals** → Back → My Schedule tab.
+- [ ] B3 Activity → FAB → **Schedule builder** → Back → Activity tab.
+- [ ] B4 Account menu → **Edit profile** → Back → the tab you launched from.
+- [ ] B5 Account menu → **Archived** → Back → the tab you launched from.
+- [ ] B6 Account menu → **Dev menu** (debug only) → Back → the tab you launched
+      from.
+- [ ] B7 B4/B5 launched from **each** of the three tabs → Back returns to *that*
+      tab, not always Groups.
+- [ ] B8 Save on Edit profile (`Navigator.pop`) → returns to the launching tab.
+- [ ] B9 Deep stack: Groups → group detail → account menu → Archived → Back →
+      group detail → Back → Groups tab.
+
+**C. Notification paths — all four events (needs the second person)**
+
+Foreground (in-app banner → **View**) and background (tray tap) for each. Every
+one must land on a screen with the nav bar and a way back.
+
+- [ ] C1 `created` → Pending approvals, pushed over My Schedule; Back → My
+      Schedule tab.
+- [ ] C2 `withdrawn` → same destination and same Back behaviour as C1.
+- [ ] C3 `decided` → Activity tab (a branch switch — Back exits, no orphan push).
+- [ ] C4 `outcome` → Activity tab, same as C3.
+- [ ] C5 Legacy payload `type: 'outcome'` with **no** `event` field → Activity tab.
+- [ ] C6 Tap a notification while already **on** the destination → no duplicate
+      screen stacked on itself.
+- [ ] C7 Tap a notification while a pushed route is open (e.g. Schedule builder)
+      → lands correctly, and Back does not strand you.
+- [ ] C8 Cold start **from** a tray tap (terminated app, `getInitialMessage`) →
+      correct destination, nav bar present, Back works.
+
+**D. Dev menu — all six destinations**
+
+Each pushes and must return to the dev menu on Back.
+
+- [ ] D1 Edit Profile · [ ] D2 Groups & Invite · [ ] D3 Schedule Builder
+- [ ] D4 Activity (planner) · [ ] D5 Pending Approvals · [ ] D6 My Schedule /
+      Outcomes
+- [ ] D7 From any of the six, Back → dev menu → Back → the tab you launched from.
+
+**E. Auth edges**
+
+- [ ] E1 Sign out from the account menu → auth screen, no stranded shell beneath.
+- [ ] E2 Sign back in → Groups tab, nav bar present.
+- [ ] E3 Sign out while a pushed route is open (e.g. Archived) → auth screen, and
+      Back does not reveal the signed-in stack.
+- [ ] E4 A signed-in user with an **incomplete** profile still sees the
+      complete-profile screen instead of the tabs (decision 2 above).
+- [ ] E5 App lock (D1, shipped) still gates everything: background → foreground on
+      a pushed route → lock screen, not the route.
+
+*Record the date, the build, and any failing line in DECISIONS.md when the pass is
+run. Restore the device to its prior build/theme afterwards.*
 
 ## Session 4 — Repository tests on the emulator you already run · 3–4h · [D18, V2]
 
