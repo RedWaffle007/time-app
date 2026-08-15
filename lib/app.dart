@@ -29,6 +29,11 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
   // this key, attached to MaterialApp.router below, gives it one.
   final _scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
+  /// The uid whose session the currently-queued snackbars belong to. Compared
+  /// against each new auth emission to spot a session ENDING — see the listener
+  /// in build().
+  String? _sessionUid;
+
   @override
   void initState() {
     super.initState();
@@ -133,6 +138,12 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     messenger.hideCurrentSnackBar(); // replace, don't stack, on rapid outcomes
     messenger.showSnackBar(
       SnackBar(
+        // Without `persist: false` the 6s below is dead code: a SnackBar with a
+        // SnackBarAction defaults to `persist: true` (`snack_bar.dart:303`) and
+        // its dismiss timer returns without acting (`scaffold.dart:619-626`).
+        // This banner has had a View action since it was written, so it has
+        // never once timed out.
+        persist: false,
         duration: const Duration(seconds: 6),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -179,6 +190,32 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    // Drop the previous session's snackbars when one ENDS.
+    //
+    // The ScaffoldMessenger is built above the Router (`material/app.dart:1047`
+    // wraps the Router and this widget's `builder`), so its queue is outside the
+    // navigation tree: no route change, branch switch or sign-out reaches it,
+    // and `_register` hands a live snackbar straight to any newly mounted root
+    // Scaffold (`scaffold.dart:211-222`). That is how an archive snackbar
+    // survived sign-out AND a sign-in as a different account. Nothing else in
+    // the app tears the messenger down, so it is done here — the one place that
+    // owns the messenger key.
+    //
+    // **This cannot eat a wanted message.** It fires only when a session that
+    // was actually established is replaced by a different one: sign-out
+    // (uid → null) and account switch (uidA → uidB). The first sign-in of the
+    // process is skipped (`endedUid == null`), and a token refresh re-emitting
+    // the same user is skipped (`endedUid == nextUid`). Any snackbar in flight
+    // at that moment belongs to the session being torn down, which is precisely
+    // what has to go.
+    ref.listen(authStateProvider, (previous, next) {
+      final nextUid = next.value?.uid;
+      final endedUid = _sessionUid;
+      _sessionUid = nextUid;
+      if (endedUid == null || endedUid == nextUid) return;
+      _scaffoldMessengerKey.currentState?.clearSnackBars();
+    });
+
     // Register / refresh the device token whenever a user is signed in. The
     // MessagingService dedups per-uid internally, so calling it on rebuilds is
     // safe — the permission prompt + token write happen once per signed-in user.

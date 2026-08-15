@@ -53,21 +53,46 @@ class ArchiveMenuButton extends ConsumerWidget {
   ///
   /// The Undo belongs to this route alone. Auto-archive writes nothing, so it
   /// has nothing to undo and deliberately shows no snackbar at all.
+  ///
+  /// **`persist: false` is load-bearing, not a tidy-up.** A [SnackBar] carrying
+  /// a [SnackBarAction] defaults to `persist: true` (`snack_bar.dart:303`), and
+  /// the dismiss timer then fires into a no-op (`scaffold.dart:619-626`) — so
+  /// this snackbar never timed out, and setting a `duration` would not have
+  /// helped. It outlived sign-out and even a sign-in as a different account,
+  /// because `MaterialApp` builds the `ScaffoldMessenger` ABOVE the Router
+  /// (`material/app.dart:1047`) where no route or auth change can reach it.
+  ///
+  /// The `uid` re-check inside `Undo` closes the other half of that, and does it
+  /// independently of the auth-change teardown in `app.dart`. `uid` is captured
+  /// when the snackbar is shown; if the account changed before the tap, this
+  /// write would land in the PREVIOUS account's archive document — a real
+  /// cross-account write, not a cosmetic leak. Ownership is therefore re-checked
+  /// at TAP time, not trusted from capture time.
+  ///
+  /// `auth` is captured here rather than `ref.read` inside the closure on
+  /// purpose: archiving removes this card from the list, so the widget (and its
+  /// `WidgetRef`) may already be disposed by the time Undo is tapped. Holding
+  /// the repository object is the same pattern the `repository` capture uses.
   Future<void> _archive(BuildContext context, WidgetRef ref) async {
     final uid = ref.read(currentUidProvider);
     if (uid == null) return;
     final messenger = ScaffoldMessenger.of(context);
     final repository = ref.read(archiveRepositoryProvider);
+    final auth = ref.read(authRepositoryProvider);
 
     await repository.archive(uid, item.id);
 
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
       SnackBar(
+        persist: false,
         content: const Text('Archived — hidden from your views only.'),
         action: SnackBarAction(
           label: 'Undo',
-          onPressed: () => repository.unarchive(uid, item.id),
+          onPressed: () {
+            if (auth.currentUser?.uid != uid) return;
+            repository.unarchive(uid, item.id);
+          },
         ),
       ),
     );
