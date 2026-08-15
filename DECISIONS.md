@@ -2217,3 +2217,95 @@ skips installation when the device sha1 stamp matches
 (`android_device.dart:400`), and hot reload never replaces native code at all.
 **Rule for any `.kt` / manifest / Gradle / plugin change: uninstall first.** Cost
 each time: signed out, app-lock setting reset, and the FCM token invalidated.
+
+# D2 + D11 — the tabs became a StatefulShellRoute (2026-08-14)
+
+Three code commits plus a docs pass. All reasoning below is against
+**go_router 17.3.0**, and parts of it are version-specific — re-check the cited
+source if that constraint moves.
+
+## The tabs are branches, and each tab owns its detail screens
+
+**Decision: one registration per screen, and a screen's *location* names the tab
+it belongs to.** `GroupsScreen`, `OutcomeScreen` and `PlannerActivityScreen` were
+registered twice — as tabs inside `HomeShell` and as flat top-level routes — which
+is what made a notification `go()` replace the whole stack with a bare, doorless
+screen (D2). They are now the three branches of a
+`StatefulShellRoute.indexedStack`.
+
+**Then the second, less obvious half: the detail screens were *nested*, not
+"pushed on top of the shell" as WORK_PLAN's Session 3 plan had it.** Sub-routes
+resolve into their branch's own navigator, so the nav bar stays, Back returns to
+the tab, and each branch keeps its own stack. go_router forbids a leading `/` on
+a sub-route, so two locations changed:
+
+| screen | before | after |
+|---|---|---|
+| Pending approvals | `/approvals` | `/outcome/approvals` |
+| Schedule builder | `/schedule-builder` | `/activity/schedule-builder` |
+| Group detail | `/groups/:groupId` | unchanged (already under `/groups`) |
+
+Every call site goes through the `Routes` constants, so the constants absorbed
+the change. The one hardcoded literal in the app — `groups_screen.dart`'s
+`'/groups/${g.id}'` — still resolves because that path did not move. It was
+grepped for explicitly, not assumed.
+
+**`/profile`, `/archived` and `/dev` stay root-level.** They are opened from the
+account menu, which every tab shows, so they belong to no branch and should cover
+the bar rather than live under one tab.
+
+**`_handleTap` needed no code change.** Once both destinations are branch
+locations, a plain `go()` *is* the shell-aware navigation: `go(Routes.approvals)`
+selects the My Schedule branch and stacks the queue on it, and
+`go(Routes.plannerActivity)` is a tab switch. Session 3's decision 1 — target-
+facing events push over My Schedule, planner-facing events switch to Activity —
+holds as written.
+
+## The dev menu had to use `go`, and that cost something
+
+**Pushing an in-shell location from `/dev` does not reuse the shell — it clones
+it.** `RouteMatchList._createNewMatchUntilIncompatible` (`match.dart:634`) reuses
+the existing shell only when the top of the current stack *is* that shell route.
+Standing on the dev menu the top is `/dev`, so the routes are unequal and control
+falls to `_cloneBranchAndInsertImperativeMatch` (`:663`), which copies the shell
+branch and appends it. Two `ShellRouteMatch`es for one `StatefulShellRoute`, and
+since `_buildPageForShellRoute` (`builder.dart:280`) uses `match.navigatorKey`,
+that is the same branch-navigator `GlobalKey` live in two subtrees — a duplicate-
+GlobalKey crash, not a cosmetic second nav bar.
+
+So each dev-menu entry carries an `inShell` flag: **five destinations use `go`,
+and only root-level `/profile` is pushed.** Note this hazard arrived with the
+shell conversion itself, not with the nesting; nesting only raised the count from
+three to five.
+
+**Rejected: registering those screens again as dev-only root-level aliases** so
+`push` would work. That is exactly the duplicate registration D2 removed. Being
+debug-only does not make it not a second registration.
+
+**Trade accepted:** `go` drops the dev menu from the stack, so Back from those
+five returns to the tab, not to the menu. A launcher that teleports you into a
+tab cannot also be a modal you come back to. WORK_PLAN's device checklist section
+D was rewritten to expect two different behaviours rather than one.
+
+## D11 — `ref.onDispose`, and why it is defensive
+
+`routerProvider` now holds the refresh stream in a local and registers
+`ref.onDispose(refresh.dispose)`, which cancels the `authStateChanges()`
+subscription. **go_router never disposes a `refreshListenable`** — the provider
+only calls `removeListener` on it (`information_provider.dart:318`) — so the
+subscription was always the caller's to cancel, and there is no double-dispose
+risk in adding this.
+
+**Recorded honestly: this is defensive, not a live leak.** `routerProvider` is
+never invalidated, `authRepositoryProvider` never rebuilds, and no test reads the
+router, so today the only dispose is app teardown. It becomes real the moment a
+scoped container or a widget test overrides either provider — the pattern
+`currentUidProvider`'s own doc comment recommends — and the failure has no
+symptom to catch it by later.
+
+## What is NOT verified
+
+**Routing has zero automated coverage.** Nothing in the suite builds the router;
+`flutter analyze` clean and 65/65 passing say nothing about any of the above. The
+verification is the manual device matrix in WORK_PLAN.md, sections A–E. **It has
+not been run.** Until its result is recorded here, D2 is fixed-in-tree only.
