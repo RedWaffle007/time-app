@@ -756,7 +756,7 @@ suite went from 66 tests to 65.
 checked the recents thumbnail, on the Redmi (HyperOS, Android 16) on 2026-08-14.
 Recorded in DECISIONS.md.
 
-## 4.6 FIXED 2026-08-14: notification taps stranded the user
+## 4.6 FIXED 2026-08-14, VERIFIED ON DEVICE 2026-08-16: notification taps stranded the user
 
 **The defect.** `app.dart` routed a tap with `router.go(...)`, which replaces the
 navigation stack. `/activity` and `/approvals` were registered as bare top-level
@@ -781,24 +781,51 @@ deliberate `go`-vs-`push` split (**D1–D8**). Tab state survives switching, nes
 routes resolve into their branch, and detail screens stack over the nav bar with
 a working back arrow. The dead end this section is about is gone.
 
-**Still no automated coverage.** `flutter analyze` is clean and 65 tests pass, but
-nothing here is exercised by a test (§4.9, D18). This is a hand-run matrix, not a
-regression net — the next refactor gets no warning from it.
+**A4 — VERIFIED ON DEVICE 2026-08-16, and the written expectation is superseded.**
+The checklist asked that Back at a tab root exit the app. That expectation was
+rejected as a product decision rather than recorded as a failure: Back now
+returns to the Groups tab from any other tab, and Groups itself takes a "press
+again to exit" confirmation. Confirmed on the Redmi on a **fresh launch** —
+which is the run that matters, because the first implementation (`de6233f`) only
+worked after every branch navigator had mounted. See "Back was dead on a fresh
+launch" below.
 
-**A4 — behaves as written; the written expectation is superseded.** The checklist
-asked that Back at a tab root exit the app, and it does. That expectation is now
-rejected as a product decision, not recorded as a failure: Back returns to the
-Groups tab from any other tab, and Groups itself takes a "press again to exit"
-confirmation. This is not a regression — the app has never had back handling of
-any kind (`grep -rn "PopScope\|WillPopScope" lib/` is empty, before the refactor
-and after).
+**Re-tested 2026-08-16 (Redmi / HyperOS, Android 16, debug), all passing:**
+**A1–A4** on a fresh launch — press-again-to-exit from a tab root, Back returning
+to Groups from the other two tabs, and pushed routes popping to their own tab;
+and **E5** — the app lock gates a pushed route after backgrounding for over a
+minute (i.e. past `kAppLockGrace`, the deliberate 30s window). With A4 closed and
+E5 run, **Session 3 is done.**
+
+**Back was dead on a fresh launch — fixed 2026-08-16 (`dd27500`).** The `PopScope`
+added in `de6233f` did nothing until every tab's branch navigator had mounted; on
+a cold start, Back at Activity or Schedule still exited silently. Cause was not
+the `PopScope` but the flag underneath it: `WidgetsApp`'s default
+`onNavigationNotification` forwards each `NavigationNotification.canHandlePop` to
+`SystemNavigator.setFrameworkHandlesBack` last-writer-wins, and under a
+`StatefulShellRoute` the launch sequence is `false, true, true, false` — the
+shell's `PopScope` dispatches `true`, then a branch navigator sitting at its tab
+root dispatches `false` and wins. With targetSdk 36 + predictive back on
+Android 16, a `false` flag means `popRoute` never reaches Dart at all. Fixed by
+overriding `onNavigationNotification` in `app.dart` to report `true`
+unconditionally (lifecycle-guarded like the default). `/auth` still exits on the
+first press, because the flag only routes Back *through* Dart — when nothing
+handles it, `handlePopRoute()` falls through to `SystemNavigator.pop()`.
+
+**Automated coverage now exists — but only for this.** `test/back_button_test.dart`
+(5 tests) pins the flag at launch, that Back reaches the shell instead of exiting,
+that `/auth` still exits, the lifecycle guard, and a canary on the framework
+behaviour the fix works around. `flutter analyze` is clean and **70 tests pass**.
+Everything else in this section is still a hand-run matrix (§4.9, D18): the tab
+shell, the pushed routes and the dev-menu split have no test, so the next refactor
+gets no warning from them.
 
 **NOT RUN — do not treat as passing.** **C1–C8** (all four notification events,
 foreground and tray) needs a second device holding a live FCM token, and is
 deferred with the notification retest; the current `wrangler tail` no-delivery is
 the expected no-tokens progression after stale-token cleanup, not a new fault —
-the Worker and the admin key are fine. Of section E only **E1/E2** were exercised
-(sign out; sign in as a different account); **E3–E5 were not run**.
+the Worker and the admin key are fine. Of section E, **E1/E2 and E5** have been
+exercised; **E3–E4 were not run**.
 
 **Five defects surfaced by the pass. None is a regression** — every one pre-dates
 the refactor, and the pass found them only because it was the first time anyone
