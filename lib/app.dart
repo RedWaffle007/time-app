@@ -1,5 +1,6 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -281,7 +282,59 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
         return const Locale('en');
       },
       supportedLocales: const [Locale('en')],
+      // Without this the PopScope in home_shell.dart is dead on a fresh launch.
+      // See forceFrameworkHandlesBack below.
+      onNavigationNotification: forceFrameworkHandlesBack,
       routerConfig: router,
     );
+  }
+}
+
+/// Tells Android that Dart handles Back — always, whatever the notification says.
+///
+/// This replaces WidgetsApp's default handler (`widgets/app.dart:1442`), which
+/// forwards `notification.canHandlePop` to the platform verbatim. That default
+/// is last-writer-wins, and under a `StatefulShellRoute` the last writer is the
+/// wrong one. At launch four notifications arrive in this order:
+///
+///   `false, true, true, false`
+///
+/// The shell route's [PopScope] dispatches `true`
+/// (`widgets/routes.dart:2142` — a `doNotPop` disposition means "I handle it"),
+/// but each of the three branch navigators sitting at its tab root dispatches
+/// `false`, because it has nothing to pop and no PopScope of its own
+/// (`widgets/navigator.dart:3753`). The root navigator forwards that `false`
+/// untouched: it only upgrades a `false` when *it* can pop
+/// (`widgets/navigator.dart:5920`), and it never looks at the PopScope on its
+/// own current route. So a branch's `false` lands last and wins.
+///
+/// With targetSdk 36 + predictive back on Android 16, a `false` flag means the
+/// engine finishes the activity itself and `popRoute` never reaches Dart — so
+/// `_handleBack()` in home_shell.dart never ran and Back at a tab root exited
+/// the app silently. It healed once a branch had something to pop, which is why
+/// it only reproduced on a fresh launch. Regression coverage:
+/// `test/back_button_test.dart`.
+///
+/// **Forcing `true` cannot trap the user.** The flag is a routing hint, not a
+/// promise: Back is merely delivered to Dart, `GoRouterDelegate.popRoute()`
+/// runs, and when nothing handles it `handlePopRoute()` falls through to
+/// `SystemNavigator.pop()` (`widgets/binding.dart:1132`). `/auth` — no
+/// PopScope, nothing to pop — therefore still exits on the first press, as the
+/// test asserts. The cost is one IPC round-trip and the loss of the system's
+/// predictive-back preview animation on screens that would have exited.
+///
+/// Lifecycle-guarded exactly like the default handler, so nothing is sent to the
+/// engine before the app is attached.
+bool forceFrameworkHandlesBack(NavigationNotification notification) {
+  switch (WidgetsBinding.instance.lifecycleState) {
+    case null:
+    case AppLifecycleState.detached:
+      return true;
+    case AppLifecycleState.inactive:
+    case AppLifecycleState.resumed:
+    case AppLifecycleState.hidden:
+    case AppLifecycleState.paused:
+      SystemNavigator.setFrameworkHandlesBack(true);
+      return true;
   }
 }
