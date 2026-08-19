@@ -98,4 +98,12 @@ abstract final class Sizes {
 
   /// Hairline border used everywhere flat surfaces need an edge.
   static const double hairline = 1;
+
+  /// Height of a determinate progress bar (UI-RULES.md §6.7).
+  ///
+  /// Material's default is 4, which on a phone reads as a hairline rule rather
+  /// than as a filling shape — and the one place this is used, a 130MB
+  /// download, is a bar someone actually watches. 8 is thick enough to see the
+  /// fill move without becoming a slab.
+  static const double progressBar = 8;
 }

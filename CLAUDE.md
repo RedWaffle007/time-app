@@ -215,6 +215,147 @@ tz-snapshot **detect-and-re-approve** upgrade (option 3; v1 stays pure snapshot 
 DECISIONS.md 2026-07-22). Card-day items (Cloud-Function push swap, CF-mediated
 join) are parked to Blaze, not to now.
 
+## Language practice chatbot — a SEPARATE feature (added 2026-08-18)
+
+**Not part of the core loop and deliberately not woven into it.** `lib/features/chatbot/`
+shares the theme, the icon vocabulary and the router with the delegation app and
+**nothing else**: no group, no schedule item, no approval, no outcome, no Firestore
+document, no FCM, no Worker. Keep it that way — if it ever needs to touch a
+delegation feature, that is a decision to record here first.
+
+**Entry point = the account menu** (`AccountButton` → "Language practice"), above a
+divider that separates it from the account block. `Routes.chatbot` stays **top-level
+and pushed**, so it covers the nav bar and Back returns to the tab you left. The dev
+menu still links to it, but is no longer the only way in — that mattered because the
+dev menu is stripped from release builds, so the feature had no door in release.
+**Do not make it a fourth nav tab** without re-reading DECISIONS.md 2026-08-18: it
+would dilute the three-stance meaning of the bar, force the dev-menu link from `push`
+to `go`, and break the chat's session boundary (a shell branch stays mounted forever,
+so the transcript and `session_id` would outlive the sitting).
+
+**What it talks to.** Since Part 2 (below), **the engine on this phone** — nothing
+at all. What follows describes `HttpChatbotService`, which is kept as the
+reference implementation to compare against, and the service it speaks to:
+
+```
+POST {base}/chat   {"session_id": "...", "message": "..."}
+  -> {"reply_german": "...", "reply_english": "...", "source_file": "...",
+      "matched": true|false, "score": 0.0}
+GET  {base}/health -> {"status":"ok","lines_indexed":...}   # not called by the app
+```
+
+`matched:false` is a **normal reply**, not an error — the service returns a graceful
+"say that another way" and the UI marks it quietly (line work + muted text, never the
+orange fill, §2.7). Only a turn that produced no usable reply throws.
+
+**The seam — the one thing that must not be eroded.** `data/chatbot_service.dart`
+declares `ChatbotService` with **one** method (`send` → `ChatReply`) and one throwable
+(`ChatbotFailure`, carrying a message already written for the user). **No HTTP
+vocabulary may cross it** — no URL, no status code, no JSON, and no `/health`, which is
+an HTTP-only diagnostic. This exists because the long-term direction is the chatbot
+running **ON-DEVICE with no server**, for other people's phones: that lands as a second
+implementation behind the same interface, swapped at the single line in
+`chatbotServiceProvider`, with the chat UI untouched.
+
+**Everything address-related is HTTP-implementation-scoped and dies with it:**
+`http_chatbot_service.dart`, `chatbot_endpoint_store.dart` (the `shared_preferences`
+base URL, defaulting to `http://100.116.97.26:5000` — a Tailscale address that WILL
+move, hence editable and never hardcoded in the UI) and `chatbot_settings_screen.dart`.
+On-device has no address; delete the three together.
+
+**Android cleartext.** Plain `http://` is blocked from targetSdk 28, so
+`android:usesCleartextTraffic="true"` is set in `android/app/src/debug/AndroidManifest.xml`
+— **debug only, on purpose.** Release stays cleartext-blocked (all other traffic is
+HTTPS). Running the chatbot in a release build over plain HTTP needs a recorded
+decision first.
+
+**`HttpChatbotService` is no longer what the app runs** (see Part 2 below); it is
+kept as the reference implementation to compare the on-device engine against.
+Never run against the live service on a device, and `normalizeBaseUrl` and the
+`/chat` response parsing remain untested.
+
+### On-device engine — Part 2 (it answers) SHIPPED 2026-08-19
+
+**`chatbotServiceProvider` now returns `OnDeviceChatbotService`.** A reply needs
+no laptop, no Tailscale and no internet — the phone can be in airplane mode. The
+chat screen did not change; one provider line did. (DECISIONS.md → "On-device
+chatbot engine — Part 2".)
+
+- **The pipeline is a PORT of `backend/search.py` + `app.py`, not an
+  approximation.** Normalize (SentencePiece Precompiled charsmap) → WhitespaceSplit
+  + Metaspace → Unigram Viterbi at 128 incl. specials → ONNX MiniLM int8 (mean
+  pooling is INSIDE the graph) → L2 normalize → cosine over the 5,275-row index →
+  top 10 → **below 0.55, decline**; otherwise serve, skipping a repeat of the
+  session's last line. Query and index vectors are only comparable if both sides
+  tokenize identically, and a *nearly* right tokenizer raises no error — it just
+  retrieves worse lines. Do not "simplify" any stage.
+- **Threshold is 0.55** — `MATCH_THRESHOLD` in `app.py`. The 0.545 named in the
+  Part 2 prompt exists nowhere in the chatbot repo; both sit inside the measured
+  void (0.4552 … 0.6893) so nothing measured behaves differently. One source of
+  truth, in `RetrievalPolicy`.
+- **Tokenizer verified against the real 250,002-piece HuggingFace tokenizer on
+  5,302/5,302 texts** — whole corpus plus adversarial Unicode. Not one id differs.
+  `test/fixtures/tokenizer_fixture.json` carries the **real** charsmap with a cut-down
+  vocab; the goldens come from HF, so "correct" here means "what built the index".
+- **English glosses are PRECOMPUTED** (`subs_en.json`, 210KB, the 5th release
+  asset), produced by the same Argos de→en model the server calls. Retrieval can
+  only ever return one of the 5,275 corpus lines, so the runtime translator was a
+  function over a finite domain. **Do not add an on-device translator** — it is
+  +159MB for an advantage that cannot occur. The gloss file is optional to
+  `EmbeddingIndex` (German-only degrade) and required in `kModelFiles`.
+- **The download is a choice.** `build()` only *checks* now (→ `ModelReady` or
+  `ModelNeeded`); only a tap starts 143MB. `ChatGate` is what `/chatbot` builds and
+  it sits OUTSIDE `ChatScreen`, handing over whole, so the `session_id` is minted
+  when practice begins and not when someone glanced at a prompt.
+- **Loading runs in `Isolate.run`** (17MB JSON + 8MB vectors would freeze the
+  frame that opened the chat). The ORT session is created on the main isolate — it
+  is a platform handle and cannot be sent.
+- **"Service address" left the chat menu**, dev-menu only now: it edits an address
+  nothing reads. `HttpChatbotService` is KEPT as the reference implementation to
+  compare against — restoring it is one provider line.
+
+**NOT VERIFIED — nothing has run on a device.** The ONNX session, the 118MB model
+load, inference latency and memory on the Redmi are the device pass. Everything
+either side of the ORT call is covered by tests.
+
+### On-device model — Part 1 (download + storage) SHIPPED 2026-08-19
+
+The second implementation's **acquisition layer**, recorded as built. (Its "no
+inference yet, provider unchanged" caveats were true for one session and are
+superseded by Part 2 above.) (DECISIONS.md → "On-device chatbot model — download
++ storage".)
+
+~143.5MB of model files are **downloaded from a GitHub Release, never bundled**.
+`kModelReleaseBaseUrl` in `data/model_manifest.dart` is the one line to swap. It
+is **live** (`RedWaffle007/German-Subtitle-Chatbot`, tag `model-v1`) and all five
+assets carry real sha256 digests, so strict verification is on.
+
+- `data/model_manifest.dart` — the URL constant + the **five** files (the fifth,
+  `subs_en.json`, arrived with Part 2). Each carries a **nullable**
+  `sha256`/`sizeBytes`: null means "verify what is knowable" (received bytes vs
+  `Content-Length`), and filling the real digests in turned strict verification on
+  with no code change. All five are filled.
+- `data/model_store.dart` — app-private *support* dir (not documents: machine
+  artifacts, and iOS excludes it from iCloud backup). **The `.part` discipline is
+  the safety story** — a download writes `<name>.part` and is renamed only after
+  it verifies, so a file bearing the real name is by construction a file that
+  passed. Do not add a "which downloads finished" side-table; that is the
+  bookkeeping this design exists to avoid.
+- `data/model_downloader.dart` — resumable via `Range`. **The response code
+  decides, never the request:** 206 appends, 200 truncates and restarts, 416
+  discards. A server that ignores `Range` answers 200 with the whole body, and
+  appending that to a partial file makes a corrupt file of plausible size.
+  Per-chunk idle timeout, not a whole-download one.
+- Entry point = **the chat AppBar overflow menu** → "Offline model"
+  (`/chatbot/model`), plus the dev menu. Deliberately *not* the settings screen,
+  which dies with the HTTP implementation and would take the door with it.
+- **It now gates the chat** — see Part 2 above.
+
+**Not verified on a device: nothing has downloaded a real byte.** Also
+unaddressed: Android `allowBackup` is on by default, so 143MB in the support dir
+is nominally in scope for auto-backup (it exceeds the 25MB quota and would simply
+fail) — decide whether to exclude the directory before release.
+
 ## Committed stack
 
 - **Frontend:** Flutter (single codebase).

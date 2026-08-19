@@ -51,6 +51,14 @@ class DevMenuScreen extends ConsumerWidget {
       ('Activity (planner)', Routes.plannerActivity, true),
       ('Pending Approvals (target)', Routes.approvals, true),
       ('My Schedule / Outcomes (target)', Routes.outcome, true),
+      // Root-level, so it is pushed and Back returns here. The chatbot shares
+      // nothing with the delegation features but the theme and the router.
+      ('Language practice (chatbot)', Routes.chatbot, false),
+      ('Offline model setup (chatbot)', Routes.chatbotModel, false),
+      // The HTTP service address. Off the chat's own menu since the engine went
+      // on-device — nothing reads it until `chatbotServiceProvider` is pointed
+      // back at HTTP — but kept reachable here for exactly that comparison.
+      ('Chatbot service address (HTTP only)', Routes.chatbotSettings, false),
     ];
 
     return Scaffold(

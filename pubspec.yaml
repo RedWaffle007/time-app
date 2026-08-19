@@ -60,6 +60,29 @@ dependencies:
   local_auth: ^2.3.0
   shared_preferences: ^2.3.2
 
+  # On-device chatbot model files (~143MB), downloaded from a GitHub Release on
+  # first use rather than bundled in the APK. Both were already resolving as
+  # transitive dependencies at these exact versions — promoting them to direct
+  # only records that this code calls them by name; no new package resolves.
+  #
+  # `path_provider` finds the app-private support directory the files live in.
+  # `crypto` streams a sha256 over a downloaded file so a half-finished or
+  # corrupted download can never be installed as if it were good.
+  path_provider: ^2.1.6
+  crypto: ^3.0.7
+
+  # The on-device chatbot engine. `flutter_onnxruntime` wraps Microsoft's
+  # ONNX Runtime (1.23.0 on Android) and is what actually runs the MiniLM
+  # graph; it takes a model FILE PATH, which is what makes a downloaded —
+  # rather than bundled — model possible at all.
+  #
+  # `characters` is the Unicode grapheme-cluster iterator. It is not a
+  # convenience here: SentencePiece's normalizer walks graphemes, not code
+  # points, and reproducing its output exactly is what keeps a query in the
+  # same embedding space as the corpus index.
+  flutter_onnxruntime: ^1.8.3
+  characters: ^1.4.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

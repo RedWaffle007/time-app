@@ -154,6 +154,41 @@ abstract final class AppIcons {
   /// Naming the concept `warning` is exactly so no call site types "amber".
   static const IconData warning = Icons.warning_amber_rounded;
 
+  // ---- language practice (the chatbot feature) ----
+
+  /// Send the composed message. Not [add]: composing and creating are different
+  /// acts, and only one of them is a schedule item.
+  static const IconData send = Icons.send;
+
+  /// The retrieval index had no confident match, so the bot answered with its
+  /// fallback. A quiet marker on a real reply — deliberately NOT [error] or
+  /// [warning], because nothing failed and the orange fill those imply is
+  /// reserved for state the user must act on (§2.7).
+  static const IconData noMatch = Icons.help_outline;
+
+  /// The model that runs the bot **on this phone** — the setup destination and
+  /// anything naming it. A chip glyph, because the fact worth conveying is
+  /// "this lives on the device", not "this was downloaded".
+  static const IconData offlineModel = Icons.memory;
+
+  /// Fetching that model over the network. Distinct from [offlineModel]: the
+  /// thing and the act of getting it are two concepts (rule 1), and only one of
+  /// them needs a connection.
+  static const IconData modelDownload = Icons.cloud_download_outlined;
+
+  /// The model is installed and verified — usable with no network.
+  ///
+  /// Deliberately not [done] or [approved]: those are facts about a *schedule
+  /// item* in the delegation loop, and this file is the one place that
+  /// distinction is kept honest. Not [selected] either, which is filled and
+  /// means "this row is the current choice" (rule 2).
+  static const IconData modelReady = Icons.offline_pin_outlined;
+
+  /// Where a service lives — the editable address of the practice backend, and
+  /// the control that opens it. Scoped to the HTTP implementation and deleted
+  /// with it; an on-device engine has no address.
+  static const IconData serviceAddress = Icons.dns_outlined;
+
   // ---- dev-only scaffolding (lib/dev is governed too — §6.6) ----
 
   static const IconData devPanels = warning;

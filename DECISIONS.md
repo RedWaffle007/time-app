@@ -2470,3 +2470,265 @@ therefore a release-affecting fix, not a debug nicety.
 **Decision: a cancel is a user decision, not a failure** — catch the `canceled`
 code and return silently to the sign-in screen. Red stays rationed for genuine
 failures (UI-RULES.md §2.5) and gets a human message instead of a `toString()`.
+
+## Chatbot entry point = the account menu (2026-08-18)
+
+The language-practice chatbot was reachable only from the dev menu, which is
+debug-only scaffolding stripped from release builds: the feature existed in
+release and had no door. It needed a permanent entry point in normal navigation.
+
+**Chosen: an item in the account menu (`AccountButton`), above a divider that
+separates it from the account block.**
+
+The account menu is already the documented home for exactly this shape of route.
+`app_router.dart` groups `/profile`, `/archived` and `/dev` as "account-level
+routes … reached from the account menu on any tab and belong to no tab", and
+`/chatbot` was declared in the same words for the same reason. `AccountButton`
+renders in all three tab AppBars, so one menu item makes the feature reachable
+from everywhere in the app, in release, with a working back arrow.
+
+**`/chatbot` stays top-level and pushed.** Nothing about the shell moves, so
+`/chatbot/settings` keeps nesting under it, Back from settings still returns to
+the chat, and the dev-menu entry keeps working unchanged as a pushed root-level
+destination (Back returns to the dev menu).
+
+### The fourth-tab alternative, and why it was rejected
+
+A fourth `StatefulShellRoute` branch labelled *Practice* was considered first and
+briefly chosen, then reversed. It buys discoverability — the account menu is
+where you go rarely and deliberately, which is written into the Archived
+rationale, while language practice is a place you visit. Three costs sank it:
+
+1. **It dilutes the "three role-agnostic tabs" doctrine.** The nav bar says
+   something precise today: each tab is one stance in the delegation loop, and
+   the same person occupies all of them. A fourth tab that is not part of that
+   loop turns the bar into "the app's top-level places" and spends a meaning
+   that is hard to get back.
+2. **The dev-menu link would have to change from `push` to `go`.** In-shell
+   destinations must use `go`; pushing a shell location from `/dev` makes
+   go_router clone the shell and crash on a duplicate `GlobalKey` (the long
+   comment in `dev_menu_screen.dart`). Back would stop returning to the dev menu.
+3. **It silently breaks the chat's session boundary.** `ChatScreen` holds its
+   transcript in `State` and its `session_id` in a `late final`, deliberately: a
+   practice session is one sitting, so leaving the screen ends it, matching the
+   boundary `session_id` draws on the service. `StatefulShellRoute.indexedStack`
+   keeps every branch mounted — that is the point of it — so as a tab the
+   transcript and session id would live for the whole process lifetime under a
+   session the backend may long since have forgotten. Fixing that needs a
+   *New conversation* action and a mutable session id; none of that is needed
+   while the screen is pushed and disposed on leave.
+
+If discoverability turns out to be the real problem in use, the fourth tab is
+the upgrade path — but it is a product decision with the three costs above
+attached, not a wiring change.
+
+**The seam is untouched either way.** `lib/features/chatbot/` still shares only
+the theme, the icon vocabulary and the router: no group, no schedule item, no
+approval, no outcome, no Firestore document, no FCM, no Worker. This decision
+adds one menu item that pushes a route.
+
+## On-device chatbot model — download + storage (2026-08-19)
+
+Part 1 of moving the language-practice bot off the laptop and onto the phone.
+This session builds **only** the acquisition layer: fetch the model files, store
+them, prove they are intact. No inference, no engine, no change to which
+implementation the seam returns.
+
+### The files are downloaded, never bundled
+
+~143MB of ONNX weights, a tokenizer, an embeddings index and its metadata. In the
+APK they would roughly quadruple the download for every user of the *delegation*
+app, who is the actual user and does not want a German practice bot. They are
+hosted on a **GitHub Release** and fetched on first use into app-private storage.
+
+`kModelReleaseBaseUrl` in `features/chatbot/data/model_manifest.dart` is the one
+line that moves when the release moves — the same shape as `kNotifyEndpoint`, and
+for the same reason: an address that will change should be a named constant, not
+a string spread across a data layer.
+
+### It does not gate the chat
+
+The setup screen is a **destination** (`/chatbot/model`), not a wall in front of
+`/chatbot`. The HTTP implementation still answers every message exactly as it did
+yesterday. Gating now would put a 130MB download in front of a feature that
+currently works, and — while the manifest still holds placeholder URLs — would
+make the chat unreachable entirely.
+
+Part 2 is what flips `chatbotServiceProvider`; the gate belongs in the same
+change as the thing it gates.
+
+**The door is the chat's AppBar overflow, not the settings screen.**
+`chatbot_settings_screen.dart` is documented as dying with the HTTP
+implementation, so hanging the on-device entry point off it would mean deleting
+HTTP also deletes the only way to reach the on-device model. The AppBar menu
+outlives both: today it holds *Service address* (HTTP-scoped) and *Offline
+model*; when HTTP goes, the first item goes with it and the second stays.
+
+### Verification is fail-closed, and degrades honestly
+
+Every file lands as `<name>.part` and is renamed to `<name>` **only after it
+verifies**. A rename within one directory is atomic, so a file with the real name
+is by construction a file that passed — an interrupted download cannot present as
+a finished one, and `isReady()` needs no separate bookkeeping to trust.
+
+`ModelFile.sha256` and `.sizeBytes` are **nullable**, because the real values do
+not exist until the files are uploaded. Null means "verify what is knowable":
+bytes received must equal the `Content-Length` the server declared. Filling the
+real digests into the manifest turns strict checking on with **no code change** —
+`verify()` already reads them. This is a deliberate weak state with an expiry, so
+`isPlaceholder` names it and the setup screen says so on screen rather than
+implying a guarantee it cannot make.
+
+### Resume, with a restart fallback
+
+A 130MB download over a phone connection will be interrupted. The `.part` file is
+kept and a retry sends `Range: bytes=<already-have>-`.
+
+The fallback matters more than the happy path: a server that ignores `Range`
+answers **200 with the whole body**, not 206. Appending that to a partial file
+produces a corrupt file of plausible size — which is exactly the failure a
+checksum is for, but it is better not to create it. So the response code decides:
+`206` appends, `200` truncates and restarts, `416` means the part is already at
+or past the full length and is discarded. Nothing infers resumption from the
+request it sent.
+
+A **per-chunk** idle timeout, not a whole-download timeout: a large file has no
+sane total budget, but 30 seconds with no bytes arriving is a dead connection on
+any budget.
+
+### `Sizes.progressBar = 8` — new token (UI-RULES.md §9)
+
+A determinate progress bar is the first the app has had; `app_theme.dart` themes
+no progress indicator and UI-RULES.md had no recipe. Value and reasoning are in
+the new **§6.7**, added before the screen was written.
+
+**Green, not orange.** A download in flight is *action in progress*, which is
+what `primary` means. Orange is reserved for "waiting on you" (§2.7) and a
+progress bar is a filled shape — the one thing the firewall says must not borrow
+that colour. The failure state uses `WarningPanel`, which is where orange
+legitimately lives.
+
+### What is not built
+
+No inference, no ONNX runtime, no second `ChatbotService`. Nothing in
+`chatbot_service.dart`, `http_chatbot_service.dart`, `chatbot_endpoint_store.dart`
+or `chat_screen.dart`'s transcript changed — the seam is untouched, which is the
+whole point of having had it before this work started.
+
+---
+
+## On-device chatbot engine — Part 2 (2026-08-19)
+
+Part 1 put the files on the phone. This makes them answer. `chatbotServiceProvider`
+now returns `OnDeviceChatbotService`, and the chat is gated on the model being
+present. **A reply now requires no laptop, no Tailscale and no internet.**
+
+The chat screen did not change to make this happen — one provider line did. That
+was the whole promise of keeping `ChatbotService` to a single method with no
+transport in its signature (2026-08-18), and it held.
+
+### The pipeline is a port, not a reimplementation
+
+`backend/search.py` and `backend/app.py`, step for step:
+
+```
+Precompiled charsmap -> WhitespaceSplit + Metaspace -> Unigram Viterbi (128 incl. specials)
+  -> ONNX MiniLM int8 (mean pooling INSIDE the graph) -> L2 normalise
+  -> cosine vs the 5,275-row index -> top 10
+  -> best < 0.55 ? decline : serve, skipping a repeat of the session's last line
+```
+
+This is deliberately not "close enough". Query and index vectors are only
+comparable if both sides tokenize and pool identically, and a tokenizer that is
+*nearly* right raises no error — it just lands somewhere else in the embedding
+space and retrieves a worse line. So every stage is a port of the reference, and
+correctness is measured against the reference rather than against anyone's idea
+of what XLM-R ought to do.
+
+**The normalizer had to be ported whole.** Dart has no Unicode normalization, and
+NFKC would not have been enough anyway: SentencePiece's charsmap also folds tabs,
+newlines, zero-width spaces and the BOM to a plain space, which NFKC leaves alone.
+289 of the 5,275 corpus lines are changed by it. `precompiled_normalizer.dart` is
+a port of HuggingFace's `spm_precompiled`, darts-clone double-array and all,
+including the grapheme-then-character fallback that looks wrong and is what the
+reference does.
+
+**Verified, not assumed:** the Dart tokenizer reproduces the real 250,002-piece
+HuggingFace tokenizer on **5,302/5,302 texts** — the entire corpus plus adversarial
+Unicode (BOM, tab, zero-width, full-width, ligatures, Roman numerals, emoji,
+Cyrillic, CJK, Hebrew, a 300-word truncation case). Not one id differs.
+
+### The threshold is 0.55, matching the server
+
+`MATCH_THRESHOLD` in `app.py`. The 0.545 named in the session prompt appears
+nowhere in the chatbot repo. Both sit inside the measured void between the worst
+genuine query (0.6893) and the best meaningful off-topic query (0.4552), so no
+measured query behaves differently — this is about the server and the phone
+having one source of truth. Its known limit is inherited too: keyboard mash is
+not caught (`qqqqqqqqqq` scores 0.7867), which is an input-validation problem on
+both sides and is still unsolved.
+
+Thresholding is on the **best** score, never on the score of the line finally
+served — `app.py` asks "is this answerable at all?" before the anti-repeat rule is
+allowed to move the answer to a lower-scoring line.
+
+### English glosses are precomputed, not translated on-device
+
+The server calls Argos Translate (CTranslate2) per request. On-device that is
+~159MB more download, an autoregressive decoder loop in Dart, a second
+SentencePiece tokenizer and no Flutter binding for CTranslate2.
+
+**It is also unnecessary.** Retrieval can only ever return one of the 5,275 corpus
+lines, so the runtime translator was a function over a finite, known domain.
+Evaluating it ahead of time is not an approximation of it — it is the same answer.
+`subs_en.json` (210KB, a fifth release asset) was produced by running the very
+same installed Argos de→en pipeline over the corpus, so the phone's English is
+byte-identical to what the server would have replied.
+
++0.2MB instead of +159MB. The alternative's only advantage — translating text
+outside the corpus — cannot occur.
+
+`EmbeddingIndex` treats the gloss file as **optional**: a build that reaches a
+phone before the asset does answers in German rather than refusing to start.
+It is required in `kModelFiles`, so the download fetches it.
+
+### The download is a choice, not a side effect
+
+`ModelSetupController.build()` used to start downloading. It now only **checks**,
+ending at `ModelReady` or the new `ModelNeeded`, and only a tap moves it on.
+143MB is not something to start on someone's behalf because they opened a screen —
+they may be on mobile data, or just looking.
+
+`ChatGate` is what `/chatbot` builds. The chat has no fallback any more: replies
+come from files on this phone, so without them there is nothing to talk to and no
+address to fix. The gate sits **outside** `ChatScreen` and hands over to it whole,
+because `ChatScreen`'s State mints the `session_id` — a session should begin when
+practice begins, not when someone glanced at a download prompt.
+
+Both entry points render `ModelSetupBody`, one widget. Two copies would drift, and
+the one that drifts is the gate — the screen a first-time user actually meets.
+
+### Loading happens off the UI isolate
+
+17MB of tokenizer JSON and 8MB of compressed vectors, parsed on the main isolate,
+freeze the frame that opened the chat. Both are built inside `Isolate.run`, which
+is only possible because the parsed results hold nothing but plain data — asserted
+in a test, not assumed. The ONNX session is created on the main isolate: it is a
+platform-channel handle and does not survive being sent.
+
+### "Service address" left the chat menu
+
+It edits an address nothing reads while the on-device engine is selected, so
+leaving it on the chat's own menu would invite someone to fix a connection problem
+they do not have. The screen and route stay, reachable from the dev menu, because
+they become meaningful again the moment `chatbotServiceProvider` is pointed back
+at HTTP for a comparison. `HttpChatbotService` is kept for exactly that reason: it
+is the reference the on-device pipeline is checked against.
+
+### What is NOT verified
+
+**Nothing has run on a device.** The ONNX session, the 118MB model load, inference
+latency and memory on the Redmi are all unproven — that is the device pass. What is
+proven here is everything either side of the ORT call: the tokenizer against the
+real tokenizer, the `.npz` reader against a NumPy-written file, the ranking, and
+every retrieval decision that has to agree with the server.

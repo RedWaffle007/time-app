@@ -476,6 +476,46 @@ sitting outside it.
 
 ---
 
+### 6.7 Progress
+
+Two shapes, and which one you use is a statement about what you know.
+
+**Determinate — you know the total.** A `LinearProgressIndicator` with a real
+`value`:
+
+```
+LinearProgressIndicator(
+  value: received / total,          // never null here
+  minHeight: Sizes.progressBar,     // 8
+  borderRadius: Radii.pill,
+)
+```
+
+`primary` for the bar (theme default), `surfaceContainerHighest` for the track.
+Always paired with the same fact in words underneath — `bodySmall` in
+`onSurfaceVariant`, e.g. "48.2 MB of 130 MB". A bar alone tells someone that
+something is happening; the line underneath is what tells them whether to wait.
+
+**Indeterminate — you do not.** A `CircularProgressIndicator`, sized to whatever
+it replaces (`Sizes.buttonSpinner` inside a button). Never a *linear*
+indeterminate bar: a sliding stripe reads as a stalled determinate one.
+
+Rules:
+
+- **Progress is green, never orange.** Work in flight is action, which is what
+  `primary` means. A progress bar is a filled shape, and under §2.7 an orange
+  fill means "waiting on you" — the one signal the app cannot afford to spend
+  on a spinner. A failure during that work is a `WarningPanel` (§6.3); that is
+  where the orange belongs.
+- **Never fake a total.** If the size is unknown, the indicator is
+  indeterminate. A bar that crawls to 90% and sits there is worse than a
+  spinner, because it made a promise.
+- **A determinate bar never goes backwards.** Retrying part of a longer job
+  restarts *that segment's* number, so name the segment ("File 2 of 4") rather
+  than letting the percentage jump down with nothing to explain it.
+
+---
+
 ## 7. Accessibility floor
 
 **Every text pairing hits WCAG AA (4.5:1) in both modes. Verified by computation,
