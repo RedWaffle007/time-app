@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- ==================================================================
          THROWAWAY SPIKE. Not the product. Nothing here is a precedent for
@@ -81,6 +82,38 @@
                 <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
             </intent-filter>
         </receiver>
+
+        <!-- ==============================================================
+             WorkManager auto-initialisation: REMOVED.
+
+             WorkManager registers itself through androidx.startup's
+             InitializationProvider, which runs during ContentProvider install
+             — BEFORE Application.onCreate and before any line of our code. On
+             2026-08-19 that path threw on this Redmi (Room could not construct
+             WorkDatabase) and took the whole process down on launch. There was
+             no try/catch we could have placed anywhere to survive it, because
+             nothing of ours had run yet.
+
+             WORKMANAGER is one of four instruments in this rig, and the least
+             important one — the exact-alarm variants are the decision. An
+             instrument that can kill the rig before the other three are read is
+             not acceptable, whatever its own result would have been.
+
+             So: auto-init off, and AlarmScheduler initialises WorkManager
+             lazily inside a try/catch. If it fails now, that failure is
+             recorded as one SCHEDULE_FAILED row against WORKMANAGER and the
+             other three variants run exactly as they would have.
+             ============================================================== -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
 
         <meta-data
             android:name="flutterEmbedding"

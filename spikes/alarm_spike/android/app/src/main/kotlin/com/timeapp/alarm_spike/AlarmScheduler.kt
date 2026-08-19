@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import androidx.work.Configuration
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
@@ -34,6 +35,30 @@ object AlarmScheduler {
     val ALL = listOf(ALARM_CLOCK, EXACT_IDLE, INEXACT_IDLE, WORKMANAGER)
 
     private const val WM_UNIQUE = "alarm_spike_wm"
+
+    /**
+     * WorkManager, or null if this device cannot give us one.
+     *
+     * Auto-initialisation is disabled in the manifest (see the comment there):
+     * it ran before any of our code and crashed the process on launch. Here the
+     * same failure is just a null, and a null costs us one column of the
+     * comparison instead of the entire run.
+     *
+     * Deliberately NOT cached as "unavailable" forever — the Room failure that
+     * caused this is deterministic, but a transient one shouldn't permanently
+     * disarm the variant for the rest of the session.
+     */
+    private fun workManager(context: Context): WorkManager? = try {
+        val app = context.applicationContext
+        try {
+            WorkManager.getInstance(app)
+        } catch (notInitialised: IllegalStateException) {
+            WorkManager.initialize(app, Configuration.Builder().build())
+            WorkManager.getInstance(app)
+        }
+    } catch (t: Throwable) {
+        null
+    }
 
     private fun requestCode(variant: String) = when (variant) {
         ALARM_CLOCK -> 1001
@@ -111,6 +136,8 @@ object AlarmScheduler {
                     pendingIntent(context, variant, scheduledEpoch)
                 )
                 WORKMANAGER -> {
+                    val wm = workManager(context)
+                        ?: return "WorkManager unavailable on this device"
                     val delay = (scheduledEpoch - System.currentTimeMillis()).coerceAtLeast(0)
                     val req = OneTimeWorkRequestBuilder<SpikeWorker>()
                         .setInitialDelay(delay, TimeUnit.MILLISECONDS)
@@ -120,8 +147,7 @@ object AlarmScheduler {
                                 .build()
                         )
                         .build()
-                    WorkManager.getInstance(context)
-                        .enqueueUniqueWork(WM_UNIQUE, ExistingWorkPolicy.REPLACE, req)
+                    wm.enqueueUniqueWork(WM_UNIQUE, ExistingWorkPolicy.REPLACE, req)
                 }
             }
             "ok"
@@ -139,7 +165,7 @@ object AlarmScheduler {
         listOf(ALARM_CLOCK, EXACT_IDLE, INEXACT_IDLE).forEach {
             try { am.cancel(pendingIntent(context, it, 0L)) } catch (t: Throwable) { }
         }
-        try { WorkManager.getInstance(context).cancelUniqueWork(WM_UNIQUE) } catch (t: Throwable) { }
+        try { workManager(context)?.cancelUniqueWork(WM_UNIQUE) } catch (t: Throwable) { }
         SpikeStore.clear(context)
         SpikeLog.write(context, event = "CANCELLED", note = "all variants")
     }

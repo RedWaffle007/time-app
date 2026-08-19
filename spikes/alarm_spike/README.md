@@ -59,6 +59,41 @@ differently by battery policy; a debug pass proves less than nothing here.
 
 ---
 
+## Two traps found while verifying the build on the device (2026-08-19)
+
+Both were observed on the Redmi itself, and either one silently corrupts a run.
+
+**1. Reinstalling REVOKES the exact-alarm grant.** Logcat, on the install:
+
+```
+W AlarmManager: Package com.timeapp.alarm_spike, uid 10405
+                lost permission to set exact alarms!
+```
+
+So `flutter run` / `adb install -r` drops you back to **G0**, no matter what you
+granted before. The two exact variants then fail with a `SecurityException`,
+which the app records as `SCHEDULE_FAILED` rather than crashing — but if you
+weren't watching, you'd read a G3 run that was really a G0 run.
+**Re-check the status card's three flags after every install, before arming.**
+
+**2. A `BOOT` row can appear WITHOUT a reboot.** On this HyperOS build,
+installing the app produced both of these within 500ms of each other:
+
+```
+...,BOOT,,,,,0,0,0,1,android.intent.action.LOCKED_BOOT_COMPLETED
+...,BOOT,,,,,0,0,0,1,android.intent.action.BOOT_COMPLETED
+```
+
+No reboot happened. This matters more than it looks: "did a `BOOT` row appear?"
+is the single most decision-relevant bit in Run E, and a stray install-time row
+would answer it wrongly in the optimistic direction. **In Run E, check the BOOT
+row's timestamp against when you actually rebooted** — not merely that one
+exists.
+
+**Also: tap the trash icon to clear the log before the first real run.** The
+build was verified with a live `+2 min` arm-and-cancel, so the log already has
+`APP_OPEN`, `SCHEDULE_FAILED`, `SCHEDULED` and `CANCELLED` rows in it.
+
 ## The grant matrix
 
 Four configurations. **Run the whole test at each one, in this order** — each
@@ -224,6 +259,12 @@ settings or the core promise silently breaks for them.
 - The status card shows the **system's** next alarm clock. When `ALARM_CLOCK` is
   armed this should be populated and the status bar should show the alarm icon.
   If it doesn't, `setAlarmClock` silently didn't take.
+- **WorkManager crashed the release build on launch once** (2026-08-19) — R8
+  removed Room's generated constructor, inside an `androidx.startup` provider
+  that runs before any of our code. Fixed three ways: minification is off for
+  this build, keep rules exist anyway, and WorkManager is now initialised lazily
+  behind a try/catch with its auto-initialiser removed from the manifest. If it
+  ever fails again it costs one `SCHEDULE_FAILED` row, not the run.
 - `MY_PACKAGE_REPLACED`, `TIME_SET` and `TIMEZONE_CHANGED` are also wired to the
   boot receiver. They aren't part of the matrix, but a stray `BOOT` row with one
   of those in the note column explains an otherwise confusing re-arm.
