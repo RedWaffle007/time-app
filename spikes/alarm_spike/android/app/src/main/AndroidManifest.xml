@@ -1,0 +1,89 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- ==================================================================
+         THROWAWAY SPIKE. Not the product. Nothing here is a precedent for
+         what time-app ships; the point is to measure what the OS actually
+         does on one specific Redmi.
+         ================================================================== -->
+
+    <!-- The user-granted exact-alarm flow. Deliberately chosen over
+         USE_EXACT_ALARM for the spike: the SCHEDULING BEHAVIOUR of the two is
+         identical (same AlarmManager code path, same Doze exemption), they
+         differ only in how the grant is obtained — auto-granted on install and
+         Play-policy reviewed, vs. a user prompt and no policy review at all.
+         Measuring with SCHEDULE_EXACT_ALARM therefore produces numbers that
+         hold for BOTH permissions, and it means the spike's result does not
+         depend on a Play review we have not yet been through. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+
+    <!-- The other route to exact alarms, and one that needs no exact-alarm
+         permission at all: an app on the power allowlist is always permitted to
+         call setExact()/setExactAndAllowWhileIdle(). Measuring this is the
+         point of the "battery unrestricted" arm of the test matrix. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
+
+    <!-- Re-arm after reboot. AlarmManager holds nothing across a power cycle. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
+
+    <application
+        android:label="Alarm Spike"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+        <!-- directBootAware so a re-armed alarm can still be delivered between a
+             reboot and the first unlock. Requires that everything it touches
+             lives in device-protected storage — see SpikeLog/SpikeStore. -->
+        <receiver
+            android:name=".AlarmReceiver"
+            android:exported="false"
+            android:directBootAware="true"/>
+
+        <!-- LOCKED_BOOT_COMPLETED fires before the first unlock; BOOT_COMPLETED
+             after. Registering both is how alarms get re-armed on a phone that
+             rebooted overnight and is sitting on the lock screen.
+             MY_PACKAGE_REPLACED and the time/timezone changes are here because
+             each one silently invalidates scheduled alarms. -->
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true"
+            android:directBootAware="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.TIME_SET"/>
+                <action android:name="android.intent.action.TIMEZONE_CHANGED"/>
+                <!-- Non-standard, historically used by some OEM quick-boot paths. -->
+                <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
+
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+</manifest>

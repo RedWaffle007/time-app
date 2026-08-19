@@ -249,6 +249,18 @@ which cannot carry a custom sound; and on iOS, AlarmKit via `flutter_alarmkit`
 (v0.4.x, iOS 26+ floor, immature). Play policy is the reason this path is closed,
 and it closed before Flutter-vs-RN was ever a question.
 
+> **⚠️ CORRECTED 2026-08-19 — this paragraph propagated the error it inherited.**
+> Two things are wrong with it. (1) `setAlarmClock` does **not** require
+> `USE_EXACT_ALARM`; it requires *an* exact-alarm grant, and
+> `SCHEDULE_EXACT_ALARM` — a user prompt, **no Play review** — satisfies it
+> identically. (2) "Play policy is the reason this path is closed" is therefore
+> false: policy gates only the auto-granted, non-revocable variant. Exact alarms
+> were open to this project the whole time. The `USE_EXACT_ALARM` qualification
+> question is also closer than "likely does not qualify" suggested — the policy's
+> acceptable use case is literally *"the app is an alarm or timer app."* See
+> DECISIONS.md → "Exact alarms: the Play-policy assumption was wrong (2026-08-19)".
+> The iOS/AlarmKit half of the paragraph is unaffected and still correct.
+
 ## 2.2 Everything else the docs describe that does not exist
 
 **Core to the product** — these are on the critical path to the loop working as

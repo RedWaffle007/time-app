@@ -218,7 +218,7 @@ can re-register alarms (per spec).
 | Transition | Alarm effect (when alarms exist) |
 |---|---|
 | `approved → cancelled` (planner) | De-register the device alarm (native-clock entry / local notification) and set `active=false`. |
-| `approved → withdrawn` (target) | Same de-registration, treated as **immediate** — consent revoked outranks a pending fire. |
+| `pending → withdrawn` (**planner**) | Same de-registration, treated as **immediate**. NOTE: this row said `approved → withdrawn` (target) until 2026-08-19 and was wrong from the day Group C shipped — `withdrawn` is the **planner** retracting a plan the target has **not yet decided on** (`ScheduleRepository.withdraw`, and the withdraw branch of firestore.rules permits only a `pending` item). A target revoking consent after approving is a *different*, currently unbuilt transition. Any reminder-cancellation code that trusts the old wording would cancel on the wrong actor and the wrong state. |
 | commitment edit resets `approved → pending` | Old alarm de-registered; a new one is scheduled only if/when the target re-approves. |
 | outcome recorded after fire | Alarm already fired; nothing to de-register. |
 

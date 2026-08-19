@@ -890,12 +890,24 @@ wake anyone up.** Push notifications and local reminders are the deliberate
 is no "true alarm" tier above them.
 
 **What this closes / changes:**
-- **We do NOT need `USE_EXACT_ALARM`** and do not have to qualify under Google Play's
+- ~~**We do NOT need `USE_EXACT_ALARM`**~~ and do not have to qualify under Google Play's
   alarm-clock/calendar exemption. (That restriction was the thing that looked like it
   might make an *alarm* premise unshippable — see the 2026-07-23 notifications
   diagnosis. As a *reminder* app the question is moot.)
-- **We do NOT need `SCHEDULE_EXACT_ALARM`** either (the user-granted exact-alarm
-  flow). Inexact scheduling is sufficient — see the reminder-layer write-up below.
+  > **⚠️ REOPENED 2026-08-19** — see "Exact alarms: the Play-policy assumption was
+  > wrong" at the end of this file. Two errors here: (a) the policy's acceptable
+  > use case is literally *"the app is an alarm or timer app"*, which is a
+  > plausible fit, not an obvious exclusion; and (b) *needing* it was never the
+  > question — `SCHEDULE_EXACT_ALARM` reaches the same code path with no Play
+  > review at all. "We do not need exact alarms" was a product choice made when
+  > reminders were framed as peripheral. They are the core. Undecided pending the
+  > spike.
+- ~~**We do NOT need `SCHEDULE_EXACT_ALARM`** either~~ (the user-granted exact-alarm
+  flow). ~~Inexact scheduling is sufficient~~ — see the reminder-layer write-up below.
+  > **⚠️ REOPENED 2026-08-19.** "Sufficient" was asserted, never measured. The
+  > accepted drift budget it rests on — *tens of minutes to 1h+ in deep Doze* —
+  > is the thing the spike is now measuring. This permission needs no Play
+  > review and is available to us today.
 - **The earlier iOS finding (no third-party access to the native Clock / AlarmKit
   gating on iOS 26) STOPS being a blocker.** We were never going to fire a true iOS
   alarm; we don't need to. **iOS is back in scope for v1** as a first-class target
@@ -908,6 +920,12 @@ a soft primer; never work around a refusal; a target who declines degrades to
 in-app-only, which the loop already tolerates.
 
 # Reminder layer — how we build it with inexact scheduling only (research 2026-07-23)
+
+> **⚠️ PREMISE REOPENED 2026-08-19.** The *research* below is sound and still
+> the reference for how inexact scheduling behaves. What is no longer settled is
+> the title's word "only". Read this as **the inexact arm of a comparison**, not
+> as the chosen design. See "Exact alarms: the Play-policy assumption was wrong"
+> at the end of this file.
 
 Framing above means: **no exact alarms.** Reminders may drift; the product tolerates
 it ("start your study block" 15 min late is fine; we are explicitly NOT doing "leave
@@ -1179,6 +1197,11 @@ API 33+, and `USE_EXACT_ALARM` (auto-granted, non-revocable) is **restricted by
 Google Play policy to alarm-clock/calendar apps** — an accountability app likely
 does **not** qualify, so the reminder layer must be designed around either the
 user-granted `SCHEDULE_EXACT_ALARM` flow or inexact alarms. Flagged, not decided.
+> **⚠️ CORRECTED 2026-08-19.** "Likely does not qualify" was a guess about how a
+> reviewer would classify us, recorded in a hedge and then read downstream as a
+> finding. The policy text is narrower than the paraphrase and the disjunction at
+> the end of this paragraph is the important part: **`SCHEDULE_EXACT_ALARM` was
+> always open to us.** See the entry at the end of this file.
 (Sources: Android 14 "Schedule exact alarms are denied by default"; Play exact-alarm
 policy — cited in the session transcript.)
 
@@ -2732,3 +2755,109 @@ latency and memory on the Redmi are all unproven — that is the device pass. Wh
 proven here is everything either side of the ORT call: the tokenizer against the
 real tokenizer, the `.npz` reader against a NumPy-written file, the ranking, and
 every retrieval decision that has to agree with the server.
+
+# Exact alarms: the Play-policy assumption was wrong (2026-08-19)
+
+**Context:** the user restated that alarms/reminders/notifications are **the core
+of this app, not a side feature**, and asked whether the 2026-07-23 decision to
+drop exact alarms was made on a bad premise. It was, in two distinct ways.
+
+## What the policy actually says
+
+Google Play, *Permissions and APIs that Access Sensitive Information*, verbatim:
+
+> "`USE_EXACT_ALARM` is a restricted permission and apps must only declare this
+> permission if their core functionality supports the need for an exact alarm."
+
+Acceptable use cases, the complete list:
+
+> - "The app is an alarm or timer app."
+> - "The app is a calendar app that shows event notifications."
+
+> "If you have a use case for exact alarm functionality that's not covered above,
+> you should evaluate if using `SCHEDULE_EXACT_ALARM` as an alternative is an
+> option."
+
+Declaring it also requires a **Play Console restricted-permissions declaration**
+("Complete Play Console declaration to indicate app functionality"), reviewed by
+a human, typically with a video of the core feature.
+
+The Android platform docs put the same thing the other way round:
+
+> "Calendar or alarm clock apps need to send calendar reminders, wake-up alarms,
+> or alerts when the app is no longer running. These apps can request the
+> `USE_EXACT_ALARM` normal permission. The `USE_EXACT_ALARM` permission will be
+> granted on install, and apps holding this permission will be able to schedule
+> exact alarms just like apps with the `SCHEDULE_EXACT_ALARM` permission."
+
+## Error 1 — the qualification call
+
+DECISIONS.md (2026-07-23, notifications diagnosis) recorded *"an accountability
+app likely does **not** qualify"*. That was a guess about how a reviewer would
+classify us, written as a hedge and then read downstream — in the product
+decision and in WORK_PLAN.md §2.1 — as an established finding. It hardened
+without ever being checked.
+
+Against the actual text, **we are a plausible fit**: the app's central,
+user-facing function is a scheduled item that must alert the user at a specific
+time when the app is not running. That is much closer to *"an alarm or timer
+app"* than the phrase "accountability app" made it sound. It is not a certainty
+— we are not a *dedicated* clock app, the reviewer sees a social/planning
+product, and there is no appeal worth betting a launch on. **Honest read:
+plausible yes, not guaranteed.**
+
+## Error 2 — the one that actually mattered
+
+**Qualification was never the load-bearing question.** `SCHEDULE_EXACT_ALARM`
+reaches the **identical `AlarmManager` code path** — same exactness, same Doze
+exemption, same `setExactAndAllowWhileIdle`/`setAlarmClock` — with **no Play
+review of any kind**. The only differences are how the grant is obtained
+(a user prompt vs. granted on install) and that the user can revoke it.
+
+There is also a **third route that needs no exact-alarm permission at all**: per
+the Android 14 docs, apps on the **power allowlist** (`ACTION_REQUEST_IGNORE_
+BATTERY_OPTIMIZATIONS`) *"are always allowed to call the `setExact()` or
+`setExactAndAllowWhileIdle()` methods."* That is a grant we would very likely be
+asking a Xiaomi user for regardless.
+
+So **exact alarms were available to this project the entire time.** "Inexact
+scheduling is sufficient" was a **product choice made under a mistaken sense of
+constraint**, and it was made at the moment reminders were being framed as
+peripheral to the accountability loop. With reminders restated as the core, the
+choice does not survive its own reasoning.
+
+## What is NOT reopened
+
+The 2026-07-23 product decision itself — **we are not trying to wake anyone up**,
+there is no true-alarm tier, no AlarmKit floor, iOS stays in scope — **stands.**
+Exact alarms are about *"the 09:00 item alerts at 09:00, not 09:40"*, which is
+table stakes for a planner, not an escalation to a ringing-through-silent alarm
+clock. Nothing here unparks voice mode, quiet-hours enforcement, or any parked
+feature.
+
+## What is genuinely unverified (and always was)
+
+Not the permission. **Whether any scheduled alarm survives HyperOS's battery
+policy on the Redmi.** Exact alarms are exempt from Doze by the *framework*; OEM
+app-standby is a separate layer that the framework guarantees say nothing about.
+No amount of policy reading answers it.
+
+`spikes/alarm_spike/` (throwaway, off the product tree, package
+`com.timeapp.alarm_spike`) arms **four mechanisms at one instant** —
+`setAlarmClock`, `setExactAndAllowWhileIdle`, `setAndAllowWhileIdle` (the current
+plan's baseline) and a WorkManager one-shot — plus a direct-boot-aware boot
+receiver, and writes every fire's **actual-vs-scheduled delay** and device state
+to a CSV in device-protected storage. Procedure, grant matrix (G0–G3) and
+pass criteria are in its README, **fixed before the run so the result cannot be
+rationalised afterwards.**
+
+**Nothing about the reminder layer is decided until that matrix is filled in
+here.** In particular, do not let this entry be read as "we chose exact alarms" —
+it says the choice was foreclosed on a bad premise and is now open.
+
+## Sources
+
+- [Play — Permissions and APIs that Access Sensitive Information](https://support.google.com/googleplay/android-developer/answer/9888170)
+- [Play — same policy, current article id](https://support.google.com/googleplay/android-developer/answer/16558241)
+- [Android — Schedule exact alarms are denied by default](https://developer.android.com/about/versions/14/changes/schedule-exact-alarms)
+- [Android — Schedule alarms](https://developer.android.com/develop/background-work/services/alarms/schedule)

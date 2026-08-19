@@ -208,12 +208,31 @@ One feature at a time, plan → sign-off → build. Most strictly for goals.
    any-signed-in; tighten to users who share a group with the owner. Deferred rules
    hardening. (DECISIONS.md "Deferred hardening.")
 
-**Parked to the alarm layer (do NOT build until explicitly directed):** all alarm
-firing (Xiaomi spike — the whole premise is empirically unverified), voice-mode
-alarms, quiet-hours *enforcement*, boot-persistence/re-registration, and the
-tz-snapshot **detect-and-re-approve** upgrade (option 3; v1 stays pure snapshot —
-DECISIONS.md 2026-07-22). Card-day items (Cloud-Function push swap, CF-mediated
-join) are parked to Blaze, not to now.
+**Parked to the reminder layer (do NOT build until explicitly directed):** all
+reminder firing, voice-mode reminders, quiet-hours *enforcement*,
+boot-persistence/re-registration, and the tz-snapshot **detect-and-re-approve**
+upgrade (option 3; v1 stays pure snapshot — DECISIONS.md 2026-07-22). Card-day
+items (Cloud-Function push swap, CF-mediated join) are parked to Blaze, not to now.
+
+**Read this before planning any of it (corrects a stale framing — D25):** the
+2026-07-23 product decision (DECISIONS.md "reminder / accountability app, NOT an
+alarm app") settled that we are not trying to wake anyone up, and that stands.
+It is **not** a decision that reminders are peripheral, and it is **not** a
+finding that exact alarms are unavailable to us. On 2026-08-19 the user restated
+that reminders/notifications are **the core of the product**, and the Play policy
+was re-checked against that: the acceptable use cases for `USE_EXACT_ALARM` are
+literally *"the app is an alarm or timer app"* and *"a calendar app that shows
+event notifications."* Separately, `SCHEDULE_EXACT_ALARM` — the user-granted
+prompt — reaches **the identical AlarmManager code path with no Play review at
+all.** So "inexact scheduling is sufficient" was a *choice*, not a constraint,
+and it is now reopened. Nothing is decided until the spike's numbers land.
+
+**The empirical gap, stated honestly:** what is unverified is not "can we use
+exact alarms" (we can) but "does any scheduled alarm survive HyperOS's battery
+policy on the Redmi." `spikes/alarm_spike/` exists to answer exactly that, off
+the product tree; its README carries the procedure and the pass criteria. **No
+reminder-layer code lands in `lib/` until that matrix is filled in and recorded
+in DECISIONS.md.**
 
 ## Language practice chatbot — a SEPARATE feature (added 2026-08-18)
 
