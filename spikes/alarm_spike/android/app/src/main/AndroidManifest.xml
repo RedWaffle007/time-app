@@ -32,7 +32,7 @@
 
     <application
         android:label="Alarm Spike"
-        android:name="${applicationName}"
+        android:name=".SpikeApplication"
         android:icon="@mipmap/ic_launcher">
 
         <activity
@@ -99,10 +99,17 @@
              instrument that can kill the rig before the other three are read is
              not acceptable, whatever its own result would have been.
 
-             So: auto-init off, and AlarmScheduler initialises WorkManager
-             lazily inside a try/catch. If it fails now, that failure is
-             recorded as one SCHEDULE_FAILED row against WORKMANAGER and the
-             other three variants run exactly as they would have.
+             So: auto-init off, and WorkManager initialises ON DEMAND via
+             SpikeApplication (Configuration.Provider) instead. A failure now
+             happens inside whichever component asked for WorkManager, not in a
+             ContentProvider during application startup, so it can no longer
+             take down the launch.
+
+             DO NOT remove SpikeApplication while this node stays removed. That
+             combination compiles, runs, and enqueues work happily, then never
+             executes it, because the process the job scheduler cold-starts has
+             nothing to initialise WorkManager. It cost one full test run on
+             2026-08-19 and looked exactly like an OEM finding.
              ============================================================== -->
         <provider
             android:name="androidx.startup.InitializationProvider"

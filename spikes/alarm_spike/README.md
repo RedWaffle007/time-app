@@ -90,6 +90,19 @@ would answer it wrongly in the optimistic direction. **In Run E, check the BOOT
 row's timestamp against when you actually rebooted** — not merely that one
 exists.
 
+**3. `POST_NOTIFICATIONS` denied makes a PERFECT run look like a total failure.**
+This is what happened on the first real attempt (2026-08-19). Every alarm fired
+correctly and the CSV recorded all of it — but the status card's third flag was
+red, so `Notifications.show()` posted nothing, no heads-up appeared, and the
+run read as "nothing fired." **Grant notifications.** The log does not need it,
+but you do, because you cannot watch a CSV overnight.
+
+**4. A phone on the charger CANNOT enter deep Doze.** `dumpsys battery` reported
+`USB powered: true` throughout the first attempt — which is fine for Runs A/B/C
+but makes **Run D meaningless**. Deep Doze needs the device unplugged,
+stationary and screen-off. If you leave the USB cable in to keep adb alive,
+you have not run Run D; you have run a long Run B.
+
 **Also: tap the trash icon to clear the log before the first real run.** The
 build was verified with a live `+2 min` arm-and-cancel, so the log already has
 `APP_OPEN`, `SCHEDULE_FAILED`, `SCHEDULED` and `CANCELLED` rows in it.
