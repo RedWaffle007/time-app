@@ -252,7 +252,12 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       color: selected ? Theme.of(context).colorScheme.primaryContainer : null,
       child: ListTile(
         leading: const Icon(AppIcons.person),
-        title: const Text('Myself'),
+        // Your own NAME plus the marker, not the bare word "Myself" — a member
+        // genuinely called "Myself Self" exists in test data, and against a
+        // list of other people's names a label that never shows your own is
+        // unresolvable the moment two of you share a name. Falls back to the
+        // bare marker only while the profile is still loading.
+        title: Text(profile == null ? 'Myself' : '${profile.name} (myself)'),
         subtitle: profile == null ? null : Text(profile.homeTimezone),
         trailing: selected ? const Icon(AppIcons.selected) : null,
         onTap: () => setState(() {

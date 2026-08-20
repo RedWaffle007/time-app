@@ -49,6 +49,13 @@ service cloud.firestore {
       return signedIn() && uidInGroup(groupId, request.auth.uid);
     }
 
+    // The group's owner uid. Used by the removal rules, which must treat the
+    // owner as unremovable: `delete: if false` on /groups means a group that
+    // lost its owner could never be cleaned up by anyone, ever.
+    function groupOwnerUid(groupId) {
+      return get(/databases/$(database)/documents/groups/$(groupId)).data.ownerUid;
+    }
+
     // Does the caller hold an ACTIVE planner grant over `targetUid` in `groupId`?
     // Grant id is deterministic: `{plannerUid}_{targetUid}` (PlannerGrant.docId).
     function callerHasActiveGrant(targetUid, groupId) {
@@ -191,14 +198,40 @@ service cloud.firestore {
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.memberUids == [request.auth.uid];
 
-      // Self-join: memberUids is the only field touched, the caller wasn't
-      // already a member, and exactly one element — the caller — was added.
+      // `memberUids` is the only field a client may ever touch, in either
+      // direction, and only in one of two exact shapes: a self-join (+1, the
+      // caller) or a single removal (-1, the caller leaving or the owner
+      // ejecting). Anything else — a bulk rewrite, adding someone else, two
+      // changes at once — is denied.
+
+      // Exactly one element, the caller, added; nothing removed.
+      function isSelfJoin() {
+        return !(request.auth.uid in resource.data.memberUids)
+          && request.auth.uid in request.resource.data.memberUids
+          && request.resource.data.memberUids.hasAll(resource.data.memberUids)
+          && request.resource.data.memberUids.size() == resource.data.memberUids.size() + 1;
+      }
+
+      // The uids this write drops from memberUids.
+      function removedUids() {
+        return resource.data.memberUids.toSet()
+          .difference(request.resource.data.memberUids.toSet());
+      }
+
+      // Exactly one element removed, nothing added, and never the owner. The
+      // remover is either that member (leaving) or the owner (ejecting).
+      function isMemberRemoval() {
+        return resource.data.memberUids.hasAll(request.resource.data.memberUids)
+          && request.resource.data.memberUids.size() == resource.data.memberUids.size() - 1
+          && removedUids().size() == 1
+          && !removedUids().hasAny([resource.data.ownerUid])
+          && (removedUids().hasOnly([request.auth.uid])
+              || request.auth.uid == resource.data.ownerUid);
+      }
+
       allow update: if signedIn()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberUids'])
-        && !(request.auth.uid in resource.data.memberUids)
-        && request.auth.uid in request.resource.data.memberUids
-        && request.resource.data.memberUids.hasAll(resource.data.memberUids)
-        && request.resource.data.memberUids.size() == resource.data.memberUids.size() + 1;
+        && changedKeys().hasOnly(['memberUids'])
+        && (isSelfJoin() || isMemberRemoval());
 
       allow delete: if false;
 
@@ -211,7 +244,17 @@ service cloud.firestore {
         allow create, update: if signedIn()
           && memberUid == request.auth.uid
           && callerInGroup(groupId);
-        allow delete: if false;
+
+        // Removal deletes the roster doc BEFORE memberUids is updated, while
+        // the caller is still a member — callerInGroup() gates this, so the
+        // reverse order would lock the caller out of their own cleanup. It is
+        // the exact inverse of the join, which writes memberUids first.
+        // The owner's own doc is never deletable, mirroring isMemberRemoval().
+        allow delete: if signedIn()
+          && callerInGroup(groupId)
+          && memberUid != groupOwnerUid(groupId)
+          && (memberUid == request.auth.uid
+              || request.auth.uid == groupOwnerUid(groupId));
       }
 
       // ---- plannerGrants/{grantId} ----
@@ -227,12 +270,37 @@ service cloud.firestore {
       match /plannerGrants/{grantId} {
         allow read: if callerInGroup(groupId);
 
-        allow create, update: if signedIn()
+        allow create: if signedIn()
           && request.resource.data.targetUid == request.auth.uid
           && request.resource.data.grantedByUid == request.auth.uid
           && request.resource.data.groupId == groupId
           && callerInGroup(groupId)
           && uidInGroup(groupId, request.resource.data.plannerUid);
+
+        // Two callers may update a grant, and they may do different things.
+        //
+        //   * the TARGET — consent is theirs to give, so they set it either way
+        //     and remain the recorded grantedByUid.
+        //   * the PLANNER — but ONLY to `false`. Giving up a power you already
+        //     hold is not a coercion risk, and it is what "stop planning for
+        //     them" needs; a planner who could write `true` could grant
+        //     themselves authority over someone, which is the one thing this
+        //     whole model exists to prevent. grantedByUid is left exactly as
+        //     the target wrote it, so the consent trail survives revocation.
+        //
+        // Split from `create` on purpose: the planner branch reads `resource`
+        // via changedKeys(), which does not exist on a create.
+        allow update: if signedIn()
+          && request.resource.data.groupId == groupId
+          && callerInGroup(groupId)
+          && uidInGroup(groupId, request.resource.data.plannerUid)
+          && (
+            (request.resource.data.targetUid == request.auth.uid
+              && request.resource.data.grantedByUid == request.auth.uid)
+            || (request.resource.data.plannerUid == request.auth.uid
+              && request.resource.data.granted == false
+              && changedKeys().hasOnly(['granted', 'updatedAt']))
+          );
 
         allow delete: if false;
       }

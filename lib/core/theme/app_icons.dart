@@ -100,6 +100,30 @@ abstract final class AppIcons {
   /// same `Icons.login` glyph until this file existed.
   static const IconData joinGroup = Icons.group_add_outlined;
 
+  /// Take someone else out of a group you own.
+  ///
+  /// A bin glyph is *correct* here in a way it never is on [archive]: this
+  /// really does change what the other person sees, and the copy rule cuts both
+  /// ways — softening a destructive act is the same dishonesty as harshening a
+  /// reversible one. The person can rejoin with the code; nothing else survives.
+  static const IconData removeMember = Icons.person_remove_outlined;
+
+  /// Take YOURSELF out of a group.
+  ///
+  /// Distinct from [removeMember] per rule 1 — leaving and ejecting someone are
+  /// different acts with different blast radii — and distinct from [signOut],
+  /// which ends a *session* rather than a relationship. Those two shared
+  /// `Icons.logout` in every draft of this screen until the vocabulary forced
+  /// the question.
+  static const IconData leaveGroup = Icons.group_remove_outlined;
+
+  /// Give up a planner grant you hold over someone — "stop planning for them".
+  ///
+  /// Deliberately not [withdrawn], which retracts a single *item*. Ending a
+  /// standing permission and taking back one plan are different facts, and
+  /// letting them share a glyph is exactly the trap rule 1 exists to close.
+  static const IconData stopPlanning = Icons.event_busy_outlined;
+
   /// Hide a settled item from your own views (Group D). Never "delete" — the
   /// record is untouched and the other party is unaffected, and the glyph has
   /// to say so as plainly as the label does. A bin icon here would be a lie in
@@ -153,6 +177,26 @@ abstract final class AppIcons {
   /// §2.4 — the icon renders in `onAttentionContainer` on the attention fill.
   /// Naming the concept `warning` is exactly so no call site types "amber".
   static const IconData warning = Icons.warning_amber_rounded;
+
+  // ---- reminders (the local reminder layer) ----
+
+  /// A reminder — the notification this phone fires when one of your items is
+  /// due. Deliberately not [pending], which is a *schedule item's* status, and
+  /// not [time], which is the picker glyph: "a reminder" and "a clock" are
+  /// different concepts (rule 1).
+  static const IconData reminders = Icons.notifications_active_outlined;
+
+  /// Timing precision — the exact-alarm permission and anything naming it.
+  ///
+  /// Distinct from [reminders]: whether you get reminded at all and whether you
+  /// get reminded *on time* are two separate permissions with two separate
+  /// system screens, and a user who has one and not the other must be able to
+  /// tell which is which. The spike measured that gap at 0.6s versus 110s.
+  static const IconData exactTiming = Icons.alarm_on_outlined;
+
+  /// Discard a diagnostic log. A bin is honest here, unlike on [archive]: this
+  /// really does destroy the data and nothing references it.
+  static const IconData clearLog = Icons.delete_sweep_outlined;
 
   // ---- language practice (the chatbot feature) ----
 

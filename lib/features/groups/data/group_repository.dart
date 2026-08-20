@@ -145,6 +145,86 @@ class GroupRepository {
     }, SetOptions(merge: true));
   }
 
+  /// Give up a planner grant the SIGNED-IN user *holds* over someone — the
+  /// "stop planning for them" direction.
+  ///
+  /// Deliberately NOT a call into [setPlannerGrant]. That one is the target's
+  /// consent switch and can turn a grant on; this can only ever turn one off,
+  /// and it is called by the planner, who must never be able to do the former.
+  /// The rules enforce the same asymmetry, so collapsing the two here would
+  /// produce a method whose happy path is denied half the time it is used.
+  ///
+  /// `update`, not `set(merge:)`: the rule's planner branch requires the write
+  /// to touch only `granted` and `updatedAt`, and an update on a missing doc
+  /// fails loudly rather than conjuring a grant no one consented to.
+  Future<void> revokeMyPlannerGrant({
+    required String groupId,
+    required String plannerUid,
+    required String targetUid,
+  }) {
+    final id = PlannerGrant.docId(plannerUid, targetUid);
+    return _groups.doc(groupId).collection('plannerGrants').doc(id).update({
+      'granted': false,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Remove [memberUid] from [groupId] — either the caller leaving (when
+  /// [memberUid] is their own uid) or the owner ejecting someone.
+  ///
+  /// **The order is load-bearing and the rules enforce it.** Grants are revoked
+  /// and the roster doc deleted FIRST, while the caller is still inside
+  /// `memberUids` — `callerInGroup()` gates both writes, so dropping the array
+  /// entry first would lock the caller out of the very cleanup they are doing.
+  /// It is the exact inverse of [joinByCode], which writes `memberUids` before
+  /// the member doc.
+  ///
+  /// Not a transaction, and deliberately so: these are three documents under
+  /// three different rules, so an atomic removal is not on offer. `memberUids`
+  /// is the single source of truth for membership and it moves last, so a
+  /// failure part-way leaves only inert residue — a revoked grant or an
+  /// orphaned roster doc — and re-running this cleans it up.
+  Future<void> removeMember({
+    required String groupId,
+    required String memberUid,
+    required String callerUid,
+  }) async {
+    // 1. Revoke live grants that the departing member is party to AND that the
+    //    caller has standing to revoke (target, or planner giving one up). A
+    //    left-behind `granted: true` would keep the person listed in the
+    //    planner's target picker — watchTargetsFor filters on exactly that —
+    //    long after they stopped sharing a group.
+    //
+    //    Grants between the departing member and a THIRD party are left alone:
+    //    the caller is neither side of that consent and the rules refuse it.
+    //    They are inert, because creating an item additionally requires the
+    //    planner to still be in the group.
+    final grants =
+        await _groups.doc(groupId).collection('plannerGrants').get();
+    for (final doc in grants.docs) {
+      final d = doc.data();
+      final planner = d['plannerUid'] as String?;
+      final target = d['targetUid'] as String?;
+      if (d['granted'] != true) continue;
+      final involvesDeparting = planner == memberUid || target == memberUid;
+      final callerIsParty = planner == callerUid || target == callerUid;
+      if (involvesDeparting && callerIsParty) {
+        await doc.reference.update({
+          'granted': false,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+    }
+
+    // 2. The roster doc, while callerInGroup() still holds.
+    await _groups.doc(groupId).collection('members').doc(memberUid).delete();
+
+    // 3. Membership itself, last — it is what every rule above reads.
+    await _groups.doc(groupId).update({
+      'memberUids': FieldValue.arrayRemove([memberUid]),
+    });
+  }
+
   // --- helpers ---
 
   static const _codeAlphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no O/0/I/1

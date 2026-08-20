@@ -147,6 +147,18 @@ passing it does NOT close item 1.
    the user's language and render local digits — **blocked: no iOS target is wired
    up yet.** (DECISIONS.md, 2026-07-22.)
 
+**Leave / remove / stop-planning — BUILT 2026-08-20, RULES NOT DEPLOYED.** The
+first relationship-*ending* controls in the app (DECISIONS.md → "Ending a
+relationship"). Three narrow rules changes — member removal on `/groups`,
+`members` delete, and a planner-may-relinquish branch on `plannerGrants` — plus
+`removeMember()` / `revokeMyPlannerGrant()` and the group-detail overflow menus.
+Rules **compile clean** against Firebase's compiler but are **not deployed**:
+until `firebase deploy --only firestore:rules` runs and the *deployed source* is
+verified, every one of these buttons returns `PERMISSION_DENIED`. Two facts not
+to rediscover: **the owner cannot leave their own group** (an ownerless group
+would be uncleanable under `delete: if false`), and ejecting a member leaves that
+member's grants with *third parties* stale-but-inert.
+
 **Queued build work (agreed order, 2026-07-25 feature-planning pass — not started).**
 One feature at a time, plan → sign-off → build. Most strictly for goals.
 1. **Icon system (ii)+(iii).** (ii) Codify icon usage the way `status_style.dart`
@@ -208,11 +220,15 @@ One feature at a time, plan → sign-off → build. Most strictly for goals.
    any-signed-in; tighten to users who share a group with the owner. Deferred rules
    hardening. (DECISIONS.md "Deferred hardening.")
 
-**Parked to the reminder layer (do NOT build until explicitly directed):** all
-reminder firing, voice-mode reminders, quiet-hours *enforcement*,
-boot-persistence/re-registration, and the tz-snapshot **detect-and-re-approve**
+**Parked to LATER PARTS of the reminder layer (do NOT build until explicitly
+directed):** voice-mode reminders, quiet-hours *enforcement*, recurring
+reminders, snooze, a lead-time offset ("remind me 10 minutes before" — it wants
+`ScheduleItem.durationMinutes`, so decide it WITH goals, not before), OEM
+autostart/battery onboarding, iOS, and the tz-snapshot **detect-and-re-approve**
 upgrade (option 3; v1 stays pure snapshot — DECISIONS.md 2026-07-22). Card-day
-items (Cloud-Function push swap, CF-mediated join) are parked to Blaze, not to now.
+items (Cloud-Function push swap, CF-mediated join) are parked to Blaze, not to
+now. Reminder *firing* and boot re-registration are no longer parked — see the
+section below.
 
 **Read this before planning any of it (corrects a stale framing — D25):** the
 2026-07-23 product decision (DECISIONS.md "reminder / accountability app, NOT an
@@ -227,12 +243,97 @@ prompt — reaches **the identical AlarmManager code path with no Play review at
 all.** So "inexact scheduling is sufficient" was a *choice*, not a constraint,
 and it is now reopened. Nothing is decided until the spike's numbers land.
 
-**The empirical gap, stated honestly:** what is unverified is not "can we use
-exact alarms" (we can) but "does any scheduled alarm survive HyperOS's battery
-policy on the Redmi." `spikes/alarm_spike/` exists to answer exactly that, off
-the product tree; its README carries the procedure and the pass criteria. **No
-reminder-layer code lands in `lib/` until that matrix is filled in and recorded
-in DECISIONS.md.**
+**The spike ran; the gate is satisfied for Part 1.** `run_2026-08-20_G2.csv`,
+recorded in DECISIONS.md → "Alarm spike — the numbers (2026-08-20)". At G2
+(exact granted, battery unrestricted, autostart off), armed 04:51 → fired 09:30
+after a 4h39m screen-off window: `setAlarmClock` **+0.55s**,
+`setExactAndAllowWhileIdle` **+0.62s**, inexact **+110s**. With the permission
+*not* granted, both exact calls threw `SecurityException` and scheduled
+**nothing** — there is no silent downgrade. Chosen:
+`setExactAndAllowWhileIdle` + `SCHEDULE_EXACT_ALARM`.
+
+**Still unmeasured, and NOT to be quoted as proven:** reboot durability (Run E
+never completed — there is not one `REARMED` row in the CSV, and the only `BOOT`
+rows are the install-time artifact the README warns about), force-stop (Run C),
+and the G0/G1/G3 sweep. Autostart's contribution is therefore unknown, which is
+exactly the bit that decides whether an OEM primer is needed.
+
+## Reminder layer — Part 1, the core scheduling engine (SHIPPED 2026-08-20)
+
+**The first reminder code in `lib/`.** `lib/features/reminders/`. Full reasoning
+in DECISIONS.md → "Reminder layer, Part 1". **NOT VERIFIED ON A DEVICE** — see
+the bottom of this section.
+
+**The engine is `setExactAndAllowWhileIdle` via flutter_local_notifications**
+(`AndroidScheduleMode.exactAllowWhileIdle`), behind `SCHEDULE_EXACT_ALARM` —
+never `USE_EXACT_ALARM`, which is Play-reviewed against a list we are not on.
+Channel `time_app_reminders`, created in code and deliberately NOT the
+`high_importance_channel` FCM uses: a user must be able to silence
+someone-else's-activity pushes without silencing their own reminders, and a
+channel's importance is frozen at creation forever.
+
+**The one design rule, and do not undo it: reminders are driven off the ITEM
+STREAM, never off transitions.** There is no hook in `approve()`, `reject()`,
+`withdraw()`, `markDone()`, `markSkipped()` or the builder. One rule —
+`desiredReminders()`: I am the target, `approved`, no outcome, still future —
+is applied to whatever the stream currently says, so withdraw / reject / outcome
+/ edit are not special cases at all; each simply stops producing a desired
+entry. **Adding a per-transition `cancelReminder()` call anywhere is a
+regression**, not a belt-and-braces improvement: it creates a second place that
+decides, and the two will disagree.
+
+The pieces, and which of them can be wrong:
+
+- `application/reminder_policy.dart` + `reminder_reconciler.dart` — **two pure
+  functions**, no plugins, no clock, no Firestore. All the logic that can be
+  wrong lives here, which is why `test/reminder_scheduling_test.dart` covers it
+  without a device. `reconcileReminders` is **idempotent** — that is what makes
+  it safe to run on every stream emission, every app start and every resume.
+- `data/reminder_scheduler.dart` — **the seam**, same discipline as
+  `chatbot_service.dart`: no OS vocabulary crosses it. iOS lands as a second
+  implementation at one provider line.
+- `data/reminder_mirror_store.dart` — the durable local mirror, because Android
+  **cannot be reliably queried** for what it holds. It is a *belief*, told to
+  the OS and never read back. A refused schedule is kept OUT of it so the next
+  reconcile retries; recording it would lose that reminder permanently and
+  silently.
+- Notification ids: deterministic FNV-1a → positive 31-bit, with a real
+  collision story (linear probe, incumbent keeps its id, mirror is the
+  authority). Not a counter — cancelling requires reproducing the id from a
+  cold start.
+
+**The POST_NOTIFICATIONS ask moved and must not move back.**
+`MessagingService` no longer calls `requestPermission()` — that fired the system
+prompt during token registration on first sign-in, before the user had seen a
+screen, and Android grants that prompt roughly once. The ask now belongs to
+`ReminderPrimerCard` on My Schedule, shown only when there is an approved future
+item AND the OS will not deliver it. Token registration is unaffected:
+`getToken()` never needed the permission.
+
+**Tap routing goes through `routing/notification_routing.dart`** — the one place
+that decides a destination, now that FCM and local reminders both produce taps.
+A reminder's payload is **only the item id**; it opens `/outcome?item=<id>`,
+which scrolls to that card and outlines it for six seconds.
+
+**The spike's CSV came with us.** `android/.../reminders/ReminderAudit*.kt` +
+`data/reminder_audit_log.dart` arm a **silent shadow alarm** at the same instant
+as each reminder; its receiver writes delay + Doze/power-save/battery-opt/screen
+state to a CSV in device-protected storage. Read it at **dev menu → Reminder
+audit**. It exists because flutter_local_notifications posts natively without
+starting Dart, so there is no Dart callback at fire time. **Cost: two exact
+alarms per reminder.** It is an instrument — deleting the two receivers, the
+Kotlin and `reminder_audit_log.dart` removes it with no effect on firing.
+
+**NOT VERIFIED — nothing has fired on a device.** The device pass is: grant both
+permissions, self-plan an item a few minutes out, background the app, confirm
+the notification, tap it, and read the audit CSV. Then the ones that matter —
+**killed-app delivery** and **reboot re-arm**, neither of which the spike
+proved.
+
+**Deferred to later parts (do not build until directed):** OEM
+autostart/battery onboarding, iOS, quiet-hours enforcement, recurring reminders,
+snooze, and a lead-time offset (it wants `ScheduleItem.durationMinutes` — decide
+it WITH goals).
 
 ## Language practice chatbot — a SEPARATE feature (added 2026-08-18)
 
@@ -387,7 +488,13 @@ fail) — decide whether to exclude the directory before release.
 2. **Do not build any parked feature, and do not add any alarm/voice logic, until the user explicitly directs it.** This is a hard rule: no code for a parked feature or for alarm/voice behavior may be added — **not even as a stub, placeholder, TODO comment, empty function, config flag, or "while I'm here" convenience.** If something seems useful, **propose it and wait** — do not build it. Parked = streaks, gentle stakes, templates, panic mode, Cheerleader/Buddy roles, public template sharing, reactions beyond the voice note. Alarm code, voice notes, and roles come after the core loop is proven and are directed separately.
 3. Suggested build order: auth+profile(tz) → groups+invites+planner-permission → schedule items + pending queue + approve/reject → reliable-mode alarms → completion/skip + planner push (test with real pairs HERE) → voice-mode alarms → quiet hours + tz warnings.
 
-## Alarm work (when directed — not yet)
+## Alarm work — reminder firing is DIRECTED and Part 1 is built
+
+The blanket "not yet" is retired for the *scheduling engine* only (see "Reminder
+layer — Part 1" above). Everything else in the reminder layer — voice mode, OEM
+onboarding, iOS, quiet-hours enforcement, recurring, snooze — is still parked and
+still needs explicit direction. The rules below apply with full force to
+verifying what was just built.
 
 - **Verify alarm/notification behavior on a real Android device, never an emulator.** OEM battery-optimization process-killing (Xiaomi/Samsung/Oppo) does not reproduce on emulators — a passing emulator run proves nothing about whether alarms fire.
 - **Primary test device: the Redmi (Xiaomi HyperOS, Android 16, arm64).** Don't trust an alarm as "reliable" until it survives on this device.

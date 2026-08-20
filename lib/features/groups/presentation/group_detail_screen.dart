@@ -13,8 +13,10 @@ import '../application/group_providers.dart';
 import '../domain/membership.dart';
 import '../domain/planner_grant.dart';
 
-/// Shows a group's invite code and members, and lets the signed-in user grant
-/// other members permission to plan for them (consent-first).
+/// Shows a group's invite code and members, lets the signed-in user grant other
+/// members permission to plan for them (consent-first), and lets them end a
+/// relationship: give up a grant they hold, eject a member (owner only), or
+/// leave the group.
 class GroupDetailScreen extends ConsumerWidget {
   const GroupDetailScreen({super.key, required this.groupId});
 
@@ -31,8 +33,31 @@ class GroupDetailScreen extends ConsumerWidget {
         ?.where((g) => g.id == groupId)
         .firstOrNull;
 
+    // The owner cannot be removed and cannot leave — `isMemberRemoval()` in
+    // firestore.rules refuses it, because /groups has `delete: if false` and a
+    // group that lost its owner could never be cleaned up by anyone.
+    final iAmOwner = myUid != null && group != null && group.ownerUid == myUid;
+
     return Scaffold(
-      appBar: AppBar(title: Text(group?.name ?? 'Group')),
+      appBar: AppBar(
+        title: Text(group?.name ?? 'Group'),
+        actions: [
+          if (group != null && myUid != null && !iAmOwner)
+            PopupMenuButton<void>(
+              icon: const Icon(AppIcons.overflow),
+              tooltip: 'More',
+              itemBuilder: (_) => [
+                PopupMenuItem<void>(
+                  onTap: () => _leave(context, ref, myUid, group.name),
+                  child: const _MenuRow(
+                    icon: AppIcons.leaveGroup,
+                    label: 'Leave group',
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
       body: AsyncView<List<Membership>>(
         value: membersAsync,
         onRetry: () => ref.invalidate(membersProvider(groupId)),
@@ -41,6 +66,12 @@ class GroupDetailScreen extends ConsumerWidget {
           bool grantsToMe(String plannerUid) => grants.any((g) =>
               g.plannerUid == plannerUid &&
               g.targetUid == myUid &&
+              g.granted);
+          // The other direction: a grant *I* hold over them. Separate question,
+          // separate answer — consent here is directed, never mutual.
+          bool iPlanFor(String targetUid) => grants.any((g) =>
+              g.plannerUid == myUid &&
+              g.targetUid == targetUid &&
               g.granted);
 
           return ListView(
@@ -92,24 +123,33 @@ class GroupDetailScreen extends ConsumerWidget {
                 ListTile(
                   leading: CircleAvatar(child: Text(_initial(m.name))),
                   title: Text(m.uid == myUid ? '${m.name} (you)' : m.name),
-                  trailing: m.uid == myUid
+                  // The switch's label. It moved off the trailing row to make
+                  // width for the overflow menu — three controls on one line is
+                  // a mis-tap waiting to happen, and one of them is destructive.
+                  subtitle: m.uid == myUid ? null : const Text('can plan for me'),
+                  trailing: m.uid == myUid || myUid == null
                       ? null
                       : Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Text('can plan for me'),
                             Switch(
                               value: grantsToMe(m.uid),
-                              onChanged: myUid == null
-                                  ? null
-                                  : (v) => ref
-                                      .read(groupRepositoryProvider)
-                                      .setPlannerGrant(
-                                        groupId: groupId,
-                                        plannerUid: m.uid,
-                                        targetUid: myUid,
-                                        granted: v,
-                                      ),
+                              onChanged: (v) => ref
+                                  .read(groupRepositoryProvider)
+                                  .setPlannerGrant(
+                                    groupId: groupId,
+                                    plannerUid: m.uid,
+                                    targetUid: myUid,
+                                    granted: v,
+                                  ),
+                            ),
+                            _memberMenu(
+                              context,
+                              ref,
+                              member: m,
+                              myUid: myUid,
+                              iAmOwner: iAmOwner,
+                              iPlanForThem: iPlanFor(m.uid),
                             ),
                           ],
                         ),
@@ -119,6 +159,177 @@ class GroupDetailScreen extends ConsumerWidget {
         },
       ),
     );
+  }
+
+  /// Per-member secondary actions. Both are relationship-ending, so both live
+  /// behind the overflow (UI-RULES.md §6.6) rather than inline in a scrolling
+  /// list. Renders nothing at all when neither applies — an empty menu is a
+  /// control that lies about having options.
+  Widget _memberMenu(
+    BuildContext context,
+    WidgetRef ref, {
+    required Membership member,
+    required String myUid,
+    required bool iAmOwner,
+    required bool iPlanForThem,
+  }) {
+    final items = <PopupMenuEntry<void>>[
+      if (iPlanForThem)
+        PopupMenuItem<void>(
+          onTap: () => _stopPlanning(context, ref, myUid, member),
+          child: const _MenuRow(
+            icon: AppIcons.stopPlanning,
+            label: 'Stop planning for them',
+          ),
+        ),
+      if (iAmOwner)
+        PopupMenuItem<void>(
+          onTap: () => _removeMember(context, ref, myUid, member),
+          child: const _MenuRow(
+            icon: AppIcons.removeMember,
+            label: 'Remove from group',
+          ),
+        ),
+    ];
+    if (items.isEmpty) return const SizedBox.shrink();
+    return PopupMenuButton<void>(
+      icon: const Icon(AppIcons.overflow),
+      tooltip: 'More',
+      itemBuilder: (_) => items,
+    );
+  }
+
+  /// Give up the grant I hold over [member] — I stop being their planner.
+  ///
+  /// Not destructive to *them*: it removes a power I hold, and they can hand it
+  /// back with their own switch. Confirmed anyway because it silently drops
+  /// them out of my schedule builder, which is otherwise hard to explain.
+  Future<void> _stopPlanning(
+    BuildContext context,
+    WidgetRef ref,
+    String myUid,
+    Membership member,
+  ) async {
+    final confirmed = await _confirm(
+      context,
+      title: 'Stop planning for ${member.name}?',
+      body: "They'll disappear from your schedule builder. Their existing "
+          'items are untouched, and they can switch the permission back on '
+          'for you at any time.',
+      action: 'Stop planning',
+    );
+    if (confirmed != true || !context.mounted) return;
+    await _guard(context, ref, () async {
+      await ref.read(groupRepositoryProvider).revokeMyPlannerGrant(
+            groupId: groupId,
+            plannerUid: myUid,
+            targetUid: member.uid,
+          );
+    }, success: 'You no longer plan for ${member.name}.');
+  }
+
+  /// Owner ejects a member.
+  Future<void> _removeMember(
+    BuildContext context,
+    WidgetRef ref,
+    String myUid,
+    Membership member,
+  ) async {
+    final confirmed = await _confirm(
+      context,
+      title: 'Remove ${member.name}?',
+      body: "They'll lose access to this group and any permission between you "
+          'is revoked. Schedule items already created stay where they are. '
+          'They can rejoin only with the invite code.',
+      action: 'Remove',
+    );
+    if (confirmed != true || !context.mounted) return;
+    await _guard(context, ref, () async {
+      await ref.read(groupRepositoryProvider).removeMember(
+            groupId: groupId,
+            memberUid: member.uid,
+            callerUid: myUid,
+          );
+    }, success: '${member.name} removed.');
+  }
+
+  /// Leave a group I don't own. Pops back to the group list on success — the
+  /// members stream starts failing the moment membership is gone, and sitting
+  /// on a screen whose data the rules now deny is not a state worth rendering.
+  Future<void> _leave(
+    BuildContext context,
+    WidgetRef ref,
+    String myUid,
+    String groupName,
+  ) async {
+    final confirmed = await _confirm(
+      context,
+      title: 'Leave "$groupName"?',
+      body: 'Any permission between you and its members is revoked. Schedule '
+          'items already created stay where they are. You can rejoin only '
+          'with the invite code.',
+      action: 'Leave',
+    );
+    if (confirmed != true || !context.mounted) return;
+    final ok = await _guard(context, ref, () async {
+      await ref.read(groupRepositoryProvider).removeMember(
+            groupId: groupId,
+            memberUid: myUid,
+            callerUid: myUid,
+          );
+    }, success: 'You left "$groupName".');
+    if (ok && context.mounted) Navigator.of(context).pop();
+  }
+
+  /// One destructive-confirmation shape for all three actions — red on the
+  /// confirm button only, one of the rationed uses (UI-RULES.md §2.5).
+  Future<bool?> _confirm(
+    BuildContext context, {
+    required String title,
+    required String body,
+    required String action,
+  }) {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(body),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: ctx.colors.error,
+              foregroundColor: ctx.colors.onError,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(action),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Run a write and report it. These are the first writes on this screen that
+  /// the rules can legitimately refuse — an owner check or a membership check
+  /// can fail on a stale snapshot — and a silent no-op on a destructive action
+  /// is the worst possible outcome. Returns whether it succeeded.
+  Future<bool> _guard(
+    BuildContext context,
+    WidgetRef ref,
+    Future<void> Function() write, {
+    required String success,
+  }) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await write();
+      messenger.showSnackBar(SnackBar(content: Text(success)));
+      return true;
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text("Couldn't do that: $e")));
+      return false;
+    }
   }
 
   String _initial(String name) =>
@@ -137,6 +348,28 @@ class GroupDetailScreen extends ConsumerWidget {
       ShareParams(
         text: 'Join my group "$groupName" on time-app with code: $code',
       ),
+    );
+  }
+}
+
+/// A popup-menu row: glyph then label, at the list-icon size. Exists so the
+/// three menu entries can't drift apart, and so no call site hand-rolls
+/// spacing between an icon and its text.
+class _MenuRow extends StatelessWidget {
+  const _MenuRow({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: Sizes.listIcon),
+        const SizedBox(width: Space.md),
+        Text(label),
+      ],
     );
   }
 }

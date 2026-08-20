@@ -2861,3 +2861,292 @@ it says the choice was foreclosed on a bad premise and is now open.
 - [Play — same policy, current article id](https://support.google.com/googleplay/android-developer/answer/16558241)
 - [Android — Schedule exact alarms are denied by default](https://developer.android.com/about/versions/14/changes/schedule-exact-alarms)
 - [Android — Schedule alarms](https://developer.android.com/develop/background-work/services/alarms/schedule)
+
+---
+
+# Alarm spike — the numbers (2026-08-20)
+
+The matrix the entry above said had to be filled in before anything was decided.
+Raw data: `spikes/alarm_spike/run_2026-08-20_G2.csv`.
+
+## What was actually run
+
+**One configuration, G2** — exact alarms granted, battery "No restrictions",
+Autostart **off**. Runs A and B (short, screen on / app foregrounded) and one
+long overnight-shaped run. The full G0→G3 sweep was not done, and Runs C
+(force-stop) and E (reboot) were not completed. **This entry records only what
+the CSV supports.**
+
+| Cell | Armed → fired | ALARM_CLOCK | EXACT_IDLE | WORKMANAGER | INEXACT_IDLE |
+|---|---|---|---|---|---|
+| Short, screen on | 18:53 → 18:55 | **+0.17s** | **+0.14s** | (already fired) | +90.0s |
+| Short, screen on | 19:03 → 19:05 | **+0.12s** | **+0.10s** | +0.11s | +90.0s |
+| **Long, screen off** | **04:51 → 09:30** | **+0.55s** | **+0.62s** | +0.68s | **+110.2s** |
+
+The third row is the one that matters: a 4h39m gap with `interactive=0` at fire
+and `batt_opt_ignored=1`. **Both exact mechanisms landed inside a second.**
+
+Also recorded, and worth as much as the timings:
+
+- **G0 is not a degraded mode, it is a broken one.** With the permission not yet
+  granted, both exact variants returned `SCHEDULE_FAILED` with a
+  `SecurityException` — *nothing was scheduled at all*. There is no silent
+  downgrade to catch you; the call fails and only the app can notice.
+- **The inexact baseline is 90–110 seconds late, consistently.** That is what
+  DECISIONS.md's previous plan ("inexact scheduling is sufficient") would have
+  shipped, and it is not a reminder.
+
+## What is decided
+
+**Exact alarms, via `setExactAndAllowWhileIdle`.** `setAlarmClock` measured
+marginally better (0.55s vs 0.62s in the only cell where the difference could
+matter) and is **not** chosen: it plants a system-wide alarm icon in the status
+bar and publishes the next-alarm time to any app that asks. That is a claim on
+the device an accountability app has not earned, and 70ms does not buy it. If a
+later part finds a cell where `setAlarmClock` is the difference between firing
+and not, this gets revisited — the two are one enum value apart.
+
+**`SCHEDULE_EXACT_ALARM`, not `USE_EXACT_ALARM`.** Both reach the same
+AlarmManager path. The first is a user prompt with no Play review; the second is
+auto-granted but reviewed against a list we are not on. Settled.
+
+## What is NOT decided, and must not be read as decided
+
+- **Reboot durability is UNPROVEN.** Run E was never completed. The only `BOOT`
+  rows in the CSV are the install-time artifact the spike README warns about
+  (trap 2) — no reboot happened, and there is not a single `REARMED` row
+  anywhere in the file. Both boot receivers are shipped on the strength of the
+  argument, not a measurement.
+- **Autostart's contribution is unmeasured** (G3 never run). Whether
+  `BOOT_COMPLETED` is delivered at all on this HyperOS build without it is
+  exactly the open question, and it is what decides whether an OEM primer is
+  needed. Part 1 does not answer it.
+- **Force-stop was not tested** (Run C). Expected to kill everything on every
+  configuration — that is stock AOSP, not a Xiaomi finding — but unverified here.
+- **G0/G1/G3 were not swept.** The battery allowlist and the exact-alarm grant
+  were changed together, so their individual contributions are entangled.
+
+---
+
+# Reminder layer, Part 1 — the core scheduling engine (2026-08-20)
+
+The first reminder code in `lib/`. Gated on the entry above, and scoped
+deliberately: **the engine only.** No OEM onboarding, no iOS, no quiet-hours
+enforcement, no edge cases beyond the ones the engine cannot be correct without.
+
+## The shape, and why
+
+**`ReminderScheduler` is a seam, in the same sense `ChatbotService` is.** One
+interface, four methods, and no OS vocabulary crosses it — no
+`AndroidScheduleMode`, no channel id, no `TZDateTime`. Everything above it
+reasons about items and instants. That is what makes the iOS implementation a
+second class rather than a fork of the logic, and it is what lets the part of
+this feature that can actually be wrong be tested without a phone.
+
+**The decision layer is TWO pure functions.**
+
+- `desiredReminders(items, uid, now)` — the one rule for whether an item is
+  reminded: I am the target, status is `approved`, no outcome, instant is
+  future. It is the only place the reminder layer knows what a `ScheduleItem` is.
+- `reconcileReminders(desired, mirror, now)` — the difference between what we
+  want and what we believe we have, as a plan.
+
+Neither touches a plugin, a clock or Firestore. `ReminderService` is a thin
+applier: sequencing and nothing else.
+
+**Reminders are driven off the ITEM STREAM, not off transitions.** This is the
+central design call. The obvious implementation hooks `approve()`, `reject()`,
+`withdraw()`, `markDone()`, `markSkipped()` and the builder's edit path — six
+call sites that must each be right, and a seventh the day someone adds a
+transition. Instead there is one rule ("is this item still desired?") applied to
+whatever the stream currently says, so **withdraw, reject, outcome and edit are
+not special cases at all** — each merely stops producing a desired entry.
+`OutcomeScreen._markDone` cancels no reminder and mentions none.
+
+Reconciliation additionally runs on **app start** and **every resume**, because
+the events that invalidate a scheduled alarm happen while the app is not running
+and produce no stream emission: a reboot, an app update, a permission revoked or
+granted in Settings, or simply time passing. It is idempotent by construction —
+re-running it against its own output produces an empty plan — which is what makes
+running it that often free.
+
+## The local mirror
+
+**`shared_preferences`, not a query.** Android cannot be reliably asked what it
+holds: `pendingNotificationRequests()` reports flutter_local_notifications' own
+bookkeeping, which is a different thing from an AlarmManager registration and
+stays confidently wrong after a reboot, an update, or a revoked exact-alarm
+permission. So the app keeps its own record and treats it as a **belief**, told
+to the OS and never read back from it.
+
+The two error directions are deliberately asymmetric. Mirror-says-yes /
+OS-says-no loses a reminder silently and is the failure worth engineering
+against. Mirror-says-no / OS-says-yes re-schedules under the same deterministic
+id, which **replaces** rather than duplicates, and is harmless. Every ambiguous
+case therefore resolves toward re-scheduling: a corrupt row is dropped, an
+unreadable store reads empty.
+
+**A refused schedule is kept OUT of the mirror.** Recording it as armed would
+make every later reconcile believe it exists and never retry — a reminder lost
+permanently, silently. Left out, granting the permission and returning to the app
+repairs it with no extra code.
+
+## Notification ids
+
+Deterministic FNV-1a over the Firestore id, masked to a positive 31-bit int.
+Determinism is the requirement, not uniqueness: cancelling means reproducing the
+id exactly, from a cold start, possibly with no mirror. A counter cannot do that.
+
+**The collision story is real, not hand-waved.** 31 bits over 20-character ids is
+a birthday collision at ~46,000 simultaneous reminders, and the failure it causes
+is silent (item B's alarm overwrites item A's, and A simply never fires). So the
+hash is a *preference*: `allocateNotificationId` linear-probes past a taken id,
+the incumbent keeps its id, and the winner is recorded in the mirror, which is
+the authority thereafter. Pinned by test, including that the incumbent is not
+displaced and that allocation does not depend on Firestore's arrival order.
+
+## The POST_NOTIFICATIONS ask moved
+
+`MessagingService._attempt()` called `FirebaseMessaging.requestPermission()`
+during token registration — i.e. on the first signed-in build, before the user
+had seen a screen. Android grants that prompt roughly once and a denial is
+effectively final. **That call is removed.** Token registration is unaffected:
+`getToken()` never needed the permission, and the old code already proceeded
+whether the prompt was granted or denied.
+
+The ask now belongs to `ReminderPrimerCard`, which appears on My Schedule only
+when the user has an approved item still ahead of them *and* the OS will not
+deliver it — and explains itself before the system dialog appears. The two
+permissions are asked **separately, in order of consequence**: POST_NOTIFICATIONS
+decides whether a reminder appears at all, SCHEDULE_EXACT_ALARM decides whether
+it appears on time, and the spike measured the second as 0.6s versus 110s.
+Bundling them would make the second invisible.
+
+Dismissal is session-scoped and deliberately not persisted: the card is the app
+saying "the reminders you approved will not arrive", which stays true until it is
+fixed.
+
+## Tap routing
+
+`NotificationRouter` is now the one place that decides where a notification tap
+lands, because there are two tap sources (FCM and local) arriving through
+unrelated plugin callbacks. Two copies of the destination table would drift the
+first time a route moved — and these routes already moved once, in the Session 3
+shell refactor.
+
+A reminder carries **only the item id** as its payload — a string the OS holds
+for hours should be a key to look up, never a copy of anything. It routes to
+`/outcome?item=<id>`, which scrolls that card into view and outlines it for six
+seconds. A query parameter rather than an `/outcome/item/:id` sub-route: the
+destination is the same list with the same Done and Skip controls, and a
+sub-route would be a second rendering of one item to keep in step, with a Back
+that drops you onto the list you were already looking at.
+
+The fade is not cosmetic. My Schedule is a shell branch, so its location —
+query parameter included — survives every tab switch for the life of the
+process; without the fade, an item tapped this morning would still be outlined
+tonight.
+
+## The audit CSV came with us
+
+`spikes/alarm_spike/`'s logging is ported into `android/.../reminders/` and
+`reminder_audit_log.dart`. A **silent shadow alarm** is armed at the same instant
+and by the same mechanism as each reminder, and its receiver appends one row:
+delay, plus the device's Doze / power-save / battery-optimisation / screen state
+**at the moment of delivery**, without which a 40-minute delay is
+uninterpretable.
+
+Why a second alarm rather than a callback: flutter_local_notifications posts its
+notification from its own native receiver and never starts Dart, so there is no
+Dart callback at fire time to hook — and one that existed would fold Flutter's
+cold start into the number being measured. Device-protected storage, and a
+direct-boot-aware receiver, so a reboot can be recorded before the first unlock.
+
+**Cost, stated plainly: two exact alarms per reminder.** It is an instrument, not
+a feature — deleting the two receivers, `ReminderAudit*.kt` and
+`reminder_audit_log.dart` removes it with no effect on whether reminders fire.
+It earns its keep as long as real-world fire timing on this device is an open
+question, which it is: the spike answered the laboratory version, and Runs C, D
+and E are still unfilled.
+
+## Deliberately deferred to later parts
+
+OEM autostart/battery onboarding (and the Run E result that should decide where
+it goes); iOS (`DarwinInitializationSettings`, the 64-notification cap, and the
+`CFBundleLocalizations` question that is still blocked on there being an iOS
+target at all); quiet-hours *enforcement*, which remains warnings-only —
+filtering reminders here would silently drop items the user approved; recurring
+reminders; snooze; a lead-time offset ("remind me 10 minutes before"), which is
+the first thing that will want `ScheduleItem.durationMinutes` and should be
+decided with the goals phase, not before it.
+
+## Icon vocabulary additions
+
+`AppIcons.reminders`, `AppIcons.exactTiming`, `AppIcons.clearLog` — three new
+concepts under §6.6 rule 1, not re-uses. `exactTiming` is separate from
+`reminders` on purpose: "will I be reminded" and "will I be reminded on time"
+are two permissions with two system screens, and a user who has one and not the
+other has to be able to tell which is which.
+
+## Ending a relationship — leave / remove / stop planning (2026-08-20)
+
+Until now the only relationship control in the app was the target's
+"can plan for me" switch. There was no way to remove anyone, no way to leave a
+group, and no way for a *planner* to give up a grant they held. The rules made
+that structural, not accidental: `allow delete: if false` on every collection,
+and the `groups` update rule was a self-join-only shape (caller not already a
+member, exactly one element added). Membership could only ever grow.
+
+**Three rule changes, all narrow.**
+
+1. **`/groups/{groupId}` update** now admits a second shape beside `isSelfJoin()`:
+   `isMemberRemoval()` — exactly one uid dropped, nothing added, and **never the
+   owner**. The remover is either that member (leaving) or the owner (ejecting).
+   The owner exclusion is not politeness: `/groups` has `delete: if false`, so a
+   group that lost its owner could never be cleaned up by anyone, ever. **The
+   owner therefore cannot leave their own group** — a real product limitation,
+   recorded here rather than discovered later.
+2. **`/groups/{groupId}/members/{memberUid}` delete** — self, or the owner, and
+   never the owner's own doc. Gated on `callerInGroup()`, which is why the client
+   must delete the roster doc *before* dropping the uid from `memberUids`. That
+   is the exact inverse of the join, and the ordering is load-bearing: reversed,
+   the caller locks themselves out of their own cleanup.
+3. **`/groups/{groupId}/plannerGrants/{grantId}`** split `create` from `update`.
+   The target still sets consent either way. A **planner may now write
+   `granted: false` and nothing else** — giving up a power you already hold is
+   not a coercion risk, and it is what "stop planning for them" needs. A planner
+   who could write `true` could grant themselves authority over another person,
+   which is the single thing this model exists to prevent. `grantedByUid` is
+   left as the target wrote it, so the consent trail survives revocation. The
+   split exists because the planner branch reads `resource` via `changedKeys()`,
+   which does not exist on a create.
+
+Validated against Firebase's own rules compiler via
+`firebaserules.googleapis.com/v1/projects/time-app-1e1c9:test` — compiles clean.
+**NOT YET DEPLOYED.** Until it is, the new UI returns `PERMISSION_DENIED`; deploy
+rules first, verify the *deployed source*, then install — the same discipline the
+archive feature is held to.
+
+**Known residue, accepted for now.** When an owner ejects a member, grants
+between that member and a *third* party are left at `granted: true` — the ejector
+is party to neither side and the rules refuse it. They are inert: creating an
+item additionally requires the planner to still be in the group
+(`uidInGroup`), so the stale grant buys nothing. Its only symptom is a stale row
+in the ejected member's own target picker, which fails at save. The fix would be
+an owner-may-revoke-any-grant-in-their-group branch; it was **rejected for v1**
+because it hands the owner power over a consent relationship they are not part
+of, and the consent model is the product. Revisit if it bites.
+
+**`removeMember()` is deliberately not a transaction.** Three documents under
+three different rules; atomicity is not on offer. `memberUids` is the single
+source of truth for membership and it moves last, so a partial failure leaves
+only inert residue and re-running cleans it up.
+
+## Data reset — grants soft-cleared (2026-08-20)
+
+All six planner grants involving `42ml93AS…` were set to `granted: false`
+server-side (admin REST, since the rules correctly refuse a client the
+planner-side revoke that this same session added). Groups, membership and
+schedule items were left **untouched** — the chosen scope was the reversible one.
+`brY8JaR7 → P5eNrQfN` (a grant between two other people) was deliberately left at
+`granted: true`: it is not the signed-in user's relationship to end.
