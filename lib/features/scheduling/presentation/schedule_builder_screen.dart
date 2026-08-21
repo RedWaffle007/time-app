@@ -20,7 +20,21 @@ import '../domain/schedule_item.dart';
 /// Planner picks a target they may plan for and creates a timetable item IN THE
 /// TARGET'S LOCAL TIME.
 class ScheduleBuilderScreen extends ConsumerStatefulWidget {
-  const ScheduleBuilderScreen({super.key});
+  const ScheduleBuilderScreen({super.key, this.initialDate});
+
+  /// A date to open with, seeded by the calendar when a user plans from a
+  /// tapped day (`Routes.calendarNew`). Null everywhere else, and null behaves
+  /// exactly as this screen always has — no date chosen until the user picks
+  /// one.
+  ///
+  /// **The date only.** Not a time: a date is what the user actually indicated
+  /// by tapping a cell, and pre-filling a time they never chose would let an
+  /// item be sent for approval at an hour nobody selected. `_canSave` still
+  /// requires a time, so the form cannot be submitted straight through.
+  ///
+  /// This one optional parameter is the whole of the calendar's integration
+  /// with the builder. The calendar deliberately has no create flow of its own.
+  final DateTime? initialDate;
 
   @override
   ConsumerState<ScheduleBuilderScreen> createState() =>
@@ -38,6 +52,12 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
   bool _saving = false;
 
   @override
+  void initState() {
+    super.initState();
+    _date = widget.initialDate;
+  }
+
+  @override
   void dispose() {
     _titleController.dispose();
     _noteController.dispose();
@@ -46,11 +66,25 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
 
   Future<void> _pickDate() async {
     final now = DateTime.now();
+    var firstDate = now.subtract(const Duration(days: 1));
+    var lastDate = now.add(const Duration(days: 365));
+
+    // A date seeded from the calendar can sit outside that window — the grid
+    // pages years either way. `showDatePicker` ASSERTS that initialDate is in
+    // range, so a user who tapped last March and then opened the picker would
+    // crash the screen rather than see a clamped date. Widen the window to
+    // contain whatever is already selected; the ordinary case is untouched.
+    final selected = _date;
+    if (selected != null) {
+      if (selected.isBefore(firstDate)) firstDate = selected;
+      if (selected.isAfter(lastDate)) lastDate = selected;
+    }
+
     final picked = await showDatePicker(
       context: context,
-      initialDate: _date ?? now,
-      firstDate: now.subtract(const Duration(days: 1)),
-      lastDate: now.add(const Duration(days: 365)),
+      initialDate: selected ?? now,
+      firstDate: firstDate,
+      lastDate: lastDate,
     );
     if (picked != null) setState(() => _date = picked);
   }

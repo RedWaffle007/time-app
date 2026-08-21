@@ -587,6 +587,59 @@ own glyph:
 A zero would be a lie in both cases — indistinguishable from a measured zero,
 and confidently wrong.
 
+### 6.10 Calendar
+
+The calendar (`lib/features/calendar/`) is a **view over the item stream**, and
+its recipes exist so it stays one — nothing here invents a colour, a status or a
+second rendering of an item's controls.
+
+**Sizes.**
+
+| Token | Value | Use |
+|---|---|---|
+| `Sizes.calendarCellHeight` | 48 | One day cell in the month/week grid |
+| `Sizes.calendarMarkerDot` | 6 | One item's dot in a day cell |
+| `Sizes.calendarMarkerRow` | 16 | Height reserved for the marker row |
+| `Sizes.calendarHourGutter` | 56 | The hour-label column in the day view |
+| `Sizes.calendarHourRow` | 56 | Minimum height of one hour row |
+
+`calendarCellHeight` is the touch target, not a layout preference — a cell is
+how a date is selected, so it meets the 48dp floor in §7 exactly. Do not shrink
+it to fit more weeks.
+
+**Day markers take their colour from the ONE status mapping.** A dot is *state*,
+so its fill comes from `statusStyle()` / `outcomeStyle()` in `status_style.dart`
+— `style.background` for the tinted and solid treatments, `style.border` for the
+neutral one, whose background is transparent by design. The calendar never names
+an `attention*` role itself, so the §2.7 firewall holds with no exemption and no
+entry in the lint's owner list. If a day needs a new kind of mark, that is a new
+state: add it to `status_style.dart`.
+
+Cap the dots at four and show a `labelSmall` overflow count; a cell that fills
+with dots stops distinguishing a busy day from a full one.
+
+**Every day number, weekday name and hour label goes through
+`core/format/datetime_format.dart`,** like all other time rendering (§1). This
+is not pedantry here: `table_calendar`'s own cell builders interpolate
+`'${day.day}'`, which is Latin digits, and would silently break the app's
+worldwide requirement in any locale that renders its own numerals. That is the
+reason every cell in this app is drawn by our builder rather than the package's.
+
+**The week starts where the locale says.** `MaterialLocalizations.of(context)
+.firstDayOfWeekIndex`, never a constant, never Monday-by-default.
+
+**No time-blocking, and no proportional day grid.** `ScheduleItem` carries an
+instant, not a span — it has no duration field. The day view is an hour *rail*:
+items are pinned beside the hour they fall in, each at its natural card height.
+An item drawn as a sized block would be asserting a duration the model does not
+have. If `durationMinutes` ever lands, this section is what changes first.
+
+**A tapped item opens a detail sheet, and the sheet routes rather than acts.**
+Done, Skip, Approve, Reject and Withdraw live on the screens that already own
+them; the sheet's one primary action navigates there. Two renderings of one
+item's controls are two things to keep in step — the same reasoning
+`OutcomeScreen` gives for not being a detail screen.
+
 ---
 
 ## 7. Accessibility floor

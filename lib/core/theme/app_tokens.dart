@@ -139,6 +139,36 @@ abstract final class Sizes {
   /// two to one as the screen narrows instead of clipping a label.
   static const double statTileMinWidth = 148;
 
+  /// **The calendar** (UI-RULES.md §6.10).
+  ///
+  /// [calendarCellHeight] is the 48dp TOUCH TARGET, not a layout preference: a
+  /// day cell is how a date is selected. 44 was drawn first and fits a six-week
+  /// month more comfortably; it is also under the §7 floor, so it lost. Do not
+  /// shrink this to fit more weeks on screen.
+  static const double calendarCellHeight = 48;
+
+  /// One item's dot in a day cell, and the strip they sit in.
+  ///
+  /// The strip is reserved whether or not a day has items, so cells do not
+  /// change height as the month pages past — a grid that reflows under the
+  /// finger is hard to aim at.
+  ///
+  /// 16, not the dot's own 6: past four items the strip shows a `+n` count
+  /// instead of more dots, and 16 is `labelSmall`'s line height. Sizing this to
+  /// the dot would clip that count. Day number (20) + gap (4) + strip (16) =
+  /// 40, inside [calendarCellHeight]'s 48 with room for padding.
+  static const double calendarMarkerDot = 6;
+  static const double calendarMarkerRow = 16;
+
+  /// The day view's hour-label column, and the minimum height of one hour row.
+  ///
+  /// Equal on purpose: an empty hour is a square of whitespace, which is what
+  /// makes a gap in the day legible as a gap. The row grows past this when it
+  /// holds items — it is a rail, not a proportional grid, because a
+  /// `ScheduleItem` has no duration to be proportional to.
+  static const double calendarHourGutter = 56;
+  static const double calendarHourRow = 56;
+
   /// The celestial body's limb. Deliberately heavier than [hairline]: in light
   /// mode the sky is light at every hour, so the rim — not the fill — is what
   /// makes the shape read at all.

@@ -95,6 +95,19 @@ dependencies:
   # (`avatar.dart`), never by shrinking one behind the user's back.
   image_picker: ^1.1.2
 
+  # The in-app calendar's month and week grids. Apache-2.0, actively released
+  # (3.2.1, 2026-08-09), ~585k downloads/30d, and its only non-Flutter
+  # dependencies are `intl` — already ours at 0.20.2 — and a small gesture
+  # helper. No platform channel, so it adds no permission and no native code.
+  #
+  # It supplies the month/week GRID and its paging only. There is deliberately
+  # no day view here: `table_calendar` has none, and a `ScheduleItem` carries an
+  # instant rather than a span (it has no duration field), so a day view drawn
+  # as sized blocks would be inventing a duration the model does not have. The
+  # day view is therefore an hour RAIL, hand-written in
+  # `features/calendar/presentation/calendar_day_view.dart`.
+  table_calendar: ^3.2.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

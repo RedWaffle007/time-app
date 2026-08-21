@@ -131,13 +131,20 @@ are skipped by the self-planned guard). Expect `sent:1` per event with
 `wrangler tail` running: created / decided / outcome / withdrawn. Foreground only —
 passing it does NOT close item 1.
 
-1. **BACKGROUNDED / killed-app delivery.** The one that actually matters. The
-   verified run was *foregrounded*, which sidesteps OEM background policy entirely —
-   a live process gets the message via `onMessage` regardless of Xiaomi. System-tray
-   delivery to a backgrounded or process-killed app on HyperOS is **unproven**, and
-   is exactly what the Autostart/battery primer is for (primer placement in
-   onboarding should be decided from this test's result). Nothing in the foreground
-   result predicts this one.
+1. **BACKGROUNDED / killed-app delivery. PARTLY ANSWERED 2026-08-22 — and the
+   answer is that it FAILS.** (DECISIONS.md → "Killed-app alarm delivery —
+   OneKeyClean answers open item 1".) On the Redmi, HyperOS Security's
+   **"Boost speed" (`OneKeyClean`) killed the app and every armed alarm went with
+   it** — `am_kill` at 00:29:34, both alarms `pi_cancelled` 36s later, zero
+   pending alarms afterwards, no error surfaced anywhere. The 07:00 reminder came
+   back **only** because the app was reopened by hand. The item-stream reconciler
+   worked exactly as designed; it just needs a process to run in.
+   **Mitigation applied and verified in `dumpsys`** (Autostart `allow`, Doze
+   whitelist, standby bucket 10 → **5 EXEMPTED**) — but **whether the mitigation
+   actually holds is UNTESTED**: no second Boost has run since. This still says
+   nothing about FCM system-tray delivery to a killed app, which remains
+   unproven. The primer's real target is now known to be **the user's own cleaner
+   app**, not Doze — `flags=0x5` already handles Doze.
 2. **Rules Test 3 — grant-off negative test.** With the planner grant revoked,
    confirm B's item-create is rejected `PERMISSION_DENIED`. Never run.
 3. **Real two-timezone loop (build step 5g).** A genuine two-people/two-devices run
@@ -264,6 +271,15 @@ rows are the install-time artifact the README warns about), force-stop (Run C),
 and the G0/G1/G3 sweep. Autostart's contribution is therefore unknown, which is
 exactly the bit that decides whether an OEM primer is needed.
 
+**Partly overtaken 2026-08-22 — the primer question is now settled even though
+the sweep is not.** Run C's *scenario* was observed in the wild: HyperOS
+Security's Boost killed the app and all its armed alarms vanished
+(`pi_cancelled`), silently. So **a primer IS needed**, and its target is the
+user's cleaner/Autostart settings rather than Doze. The measurements above are
+still unmeasured — this was one uncontrolled observation, not Run C — so quote
+it for *whether a primer is needed*, never for latency or durability numbers.
+(DECISIONS.md → "Killed-app alarm delivery — OneKeyClean answers open item 1".)
+
 ## Reminder layer — Part 1, the core scheduling engine (SHIPPED 2026-08-20)
 
 **The first reminder code in `lib/`.** `lib/features/reminders/`. Full reasoning
@@ -335,6 +351,23 @@ permissions, self-plan an item a few minutes out, background the app, confirm
 the notification, tap it, and read the audit CSV. Then the ones that matter —
 **killed-app delivery** and **reboot re-arm**, neither of which the spike
 proved.
+
+**ARMING is verified, firing is not (2026-08-22).** A 07:00 reminder was observed
+in `dumpsys alarm` exactly as designed: `window=0` (exact), `flags=0x5`
+(STANDALONE | ALLOW_WHILE_IDLE, i.e. `setExactAndAllowWhileIdle`),
+`exactAllowReason=permission` — the OS stating it granted exactness *because*
+`SCHEDULE_EXACT_ALARM` is held — and two alarms per reminder (the reminder plus
+its `REMINDER_AUDIT` shadow), the documented cost. **Arming is not firing:**
+nothing has been observed to fire, and the same session proved a HyperOS Boost
+silently discards armed alarms (checklist item 1 above).
+
+**Two traps for the next device pass, both hit on 2026-08-22.** (a) A release
+build refuses `run-as` (`package not debuggable`), so the mirror and the audit
+CSV are unreadable and the dev menu is stripped — **use a debug build** if you
+need either, and `dumpsys alarm` is the only witness otherwise. (b) An install
+can fire `installer_clear_app_data_caller`, **wiping prefs, the mirror and the
+sign-in**; a post-install run starts from an empty mirror and a signed-out app,
+which is not a bug but will mislead you if unnoticed.
 
 **Deferred to later parts (do not build until directed):** OEM
 autostart/battery onboarding, iOS, quiet-hours enforcement, recurring reminders,
@@ -414,6 +447,68 @@ a fourth nav tab (the bar names the three delegation stances).
 both changed; the app fails closed until they are deployed. Verify the deployed
 source, then install. 100 emulator rules tests cover it
 (`firestore-tests/social.test.mjs`).
+
+## In-app calendar — SHIPPED 2026-08-21
+
+`lib/features/calendar/`. Month / week / day views over the schedule items that
+already exist. Full reasoning in DECISIONS.md → "In-app calendar"; recipes in
+UI-RULES.md §6.10. **NOT VERIFIED ON A DEVICE.**
+
+**It stores NOTHING, and that is the property to protect.** No collection, no
+document, no field, no `firestore.rules` change, no index, no permission, no
+Worker event. Every item comes from `myItemsAsTargetProvider` and
+`myItemsAsPlannerProvider`, untouched. If the calendar ever needs to write
+something, that is a decision to record before it is a line of code.
+
+**Reached from the account menu at `/calendar`, top-level and pushed** — the
+Archived precedent, because it merges both roles and so belongs to no tab. It is
+deliberately **not a fourth nav tab**; the bar's three destinations are the three
+delegation stances, and that reasoning has now held three times (chatbot,
+Friends, this).
+
+Things not to rediscover:
+
+- **An item's day is its OWN timezone's date, never the viewer's.** The app
+  already renders every item in `item.timezone`, so bucketing by the device zone
+  would file a card reading "Tue 9:00 AM" under Monday. `calendarDayFor()` in
+  `application/calendar_grouping.dart`. An unknown zone falls back rather than
+  throwing.
+- **No time-blocking, and it is not an omission.** `ScheduleItem` carries an
+  instant, not a span — there is no duration field. The day view is an hour
+  **rail**, not a proportional grid; a sized block would assert a duration
+  nothing in the app knows. **If `durationMinutes` lands with goals,
+  `calendar_day_view.dart` is the first file that changes.**
+- **`table_calendar` supplies the GRID only, and draws none of its own cells.**
+  Its builders interpolate `'${day.day}'` — Latin digits — which would silently
+  break the standing worldwide requirement. Every cell goes through
+  `formatDayOfMonth()`, and the week start comes from
+  `MaterialLocalizations.firstDayOfWeekIndex`. `calendar_screen_test.dart` pins
+  this with a Bengali-locale render (**not** Arabic: intl's `ar` data uses Latin
+  digits, so that test would have passed vacuously).
+- **Tap opens a VIEW sheet that ROUTES; it never edits and never acts.** Edit is
+  not buildable — `firestore.rules` makes `title` and `scheduledInstantUtc`
+  immutable after create ("Planner edit is still deferred") and
+  `ScheduleRepository` has no `updateItem`. **No disabled Edit control was added
+  either**, and a test asserts its absence. Done/Skip stay on My Schedule; the
+  sheet's one action `go()`s there, where `Routes.outcomeForItem` already
+  scrolls to the card and outlines it.
+- **Markers reuse the ONE status mapping** (`style.background`, or
+  `style.border` for the transparent neutral treatment). The calendar names no
+  `attention*` role, so the §2.7 firewall lint needs no exemption for it.
+- **The calendar's whole integration with existing code is ONE optional
+  parameter**: `ScheduleBuilderScreen.initialDate`, null by default and
+  identical to before when null. It seeds the **date only**, never a time — the
+  user tapped a day, not an hour. `_pickDate`'s window was widened to contain an
+  already-selected date, because `showDatePicker` *asserts* `initialDate` is in
+  range and the grid pages years either way.
+
+**The device pass, when it happens:** open the calendar with items in more than
+one timezone; check the month grid, the dots and the `+n` overflow; select a
+date; swipe between months and confirm the header title follows; Today; Week;
+Day and its hour rail; long-press a date and confirm the builder opens with that
+date filled; tap an item and confirm the sheet routes into My Schedule with the
+card outlined. Then the same in dark mode (UI-RULES §8) and in a right-to-left
+locale, which nothing here has been run in.
 
 ## Language practice chatbot — a SEPARATE feature (added 2026-08-18)
 

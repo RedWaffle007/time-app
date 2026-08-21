@@ -58,3 +58,57 @@ String formatTimeOfDay(BuildContext context, TimeOfDay time) =>
 /// Minutes-since-midnight (how quiet hours are stored) as a localized time.
 String formatMinutesOfDayLocalized(BuildContext context, int minutes) =>
     formatTimeOfDay(context, TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60));
+
+// ---------------------------------------------------------------------------
+// The calendar (UI-RULES.md §6.10).
+//
+// These exist because `table_calendar` renders its own cells with
+// `'${day.day}'` — Latin digits, hardcoded. In a locale that writes its own
+// numerals that is a silent regression of the standing worldwide requirement,
+// with nothing to catch it. Routing every day number, weekday name and hour
+// label through here is what lets the calendar draw all its own cells.
+// ---------------------------------------------------------------------------
+
+/// The month and year heading over a month or week grid, e.g. "August 2026".
+String formatMonthYear(BuildContext context, DateTime date) =>
+    DateFormat.yMMMM(_locale(context)).format(date);
+
+/// One day number inside a grid cell. Localized digits — NOT `'${date.day}'`.
+String formatDayOfMonth(BuildContext context, DateTime date) =>
+    DateFormat.d(_locale(context)).format(date);
+
+/// An abbreviated weekday for the grid's column headers, e.g. "Tue".
+String formatWeekdayShort(BuildContext context, DateTime date) =>
+    DateFormat.E(_locale(context)).format(date);
+
+/// A day heading over an agenda or the day view, e.g. "Tue, Aug 25".
+///
+/// Deliberately without the year: it is already stated by the month heading
+/// directly above it, and repeating it crowds the one line that has to stay
+/// scannable.
+String formatDayHeadingShort(BuildContext context, DateTime date) =>
+    DateFormat.MMMEd(_locale(context)).format(date);
+
+/// The label on one hour row of the day view, e.g. "9 AM" or "09".
+///
+/// Same 12h/24h decision as every other time in the app — [MediaQuery]'s
+/// `alwaysUse24HourFormat`, never a guess from the locale alone.
+String formatHourOfDay(BuildContext context, int hour) {
+  final locale = _locale(context);
+  final format = MediaQuery.of(context).alwaysUse24HourFormat
+      ? DateFormat.H(locale)
+      : DateFormat.j(locale);
+  return format.format(DateTime(2000, 1, 1, hour));
+}
+
+/// The time part of a WALL-CLOCK carrier — a `DateTime` whose fields are
+/// already the local time in some other zone (what `itemWallTime()` returns).
+///
+/// Distinct from [formatInstantTime], which takes a real instant and a zone to
+/// resolve it in. Passing a carrier to that one would re-interpret fields that
+/// have already been resolved; passing an instant to this one would render it
+/// in the wrong zone. The two must not be swapped.
+String formatWallTimeOfDay(BuildContext context, DateTime wall) =>
+    _timeFormat(context).format(
+      DateTime(2000, 1, 1, wall.hour, wall.minute),
+    );

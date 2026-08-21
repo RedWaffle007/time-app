@@ -45,6 +45,11 @@ class AccountButton extends ConsumerWidget {
         switch (value) {
           // Pushed, not `go`: /chatbot is a root-level route outside the shell,
           // so it covers the nav bar and Back returns to the tab you left.
+          // Pushed for the same reason /chatbot is: a root-level route
+          // outside the shell, covering the nav bar, with Back returning to
+          // whichever tab launched it.
+          case 'calendar':
+            context.push(Routes.calendar);
           case 'chatbot':
             context.push(Routes.chatbot);
           case 'friends':
@@ -60,6 +65,15 @@ class AccountButton extends ConsumerWidget {
         }
       },
       itemBuilder: (context) => [
+        // The calendar heads the destinations block. It is a place you GO, and
+        // it is deliberately here rather than in the nav bar: it merges the
+        // items you are the target of with the ones you planned for others, so
+        // it belongs to no single tab — the same shape, and the same answer, as
+        // Archived below (DECISIONS.md → "In-app calendar").
+        const PopupMenuItem(
+          value: 'calendar',
+          child: Text('Calendar'),
+        ),
         // A destination, not an account action — hence its place above the
         // divider. Worded as the feature, not as "chatbot": the label names what
         // you go there to do.

@@ -3509,3 +3509,258 @@ two wipe the database out from under each other. It presented as a scatter of
 `ALLOWS …` failures across unrelated describes, changing run to run, while each
 file passed alone. `npm test` now passes `--test-concurrency=1`; the README says
 why, so the next file added inherits it rather than rediscovering it.
+
+---
+
+# Killed-app alarm delivery — OneKeyClean answers open item 1 (2026-08-22)
+
+**The first hard evidence on HyperOS's kill behaviour, gathered by accident.** A
+routine "is my 7am reminder armed?" check caught the failure mode mid-flight,
+because the phone had killed the app three minutes earlier. Everything below is
+`dumpsys alarm` / `logcat -b events` on the Redmi (HyperOS, Android 16),
+**release build** (`run-as` refused: `package not debuggable`), so the mirror and
+the audit CSV were unreadable and `dumpsys` was the only witness.
+
+## What happened, from the device
+
+| Time (IST) | Event |
+| --- | --- |
+| 00:26:48 | Install. `installer_clear_app_data_caller` — **app data wiped**, so prefs, mirror and sign-in went with it |
+| 00:26:50 | App started (pid 7758), reconciler armed the 07:00 pair |
+| **00:29:34** | **`am_kill: [0,7758,com.timeapp.time_app,905,OneKeyClean,252460]`** |
+| 00:30:10 | Both alarms gone, `Reason=pi_cancelled`. `Pending alarms per uid` had no `u0a402` row at all |
+| 00:31:41 | App reopened by hand → reconciler re-armed 07:00 |
+
+**OneKeyClean is HyperOS Security's "Boost speed" / one-tap clean.** It took ~20
+processes in the same sweep — `com.whatsapp`, `com.android.settings`,
+`com.truecaller`, even `com.miui.securitycenter` itself — so this is not
+something the app provoked.
+
+**Mechanism: inferred, not observed.** A plain `killBackgroundProcesses` does not
+cancel PendingIntents, and **no `am_force_stop` event was logged** for the
+package. What is certain is the correlation and the outcome: kill at 00:29:34,
+`pi_cancelled` on both alarms 36s later, nothing else touched the app in that
+window, and zero pending alarms afterwards. Whether MIUI issued a true
+`forceStopPackage` is unproven. It does not change the conclusion.
+
+## The conclusion, which is the point
+
+**Open item 1 ("BACKGROUNDED / killed-app delivery … unproven") now has an
+answer on this device: it FAILS, silently.** A HyperOS Boost drops every armed
+alarm, raises no error to anyone, and writes nothing the app can see. The
+reminder came back **only** because the app was reopened by hand — the
+item-stream reconciler did exactly its job, but it needs a process to run in, and
+that is precisely what was taken away.
+
+This is the strongest argument yet for the OEM primer, and it also sharpens what
+the primer is *for*: not Doze (`flags=0x5` already handles that) but the user's
+own cleaner app.
+
+## The arming itself is correct — that was never in doubt
+
+```
+RTC_WAKEUP #50: Alarm{ba585bd ... com.timeapp.time_app}
+  tag=*walarm*:com.timeapp.time_app/...ScheduledNotificationReceiver
+  type=RTC_WAKEUP origWhen=2026-08-22 07:00:00.000 window=0
+  exactAllowReason=permission  flags=0x5
+```
+
+`window=0` = exact; `flags=0x5` = STANDALONE | ALLOW_WHILE_IDLE, i.e.
+`setExactAndAllowWhileIdle` as chosen; `exactAllowReason=permission` is the OS
+stating it granted exactness **because** `SCHEDULE_EXACT_ALARM` is held. Two
+alarms per reminder (the reminder + its `REMINDER_AUDIT` shadow), exactly the
+documented cost.
+
+## Mitigation applied, and how it was verified
+
+Autostart on, battery → No restrictions, app locked in recents:
+
+| | Before | After |
+| --- | --- | --- |
+| Autostart | `MIUIOP(10008): ignore` | `MIUIOP(10008): allow` |
+| Doze whitelist | absent | `user,com.timeapp.time_app,10402` |
+| Standby bucket | 10 (ACTIVE) | **5 (EXEMPTED)** |
+
+It now sits in *Exempted bucket packages* beside `com.whatsapp` and
+`com.android.deskclock`. `MIUIOP(10008)` was confirmed to be the Autostart op by
+comparison, not assumption — WhatsApp/Gmail/Instagram read `allow`, time_app and
+another third-party reminders app read `ignore`.
+
+**The settings changes did not disturb the armed alarms**, proven by object
+identity rather than by re-reading the time: `Alarm{ba585bd}` /
+`PendingIntentRecord{2f91510}` and `Alarm{167b7b2}` / `PendingIntentRecord{d56c3c2}`
+are byte-identical across dumps 12 minutes apart, and the newest removal-history
+entry stayed the 00:31:41 reconciler churn. A cancel-and-re-arm would have
+minted new ones.
+
+## Still NOT proven — do not read this entry as more than it is
+
+- **That the mitigation works.** No second Boost has run since. Untested.
+- **Reboot re-arm.** Unchanged from the spike; still not one `REARMED` row.
+- **That it fires at 07:00.** Arming is not firing.
+- **The recents lock.** No `dumpsys` surface was found for it; unverified.
+
+## Sidebar: why App Info shows only "Notifications" — not a bug
+
+The user reasonably expected to grant an alarm permission in App Info and found
+only Notifications. That is correct behaviour, twice over:
+
+- **App Info → Permissions lists only *runtime* ("dangerous") permissions.** Of
+  the 12 the app requests, exactly one qualifies — `POST_NOTIFICATIONS`.
+  INTERNET, WAKE_LOCK, VIBRATE, RECEIVE_BOOT_COMPLETED, ACCESS_NETWORK_STATE,
+  USE_BIOMETRIC and the rest are install-time and never appear there.
+- **`SCHEDULE_EXACT_ALARM` is a "special app access,"** deliberately kept out of
+  that list. It lives at **Settings → Apps → Special app access → Alarms &
+  reminders**, and it was already `allow`.
+
+Recorded because the future OEM primer must deep-link to the *right* screens, and
+because "the permission is missing" is the natural wrong conclusion to draw here.
+`ReminderPermissions` already sends the user to the correct place; the gap is
+that nothing tells them App Info is not it.
+
+---
+
+## In-app calendar — a VIEW over the item stream (2026-08-21)
+
+A month / week / day calendar over the schedule items that already exist.
+`lib/features/calendar/`. **It introduces no data.** No collection, no document,
+no field, no Firestore rule, no index, no permission, no Worker event. Every
+byte it renders comes from `myItemsAsTargetProvider` and
+`myItemsAsPlannerProvider`, which were already there.
+
+### What the leading apps do, and which parts we can actually copy
+
+TickTick ships month, week, agenda, multi-day, multi-week and yearly views, and
+its real differentiator over Todoist is a *native* calendar that plots tasks in
+the same surface as events, with drag-to-timeblock. Todoist treats a calendar as
+a sync target and gives tasks due dates rather than time slots. Google
+Calendar's mobile conventions are the rest of it: swipe to page, a "jump to
+today" control in the top-right, and dot markers per day.
+
+Three of those we take: **the month/week/day toggle**, **markers per day**, and
+**tap a date → that day's list**. One we structurally cannot:
+
+> **No time-blocking, and this is a model fact, not a shortcut.**
+> `ScheduleItem` has no duration field — it carries an INSTANT, not a span. It
+> is already recorded above (and in CLAUDE.md, "Carried into the goals phase")
+> that adding `durationMinutes` is an open decision belonging to the goals
+> phase. Drawing an item as a sized block would invent a duration the model does
+> not have, and drag-to-resize would need somewhere to write it. So the day view
+> is an hour **rail** — items pinned beside the hour they fall in — not a
+> proportional grid.
+
+The moment `durationMinutes` lands, the day view is the one file that changes.
+
+### Which day an item falls on: its OWN timezone, not the device's
+
+An item carries `timezone`, a snapshot of the target's home zone, and the whole
+app already renders it there (`formatInstant`). The calendar grid therefore
+places an item on **the date it displays as** — `calendarDayFor()` resolves
+`scheduledInstantUtc` in `item.timezone` and truncates.
+
+The alternative — bucketing everything by the *viewer's* device zone — was
+rejected because it makes the grid disagree with the card sitting inside it. A
+planner in Chicago looking at an 09:00 Kolkata item would see a card that says
+"Tue 9:00 AM" filed under Monday. The card is not wrong; the bucket would be.
+The cost is accepted and stated: with items in several zones, two cards on one
+day can be minutes apart in real time and hours apart on the clock. That is
+honest about what a cross-timezone plan IS.
+
+An unparseable zone falls back to the device zone rather than throwing — a
+malformed document must not take the whole calendar down with it.
+
+### Both roles, deduped — the Archived precedent
+
+The calendar merges items where the viewer is the TARGET with items they
+created as PLANNER, deduped by id (a self-planned item is in both streams, as
+`archivedItemsProvider` already had to handle). A calendar showing only half of
+your commitments would be a worse answer to "what is my week" than the two tabs
+already give.
+
+This is the same shape as the Archived screen — a cross-role view belonging to
+neither tab — so it takes the same navigation answer: **top-level route reached
+from the account menu**, pushed, covering the nav bar. It is deliberately NOT a
+fourth nav tab. The bar's three destinations are the three stances in the
+delegation loop, and that reasoning has now held twice, for the chatbot
+(2026-08-18) and for Friends (2026-08-21); a calendar is a lens over all three
+stances, not a fourth one.
+
+### It reads the VIEW layer, not the RECORD layer
+
+`schedule_providers.dart` warns that stats/summaries must aggregate the RECORD
+providers. The calendar is not such a consumer: it is a feed, so it takes the
+filtered view and an archived item correctly disappears from the grid. Stated
+here so the constraint is not misapplied in the other direction.
+
+### Package: `table_calendar` 3.2.1, for the grid only
+
+Apache-2.0, released 2026-08-09, ~585k downloads/30d, 3.3k likes. Its only
+non-Flutter dependencies are `intl` (ours already, 0.20.2) and a gesture helper.
+No platform channel, so **no new permission and no native code** — which is the
+property that mattered most, given where this app's risk actually lives.
+
+It supplies the month/week grid and its paging. It does **not** supply a day
+view, and we would not have used one: see the duration argument above. Every
+cell is drawn by our own builder, because `table_calendar`'s defaults render day
+numbers with `'${day.day}'` — Latin digits, which would silently break the
+standing worldwide requirement in a locale using Arabic-Indic numerals. Ours go
+through `formatDayOfMonth()` in the one date/time helper, and the week start
+comes from `MaterialLocalizations.firstDayOfWeekIndex` rather than a constant.
+
+### Tap an item → view, never edit. The rules forbid the edit.
+
+The brief asked for view/edit. **Edit is not buildable without a rules change**
+and is therefore not built. `firestore.rules` whitelists exactly the target's
+approve / reject / done / skip and the planner's withdraw; `title` and
+`scheduledInstantUtc` are immutable after create, and the block says so in
+terms — *"Planner edit is still deferred."* `ScheduleRepository` has no
+`updateItem` to call.
+
+No disabled "Edit" affordance was added either. A stub would imply the feature
+is one tap away when it is a rules deploy away.
+
+What a tap does instead: a detail sheet, then **one action that routes to the
+canonical screen** — `Routes.outcomeForItem(id)` for an item targeted at you
+(which already scrolls to the card and outlines it, carrying the real Done and
+Skip controls), or Activity for one you planned. There is deliberately no second
+rendering of Done/Skip inside the calendar. That is `OutcomeScreen`'s own stated
+reason for not being a detail screen, applied one level out: two renderings of
+one item's controls are two things to keep in step.
+
+### Creating from a date — the ONE touch of existing code
+
+`ScheduleBuilderScreen` gains an optional `initialDate`, defaulting to null,
+which seeds `_date`. Null behaves exactly as before. This is the whole
+integration: the calendar does not get a parallel create flow, it pushes the
+real builder with the tapped date already filled.
+
+`/calendar/new` is a sub-route of `/calendar`, mirroring `/friends/search` —
+the calendar is a top-level pushed route, so its create flow belongs to its own
+stack and Back returns to the grid. It is a second registration of
+`ScheduleBuilderScreen`, and that is examined rather than assumed: D2 was three
+screens registered as tabs AND as flat top-level paths, where the harm was a
+notification `go()` becoming ambiguous. Nothing deep-links to the builder, and
+the alternative — pushing a location inside the Activity branch from outside the
+shell — is the shape D2 actually punished.
+
+### Markers reuse the ONE status mapping
+
+A day cell's dots take their colour from `statusStyle()` / `outcomeStyle()` —
+`style.background` for tinted and solid, `style.border` for the neutral
+treatment, which is transparent by design. No new colour, no local switch, and
+the §2.7 firewall is untouched: the calendar file never names an `attention*`
+role, so the lint's ban holds with no exemption. A dot IS state, and it gets its
+fill from the file that owns state.
+
+### New tokens (UI-RULES.md §6.10, added with this entry)
+
+`Sizes.calendarCellHeight` 48, `calendarMarkerDot` 6, `calendarMarkerRow` 16,
+`calendarHourGutter` 56, `calendarHourRow` 56. All are layout metrics, not
+colours, so no contrast check applies.
+
+**The cell is 48, not 44, and that is the §7 floor deciding it rather than the
+layout.** 44 was drawn first and fits a six-week month more comfortably; it is
+also 4dp under the minimum touch target, and a calendar cell is a *tap target*
+in every view — it is how a date is selected. Six rows at 48 is 288dp plus the
+day-of-week header, which a phone holds without scrolling, so the floor cost
+nothing here. Had it cost something, the floor would still have won.

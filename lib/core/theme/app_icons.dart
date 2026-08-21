@@ -336,6 +336,46 @@ abstract final class AppIcons {
   /// exactly what `ProfileRelation.blockedBy` documents.
   static const IconData profileUnavailable = Icons.no_accounts_outlined;
 
+  // ---- the calendar (UI-RULES.md §6.10) ----
+
+  /// The calendar screen as a *destination* — the account-menu entry and the
+  /// screen's own identity.
+  ///
+  /// Deliberately not [date] (`calendar_today`), which is the *pick a date*
+  /// control on the schedule builder, and not [navSchedule] (`event`), which
+  /// names the My Schedule tab. "Go and look at the calendar", "choose a day"
+  /// and "your approved items" are three concepts, and rule 1 gives them three
+  /// glyphs.
+  static const IconData calendar = Icons.calendar_month_outlined;
+
+  /// The three view modes, on the segmented toggle. Outlined per rule 2 — the
+  /// segmented button carries selection itself, so fill weight is not being
+  /// asked to encode it a second time.
+  static const IconData viewMonth = Icons.calendar_view_month_outlined;
+  static const IconData viewWeek = Icons.calendar_view_week_outlined;
+  static const IconData viewDay = Icons.calendar_view_day_outlined;
+
+  /// Jump back to today. Distinct from [calendar] and from [date]: this is a
+  /// movement, not a place and not a choice.
+  static const IconData today = Icons.today_outlined;
+
+  /// Page to the previous / next month, week or day.
+  ///
+  /// `keyboard_arrow_*` rather than `chevron_*` on purpose. [openRow] is already
+  /// `chevron_right`, and rule 1 is literal — a glyph means exactly one thing in
+  /// this app. "Drill into this row" and "move to next month" are different
+  /// concepts, so they get different glyphs even though both are arrowheads.
+  static const IconData previousPeriod = Icons.keyboard_arrow_left;
+  static const IconData nextPeriod = Icons.keyboard_arrow_right;
+
+  /// A day with nothing on it.
+  ///
+  /// A third emptiness, alongside [emptyGeneric] and [emptyArchive], for the
+  /// same reason those two are separate: "your inbox is empty", "you have
+  /// archived nothing" and "this day is free" are different messages. A free day
+  /// is a good thing, which is exactly what the other two glyphs fail to say.
+  static const IconData emptyDay = Icons.event_available_outlined;
+
   // ---- dev-only scaffolding (lib/dev is governed too — §6.6) ----
 
   static const IconData devPanels = warning;

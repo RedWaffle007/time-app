@@ -14,6 +14,7 @@ import '../features/auth/presentation/profile_edit_screen.dart';
 import '../features/chatbot/presentation/chat_gate.dart';
 import '../features/chatbot/presentation/chatbot_settings_screen.dart';
 import '../features/chatbot/presentation/model_setup_screen.dart';
+import '../features/calendar/presentation/calendar_screen.dart';
 import '../features/home/presentation/home_gate.dart';
 import '../features/social/presentation/blocked_users_screen.dart';
 import '../features/social/presentation/friend_requests_screen.dart';
@@ -46,6 +47,66 @@ class Routes {
   static const scheduleBuilder = '$plannerActivity/schedule-builder';
   static const approvals = '$outcome/approvals';
   static const archived = '/archived';
+
+  /// **The calendar** — a month/week/day view over the items that already
+  /// exist. Top-level and pushed, reached from the account menu, for exactly
+  /// the reason [archived] is: it merges the items you are the TARGET of with
+  /// the ones you planned for others, so it belongs to no single tab. It is
+  /// deliberately not a fourth nav destination — the bar's three tabs are the
+  /// three stances in the delegation loop, and a calendar is a lens over all
+  /// three rather than a fourth one (DECISIONS.md → "In-app calendar").
+  static const calendar = '/calendar';
+
+  /// Planning an item from a tapped date.
+  ///
+  /// This is the REAL [ScheduleBuilderScreen], not a parallel create flow — the
+  /// calendar's whole integration with the builder is one optional
+  /// `initialDate`. It is a sub-route of [calendar] for the same reason
+  /// `/friends/search` is a sub-route of `/friends`: the calendar is pushed at
+  /// the root, so its create flow belongs to its own stack and Back returns to
+  /// the grid.
+  ///
+  /// It is a SECOND registration of that screen, and that is examined rather
+  /// than assumed. D2 was three screens registered as tabs *and* as flat
+  /// top-level paths, where the harm was a notification `go()` becoming
+  /// ambiguous about which stack it meant. Nothing deep-links to the builder,
+  /// and the alternative — pushing a location inside the Activity branch from a
+  /// route outside the shell — is the shape D2 actually punished.
+  static const calendarNew = '$calendar/new';
+
+  /// Query parameter seeding [calendarNew] with a date, as `yyyy-MM-dd`.
+  ///
+  /// A plain calendar date, not an instant and not a locale-formatted string:
+  /// the builder resolves it against the TARGET's timezone once a target is
+  /// picked, and which target that is is not known yet at this point.
+  static const calendarDateParam = 'date';
+
+  static String calendarNewFor(DateTime day) => Uri(
+        path: calendarNew,
+        queryParameters: {
+          calendarDateParam: '${day.year.toString().padLeft(4, '0')}-'
+              '${day.month.toString().padLeft(2, '0')}-'
+              '${day.day.toString().padLeft(2, '0')}',
+        },
+      ).toString();
+
+  /// Parse [calendarDateParam] back to a LOCAL-kind date.
+  ///
+  /// Local-kind on purpose: it feeds `showDatePicker` and the builder's own
+  /// `_date`, both of which work in device-local dates. Returns null for a
+  /// missing or malformed value, so a hand-typed link degrades to the ordinary
+  /// empty builder rather than throwing.
+  static DateTime? calendarDateFrom(String? raw) {
+    if (raw == null) return null;
+    final parts = raw.split('-');
+    if (parts.length != 3) return null;
+    final year = int.tryParse(parts[0]);
+    final month = int.tryParse(parts[1]);
+    final day = int.tryParse(parts[2]);
+    if (year == null || month == null || day == null) return null;
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    return DateTime(year, month, day);
+  }
 
   /// Query parameter naming ONE item on [outcome], so a tapped reminder can
   /// single out the card it belongs to.
@@ -248,6 +309,23 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.archived,
         builder: (context, state) => const ArchivedScreen(),
+      ),
+      // The calendar. Account-level and pushed, alongside Archived and for the
+      // same reason — see the doc on `Routes.calendar`. Its create flow is a
+      // sub-route, so Back from the builder returns to the grid the user tapped.
+      GoRoute(
+        path: Routes.calendar,
+        builder: (context, state) => const CalendarScreen(),
+        routes: [
+          GoRoute(
+            path: 'new',
+            builder: (context, state) => ScheduleBuilderScreen(
+              initialDate: Routes.calendarDateFrom(
+                state.uri.queryParameters[Routes.calendarDateParam],
+              ),
+            ),
+          ),
+        ],
       ),
       // The social layer. Account-level and pushed, for the reason spelled out
       // on the `Routes.friends` constant: a friend graph is not one of the
