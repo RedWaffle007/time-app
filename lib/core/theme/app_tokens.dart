@@ -106,4 +106,41 @@ abstract final class Sizes {
   /// download, is a bar someone actually watches. 8 is thick enough to see the
   /// fill move without becoming a slab.
   static const double progressBar = 8;
+
+  /// The time-reactive hero band at the top of My Schedule.
+  ///
+  /// Sized to hold `labelSmall` + `displaySmall` + `bodySmall` with `Space.lg`
+  /// padding and still leave the sky visible above the type — the band is a
+  /// sky with a caption, not a header with a tint.
+  static const double heroBand = 160;
+
+  /// Radius of the sun or moon in the hero band.
+  static const double celestialRadius = 17;
+
+  /// Profile-picture diameters (UI-RULES.md §6.6 — an avatar is an *image*,
+  /// not an icon, so it is sized here rather than with the icon tokens).
+  ///
+  /// Three sizes, and no more: a list row, a screen header, and the editable
+  /// one on the edit form. Each is a place an avatar actually appears — adding
+  /// a fourth means a fourth place, which is a design question before it is a
+  /// token question.
+  ///
+  /// [avatarRow] is deliberately just under [touchTarget]: a list row's leading
+  /// slot is 40 by Material convention, and the row itself supplies the 48pt
+  /// target, so sizing the image to the target would push every row taller.
+  static const double avatarRow = 40;
+  static const double avatarHeader = 72;
+  static const double avatarEditable = 96;
+
+  /// A stat tile's minimum width, used by the wrapping stats grid.
+  ///
+  /// Wide enough for "Plans made for others" over two lines at `labelSmall`
+  /// plus a `titleLarge` value, so the tile count per row falls from three to
+  /// two to one as the screen narrows instead of clipping a label.
+  static const double statTileMinWidth = 148;
+
+  /// The celestial body's limb. Deliberately heavier than [hairline]: in light
+  /// mode the sky is light at every hour, so the rim — not the fill — is what
+  /// makes the shape read at all.
+  static const double celestialRim = 1.5;
 }

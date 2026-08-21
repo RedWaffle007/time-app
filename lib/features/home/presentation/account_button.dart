@@ -4,8 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_icons.dart';
+import '../../../core/theme/app_tokens.dart';
+import '../../../core/theme/status_style.dart';
 import '../../../routing/app_router.dart';
 import '../../notifications/application/messaging_service.dart';
+import '../../social/application/social_providers.dart';
 
 /// The account entry point that lives in every tab's AppBar: edit profile,
 /// sign out, and (debug builds only) a way back into the dev menu while the new
@@ -28,8 +31,15 @@ class AccountButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final pendingRequests = ref.watch(incomingRequestCountProvider);
+
     return PopupMenuButton<String>(
-      icon: const Icon(AppIcons.account),
+      icon: pendingRequests > 0
+          ? PendingCountBadge(
+              count: pendingRequests,
+              child: const Icon(AppIcons.account),
+            )
+          : const Icon(AppIcons.account),
       tooltip: 'Account',
       onSelected: (value) {
         switch (value) {
@@ -37,6 +47,8 @@ class AccountButton extends ConsumerWidget {
           // so it covers the nav bar and Back returns to the tab you left.
           case 'chatbot':
             context.push(Routes.chatbot);
+          case 'friends':
+            context.push(Routes.friends);
           case 'profile':
             context.push(Routes.profile);
           case 'archived':
@@ -54,6 +66,31 @@ class AccountButton extends ConsumerWidget {
         const PopupMenuItem(
           value: 'chatbot',
           child: Text('Language practice'),
+        ),
+        // Friends sits with the chatbot ABOVE the divider — both are places
+        // you GO, as opposed to the account block below, which acts on your
+        // account. It is deliberately not a fourth nav tab: the bar's three
+        // destinations are the three stances in the delegation loop (target,
+        // planner, group member) and a friend graph is none of them.
+        //
+        // Carries the same orange count badge the nav bar uses when requests
+        // are waiting — the app's one trusted attention signal (UI-RULES.md
+        // §2.7), and the only way this entry point announces itself, since the
+        // menu it lives in is closed most of the time.
+        PopupMenuItem(
+          value: 'friends',
+          child: Row(
+            children: [
+              const Text('Friends'),
+              if (pendingRequests > 0) ...[
+                const SizedBox(width: Space.sm),
+                PendingCountBadge(
+                  count: pendingRequests,
+                  child: const SizedBox.shrink(),
+                ),
+              ],
+            ],
+          ),
         ),
         const PopupMenuDivider(),
         const PopupMenuItem(value: 'profile', child: Text('Edit profile')),

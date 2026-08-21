@@ -233,6 +233,109 @@ abstract final class AppIcons {
   /// with it; an on-device engine has no address.
   static const IconData serviceAddress = Icons.dns_outlined;
 
+  // ---- social profiles, friends and privacy ----
+
+  /// The friends list, as a destination.
+  ///
+  /// Deliberately NOT [group] / [navGroups], which draw the same Material
+  /// "people" glyph. A group is the delegation container the whole core loop
+  /// runs inside; a friend is a person-to-person tie that grants nothing on its
+  /// own. Letting them share a glyph would say the two are the same thing,
+  /// which is the exact confusion the social layer had to be designed around.
+  static const IconData friends = Icons.people_alt_outlined;
+
+  /// Ask someone to be friends.
+  ///
+  /// Distinct from [joinGroup], which is `group_add` — joining a group and
+  /// befriending a person are different acts with different consequences, and
+  /// rule 1 gives them different glyphs.
+  static const IconData addFriend = Icons.person_add_alt_1_outlined;
+
+  /// Accept an incoming request.
+  ///
+  /// Deliberately not [approved]: that means "the target agreed to a plan", a
+  /// fact about a schedule item in the delegation loop. Agreeing to a
+  /// friendship is a different fact, and this file is the one place that
+  /// distinction is kept honest.
+  static const IconData acceptFriend = Icons.how_to_reg_outlined;
+
+  /// Decline an incoming request. Not [rejected], for the same reason
+  /// [acceptFriend] is not [approved].
+  static const IconData declineFriend = Icons.person_off_outlined;
+
+  /// End a friendship you already have.
+  ///
+  /// Distinct from [declineFriend] (refusing one that never started) and from
+  /// [removeMember] (ejecting someone from a group you own). Three different
+  /// severances with three different blast radii.
+  static const IconData removeFriend = Icons.person_remove_alt_1_outlined;
+
+  /// Block a user. The bin-glyph reasoning from [removeMember] applies in
+  /// reverse: this is genuinely severe and the glyph must not soften it.
+  static const IconData block = Icons.block;
+
+  /// Lift a block. A distinct concept from [block] — reversibility is the
+  /// point, so it does not share the glyph.
+  static const IconData unblock = Icons.lock_reset;
+
+  /// Report a profile picture for moderation.
+  ///
+  /// Not [warning], whose orange fill is reserved for state the user must act
+  /// on (§2.7). Reporting is something the user chooses to do, not something
+  /// waiting on them.
+  static const IconData report = Icons.flag_outlined;
+
+  /// The privacy toggle when the profile is PUBLIC — visible to anyone signed
+  /// in. Filled, per rule 2: public is the active, opted-into state.
+  static const IconData privacyPublic = Icons.visibility;
+
+  /// The privacy toggle when the profile is PRIVATE — friends only. This is the
+  /// default, i.e. the state at rest, so it is the outlined one.
+  static const IconData privacyPrivate = Icons.visibility_off_outlined;
+
+  /// A username / handle, wherever one is shown or edited.
+  static const IconData username = Icons.alternate_email;
+
+  /// The free-text "about you" field.
+  static const IconData bio = Icons.notes_outlined;
+
+  /// Choose or replace a profile picture.
+  static const IconData editPhoto = Icons.add_a_photo_outlined;
+
+  /// Remove the uploaded picture, falling back to the account photo. Not
+  /// [clearLog], which destroys data — this only unsets a field, and the object
+  /// is deleted as a consequence rather than as the point.
+  static const IconData removePhoto = Icons.hide_image_outlined;
+
+  /// A profile as a destination — "view this person".
+  ///
+  /// Distinct from [account], which is filled and means "your own account menu"
+  /// in every AppBar. Looking at someone else's profile is not that.
+  static const IconData viewProfile = Icons.badge_outlined;
+
+  /// The stats section header, and a stat tile with no value yet.
+  ///
+  /// Not [navActivity] (`insights`), which names the planner's own tab. A
+  /// profile statistic and the Activity feed are different things.
+  static const IconData stats = Icons.leaderboard_outlined;
+
+  /// Nobody in the friends list yet.
+  ///
+  /// Distinct from [friends] for the reason [emptyArchive] is distinct from
+  /// [archive]: "your friends" and "you have no friends yet" are opposite
+  /// messages and must not share a glyph.
+  static const IconData emptyFriends = Icons.person_search_outlined;
+
+  /// No friend requests waiting. Distinct again from [emptyFriends] — an empty
+  /// inbox and an empty roster are different emptinesses.
+  static const IconData emptyRequests = Icons.mark_email_read_outlined;
+
+  /// A profile that cannot be reached — blocked in either direction, or a
+  /// username that resolves to nobody. One glyph for all three on purpose: the
+  /// user must not be able to tell a block from a missing account, which is
+  /// exactly what `ProfileRelation.blockedBy` documents.
+  static const IconData profileUnavailable = Icons.no_accounts_outlined;
+
   // ---- dev-only scaffolding (lib/dev is governed too — §6.6) ----
 
   static const IconData devPanels = warning;

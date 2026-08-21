@@ -31,6 +31,20 @@ String formatInstant(
   return '$date, ${_timeFormat(context).format(t)}';
 }
 
+/// Just the time part of an absolute instant in [ianaZone], localized.
+///
+/// Same clock and locale decisions as [formatInstant] — this is that function
+/// with the date dropped, for the one place the date is already established by
+/// its surroundings (the hero band, which is showing today).
+String formatInstantTime(
+  BuildContext context,
+  DateTime utcInstant,
+  String ianaZone,
+) {
+  final t = tz.TZDateTime.from(utcInstant, tz.getLocation(ianaZone));
+  return _timeFormat(context).format(t);
+}
+
 /// A wall-clock date with no zone (e.g. the date-picker button label).
 String formatWallDate(BuildContext context, DateTime date) =>
     DateFormat.yMMMEd(_locale(context)).format(date);

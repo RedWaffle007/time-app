@@ -16,6 +16,7 @@ import { getAccessToken } from './google-auth.js';
 import { makeFirestoreDb } from './firestore-rest.js';
 import { makeFcm } from './fcm-rest.js';
 import { sendEventNotification } from './notify.js';
+import { handleAvatarUpload, handleAvatarDelete } from './avatar.js';
 
 const MAX_BODY_BYTES = 2048;
 const EVENTS = new Set(['created', 'decided', 'outcome', 'withdrawn']);
@@ -26,6 +27,45 @@ const PLANNER_TRIGGERED = new Set(['created', 'withdrawn']);
 
 export default {
   async fetch(request, env) {
+    // --- routing ---
+    //
+    // Two features share one Worker: push (the root path, unchanged) and
+    // profile-picture storage (`/avatar`). One Worker rather than two because
+    // both need exactly the same thing — a verified Firebase ID token and a
+    // privileged credential that must never reach a phone — and that
+    // verification code is not worth duplicating or keeping in step.
+    //
+    // The avatar routes are handled BEFORE the POST-only guard below, because
+    // removing a picture is a DELETE.
+    const url = new URL(request.url);
+    if (url.pathname === '/avatar') {
+      if (request.method !== 'POST' && request.method !== 'DELETE') {
+        return json({ error: 'method-not-allowed' }, 405, {
+          Allow: 'POST, DELETE',
+        });
+      }
+      let uid;
+      try {
+        uid = await requireUid(request, env.PROJECT_ID);
+      } catch (e) {
+        if (e instanceof IdTokenError) {
+          return json({ error: 'unauthorized' }, 401);
+        }
+        throw e;
+      }
+      try {
+        return request.method === 'POST'
+          ? await handleAvatarUpload(request, env, uid)
+          : await handleAvatarDelete(request, env, uid);
+      } catch (e) {
+        // Fail closed, same as the push path: never a partial result.
+        return json(
+          { error: 'avatar-failed', detail: String(e && e.message) },
+          500,
+        );
+      }
+    }
+
     if (request.method !== 'POST') {
       return json({ error: 'method-not-allowed' }, 405, { Allow: 'POST' });
     }
@@ -113,6 +153,20 @@ export default {
     }
   },
 };
+
+/**
+ * The verified caller's uid, or throw.
+ *
+ * Extracted so the push route and the avatar routes authenticate identically —
+ * two copies of "parse the Bearer header, verify the token" is two places for
+ * an accidental `if (!token) uid = 'anonymous'` to appear.
+ */
+async function requireUid(request, projectId) {
+  const authz = request.headers.get('authorization') || '';
+  const idToken = authz.startsWith('Bearer ') ? authz.slice(7).trim() : '';
+  if (!idToken) throw new IdTokenError('missing token');
+  return verifyFirebaseIdToken(idToken, projectId);
+}
 
 function json(obj, status, extraHeaders = {}) {
   return new Response(JSON.stringify(obj), {

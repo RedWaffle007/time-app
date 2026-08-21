@@ -1,0 +1,241 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../auth/application/auth_providers.dart';
+import '../data/avatar_uploader.dart';
+import '../data/block_repository.dart';
+import '../data/friend_repository.dart';
+import '../data/profile_stats_repository.dart';
+import '../data/username_repository.dart';
+import '../data/worker_avatar_uploader.dart';
+import '../domain/friend_request.dart';
+import '../domain/friendship.dart';
+import '../domain/profile_visibility.dart';
+import '../domain/user_block.dart';
+
+// ---------------------------------------------------------------------------
+// Repositories — plain providers, created once, exactly as the rest of the app
+// does it (`schedule_providers.dart`, `archive_providers.dart`).
+// ---------------------------------------------------------------------------
+
+final usernameRepositoryProvider = Provider<UsernameRepository>((ref) {
+  return UsernameRepository(FirebaseFirestore.instance);
+});
+
+final friendRepositoryProvider = Provider<FriendRepository>((ref) {
+  return FriendRepository(FirebaseFirestore.instance);
+});
+
+final blockRepositoryProvider = Provider<BlockRepository>((ref) {
+  return BlockRepository(FirebaseFirestore.instance);
+});
+
+final profileStatsRepositoryProvider = Provider<ProfileStatsRepository>((ref) {
+  return ProfileStatsRepository(FirebaseFirestore.instance);
+});
+
+/// **The one line that changes when storage changes.**
+///
+/// Same role as `chatbotServiceProvider`: everything above this depends on the
+/// [AvatarUploader] interface, so moving from the Worker+Supabase path to
+/// Firebase Storage (on card-day) or to a self-hosted bucket is this line and
+/// nothing else. See `worker_avatar_uploader.dart` for why the current
+/// implementation goes through the Worker rather than uploading directly.
+final avatarUploaderProvider = Provider<AvatarUploader>((ref) {
+  return const WorkerAvatarUploader();
+});
+
+// ---------------------------------------------------------------------------
+// The signed-in user's own social graph.
+// ---------------------------------------------------------------------------
+
+/// Everyone the signed-in user is friends with.
+final myFriendshipsProvider = StreamProvider<List<Friendship>>((ref) {
+  final uid = ref.watch(currentUidProvider);
+  if (uid == null) return Stream.value(const []);
+  return ref.watch(friendRepositoryProvider).watchFriends(uid);
+});
+
+/// Just the uids, which is what most callers actually want.
+final myFriendUidsProvider = Provider<AsyncValue<List<String>>>((ref) {
+  final uid = ref.watch(currentUidProvider);
+  return ref.watch(myFriendshipsProvider).whenData(
+        (friendships) =>
+            [for (final f in friendships) f.otherUid(uid ?? '')],
+      );
+});
+
+/// How many friends the signed-in user has.
+///
+/// Derived from the list already streaming, **not** a denormalised counter on
+/// the profile and not a `count()` aggregate. A stored counter cannot be
+/// maintained correctly without a server: accepting a request and incrementing
+/// two counters is three writes across two users' documents, no client may
+/// write another user's profile, and any client that could would race. The list
+/// is already in memory for the friends screen, so its length is free and
+/// cannot drift from it.
+///
+/// The cost, stated: this is the *viewer's own* count only. A visitor's device
+/// cannot enumerate someone else's friendships (the rules scope every read to
+/// the caller), so another person's friend count is not shown at all rather
+/// than shown wrong — see [friendCountForProvider].
+final myFriendCountProvider = Provider<AsyncValue<int>>((ref) {
+  return ref.watch(myFriendshipsProvider).whenData((f) => f.length);
+});
+
+/// Friend requests waiting on the signed-in user to decide.
+final incomingRequestsProvider = StreamProvider<List<FriendRequest>>((ref) {
+  final uid = ref.watch(currentUidProvider);
+  if (uid == null) return Stream.value(const []);
+  return ref.watch(friendRepositoryProvider).watchIncomingRequests(uid);
+});
+
+/// Requests the signed-in user has sent and nobody has answered.
+final outgoingRequestsProvider = StreamProvider<List<FriendRequest>>((ref) {
+  final uid = ref.watch(currentUidProvider);
+  if (uid == null) return Stream.value(const []);
+  return ref.watch(friendRepositoryProvider).watchOutgoingRequests(uid);
+});
+
+/// How many requests are waiting on the user. Drives the badge on the Friends
+/// entry, in the same shape as the pending-items badge on the nav bar: it reads
+/// zero on loading or error, because a badge is an invitation to act and must
+/// never invent one.
+final incomingRequestCountProvider = Provider<int>((ref) {
+  return ref.watch(incomingRequestsProvider).maybeWhen(
+        data: (requests) => requests.length,
+        orElse: () => 0,
+      );
+});
+
+/// Everyone the signed-in user has blocked.
+final myBlocksProvider = StreamProvider<List<UserBlock>>((ref) {
+  final uid = ref.watch(currentUidProvider);
+  if (uid == null) return Stream.value(const []);
+  return ref.watch(blockRepositoryProvider).watchMyBlocks(uid);
+});
+
+// ---------------------------------------------------------------------------
+// Relationship with ONE other user — what a profile screen needs.
+// ---------------------------------------------------------------------------
+
+/// Whether a block exists in either direction between the signed-in user and
+/// [otherUid].
+final blockPairProvider =
+    StreamProvider.family<({bool iBlocked, bool theyBlocked}), String>(
+        (ref, otherUid) {
+  final uid = ref.watch(currentUidProvider);
+  if (uid == null || uid == otherUid) {
+    return Stream.value((iBlocked: false, theyBlocked: false));
+  }
+  return ref
+      .watch(blockRepositoryProvider)
+      .watchBlockPair(viewerUid: uid, otherUid: otherUid);
+});
+
+/// Whether the signed-in user and [otherUid] are friends.
+final isFriendProvider = StreamProvider.family<bool, String>((ref, otherUid) {
+  final uid = ref.watch(currentUidProvider);
+  if (uid == null || uid == otherUid) return Stream.value(false);
+  return ref.watch(friendRepositoryProvider).watchFriendship(uid, otherUid);
+});
+
+/// The signed-in user's outgoing request to [otherUid], if any.
+final outgoingRequestToProvider =
+    StreamProvider.family<FriendRequest?, String>((ref, otherUid) {
+  final uid = ref.watch(currentUidProvider);
+  if (uid == null || uid == otherUid) return Stream.value(null);
+  return ref
+      .watch(friendRepositoryProvider)
+      .watchRequest(fromUid: uid, toUid: otherUid);
+});
+
+/// [otherUid]'s request to the signed-in user, if any.
+final incomingRequestFromProvider =
+    StreamProvider.family<FriendRequest?, String>((ref, otherUid) {
+  final uid = ref.watch(currentUidProvider);
+  if (uid == null || uid == otherUid) return Stream.value(null);
+  return ref
+      .watch(friendRepositoryProvider)
+      .watchRequest(fromUid: otherUid, toUid: uid);
+});
+
+/// **The profile screen's single source of truth for what to render.**
+///
+/// Combines five live facts into the one pure decision in
+/// `profile_visibility.dart`. Every one of them is a listener that can change
+/// while the screen is open — the other person accepting, or blocking — so this
+/// is a derived provider rather than a one-shot read.
+///
+/// It resolves to a value as soon as the pieces are known, and while they are
+/// not it stays [AsyncLoading]. **It never degrades to a permissive default.**
+/// If the block state is unknown, the honest answer is "still loading", not
+/// "not blocked" — the latter would flash a profile open for a moment before
+/// closing it again, which is exactly the leak the block exists to prevent.
+final profileVisibilityProvider =
+    Provider.family<AsyncValue<ProfileVisibility>, String>((ref, profileUid) {
+  final viewerUid = ref.watch(currentUidProvider);
+  if (viewerUid == null) return const AsyncLoading();
+
+  if (viewerUid == profileUid) {
+    return AsyncData(
+      visibilityFor(relation: ProfileRelation.self, isPublic: true),
+    );
+  }
+
+  final blocks = ref.watch(blockPairProvider(profileUid));
+  final friend = ref.watch(isFriendProvider(profileUid));
+  final outgoing = ref.watch(outgoingRequestToProvider(profileUid));
+  final incoming = ref.watch(incomingRequestFromProvider(profileUid));
+  final profile = ref.watch(profileByUidProvider(profileUid));
+
+  // Any genuine error surfaces — a profile that cannot establish the
+  // relationship must say so rather than guess at one.
+  for (final async in [blocks, friend, outgoing, incoming, profile]) {
+    if (async.hasError) {
+      return AsyncError(async.error!, async.stackTrace ?? StackTrace.empty);
+    }
+  }
+
+  final blockState = blocks.value;
+  final isFriend = friend.value;
+  if (blockState == null || isFriend == null) return const AsyncLoading();
+
+  final relation = relationBetween(
+    viewerUid: viewerUid,
+    profileUid: profileUid,
+    isFriend: isFriend,
+    viewerBlockedThem: blockState.iBlocked,
+    theyBlockedViewer: blockState.theyBlocked,
+    outgoingRequestPending: outgoing.value?.isPending ?? false,
+    incomingRequestPending: incoming.value?.isPending ?? false,
+  );
+
+  return AsyncData(
+    visibilityFor(
+      relation: relation,
+      // A profile that has not loaded is treated as PRIVATE. Failing closed
+      // matters here: the opposite default would show a private user's numbers
+      // for the frame before their profile arrived.
+      isPublic: profile.value?.isPublic ?? false,
+    ),
+  );
+});
+
+/// Another user's friend count, which is deliberately **not available**.
+///
+/// Kept as a named provider rather than simply omitted, so the next person to
+/// look for it finds the reason instead of adding a query that will be denied.
+/// The rules scope every friendship read to the caller (`participants`
+/// array-contains the caller), so a visitor's device cannot enumerate someone
+/// else's friendships — by design, since the alternative is letting anyone map
+/// the entire social graph.
+///
+/// Publishing a count into `profileStats` would be the way to offer it. That is
+/// a deliberate disclosure decision, not a technical gap, and it has not been
+/// made — so nothing renders it.
+final friendCountForProvider = Provider.family<int?, String>((ref, uid) {
+  final me = ref.watch(currentUidProvider);
+  if (me != null && me == uid) return ref.watch(myFriendCountProvider).value;
+  return null;
+});

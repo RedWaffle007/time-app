@@ -250,7 +250,7 @@ system font is the only thing guaranteed to have the glyphs.
 
 | Token | Size / line | Weight | Use |
 |---|---|---|---|
-| `displaySmall` | 32 / 40 | 700 | auth hero only |
+| `displaySmall` | 32 / 40 | 700 | heroes only — the auth screen, and the schedule hero band |
 | `titleLarge` | 20 / 28 | 600 | screen section headers |
 | `titleMedium` | 17 / 24 | 600 | card titles |
 | `bodyLarge` | 16 / 24 | 400 | default body |
@@ -266,6 +266,14 @@ system font is the only thing guaranteed to have the glyphs.
 
 - Never write `fontSize`. Never write `fontWeight` on a themed style — the token
   carries it.
+- **`displaySmall` is for heroes, and there are exactly two.** Its remit was
+  widened from "auth hero only" on 2026-08-20 when the schedule hero band needed
+  a size above `titleLarge` — at `titleLarge` the band was the same size as the
+  "Today" section header directly beneath it, so it did not out-rank the list it
+  introduces. Adding a tenth token was the alternative and bought nothing: both
+  call sites are the largest thing on their screen, which is what this slot
+  means. It is still not a general-purpose "big text" — a third use needs a
+  `DECISIONS.md` entry, per §9.
 - Card titles are `titleMedium`. All of them. (The old UI had 18 on two screens
   and 17 on a third for the same element; that is the drift this prevents.)
 - Secondary prose is `bodySmall`. Metadata — timestamps, tz labels, counts — is
@@ -513,6 +521,71 @@ Rules:
 - **A determinate bar never goes backwards.** Retrying part of a longer job
   restarts *that segment's* number, so name the segment ("File 2 of 4") rather
   than letting the percentage jump down with nothing to explain it.
+
+---
+
+### 6.8 Avatars
+
+**One widget: `AvatarImage`.** Every profile picture in the app draws through it
+— list rows, profile headers, the edit form. Three sizes and no more, because
+each is a place a picture actually appears:
+
+| Token | Value | Where |
+|---|---|---|
+| `Sizes.avatarRow` | 40 | A list row's leading slot |
+| `Sizes.avatarHeader` | 72 | The profile screen header |
+| `Sizes.avatarEditable` | 96 | The edit form, with its controls beside it |
+
+`avatarRow` is deliberately under `Sizes.touchTarget`: the ROW supplies the 48pt
+target, so sizing the image to it would make every row taller.
+
+**The fallback is a letter, not a glyph.** No picture → the display name's first
+grapheme on a `primaryContainer` tint. A container tint and line work, never an
+orange fill (§2.7) — a person without a photo is not a state waiting on you.
+
+**`AppText.avatarInitial(diameter)` sizes that letter, and it is NOT a tenth
+entry in the type scale (§3).** The scale is nine sizes for text people read;
+this is a letterform used as a graphic, filling a circle whose diameter is a
+layout token. A fixed style cannot serve all three — `titleMedium` is right at
+40 and becomes a letter adrift at 96 — so the size is derived from the diameter
+and the optical weight stays constant.
+
+**Never wrap an avatar in anything that re-decodes it.** No `cacheWidth`,
+`cacheHeight`, crop or compression pass. Flutter animates GIF and WebP natively;
+re-encoding is how a multi-frame image silently becomes a still, and animated
+pictures are a supported feature, not an accident. Size is enforced by *refusing*
+an oversized file (`avatar.dart`), never by shrinking one behind the user's back.
+
+**A failed load falls back to the initial**, never a broken-image glyph. A
+stored URL can 404 — object deleted, bucket moved, network down mid-scroll — and
+a moderated picture resolves to null by the same path, so there is exactly one
+code path for "no picture to draw".
+
+---
+
+### 6.9 Stat tiles
+
+Flat, outlined, no fill — a card by §6.1's rules. A tile HOLDS a number; it is
+not a state to act on, so it gets a hairline `outlineVariant` border and no
+shadow.
+
+**They reflow, they do not break.** The stats grid computes its column count
+from the available width against `Sizes.statTileMinWidth` (148), so three
+columns become two become one as the screen narrows. No breakpoint, and no
+clipped labels.
+
+**Absence is an em dash, never a zero.** A stat with no value renders `—`, in
+`onSurfaceVariant` so it cannot compete with the real numbers beside it. Two
+different absences exist and each carries its own explanation rather than its
+own glyph:
+
+| State | Tile | Explained by |
+|---|---|---|
+| `placeholder` | `—` | "Coming soon" caption under the label |
+| `hidden` | `—` | A line above the grid: this profile is private |
+
+A zero would be a lie in both cases — indistinguishable from a measured zero,
+and confidently wrong.
 
 ---
 

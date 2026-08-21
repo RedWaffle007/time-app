@@ -7,6 +7,30 @@
         { "fieldPath": "granted", "order": "ASCENDING" },
         { "fieldPath": "plannerUid", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "plannerGrants",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "granted", "order": "ASCENDING" },
+        { "fieldPath": "targetUid", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "friendRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "toUid", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "friendRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "fromUid", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [

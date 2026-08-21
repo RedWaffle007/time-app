@@ -67,6 +67,47 @@ service cloud.firestore {
     // A field rewritten with the value it already had does not appear — so an
     // idempotent re-approve is not mistaken for a status transition, while
     // `updatedAt` (a serverTimestamp) always does appear.
+    // ---- social helpers (the friend graph) ----
+    //
+    // These exist because of one hard property of the rules engine: it can
+    // `exists()` a path it can CONSTRUCT, and it cannot run a query. So every
+    // social predicate below is answered by computing a document id from the
+    // two uids in hand — which is exactly why `social_ids.dart` makes those ids
+    // deterministic. A friendship under an auto-id, findable only by querying
+    // `participants`, would be invisible here and the privacy toggle would be
+    // unenforceable, i.e. a lie in the UI.
+
+    // The sorted pair id of a friendship. Must match friendshipId() in
+    // lib/features/social/domain/social_ids.dart EXACTLY — the two compute the
+    // same address or nothing works.
+    //
+    // Named `sortedPairId`, not `pairId`, deliberately: the friendship match
+    // below binds a wildcard called `pairId`, which would SHADOW a function of
+    // that name inside the one block that needs it most.
+    function sortedPairId(a, b) {
+      return a < b ? a + '_' + b : b + '_' + a;
+    }
+
+    // The uid in a two-element participants array that ISN'T the caller. Used
+    // by the friendship-create rule to name the person whose request is being
+    // accepted, without trusting the client to say who that is.
+    function otherParty(participants) {
+      return participants[0] == request.auth.uid ? participants[1] : participants[0];
+    }
+
+    function areFriends(a, b) {
+      return exists(/databases/$(database)/documents/friendships/$(sortedPairId(a, b)));
+    }
+
+    // Blocking is recorded one-way and ENFORCED BOTH WAYS. A one-directional
+    // check would leave the blocked party able to read the blocker's profile,
+    // which is the whole thing the feature is for. Two `exists()` calls, both
+    // on computed ids.
+    function blocked(a, b) {
+      return exists(/databases/$(database)/documents/blocks/$(a + '_' + b))
+        || exists(/databases/$(database)/documents/blocks/$(b + '_' + a));
+    }
+
     function changedKeys() {
       return request.resource.data.diff(resource.data).affectedKeys();
     }
@@ -127,12 +168,131 @@ service cloud.firestore {
           && request.resource.data.name.trim().size() > 0;
       }
 
+      // ---- the social fields (username / bio / isPublic / avatar) ----
+      //
+      // These live on THIS document because everything here is already
+      // readable by any signed-in user who knows the uid — the planner needs
+      // the target's name and home timezone, and vice versa. Public-by-nature
+      // fields on a public-by-design document cost nothing.
+      //
+      // WHAT MUST NEVER BE ADDED HERE is anything `isPublic` is supposed to
+      // protect. This document's read rule does not consult `isPublic` and
+      // cannot: `get` is open to every signed-in caller. Statistics therefore
+      // live in the `profileStats` subcollection below, which has its own gated
+      // rule. A number parked here "for convenience" would be published to
+      // every signed-in user and make the privacy switch a decoration.
+
+      // The handle shown on the profile must be one the user actually HOLDS.
+      //
+      // Without this, a user could write `username: 'admin'` onto their own
+      // document without owning the reservation, and their profile would
+      // display a handle belonging to someone else. Search is unaffected (it
+      // resolves through `usernames/`), so the damage is impersonation on the
+      // profile screen — which is exactly what the reserved-handle list exists
+      // to prevent, defeated through a different door.
+      //
+      // Checked ONLY when `username` actually changes (see the update rule).
+      // Re-checking it on every unrelated profile write would spend a get() on
+      // each quiet-hours edit, and — worse — would deny every future write if
+      // the reservation ever went missing, locking the user out of their own
+      // profile over a field they never touched. That is the same trap the
+      // `name` note above describes.
+      //
+      // `UsernameRepository.claim` writes the reservation and this mirror as
+      // TWO separate operations for this rule's benefit: rules see committed
+      // state only, so a single transaction would be evaluated against a world
+      // where the reservation does not exist yet and every claim would fail.
+      function usernameIsHeld() {
+        return !('username' in request.resource.data)
+          || (
+            request.resource.data.username is string
+            && exists(/databases/$(database)/documents/usernames/$(request.resource.data.username))
+            && get(/databases/$(database)/documents/usernames/$(request.resource.data.username)).data.uid == uid
+          );
+      }
+
+      // Bounds mirrored in lib/features/social/presentation/social_profile_editor.dart
+      // (bio) and lib/features/social/domain/avatar.dart (sizes). Both sides
+      // together, per the note on `name` above: a cap here without a matching
+      // `maxLength` on the field turns a valid-looking Save into
+      // PERMISSION_DENIED with nothing to explain it.
+      function socialFieldsValid() {
+        return (!('bio' in request.resource.data)
+            || (request.resource.data.bio is string
+                && request.resource.data.bio.size() <= 300))
+          && (!('isPublic' in request.resource.data)
+            || request.resource.data.isPublic is bool)
+          && (!('avatar' in request.resource.data)
+            || (request.resource.data.avatar.url is string
+                && request.resource.data.avatar.sizeBytes is int
+                // The animated cap (5MB) — the larger of the two, since the
+                // rule cannot tell a GIF from a JPEG without decoding it. The
+                // per-format cap is enforced by the Worker, which has the
+                // bytes. This is a backstop against a metadata document
+                // claiming a size no storage would have accepted.
+                && request.resource.data.avatar.sizeBytes <= 5242880
+                && request.resource.data.avatar.moderation is string));
+      }
+
       allow get: if signedIn();
       allow list: if false;
-      allow create, update: if signedIn()
+
+      allow create: if signedIn()
         && request.auth.uid == uid
-        && nameIsPresent();
+        && nameIsPresent()
+        && usernameIsHeld()
+        && socialFieldsValid();
+
+      allow update: if signedIn()
+        && request.auth.uid == uid
+        && nameIsPresent()
+        && socialFieldsValid()
+        && (!changedKeys().hasAny(['username']) || usernameIsHeld());
+
       allow delete: if false;
+
+      // ---- users/{uid}/profileStats/{doc} ----
+      // **The privacy toggle's ONLY teeth.**
+      //
+      // Everything else about a profile (name, picture, timezone) is readable
+      // by uid and always was — the delegation loop needs it. The numbers are
+      // the part `isPublic` governs, so they live here, behind a rule that
+      // actually reads it.
+      //
+      // Readable when ALL of:
+      //   * neither party has blocked the other — checked FIRST, so a block
+      //     out-ranks both friendship and a public profile;
+      //   * AND one of: it is your own document / the owner is public / you
+      //     are friends.
+      //
+      // A pending friend request grants NOTHING. If it did, a private profile
+      // would be readable by anyone willing to tap Add friend and never follow
+      // up — see `profile_visibility.dart`, which mirrors this and is
+      // deliberately the stricter of the two.
+      //
+      // COST, stated plainly: up to three document reads per stats read (two
+      // block ids, one friendship id, plus the owner's profile). All are
+      // `exists()`/`get()` on COMPUTED ids — never a query — which is the whole
+      // reason the ids are deterministic. It is the price of expressing privacy
+      // in rules at all, and it is paid only on a profile view.
+      //
+      // `list` is denied: the collection holds one document (`summary`) at a
+      // known id, so nothing needs to enumerate it.
+      match /profileStats/{doc} {
+        allow get: if signedIn()
+          && !blocked(request.auth.uid, uid)
+          && (
+            request.auth.uid == uid
+            || get(/databases/$(database)/documents/users/$(uid)).data.isPublic == true
+            || areFriends(request.auth.uid, uid)
+          );
+        allow list: if false;
+
+        // Owner-only. Publishing someone else's stats would let anyone put any
+        // number on anyone's profile — which, on the leaderboard this is built
+        // toward, is the entire game.
+        allow write: if signedIn() && request.auth.uid == uid;
+      }
 
       // ---- users/{uid}/fcmTokens/{token} ----
       // Per-device FCM tokens (doc id = the token). Owner-only: a user reads and
@@ -304,6 +464,216 @@ service cloud.firestore {
 
         allow delete: if false;
       }
+    }
+
+    // ---- usernames/{handle} ----
+    // The uniqueness primitive. Firestore has no unique index and rules cannot
+    // run a query, so uniqueness is built out of the one thing that IS atomic:
+    // a document id. The canonical (lowercased) handle IS the id, so two people
+    // racing for one handle race for one document.
+    //
+    // This is the same shape as `joinCodes/{code}` below, and closes the same
+    // class of hole. There it stops group enumeration; here it stops USER
+    // enumeration.
+    //
+    // get    — resolve a handle you were given. Yields a uid, which grants
+    //          nothing on its own: profiles are per-uid gets, stats are gated,
+    //          and schedules are unreachable.
+    // list   — DENIED, and this is the load-bearing half. `users` already has
+    //          `list: if false` because listing it leaked every user's name,
+    //          home timezone and QUIET-HOURS WINDOW — when each person sleeps.
+    //          Allowing list here would rebuild that capability one hop away:
+    //          sweep the handles, get each uid, get each profile. It is also
+    //          why the app's search is exact-match only, which
+    //          `user_search_screen.dart` explains to the user rather than
+    //          leaving them to conclude search is broken.
+    // create — claim a free handle for YOURSELF. `uid` must be the caller, so a
+    //          handle cannot be reserved on someone else's behalf.
+    // update — DENIED. A reservation is never repointed at another uid; a
+    //          rename is a create of the new plus a delete of the old.
+    // delete — release a handle you hold. Only its owner.
+    match /usernames/{handle} {
+      allow get: if signedIn();
+      allow list: if false;
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        // Re-claiming your own is fine; taking someone else's is not. Firestore
+        // treats a `set` on an existing doc as an update, so this branch only
+        // ever sees a genuinely free handle — the update rule below covers the
+        // idempotent re-claim.
+        && handle.size() >= 3
+        && handle.size() <= 20;
+
+      // The idempotent re-claim: writing the same reservation you already hold.
+      // Permitted so `claim()` can be re-run after a failure between its two
+      // steps without special-casing; it can only ever be a no-op.
+      allow update: if signedIn()
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == request.auth.uid;
+
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // ---- friendRequests/{requestId} ----
+    // A DIRECTED request, at the computed id `{fromUid}_{toUid}`. Deterministic
+    // rather than auto-id so sending twice is idempotent and so the rules have
+    // an address to check rather than a query to run.
+    //
+    // The id is verified against the payload on create — otherwise a caller
+    // could write a request from themselves at an id naming two other people,
+    // and the recipient's inbox query (`toUid == me`) would surface a document
+    // whose id said something else entirely.
+    //
+    // read   — either party, and only those two.
+    // create — the SENDER only, as `pending`, with neither party blocking the
+    //          other. The block check is what makes blocking mean anything: a
+    //          blocked person must not be able to keep knocking.
+    // update — three transitions, each scoped to who may make it:
+    //            * recipient → accepted | rejected  (the decision is theirs)
+    //            * either party → cancelled          (withdraw / clear)
+    //          A `rejected` row can be cancelled but NEVER revived to
+    //          `pending`, which is what stops "no" being a button that does
+    //          nothing: re-asking means the recipient clearing it first.
+    // delete — DENIED. The row is the record. See FriendRequestStatus.
+    match /friendRequests/{requestId} {
+      function fromUid() { return resource.data.fromUid; }
+      function toUid()   { return resource.data.toUid; }
+      function isParty() {
+        return request.auth.uid == fromUid() || request.auth.uid == toUid();
+      }
+
+      allow read: if signedIn() && isParty();
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+             'fromUid', 'toUid', 'participants', 'status',
+             'createdAt', 'updatedAt'
+           ])
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.toUid is string
+        && request.resource.data.toUid != request.auth.uid
+        // The id must BE the pair it claims to describe.
+        && requestId == request.resource.data.fromUid + '_' + request.resource.data.toUid
+        && request.resource.data.participants.hasOnly([
+             request.resource.data.fromUid, request.resource.data.toUid
+           ])
+        && request.resource.data.status == 'pending'
+        && !blocked(request.auth.uid, request.resource.data.toUid);
+
+      allow update: if signedIn()
+        && isParty()
+        // Immutable identity: the parties and the id never change.
+        && request.resource.data.fromUid == fromUid()
+        && request.resource.data.toUid == toUid()
+        && changedKeys().hasOnly(['status', 'decidedAt', 'updatedAt'])
+        && (
+          // The recipient decides. Only on a request that is still open —
+          // this is what stops a decided row being re-decided.
+          (
+            request.auth.uid == toUid()
+            && resource.data.status == 'pending'
+            && request.resource.data.status in ['accepted', 'rejected']
+          )
+          // Either party clears it. Never FROM accepted: a friendship exists at
+          // that point, and unfriending is deleting that document, not
+          // rewriting this one.
+          || (
+            request.resource.data.status == 'cancelled'
+            && resource.data.status in ['pending', 'rejected']
+          )
+        );
+
+      allow delete: if false;
+    }
+
+    // ---- friendships/{pairId} ----
+    // ONE document per pair, at the SORTED id (see sortedPairId() above). Symmetric
+    // by construction: both parties compute the same address, so there is no
+    // state in which one of them thinks they are friends and the other does
+    // not, and no half-edge to leave behind on removal.
+    //
+    // **This is the document every privacy rule reads.** Its shape is dictated
+    // by that: `exists()` on a computed id, no query, no status field.
+    //
+    // read   — either party. Scoped so the LIST query
+    //          (`participants array-contains me`) returns only the caller's own
+    //          friendships and the social graph cannot be enumerated. The cost:
+    //          another user's friend count is not knowable from a client, which
+    //          `friendCountForProvider` records rather than works around.
+    // create — the ACCEPTING party, and only against a real pending request
+    //          addressed to them. This is the one place a friendship can come
+    //          into existence, so it carries the whole consent story: you
+    //          cannot befriend someone who did not ask.
+    // update — DENIED. There is nothing on this document to change.
+    // delete — either party, unilaterally. Unfriending needs no agreement.
+    match /friendships/{pairId} {
+      function isParty() {
+        return request.auth.uid in resource.data.participants;
+      }
+
+      allow read: if signedIn() && isParty();
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+             'uidA', 'uidB', 'participants', 'createdAt'
+           ])
+        && request.auth.uid in request.resource.data.participants
+        && request.resource.data.participants.size() == 2
+        // The id must be the sorted pair of the two named uids, or the document
+        // would be unfindable by the very rules that depend on computing it.
+        && sortedPairId(request.resource.data.uidA, request.resource.data.uidB) == pairId
+        && request.resource.data.participants.hasOnly([
+             request.resource.data.uidA, request.resource.data.uidB
+           ])
+        && request.resource.data.uidA != request.resource.data.uidB
+        && !blocked(request.resource.data.uidA, request.resource.data.uidB)
+        // There must be a PENDING request from the other person to the caller.
+        // Reading the request rather than trusting the caller is what keeps
+        // consent real: without it, anyone could make themselves your friend
+        // and read your private stats.
+        && exists(/databases/$(database)/documents/friendRequests/$(otherParty(request.resource.data.participants) + '_' + request.auth.uid))
+        && get(/databases/$(database)/documents/friendRequests/$(otherParty(request.resource.data.participants) + '_' + request.auth.uid)).data.status == 'pending';
+
+      allow update: if false;
+      allow delete: if signedIn() && isParty();
+    }
+
+    // ---- blocks/{blockId} ----
+    // A one-way record at `{blockerUid}_{blockedUid}`, enforced both ways by
+    // blocked() above.
+    //
+    // get    — EITHER party. The blocked side needs this: the client has to
+    //          know it is blocked in order to render the profile as
+    //          unavailable, and `users/{uid}` stays readable by uid regardless.
+    //          THE COST, NAMED: a determined reader can detect that they were
+    //          blocked by fetching a computed id. The UI never tells them — a
+    //          block and a missing account render identically
+    //          (`AppIcons.profileUnavailable`) — but this is a UI property, not
+    //          a data one. Closing it would mean the blocked client could not
+    //          hide the profile at all, which is worse.
+    // list   — the BLOCKER only, so nobody can enumerate who has blocked them.
+    // create — the blocker, naming themselves.
+    // update — DENIED. A block is not edited; it is placed or lifted.
+    // delete — the blocker only. Being blocked is not something you can undo.
+    match /blocks/{blockId} {
+      allow get: if signedIn()
+        && (resource.data.blockerUid == request.auth.uid
+            || resource.data.blockedUid == request.auth.uid);
+      allow list: if signedIn() && resource.data.blockerUid == request.auth.uid;
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+             'blockerUid', 'blockedUid', 'createdAt'
+           ])
+        && request.resource.data.blockerUid == request.auth.uid
+        && request.resource.data.blockedUid is string
+        && request.resource.data.blockedUid != request.auth.uid
+        && blockId == request.resource.data.blockerUid + '_' + request.resource.data.blockedUid;
+
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.blockerUid == request.auth.uid;
     }
 
     // ---- joinCodes/{code} ----

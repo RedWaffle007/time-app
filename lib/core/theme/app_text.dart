@@ -9,7 +9,16 @@ import 'package:flutter/material.dart';
 /// style either — the token carries it. To colour text, use
 /// `.copyWith(color: <role>)`.
 abstract final class AppText {
-  /// Auth hero only.
+  /// Heroes only — the auth screen's, and My Schedule's time-reactive band.
+  ///
+  /// Widened from "auth hero only" on 2026-08-20. The hero band needed a size
+  /// above `titleLarge`, which is the section-header size and would have left
+  /// the band no larger than the "Today" header directly beneath it. Reusing
+  /// this token rather than adding one keeps the scale at nine entries and adds
+  /// nothing to verify — both uses are genuinely the largest thing on their
+  /// screen, which is the whole definition of the slot.
+  ///
+  /// It is still not a general-purpose "big text": two heroes, no more.
   static const displaySmall = TextStyle(
     fontSize: 32,
     height: 40 / 32,
@@ -73,6 +82,29 @@ abstract final class AppText {
     fontWeight: FontWeight.w700,
     letterSpacing: 3,
   );
+
+  /// The letter drawn inside an avatar when there is no picture.
+  ///
+  /// **Not a tenth entry in the type scale**, and it must not be used as one.
+  /// The scale is nine sizes for *text the user reads*; this is a letterform
+  /// used as a graphic, filling a circle whose diameter is a layout token
+  /// (`Sizes.avatarRow` / `avatarHeader` / `avatarEditable`). A fixed style
+  /// cannot serve all three: `titleMedium` is right in a 40pt row and becomes a
+  /// small letter adrift in a 96pt disc.
+  ///
+  /// So the size is derived from the diameter, which keeps the optical weight
+  /// constant across every place an avatar appears. 0.42 is the ratio at which
+  /// a capital's cap-height reads as filling the circle without touching its
+  /// edge; `height: 1` removes the line-box padding that would otherwise push
+  /// the letter off-centre.
+  ///
+  /// It lives here rather than in the widget because raw type values belong in
+  /// this file — that is the whole of UI-RULES.md §1, and the lint enforces it.
+  static TextStyle avatarInitial(double diameter) => TextStyle(
+        fontSize: diameter * 0.42,
+        height: 1,
+        fontWeight: FontWeight.w600,
+      );
 
   static const textTheme = TextTheme(
     displaySmall: displaySmall,

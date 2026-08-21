@@ -3150,3 +3150,362 @@ planner-side revoke that this same session added). Groups, membership and
 schedule items were left **untouched** — the chosen scope was the reversible one.
 `brY8JaR7 → P5eNrQfN` (a grant between two other people) was deliberately left at
 `granted: true`: it is not the signed-in user's relationship to end.
+
+## Rules deploy verified (2026-08-20)
+
+Live ruleset **`47c62b28-f776-4458-a12f-a5e0d5679168`**, released
+2026-08-20T10:20:36Z. It **supersedes `1cff4c97-3dbf-4e6b-abec-8d3d9a048a8e`**.
+
+Verified the way this project requires — a ruleset id proves *something*
+deployed, not *what*. The deployed source was fetched back from
+`GET firebaserules.googleapis.com/v1/{rulesetName}` and diffed against the local
+`firestore.rules`: **byte-for-byte identical.** All three changes from "Ending a
+relationship" are confirmed present in the deployed source, and the §6/§6.1
+hardening, the `fcmTokens` block and the item-create `status` constraint did not
+regress (they are in the same file that matched).
+
+Also confirmed server-side the same day: the six planner grants involving
+`42ml93AS…` all read `granted: false` (`updatedAt 2026-08-20T10:00:53Z`), and
+`brY8JaR7 → P5eNrQfN` remains `true` — correctly untouched, being a relationship
+between two other people.
+
+**Not verified: anything on a device.** No leave / remove / stop-planning has run
+against the live rules, and the installed APK predates the feature.
+
+---
+
+# Social profile layer — SHIPPED 2026-08-21
+
+The first feature in the app that is **not** part of the delegation loop and is
+nevertheless wired into it. `lib/features/social/`. Built in one session at the
+user's explicit direction, after they were shown the phased alternative and
+chose otherwise.
+
+## The premise that had to be corrected first
+
+The request framed cross-device planning and alarms as future work to leave room
+for. **They already ship.** `groups/{id}/plannerGrants/{plannerUid}_{targetUid}`
+is the permission model, the `pending → approved` state machine is per-plan
+approval, FCM plus the Worker is the cross-device push, and
+`lib/features/reminders/` fires the alarms. So the question was never "will the
+schema support it later" but "how does a friend graph meet a group-scoped
+permission model that is already deployed and device-verified".
+
+## Friends sit ALONGSIDE groups. They do not replace them.
+
+Chosen over two alternatives (friends replace groups; friendship gates group
+membership), because the group model is shipped, rules-hardened and verified
+with a real second person on 2026-07-24, and rewriting it to win conceptual
+tidiness would put the working half of the product at risk for no user-visible
+gain.
+
+So: **groups remain the delegation mechanism; friendship is a social tie that
+grants nothing.** Being someone's friend does not let them plan your day. That
+separation is not a compromise — it is the consent model restated. Planning
+permission stays a directed, revocable, target-granted thing, and a friend graph
+is the wrong granularity for it.
+
+**The migration path, if a friendship should ever carry planning permission:**
+`watchTargetsFor()` is a COLLECTION-GROUP query on `plannerGrants`, so a
+`friendships/{pairId}/plannerGrants/{id}` subcollection is picked up by the same
+query with **no client change**. The bottom-of-file `/{path=**}/plannerGrants`
+read rule already covers it too. That is the non-rewrite escape hatch, and it
+exists by accident of good earlier design rather than by anything done here.
+
+## Deterministic document ids are the load-bearing decision
+
+**Rules can `exists()` a path they can construct; rules cannot run a query.**
+Everything else follows from that one sentence.
+
+A friendship under an auto-id, findable only by `where('participants',
+arrayContains: …)`, is invisible to the rules engine — and a privacy toggle the
+rules cannot evaluate is not a privacy toggle, it is a label. So:
+
+- `friendships/{sortedPairId}` — **sorted**, because friendship is symmetric and
+  both parties must compute the same address. One edge, no half-edge to leave
+  behind, no second document for a rule to have to check.
+- `friendRequests/{fromUid}_{toUid}` — **not sorted**, because a request is
+  directed. Sorting would make crossing requests overwrite each other.
+- `blocks/{blockerUid}_{blockedUid}` — **not sorted**, because A blocking B is
+  not B blocking A, and both may exist.
+
+`social_ids.dart` and the `sortedPairId()` helper in `firestore.rules` compute
+the same ids and **must stay in step**. They are the two halves of one mechanism.
+
+(The rules helper is named `sortedPairId`, not `pairId`, because
+`match /friendships/{pairId}` binds a wildcard of that name which would shadow
+the function inside the one block that needs it most. Caught by the emulator
+suite; it would have been a silent always-deny.)
+
+## Uniqueness: `usernames/{handle}`, the same trick as `joinCodes/{CODE}`
+
+Firestore has no unique index and rules cannot query, so uniqueness is built out
+of the only atomic primitive available: **a document id**. The canonical
+lowercased handle IS the id, so two people racing for one handle race for one
+document and Firestore serialises it.
+
+`list` is **denied**, and this is the load-bearing half. `users` already has
+`list: if false` because listing it leaked every user's name, home timezone and
+quiet-hours window — when each person sleeps (ARCHITECTURE.md §4.1a). Allowing
+`list` here would rebuild that capability one hop away: sweep the handles, get
+each uid, get each profile.
+
+**Consequence, accepted deliberately: search is exact-match only.** No prefix, no
+fuzzy. People exchange handles out-of-band, exactly as they already do with group
+join codes. `user_search_screen.dart` says so to the user in plain words rather
+than letting them conclude search is broken.
+
+**Canonicalisation is locale-independent** (`toLowerCase()` with no locale). The
+Turkish dotted/dotless I would otherwise canonicalise the same handle to two
+different reservation keys depending on the typist's phone — a uniqueness
+guarantee that silently depended on the device.
+
+### The claim is TWO writes, and it cannot be one
+
+`UsernameRepository.claim` runs a transaction (reservation) and then a separate
+plain write (the `users/{uid}.username` mirror).
+
+**Rules see the last COMMITTED state, never the pending writes of the transaction
+being evaluated.** The rule guarding the mirror asks "does this user actually
+hold a reservation for the handle they claim to display?" — and if the mirror
+write shared the transaction, that check would run against a world where the
+reservation does not exist and *every claim would be denied*. This was found by
+reasoning it through before writing the rule; it would otherwise have shipped as
+a feature that never worked once.
+
+Failure between the two steps leaves the reservation held and the profile showing
+the old handle: visible, harmless, and fixed by pressing Save again.
+
+The mirror rule matters because without it a user can write `username: 'admin'`
+onto their own document without holding the reservation. Search is unaffected (it
+resolves through `usernames/`), so the damage is impersonation on the profile
+screen — the reserved-handle list defeated through a different door.
+
+It is gated on `username` actually CHANGING. Re-checking on every profile write
+would spend a `get()` per quiet-hours edit and — worse — would deny every future
+write if the reservation ever went missing, locking a user out of their own
+profile over a field they never touched. Same trap the `name` note in
+`firestore.rules` describes.
+
+## Privacy: stats live in a SUBCOLLECTION, and they had to
+
+`users/{uid}` is `allow get: if signedIn()` **by design** — the planner needs the
+target's name and home timezone and vice versa. That rule does not consult
+`isPublic` and cannot. So a number stored on that document is published to every
+signed-in user, and the privacy switch is a decoration.
+
+Hence `users/{uid}/profileStats/summary`, with a rule that reads the toggle:
+
+```
+blocked?           → deny, before anything else is consulted
+own document       → allow
+owner isPublic     → allow          (the future leaderboard)
+caller is a friend → allow
+otherwise          → deny
+```
+
+**A pending request grants nothing.** If it did, a private profile would be
+readable by anyone willing to tap Add friend and never follow up.
+`profile_visibility.dart` mirrors this in Dart and is deliberately the stricter
+of the two — the client being stricter hides a control that would have worked
+(invisible, safe), the client being looser offers a control that always fails.
+
+**Cost, named:** up to three document reads per stats read (two block ids, one
+friendship id) plus the owner's profile. All `exists()`/`get()` on **computed**
+ids, never a query. That is the price of expressing privacy in rules at all, and
+it is paid only on a profile view.
+
+## Stats are PUBLISHED, not derived on read
+
+A visitor cannot compute your numbers: your items live at
+`scheduleItems/{you}/items` and only you may read that subtree. So the owner's
+device computes and writes a small document, and the visitor reads it if the gate
+allows.
+
+**Driven off the item stream, never off transitions** — deliberately the same
+doctrine as the reminder layer, and stated in `app.dart` next to the reminder
+wire. There is no `publishStats()` call in `markDone()`, `approve()` or anywhere
+else. One recomputation is applied to whatever the stream currently says, so an
+outcome, an edit, a withdrawal and a rejection are not special cases. A
+per-transition hook would create a second place that decides, and the two would
+disagree.
+
+`myComputedStatsProvider` reads `allItemsAsTarget/PlannerProvider` — the RECORD
+layer. It is **the first record-layer consumer in the app**, which is what the
+constraint comment in `schedule_providers.dart` was written for.
+
+**Extensibility is `kProfileStatDefinitions`.** Adding a statistic is one entry;
+turning a placeholder live is giving that entry a `compute` function. Nothing in
+the section widget knows what a streak is. Placeholders are **omitted from the
+published map, never written as zero** — a stored `hoursTracked: 0` is
+indistinguishable from a measured zero, so a visitor's tile would render a
+confident, wrong number. Unknown keys are ignored on read, so an older build
+reading a newer user's document degrades to what it understands.
+
+Streaks count days in the **home timezone**. A streak breaks at the midnight the
+person actually slept through, and the app already anchors every commitment to
+`homeTimezone` for the same reason. It ends "today or yesterday" so it does not
+break at midnight while the user is asleep and reappear next morning.
+
+## Blocking is a cascade, not a write
+
+Placing the document is the easy part. What makes it mean anything is severing
+the standing permissions, and in this app those are unusually consequential — a
+live planner grant is permission to put items on someone's calendar and ring
+their phone.
+
+Order, chosen so every intermediate state is safe:
+
+1. **the block document first** — it is what every gate reads, so from that
+   moment the two are invisible to each other even if nothing else succeeds;
+2. planner grants, both directions;
+3. the friendship;
+4. pending requests, both directions.
+
+A failure part-way leaves a live block with inert residue, and re-running cleans
+up. Tidy-first-block-last would leave a window in which the relationship is
+half-dismantled and the block is not yet in force.
+
+**Existing schedule items are deliberately untouched.** They are a shared record
+of something that was consented to, and rewriting them is the "delete for me"
+dishonesty rejected on the archive feature. The grant revocation stops anything
+new; withdraw and reject already handle what exists.
+
+**Unblocking restores nothing.** Re-blocking must not be a way to silently re-arm
+someone's permission over your calendar.
+
+**The record is one-way; enforcement is both ways.** A one-directional check
+would leave the blocked party reading the blocker's profile.
+
+**A block and a missing account render identically** (`AppIcons.profileUnavailable`)
+on the profile screen AND in search results. Telling someone they have been
+blocked hands them the one fact the feature withholds. `ProfileRelation` keeps
+`blocking` and `blockedBy` distinct internally so the viewer's own controls can
+differ — someone who has been blocked can still block back, and removing that
+control would announce the block by its absence.
+
+**Cost, named:** `blocks/{id}` allows `get` to the blocked party, because the
+client has to know it is blocked in order to hide the profile. A determined
+reader can therefore detect a block by fetching a computed id. The UI never tells
+them, but this is a UI property, not a data one. Closing it would mean the
+blocked client could not hide the profile at all, which is worse.
+
+## Profile pictures: Supabase Storage, via the existing Worker
+
+**Firebase Storage is unavailable to us.** It needs Blaze, and this project has
+no payment card attached — a documented, deliberate position (see
+"Completion→planner push"). This is the second feature that constraint has
+shaped.
+
+Picked against three requirements: free **without a card** (Cloudflare R2 fails —
+it wants one even on the free tier), genuinely open source and self-hostable
+(Cloudinary, ImgBB fail), and able to serve animated GIF and WebP untouched.
+Supabase Storage is Apache-2.0, has a 1 GB no-card free tier, and is plain object
+storage.
+
+**Uploads go through the Cloudflare Worker, not direct from the phone.** Supabase
+authorises with its own JWT and has never heard of a Firebase uid; reconciling
+them client-side means shipping a Supabase **write** key in the APK. The Worker
+already solves exactly this for push — verify a Firebase ID token, hold
+privileged credentials that never leave Cloudflare — so `/avatar` is 100 lines
+next to `/notify` rather than a new service.
+
+It is also where the caps are actually enforced. Client-side checks exist only so
+the user hears "too large" before waiting through an upload.
+
+- **Format is decided by SNIFFING THE BYTES**, not by `Content-Type`. A declared
+  MIME is a claim. An SVG served from a trusted origin is a scripting primitive,
+  not a picture; a mismatch between claim and reality is refused rather than
+  silently corrected.
+- **Two caps: 2 MB static, 5 MB animated.** Animated formats legitimately need
+  more because they carry frames; one shared cap would either ban animation in
+  practice or wave through enormous stills. Unknown types get the stricter one.
+- **`image/webp` gets the animated cap even though most WebP is still**, because
+  nothing can tell them apart without decoding the container.
+- **No image transformation is ever requested.** Supabase's transform API is
+  paid, and resizing an animated image server-side is the standard way to flatten
+  it to one frame. No cropping or compression package on the client either, and
+  `imageQuality`/`maxWidth` are not passed to `image_picker` — all of them
+  re-encode. Originals only; the UI scales for display.
+- **A key is only yours if it sits under `avatars/{uid}/`.** Every delete is
+  checked against that, from the VERIFIED token — otherwise `X-Previous-Key`
+  would let a caller have the Worker (which bypasses every storage policy) delete
+  someone else's picture.
+- **Delete answers 200 for a key that is not yours**, not 403. A 403 would
+  confirm that some other user's key exists.
+
+### Moderation: a flag, and an honest one
+
+`AvatarModeration` defaults to **`approved`, not `pending`**. There is no
+moderation queue and no moderator, so `pending` would mean nobody's picture is
+ever shown. `flagged` stays visible — a report is an accusation, not a finding,
+and hiding on accusation alone is a griefing tool. `pending` and `rejected` are
+withheld, and an **unreadable** moderation value fails CLOSED to `pending`, so a
+corrupt field cannot become a way to display a rejected picture.
+
+The read path already branches on all four, so adding a classifier later changes
+who writes the field, not who reads it. The Report control does not claim a
+review will happen, because none will.
+
+## What was NOT built, and why it is not an oversight
+
+- **Another user's friend count.** The rules scope every friendship read to the
+  caller, by design — the alternative is letting anyone map the social graph.
+  `friendCountForProvider` exists as a named provider returning null, so the next
+  person to look for it finds the reason instead of adding a query that will be
+  denied. Publishing a count into `profileStats` would offer it; that is a
+  disclosure decision and it has not been made.
+- **A denormalised friend counter.** Cannot be maintained correctly without a
+  server: accepting a request would be three writes across two users' documents,
+  no client may write another user's profile, and any client that could would
+  race. The viewer's own count is the length of a list already in memory.
+- **Rate limiting on friend requests.** There is nowhere to put it without Blaze
+  or a Worker KV namespace. Named here so it is not rediscovered as a surprise.
+- **Push notifications for friend events.** The Worker's `/notify` contract is
+  `{event, targetUid, itemId}` with authorization branched per event and the
+  recipient computed structurally from a schedule item. A social event does not
+  fit that shape; adding one is a Worker change and a contract decision.
+- **Friends as a fourth nav tab.** The bar's three destinations are the three
+  stances in the delegation loop and a friend graph is none of them — the same
+  reasoning recorded for the chatbot on 2026-08-18. It lives in the account menu,
+  above the divider, with the request count badge.
+
+## This resolves two deferred questions
+
+CLAUDE.md open item 7 ("share-a-group profile-read scoping") and the goals-phase
+note that "who can see my goal stats" must be answered **together** with it. Both
+are now answered by one mechanism: **a friend graph plus an owner-controlled
+public/private toggle, gating a stats subcollection.** Goal stats, when they
+arrive, are entries in `kProfileStatDefinitions` and inherit this gate — they do
+not need a second visibility model, and `feature-ideas.md`'s "own share list, NOT
+a reuse of plannerGrants" is satisfied by exactly this.
+
+`users/{uid}` itself is still readable by uid. That was left alone deliberately:
+tightening it needs a denormalised `groupIds` on every user document plus a
+backfill, it would now ALSO have to admit friends, and the delegation loop
+depends on it working. Unchanged scope, new answer for the part that matters.
+
+---
+
+# Test suite — two pre-existing failures fixed 2026-08-21
+
+Not part of the social work; found because the suite had to be green to trust it.
+
+**`test/reminder_scheduling_test.dart` was date-dependent and expired after one
+day.** Its fixture pinned `now = DateTime.utc(2026, 8, 20, 12)` — the day it was
+written — with every item two hours later. The pure-function groups are handed
+`now` explicitly and were fine. `ReminderService.sync` is not: it reads
+`DateTime.now()` itself (`reminder_service.dart:95`). So from 2026-08-21 every
+fixture item was in the past, `desiredReminders` filtered them all out, and seven
+service tests failed against an empty plan. Anchored to the real clock, truncated
+to whole **milliseconds** — the mirror serialises `fireAtMs`, so a microsecond
+component cannot round-trip and the round-trip test failed on it. Everything is
+relative to `now`, so each test's meaning is unchanged and now true on any day.
+
+**`firestore-tests` ran its files in parallel against one emulator.**
+`node --test` runs each file in its own process concurrently, and every file
+calls `clearFirestore()` in `beforeEach` — so adding `social.test.mjs` made the
+two wipe the database out from under each other. It presented as a scatter of
+`ALLOWS …` failures across unrelated describes, changing run to run, while each
+file passed alone. `npm test` now passes `--test-concurrency=1`; the README says
+why, so the next file added inherits it rather than rediscovering it.

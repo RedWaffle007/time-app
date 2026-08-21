@@ -14,6 +14,11 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // REQUIRED BY flutter_local_notifications (v10+). The plugin's scheduling
+        // path uses `java.time`, which does not exist below API 26; desugaring is
+        // what back-fills it on our minSdk 23. Without this the build fails
+        // outright — it is not an optimisation.
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -28,6 +33,9 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // Desugaring pushes the method count up; multidex keeps a debug build on
+        // API 23-24 (pre-native-multidex) from failing to install.
+        multiDexEnabled = true
     }
 
     buildTypes {
@@ -37,6 +45,12 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+}
+
+dependencies {
+    // The desugared java.time (and friends) implementation. Version is the one
+    // flutter_local_notifications 22.x documents as its minimum.
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 
 kotlin {

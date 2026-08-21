@@ -16,13 +16,27 @@ Conventions:
 
 ```
 users/{uid}
+users/{uid}/fcmTokens/{token}
+users/{uid}/state/{doc}                   # per-user view state (archive)
+users/{uid}/profileStats/{doc}            # SOCIAL — privacy-gated stats
 groups/{groupId}
 groups/{groupId}/members/{uid}
 groups/{groupId}/plannerGrants/{grantId}
+joinCodes/{code}
+usernames/{handle}                        # SOCIAL — uniqueness + search
+friendRequests/{fromUid}_{toUid}          # SOCIAL — directed
+friendships/{sortedPairId}                # SOCIAL — symmetric
+blocks/{blockerUid}_{blockedUid}          # SOCIAL — directed record, symmetric effect
 invites/{inviteId}
 scheduleItems/{targetUid}/items/{itemId}
 alarms/{alarmId}                          # DESIGN-ONLY — NOT BUILT
 ```
+
+The four `# SOCIAL` collections arrived 2026-08-21 and are documented in full at
+the end of this file. **They grant no planning permission.** Friendship is a
+social tie; permission to build someone's schedule remains
+`groups/{id}/plannerGrants`, target-granted and revocable. See DECISIONS.md
+"Social profile layer".
 
 Schedule items are keyed **under the target user** (`scheduleItems/{targetUid}/…`)
 so "this data belongs to the target" is expressible as a simple ownership rule.
@@ -42,6 +56,11 @@ through a Cloud Function instead of client-side rules.
 | `quietHours` | map? | `{ start: "HH:mm", end: "HH:mm" }` in the user's own home local time. Planner cannot override; only warned. |
 | `fcmTokens` | string[] | Device push tokens for completion/invite notifications. |
 | `createdAt` / `updatedAt` | Timestamp | |
+
+Four more fields — `username`, `bio`, `isPublic`, `avatar` — arrived with the
+social layer on 2026-08-21. They are documented in "The social layer" at the end
+of this file, along with the rule that **nothing the privacy toggle governs may
+ever be added to this document**.
 
 ---
 
@@ -268,3 +287,125 @@ against (they don't silently shift); only *new* items use the new home tz.
    Model assumes warn-only (item can still be created). Confirm.
 3. **Privileged writes** — planner-writes-to-target's-schedule via client-side
    security rules vs. a Cloud Function. Model supports either; decide at Step 4/5.
+
+
+---
+
+# The social layer (added 2026-08-21)
+
+Four top-level collections and one subcollection. Full reasoning in DECISIONS.md
+→ "Social profile layer — SHIPPED 2026-08-21".
+
+**The one thing to understand before reading any of it:** every document id here
+is **computed from the two uids involved**, never an auto-id. Firestore security
+rules can `exists()` a path they can construct and **cannot run a query**, so an
+address that a rule can derive is the only way a privacy predicate is
+expressible at all. `lib/features/social/domain/social_ids.dart` and the
+`sortedPairId()` helper in `firestore.rules` compute the same ids and must stay
+in step.
+
+## `users/{uid}` — new fields
+
+| Field | Type | Notes |
+|---|---|---|
+| `username` | string? | Canonical (lowercase) handle. A **mirror** of `usernames/{handle}`; the reservation is what guarantees uniqueness. Rules refuse a value the caller does not hold. |
+| `bio` | string? | Free text, ≤ 300 chars (enforced in rules and in the field's `maxLength`). |
+| `isPublic` | bool | Privacy toggle. **Absent decodes to `false`** — shipping this did not make anyone's numbers public. |
+| `avatar` | map? | `{url, storageKey, mime, sizeBytes, moderation, updatedAt}`. |
+
+There is deliberately **no `displayName`**: `name` already is one, is required,
+is server-enforced and is rendered everywhere.
+
+**Nothing that `isPublic` governs may ever be added to this document.** Its read
+rule is `allow get: if signedIn()` by design (the delegation loop needs name and
+timezone) and does not consult the toggle. Stats live in the subcollection below
+for exactly this reason.
+
+## `users/{uid}/profileStats/summary`
+
+| Field | Type | Notes |
+|---|---|---|
+| `values` | map | `statKey → number`. Open by design — a new stat is a new key. Unknown keys are ignored on read, so an older build degrades gracefully. |
+| `version` | int | Bumped only if an existing key's MEANING changes. A new key needs no bump. |
+| `updatedAt` | Timestamp | |
+
+Written **only by the owner**; read through the privacy gate:
+
+```
+blocked either way   → deny (checked first — a block outranks everything)
+own document         → allow
+owner isPublic       → allow      (the future leaderboard)
+caller is a friend   → allow
+otherwise            → deny       (a PENDING request grants nothing)
+```
+
+Fixed doc id `summary`, because `list` is denied and a visitor must be able to
+name the document without enumerating.
+
+Published rather than derived: a visitor cannot read
+`scheduleItems/{owner}/items`, so they cannot compute anything.
+
+## `usernames/{handle}`
+
+Doc id **is** the canonical lowercased handle — that is the uniqueness
+mechanism, since Firestore has no unique index.
+
+| Field | Type | Notes |
+|---|---|---|
+| `uid` | string | Who holds it. Must be the caller. |
+| `createdAt` | Timestamp | |
+
+`get` open to any signed-in caller; **`list` DENIED**, which is what keeps users
+un-enumerable and is why app search is exact-match only. `update` denied except
+for an idempotent re-claim by the holder; `delete` by the holder only.
+
+## `friendRequests/{fromUid}_{toUid}` — directed
+
+| Field | Type | Notes |
+|---|---|---|
+| `fromUid` / `toUid` | string | Immutable. The id must equal `fromUid_toUid`. |
+| `participants` | string[2] | For the inbox queries only; rules read the two fields. |
+| `status` | enum | `pending` → `accepted` \| `rejected` \| `cancelled`. |
+| `createdAt` / `decidedAt` / `updatedAt` | Timestamp | |
+
+`rejected` is **stored and kept, never deleted** — deleting would let the sender
+re-ask immediately and forever, turning "no" into a button that does nothing.
+Rules refuse reviving a `rejected` row to `pending`. `cancelled` is distinct
+because who backed out is a fact worth keeping, exactly as `cancelled` and
+`withdrawn` are distinct on a schedule item.
+
+Only the recipient may accept or reject; either party may cancel; nobody may
+delete.
+
+## `friendships/{sortedPairId}` — symmetric
+
+Id is the two uids sorted and joined with `_`. **One document per pair.**
+
+| Field | Type | Notes |
+|---|---|---|
+| `uidA` / `uidB` | string | Sorted. Which is which carries NO meaning — a sort key, not a role. |
+| `participants` | string[2] | Powers `array-contains` listing. |
+| `createdAt` | Timestamp | |
+
+No status field, deliberately: this document is what every privacy rule
+`exists()`-checks, and a field in that predicate would be a second thing to read
+on the hot path.
+
+Created **only by the accepting party, and only against a real pending request
+addressed to them** — that check is the consent story of the whole layer.
+Deleted unilaterally by either party. Never updated.
+
+## `blocks/{blockerUid}_{blockedUid}` — directed record, symmetric effect
+
+| Field | Type | Notes |
+|---|---|---|
+| `blockerUid` / `blockedUid` | string | Only the blocker may create or delete. |
+| `createdAt` | Timestamp | |
+
+Every gate checks **both** ids. `get` is allowed to either party (the blocked
+client needs it to hide the profile); `list` to the blocker only.
+
+Placing a block cascades — block doc, then planner grants both directions, then
+the friendship, then pending requests — in that order, so every intermediate
+state is safe. **Existing schedule items are untouched.** Unblocking restores
+nothing.

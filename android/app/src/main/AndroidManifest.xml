@@ -8,6 +8,29 @@
     <!-- Android 13+ runtime notification permission (requested at runtime by
          firebase_messaging). Declared explicitly for clarity. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
+    <!-- ===================== THE REMINDER LAYER ===================== -->
+
+    <!-- EXACT alarms, the user-granted route.
+
+         SCHEDULE_EXACT_ALARM, deliberately NOT USE_EXACT_ALARM. Both reach the
+         identical AlarmManager code path; the difference is who approves.
+         USE_EXACT_ALARM is auto-granted but is Play-reviewed against a narrow
+         list ("the app is an alarm or timer app" / "a calendar app that shows
+         event notifications"), and we are neither. SCHEDULE_EXACT_ALARM is a
+         user prompt with NO Play review, which is the whole reason the
+         2026-08-19 policy re-check reopened this. See DECISIONS.md → "Exact
+         alarms: the Play-policy assumption was wrong".
+
+         From Android 14 this is DENIED by default and must be granted from
+         Settings; `ReminderPermissions` sends the user there. On this Redmi it
+         is also revoked by every reinstall (spike README trap 1). -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+
+    <!-- AlarmManager keeps scheduled alarms in volatile memory ONLY — a reboot
+         drops every one of them with no error to anyone. This permission is what
+         lets both boot receivers below hear about the reboot and re-arm. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <application
         android:label="time_app"
         android:name="${applicationName}"
@@ -55,6 +78,70 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+
+        <!-- ============ flutter_local_notifications' own receivers ============
+
+             Since plugin v16 these are NOT declared by the plugin's manifest —
+             the app must declare them, and a missing declaration fails silently:
+             the alarm fires, the receiver is not found, and no notification ever
+             appears. ScheduledNotificationReceiver posts the notification;
+             ScheduledNotificationBootReceiver re-registers the plugin's own
+             pending set after a reboot or an app update from its own store.
+
+             MY_PACKAGE_REPLACED matters as much as BOOT_COMPLETED here: on this
+             device a reinstall also revokes SCHEDULE_EXACT_ALARM (spike README
+             trap 1), so an update silently downgrades every re-armed alarm. The
+             Dart-side reconcile on next app start is the backstop for that. -->
+        <receiver
+            android:exported="false"
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
+        <receiver
+            android:exported="false"
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
+
+        <!-- ==================== The fire-timing audit ====================
+
+             Carried over from spikes/alarm_spike/. These two receivers post
+             NOTHING and are invisible to the user; they exist so that "did the
+             reminder actually fire, and how late" is answerable from real use
+             rather than from a throwaway harness. A silent exact alarm is armed
+             alongside every reminder at the same instant, and its receiver
+             appends one CSV row recording the delay AND the device state (Doze,
+             power save, battery-optimisation, screen) at the moment it landed —
+             a 40-minute delay is uninterpretable without knowing whether the
+             phone was in Doze when it arrived.
+
+             directBootAware, and writing to device-protected storage, so the
+             boot receiver can record a reboot on LOCKED_BOOT_COMPLETED — i.e.
+             BEFORE the first unlock. Credential-protected storage throws there.
+
+             It is a measurement instrument, not a feature. Deleting these two
+             receivers, ReminderAudit*.kt and reminder_audit_log.dart removes it
+             with no effect on whether reminders fire. -->
+        <receiver
+            android:exported="false"
+            android:directBootAware="true"
+            android:name=".reminders.ReminderAuditReceiver" />
+        <receiver
+            android:exported="true"
+            android:directBootAware="true"
+            android:name=".reminders.ReminderAuditBootReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.TIME_SET"/>
+                <action android:name="android.intent.action.TIMEZONE_CHANGED"/>
+            </intent-filter>
+        </receiver>
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

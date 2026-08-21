@@ -7,6 +7,7 @@ import '../../../core/theme/app_tokens.dart';
 import '../../../core/format/datetime_format.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../applock/presentation/app_lock_tile.dart';
+import '../../social/presentation/social_profile_editor.dart';
 import '../application/auth_providers.dart';
 import 'timezone_picker.dart';
 
@@ -263,11 +264,21 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                       ?.copyWith(color: context.colors.error),
                 ),
               ],
+              // The social half of the profile — picture, username, bio and
+              // the public/private toggle. Its own section with its own Save
+              // (see SocialProfileEditor): the form above is identity, this is
+              // presentation, and saving them together would mean a privacy
+              // change also rewrote the user's timezone.
+              const SectionHeader('Your public profile'),
+              const SocialProfileEditor(),
               // Below the Save button on purpose: everything above is a draft
               // the user commits, the app lock applies the instant it is
               // flipped. A switch that looked like it needed saving would be a
               // lock people think is on when it is not.
-              const SectionHeader('Privacy'),
+              // Named for THIS device, because the section above also holds a
+              // privacy control and the two answer different questions:
+              // 'who can see my stats' versus 'who can open this app'.
+              const SectionHeader('This device'),
               const AppLockTile(),
             ],
           ),

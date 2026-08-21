@@ -15,8 +15,14 @@ import '../features/chatbot/presentation/chat_gate.dart';
 import '../features/chatbot/presentation/chatbot_settings_screen.dart';
 import '../features/chatbot/presentation/model_setup_screen.dart';
 import '../features/home/presentation/home_gate.dart';
+import '../features/social/presentation/blocked_users_screen.dart';
+import '../features/social/presentation/friend_requests_screen.dart';
+import '../features/social/presentation/friends_screen.dart';
+import '../features/social/presentation/user_profile_screen.dart';
+import '../features/social/presentation/user_search_screen.dart';
 import '../features/home/presentation/home_shell.dart';
 import '../features/outcomes/presentation/outcome_screen.dart';
+import '../features/reminders/presentation/reminder_diagnostics_screen.dart';
 import '../features/scheduling/presentation/planner_activity_screen.dart';
 import '../features/scheduling/presentation/schedule_builder_screen.dart';
 import 'go_router_refresh_stream.dart';
@@ -41,6 +47,50 @@ class Routes {
   static const approvals = '$outcome/approvals';
   static const archived = '/archived';
 
+  /// Query parameter naming ONE item on [outcome], so a tapped reminder can
+  /// single out the card it belongs to.
+  ///
+  /// A query parameter rather than a `/outcome/item/:id` sub-route on purpose:
+  /// the destination is the same screen with the same list and the same Done /
+  /// Skip controls, just scrolled and marked. A sub-route would be a second
+  /// rendering of one item to keep in step with the first, and Back would drop
+  /// the user onto the list they were already looking at.
+  static const outcomeItemParam = 'item';
+
+  static String outcomeForItem(String itemId) => Uri(
+        path: outcome,
+        queryParameters: {outcomeItemParam: itemId},
+      ).toString();
+
+  /// **The social layer.** All top-level and pushed, deliberately — the same
+  /// reasoning as [profile] and [archived]. The nav bar's three tabs are the
+  /// three stances in the delegation loop (target, planner, group member) and a
+  /// friend graph is none of them; making Friends a fourth tab would dilute
+  /// that meaning exactly as `DECISIONS.md` 2026-08-18 records for the chatbot.
+  ///
+  /// They are reached from the account menu, which every tab's AppBar shows, so
+  /// one entry point serves all three tabs and Back returns to whichever tab
+  /// launched it.
+  static const friends = '/friends';
+  static const friendRequests = '$friends/requests';
+  static const userSearch = '$friends/search';
+  static const blockedUsers = '$friends/blocked';
+
+  /// Viewing ONE person's profile.
+  ///
+  /// `/u/:uid` rather than `/profile/:uid`, because [profile] is the *edit your
+  /// own* form — making the read-only view of a stranger a child of it would
+  /// say the two are the same screen, and Back from a stranger's profile would
+  /// drop the user into their own edit form.
+  ///
+  /// Keyed by uid, not by username. A handle is renameable, so a link built
+  /// from one goes stale the moment its owner changes it; the uid never moves.
+  /// `u` is in `kReservedUsernames`, so no user can ever claim a handle that
+  /// would collide if a vanity path is added later.
+  static const userProfile = '/u';
+
+  static String userProfileFor(String uid) => '$userProfile/$uid';
+
   /// The language-practice chatbot — a self-contained feature that shares the
   /// theme and this router with the delegation app and nothing else. Top-level,
   /// because it belongs to no tab and is not part of the core loop; reached from
@@ -56,6 +106,12 @@ class Routes {
   /// Debug-only. The route itself is registered only in debug builds — see the
   /// `if (kDebugMode)` guard below. In release this path resolves to nothing.
   static const devMenu = '/dev';
+
+  /// The reminder fire-timing audit readout. Debug-only for the same reason
+  /// [devMenu] is: it is an instrument, not a feature. The CSV it displays is
+  /// still written in release builds — that is the point of measuring real use —
+  /// and is pulled off the device with `adb` when there is no dev menu to open.
+  static const reminderDiagnostics = '/dev/reminders';
 }
 
 /// The app's router. A single plain Provider (no family / autoDispose) since
@@ -144,7 +200,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: Routes.outcome,
-                builder: (context, state) => const OutcomeScreen(),
+                builder: (context, state) => OutcomeScreen(
+                  highlightItemId:
+                      state.uri.queryParameters[Routes.outcomeItemParam],
+                ),
                 routes: [
                   // The target's inbox belongs to My Schedule: the AppBar
                   // shortcut and the `created`/`withdrawn` notifications both
@@ -189,6 +248,39 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.archived,
         builder: (context, state) => const ArchivedScreen(),
+      ),
+      // The social layer. Account-level and pushed, for the reason spelled out
+      // on the `Routes.friends` constant: a friend graph is not one of the
+      // three stances the nav bar names.
+      //
+      // Search, requests and blocked users are SUB-ROUTES of `/friends`, so
+      // each resolves into the same stack and Back returns to the friends list
+      // rather than to whichever tab was underneath.
+      GoRoute(
+        path: Routes.friends,
+        builder: (context, state) => const FriendsScreen(),
+        routes: [
+          GoRoute(
+            path: 'requests',
+            builder: (context, state) => const FriendRequestsScreen(),
+          ),
+          GoRoute(
+            path: 'search',
+            builder: (context, state) => const UserSearchScreen(),
+          ),
+          GoRoute(
+            path: 'blocked',
+            builder: (context, state) => const BlockedUsersScreen(),
+          ),
+        ],
+      ),
+      // One person's profile. Top-level so it can be pushed from anywhere a
+      // person is named — a group roster, a friends list, a search result — and
+      // return to where it was opened from.
+      GoRoute(
+        path: '${Routes.userProfile}/:uid',
+        builder: (context, state) =>
+            UserProfileScreen(uid: state.pathParameters['uid']!),
       ),
       // The chatbot, kept out of the tab shell on purpose: it is not one of
       // the three roles the nav bar names, and nothing in the delegation loop
@@ -241,6 +333,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         GoRoute(
           path: Routes.devMenu,
           builder: (context, state) => const DevMenuScreen(),
+          routes: [
+            GoRoute(
+              path: 'reminders',
+              builder: (context, state) => const ReminderDiagnosticsScreen(),
+            ),
+          ],
         ),
     ],
   );

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -12,19 +14,96 @@ import '../../../routing/app_router.dart';
 import '../../archive/presentation/archive_menu_button.dart';
 import '../../home/presentation/account_button.dart';
 import '../../notifications/application/outcome_notifier.dart';
+import '../../reminders/presentation/reminder_primer.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
+import 'hero_band.dart';
 
-/// The target's approved items — where they mark Done or Skip.
+/// The target's approved items — where they mark Done or Skip, and where a
+/// tapped reminder lands.
 ///
-/// NOTE: still contains NO alarm logic. Without alarms, this is simply the list
-/// of what the target agreed to, with completion controls. Alarms (which would
-/// deep-link straight to one item) come later, when directed.
-class OutcomeScreen extends ConsumerWidget {
-  const OutcomeScreen({super.key});
+/// A reminder carries only the item id (`Routes.outcomeForItem`), and this
+/// screen resolves it: the matching card is scrolled into view and outlined for
+/// a few seconds. Deliberately not a separate detail screen — this list already
+/// holds the Done and Skip controls, so the tap ends one gesture from closing
+/// the loop, and there is no second rendering of an item to keep in step.
+class OutcomeScreen extends ConsumerStatefulWidget {
+  const OutcomeScreen({super.key, this.highlightItemId});
+
+  /// From `?item=` — the item a reminder was tapped for. Null in every other
+  /// route onto this screen.
+  final String? highlightItemId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<OutcomeScreen> createState() => _OutcomeScreenState();
+}
+
+class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
+  /// The item currently outlined. Separate from `widget.highlightItemId`
+  /// because it FADES: this tab is a shell branch, so its location — query
+  /// parameter and all — survives every tab switch for the life of the process.
+  /// Keyed off the widget property alone, an item tapped once this morning
+  /// would still be outlined tonight.
+  String? _highlighted;
+  Timer? _fade;
+
+  /// Keys for the cards, so the highlighted one can be scrolled to. Only ever
+  /// holds the one id we care about — a key per row in a long list is waste.
+  final _highlightKey = GlobalKey();
+  bool _scrolled = false;
+
+  static const _highlightDuration = Duration(seconds: 6);
+
+  @override
+  void initState() {
+    super.initState();
+    _applyHighlight(widget.highlightItemId);
+  }
+
+  @override
+  void didUpdateWidget(OutcomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.highlightItemId != oldWidget.highlightItemId) {
+      _applyHighlight(widget.highlightItemId);
+    }
+  }
+
+  @override
+  void dispose() {
+    _fade?.cancel();
+    super.dispose();
+  }
+
+  void _applyHighlight(String? itemId) {
+    _fade?.cancel();
+    _highlighted = itemId;
+    _scrolled = false;
+    if (itemId == null) return;
+    _fade = Timer(_highlightDuration, () {
+      if (mounted) setState(() => _highlighted = null);
+    });
+  }
+
+  /// Runs after the frame that first built the highlighted card, because
+  /// `ensureVisible` needs a laid-out element. Once only — re-scrolling on every
+  /// rebuild would fight the user the moment they scrolled away themselves.
+  void _scrollToHighlightAfterBuild() {
+    if (_scrolled) return;
+    _scrolled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _highlightKey.currentContext;
+      if (ctx == null) return;
+      Scrollable.ensureVisible(
+        ctx,
+        duration: Motion.normal,
+        curve: Motion.curve,
+        alignment: 0.2,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final itemsAsync = ref.watch(myItemsAsTargetProvider);
     final pendingCount = itemsAsync.value
             ?.where((i) => i.status == ScheduleItemStatus.pending)
@@ -59,8 +138,34 @@ class OutcomeScreen extends ConsumerWidget {
               .where((i) => i.status == ScheduleItemStatus.approved)
               .toList()
             ..sort((a, b) => a.scheduledInstantUtc.compareTo(b.scheduledInstantUtc));
+
+          // The primer's precondition: something is actually going to need a
+          // reminder. Matches `desiredReminders`' rule, so the card never claims
+          // a reminder is missing for an item that would not have had one.
+          final now = DateTime.now().toUtc();
+          final upcoming = approved
+              .where((i) =>
+                  i.outcome == null && i.scheduledInstantUtc.isAfter(now))
+              .toList();
+          final hasUpcoming = upcoming.isNotEmpty;
+
           return ListView(
-            children: [for (final item in approved) _OutcomeCard(item: item)],
+            children: [
+              // `approved` is already sorted by instant, so the first upcoming
+              // item IS the next one. The band reads the same list the cards
+              // do — it never queries separately, so it cannot disagree.
+              HeroBand(nextItem: upcoming.isEmpty ? null : upcoming.first),
+              ReminderPrimerCard(hasUpcomingItems: hasUpcoming),
+              for (final item in approved)
+                _OutcomeCard(
+                  item: item,
+                  highlighted: item.id == _highlighted,
+                  // The key rides on the highlighted card only; that is all
+                  // `ensureVisible` needs to find it.
+                  cardKey: item.id == _highlighted ? _highlightKey : null,
+                  onNeedsScroll: _scrollToHighlightAfterBuild,
+                ),
+            ],
           );
         },
       ),
@@ -69,9 +174,17 @@ class OutcomeScreen extends ConsumerWidget {
 }
 
 class _OutcomeCard extends ConsumerWidget {
-  const _OutcomeCard({required this.item});
+  const _OutcomeCard({
+    required this.item,
+    this.highlighted = false,
+    this.cardKey,
+    this.onNeedsScroll,
+  });
 
   final ScheduleItem item;
+  final bool highlighted;
+  final Key? cardKey;
+  final VoidCallback? onNeedsScroll;
 
   /// A self-planned item has the same person as creator and target — no planner
   /// on the other end to notify.
@@ -80,8 +193,23 @@ class _OutcomeCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final outcome = item.outcome;
+    if (highlighted) onNeedsScroll?.call();
 
     return Card(
+      key: cardKey,
+      // Line work, never a fill: an orange filled surface is reserved for "a
+      // schedule item is waiting on you" (UI-RULES.md §2.7), and "you tapped a
+      // reminder for this one" is a different, much weaker claim. A primary
+      // outline says *this one* without spending that signal.
+      shape: highlighted
+          ? RoundedRectangleBorder(
+              borderRadius: Radii.md,
+              side: BorderSide(
+                color: context.colors.primary,
+                width: Sizes.ruleWidth,
+              ),
+            )
+          : null,
       child: Padding(
         padding: Space.cardPadding,
         child: Column(
@@ -150,6 +278,10 @@ class _OutcomeCard extends ConsumerWidget {
 
   /// Record completion, then fire the (best-effort) planner push. The write is
   /// the source of truth; the push is additive (see DECISIONS.md).
+  ///
+  /// The reminder needs no cancelling here: recording an outcome makes the item
+  /// undesired, the item stream re-emits, and the reconciler cancels it. That is
+  /// the point of driving reminders off the stream rather than off transitions.
   Future<void> _markDone(WidgetRef ref) async {
     await ref.read(scheduleRepositoryProvider).markDone(item.targetUid, item.id);
     if (_isSelfPlanned) return; // no point notifying yourself

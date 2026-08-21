@@ -109,12 +109,26 @@ class MessagingService {
 
     final messaging = FirebaseMessaging.instance;
     try {
-      // Android 13+: shows the POST_NOTIFICATIONS prompt. Declining is fine for
-      // *token* registration — getToken still succeeds, so we proceed either way
-      // (a declined user just won't see tray notifications). Inside the try now,
-      // and time-boxed, so a hung prompt fails loudly instead of stalling.
-      await messaging.requestPermission().timeout(_opTimeout);
-
+      // **NO PERMISSION PROMPT HERE.** This used to call
+      // `messaging.requestPermission()`, which on Android 13+ is the
+      // POST_NOTIFICATIONS system prompt — and because registration runs on the
+      // first signed-in build, that prompt landed on a user who had not yet
+      // seen a screen of the app. Android effectively grants that prompt once;
+      // a "deny" is final and the only way back is Settings. Spending the one
+      // ask on a cold launch, with no context, is spending it badly.
+      //
+      // The ask now belongs to the reminder primer
+      // (`features/reminders/presentation/reminder_primer.dart`), which shows it
+      // when the user has an approved item that is about to need a reminder, and
+      // explains itself first. One deliberate ask, one place.
+      //
+      // **Token registration is unaffected**, which is why this is safe to
+      // remove rather than move: `getToken()` does not require notification
+      // permission on Android, and the previous code already proceeded whether
+      // the prompt was granted or denied. A user who has not granted anything
+      // still registers a token and still receives data; the only thing
+      // permission governs is whether the OS draws the tray notification — and
+      // it governed that identically before, since a denial changed nothing here.
       final token = await messaging.getToken().timeout(_opTimeout);
       if (token == null) {
         throw StateError('FCM getToken returned null');

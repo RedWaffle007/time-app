@@ -6,6 +6,23 @@ compatibility_date = "2025-01-01"
 [vars]
 PROJECT_ID = "time-app-1e1c9"
 
+# Profile-picture storage (Supabase). Non-secret: the project URL and the
+# bucket name are both public identifiers — the public object URL contains
+# them. Chosen over Firebase Storage because that needs the Blaze plan and this
+# project has no payment card attached (DECISIONS.md); chosen over Cloudflare
+# R2 because R2 requires a card even on its free tier.
+#
+# SET THESE before deploying the avatar route. Until they are set, /avatar
+# answers 500 `storage-not-configured` and the app shows "Picture uploads are
+# not set up yet on this build" — it does not half-work.
+# SUPABASE_URL    = "https://<project>.supabase.co"
+# SUPABASE_BUCKET = "avatars"     # create it PUBLIC in the Supabase dashboard
+
 # The service-account JSON is NOT here. It is set as an encrypted secret:
 #   wrangler secret put FIREBASE_SERVICE_ACCOUNT
 # and read at runtime as env.FIREBASE_SERVICE_ACCOUNT. It never lands in git.
+
+# The Supabase service_role key is NOT here. Like the Firebase service account
+# above, it is an encrypted secret:
+#   wrangler secret put SUPABASE_SERVICE_KEY
+# It bypasses every storage policy, so it must never reach a client or git.

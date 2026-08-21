@@ -229,6 +229,20 @@ class _SpikeHomeState extends State<SpikeHome> with WidgetsBindingObserver {
                   },
                 ),
                 IconButton(
+                  tooltip: 'Export CSV to app external dir (adb-readable)',
+                  icon: const Icon(Icons.save_alt),
+                  onPressed: () async {
+                    final path =
+                        await _channel.invokeMethod<String>('exportLog');
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(path == null
+                              ? 'Export FAILED'
+                              : 'Exported to $path')));
+                    }
+                  },
+                ),
+                IconButton(
                   tooltip: 'Clear log',
                   icon: const Icon(Icons.delete_outline),
                   onPressed: () async {

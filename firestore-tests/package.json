@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Security-rules unit tests for ../firestore.rules, run against the Firestore emulator.",
   "scripts": {
-    "test": "firebase emulators:exec --only firestore --config ../firebase.json --project demo-time-app \"node --test\""
+    "test": "firebase emulators:exec --only firestore --config ../firebase.json --project demo-time-app \"node --test --test-concurrency=1\""
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.0",

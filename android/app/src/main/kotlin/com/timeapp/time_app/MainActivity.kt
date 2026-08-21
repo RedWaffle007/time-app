@@ -5,6 +5,7 @@ import android.view.WindowManager
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import com.timeapp.time_app.reminders.ReminderAuditChannel
 
 /**
  * Hosts the `time_app/secure_window` channel — the Android half of
@@ -56,6 +57,12 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
+        // The reminder fire-timing audit (`reminder_audit_log.dart`). Registered
+        // on `applicationContext`, not `this`: the alarms it arms outlive this
+        // activity by hours, and holding an Activity in a PendingIntent's
+        // context is how a leak becomes a crash on a 6am delivery.
+        ReminderAuditChannel(applicationContext).register(flutterEngine.dartExecutor.binaryMessenger)
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->

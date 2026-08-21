@@ -147,15 +147,21 @@ passing it does NOT close item 1.
    the user's language and render local digits — **blocked: no iOS target is wired
    up yet.** (DECISIONS.md, 2026-07-22.)
 
-**Leave / remove / stop-planning — BUILT 2026-08-20, RULES NOT DEPLOYED.** The
-first relationship-*ending* controls in the app (DECISIONS.md → "Ending a
-relationship"). Three narrow rules changes — member removal on `/groups`,
+**Leave / remove / stop-planning — BUILT + RULES DEPLOYED AND VERIFIED
+2026-08-20.** Live ruleset **`47c62b28-f776-4458-a12f-a5e0d5679168`** (released
+2026-08-20T10:20:36Z), which **supersedes `1cff4c97-…`** named earlier in this
+file — quote this id, not that one. Verification was the real one, not a ruleset
+id alone: the *deployed source* was fetched back from
+`firebaserules.googleapis.com` and diffed byte-for-byte against `firestore.rules`
+— identical. **Still UNVERIFIED ON A DEVICE:** no leave, remove or stop-planning
+has actually been run against the live rules, and the installed build predates
+the feature.
+
+These are the first relationship-*ending* controls in the app (DECISIONS.md →
+"Ending a relationship"). Three narrow rules changes — member removal on `/groups`,
 `members` delete, and a planner-may-relinquish branch on `plannerGrants` — plus
 `removeMember()` / `revokeMyPlannerGrant()` and the group-detail overflow menus.
-Rules **compile clean** against Firebase's compiler but are **not deployed**:
-until `firebase deploy --only firestore:rules` runs and the *deployed source* is
-verified, every one of these buttons returns `PERMISSION_DENIED`. Two facts not
-to rediscover: **the owner cannot leave their own group** (an ownerless group
+Two facts not to rediscover: **the owner cannot leave their own group** (an ownerless group
 would be uncleanable under `delete: if false`), and ejecting a member leaves that
 member's grants with *third parties* stale-but-inert.
 
@@ -334,6 +340,80 @@ proved.
 autostart/battery onboarding, iOS, quiet-hours enforcement, recurring reminders,
 snooze, and a lead-time offset (it wants `ScheduleItem.durationMinutes` — decide
 it WITH goals).
+
+## Social profile layer — SHIPPED 2026-08-21
+
+`lib/features/social/`. Usernames, friend requests, friendships, blocking, a
+public/private toggle, an extensible stats section, and profile-picture uploads.
+Full reasoning in DECISIONS.md → "Social profile layer — SHIPPED 2026-08-21";
+schema in data-model.md → "The social layer". **NOT VERIFIED ON A DEVICE.**
+
+**The premise correction, so it is not re-made:** the "USP" of other people
+planning your schedule and triggering your alarms was already built — groups +
+`plannerGrants` + the `pending → approved` machine + FCM + the reminder layer.
+The social layer does NOT replace or extend it.
+
+**Friends sit ALONGSIDE groups, and grant NOTHING.** Being someone's friend does
+not let them plan your day; planning permission remains
+`groups/{id}/plannerGrants`, target-granted and revocable. Do not collapse the
+two. If a friendship should ever carry planning permission, the escape hatch is
+`friendships/{pairId}/plannerGrants/{id}` — `watchTargetsFor()` is a
+**collection-group** query, so it would pick those up with **no client change**.
+
+**The one design rule, and do not undo it: every social document id is COMPUTED
+from the two uids.** Rules can `exists()` a path they can construct and cannot
+run a query, so a friendship under an auto-id is invisible to the rules engine
+and the privacy toggle becomes unenforceable. `social_ids.dart` and the
+`sortedPairId()` helper in `firestore.rules` compute the same ids and must stay
+in step. Friendships are **sorted** (symmetric); requests and blocks are **not**
+(directed).
+
+Things not to rediscover:
+
+- **Stats are PUBLISHED, not derived.** A visitor cannot read your items, so
+  your device writes `users/{uid}/profileStats/summary` and theirs reads it
+  through the gate. **Driven off the item stream, never off transitions** — same
+  doctrine as reminders. Adding a `publishStats()` call to any transition is a
+  regression. It reads the RECORD providers (`allItemsAs*`), which is what the
+  constraint comment in `schedule_providers.dart` was written for.
+- **Adding a statistic is ONE entry in `kProfileStatDefinitions`.** No `compute`
+  function = a placeholder tile. Giving it one turns the tile live, and that is
+  the only edit. Placeholders are omitted from the published map, never written
+  as zero.
+- **Search is exact-match only, deliberately.** `usernames/{handle}` denies
+  `list` because allowing it would rebuild the user-enumeration hole that
+  `users`' `list: if false` closed. Prefix/fuzzy search reopens it.
+- **`UsernameRepository.claim` is TWO writes and cannot be one.** Rules see
+  committed state only, so a mirror write inside the reservation transaction
+  would be evaluated against a world where the reservation does not exist yet.
+- **Nothing the privacy toggle governs may go on `users/{uid}`.** That document
+  is `allow get: if signedIn()` by design and does not consult `isPublic`.
+- **A block and a missing account must render identically**, in the profile
+  screen and in search. The `blocking`/`blockedBy` distinction is internal only.
+- **Blocking cascades** (block doc → grants → friendship → requests, in that
+  order) and deliberately does NOT touch existing schedule items. Unblocking
+  restores nothing.
+- **Firebase Storage is unavailable** (needs Blaze; no card). Avatars go through
+  the existing Cloudflare Worker into **Supabase Storage**. Format is decided by
+  **sniffing bytes**, not `Content-Type`. Two caps: 2MB static / 5MB animated.
+  **Never add cropping, compression, `imageQuality` or a transform** — all
+  re-encode, and re-encoding an animated GIF/WebP flattens it to one frame.
+
+**This resolves two deferred questions** — open item 7 ("share-a-group
+profile-read scoping") and "who can see my goal stats", which had to be answered
+together. Goal stats will be entries in `kProfileStatDefinitions` and inherit
+this gate; they need no second visibility model.
+
+**NOT DONE, and each is a decision rather than a gap:** another user's friend
+count (the rules scope friendship reads to the caller by design), rate limiting
+on requests (nowhere to put it without Blaze), push for friend events (the
+Worker's `{event, targetUid, itemId}` contract does not fit one), and Friends as
+a fourth nav tab (the bar names the three delegation stances).
+
+**Deploy order — rules FIRST.** `firestore.rules` and `firestore.indexes.json`
+both changed; the app fails closed until they are deployed. Verify the deployed
+source, then install. 100 emulator rules tests cover it
+(`firestore-tests/social.test.mjs`).
 
 ## Language practice chatbot — a SEPARATE feature (added 2026-08-18)
 

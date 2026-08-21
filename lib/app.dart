@@ -10,7 +10,11 @@ import 'core/theme/app_theme.dart';
 import 'features/applock/presentation/app_lock_gate.dart';
 import 'features/auth/application/auth_providers.dart';
 import 'features/notifications/application/messaging_service.dart';
+import 'features/reminders/application/reminder_providers.dart';
+import 'features/scheduling/application/schedule_providers.dart';
+import 'features/social/application/stats_providers.dart';
 import 'routing/app_router.dart';
+import 'routing/notification_routing.dart';
 
 /// Root widget. Uses MaterialApp.router so go_router owns navigation.
 ///
@@ -39,6 +43,7 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     _setupNotificationTaps();
+    _setupReminderLaunchTap();
 
     // Retry trigger #1: app resume. If token registration failed earlier (e.g.
     // the device was briefly offline), coming back to the foreground gives it a
@@ -62,12 +67,34 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      final uid = ref.read(authStateProvider).value?.uid;
-      if (uid != null) {
-        ref.read(messagingServiceProvider).registerForUser(uid);
-      }
+    if (state != AppLifecycleState.resumed) return;
+
+    final uid = ref.read(authStateProvider).value?.uid;
+    if (uid != null) {
+      ref.read(messagingServiceProvider).registerForUser(uid);
     }
+
+    // RECONCILE ON RESUME. The item stream alone is not enough, because the
+    // things that invalidate scheduled alarms happen while the app is not
+    // running and produce no emission: a reboot, an app update (which on this
+    // Redmi also revokes SCHEDULE_EXACT_ALARM), the user granting a permission
+    // in Settings and coming back, or simply time passing until a reminder is
+    // due. The reconcile is idempotent, so the ordinary resume computes an empty
+    // plan and touches no plugin.
+    final items = ref.read(allItemsAsTargetProvider).value;
+    if (items != null) {
+      ref.read(reminderServiceProvider).sync(
+            items: items,
+            uid: uid,
+            reason: 'resume',
+          );
+    }
+
+    // Permissions can be changed from Settings behind the app's back, and on
+    // this device SCHEDULE_EXACT_ALARM is revoked by every reinstall — so the
+    // cached answer is re-read rather than trusted. This is what makes the
+    // primer card disappear the moment the user grants what it asked for.
+    ref.invalidate(reminderPermissionStateProvider);
   }
 
   void _onRegistrationStatus() {
@@ -108,6 +135,32 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
         ],
       ),
     );
+  }
+
+  /// A local reminder that was tapped while the app was DEAD.
+  ///
+  /// `onDidReceiveNotificationResponse` — wired in the scheduler — only fires
+  /// for a running app. A tap that cold-starts the process is reported once, on
+  /// launch, through this call and nowhere else; without it, tapping a reminder
+  /// for a killed app opens the app on whatever screen it was last on and the
+  /// item is never surfaced.
+  Future<void> _setupReminderLaunchTap() async {
+    try {
+      final launch = await ref
+          .read(localNotificationsPluginProvider)
+          .getNotificationAppLaunchDetails();
+      if (launch?.didNotificationLaunchApp != true) return;
+      final itemId = launch?.notificationResponse?.payload;
+      if (itemId == null || itemId.isEmpty) return;
+      if (!mounted) return;
+      ref.read(notificationRouterProvider).openItem(itemId);
+    } catch (e) {
+      // Nothing here is worth failing a launch over — on a platform with no
+      // implementation this is a MissingPluginException, and the cost of an
+      // error is a lost deep link, not a lost reminder. Unhandled, it would
+      // surface as an async error during `initState` on every cold start.
+      debugPrint('TimeApp: reminder launch tap lookup failed: $e');
+    }
   }
 
   Future<void> _setupNotificationTaps() async {
@@ -164,29 +217,13 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     );
   }
 
+  /// Where a push tap goes. The rules moved into [NotificationRouter] when local
+  /// reminders arrived: there are now two tap sources reaching the router
+  /// through unrelated plugin callbacks, and two copies of the destination table
+  /// would drift the first time a route moved — which these routes already did
+  /// once, in the Session 3 shell refactor.
   void _handleTap(RemoteMessage message) {
-    // Route to where the recipient acts on this event. Target-facing events
-    // (a plan created for them, or withdrawn) open their pending queue;
-    // planner-facing events (their plan was decided or its outcome recorded)
-    // open Activity. `type == 'outcome'` is the legacy payload, kept working.
-    //
-    // A plain `go()` is shell-aware now that both destinations are branch
-    // locations: `Routes.approvals` is nested under the My Schedule tab, so it
-    // selects that branch and stacks the queue on top of it (Back → the tab),
-    // and `Routes.plannerActivity` is a branch root, so it is a tab switch.
-    final router = ref.read(routerProvider);
-    switch (message.data['event']) {
-      case 'created':
-      case 'withdrawn':
-        router.go(Routes.approvals);
-      case 'decided':
-      case 'outcome':
-        router.go(Routes.plannerActivity);
-      default:
-        if (message.data['type'] == 'outcome') {
-          router.go(Routes.plannerActivity);
-        }
-    }
+    ref.read(notificationRouterProvider).openForPushEvent(message.data);
   }
 
   @override
@@ -225,6 +262,13 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
       _scaffoldMessengerKey.currentState
         ?..clearSnackBars()
         ..clearMaterialBanners();
+      // The stats publisher caches what it last wrote so an unchanged
+      // recomputation costs nothing. That cache is per-ACCOUNT: without this,
+      // the next account's first computation would be compared against the
+      // previous account's numbers and skipped as "unchanged", leaving their
+      // published stats stale — or, if the two happened to differ, written
+      // under the wrong uid's document by a race on the way out.
+      ref.read(profileStatsPublisherProvider).reset();
     });
 
     // Register / refresh the device token whenever a user is signed in. The
@@ -234,6 +278,32 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     if (uid != null) {
       ref.read(messagingServiceProvider).registerForUser(uid);
     }
+
+    // THE REMINDER LAYER'S ONE WIRE. Watching it keeps the sync alive: it
+    // listens to the item stream and to auth, and reconciles the OS against
+    // both. Everything else about reminders follows from that — there is no
+    // per-transition hook anywhere in the app.
+    ref.watch(reminderSyncProvider);
+
+    // THE STATS LAYER'S ONE WIRE, and it is the same shape as the reminder
+    // wire above on purpose: **driven off the item stream, never off
+    // transitions.** There is no `publishStats()` call in `markDone()`,
+    // `approve()`, `reject()` or anywhere else — a single recomputation is
+    // applied to whatever the stream currently says, so an outcome, an edit, a
+    // withdrawal and a rejection are not special cases. Adding a per-transition
+    // hook would create a second place that decides, and the two would
+    // disagree.
+    //
+    // Publishing is what lets ANOTHER person's device see these numbers: their
+    // device cannot read `scheduleItems/{me}/items`, so it reads the small
+    // document this writes (`ProfileStatsRepository`). `publishIfChanged` is
+    // idempotent and skips an unchanged recomputation, which is what makes it
+    // safe on every emission.
+    ref.listen(myComputedStatsProvider, (previous, next) {
+      if (next.hasValue) {
+        ref.read(profileStatsPublisherProvider).publishIfChanged();
+      }
+    });
 
     final router = ref.watch(routerProvider);
     return MaterialApp.router(

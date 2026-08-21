@@ -48,3 +48,17 @@ evaluates the whole ruleset in one pass; when a rule needs a document lookup
 pass cannot complete and reports an error, then re-evaluates with the fetched
 document. The verdict is the *last* clause on the line — here `false for
 'update'`. Read that one.
+
+## Why the suite runs single-threaded
+
+`npm test` passes `--test-concurrency=1`, and it is not a performance choice.
+
+`node --test` runs each test *file* in its own process, in parallel by default.
+Every file here calls `testEnv.clearFirestore()` in `beforeEach` — against the
+one emulator all of them share. Run in parallel, one file wipes the database out
+from under another file's seeded world, and the failures land on whichever
+assertions happen to lose the race. They look like rule bugs and are not: the
+symptom is a scatter of `ALLOWS …` tests failing across unrelated describes,
+changing from run to run, while each file passes on its own.
+
+So: one file at a time. Add a new `*.test.mjs` freely — it inherits this.

@@ -59,6 +59,10 @@ class DevMenuScreen extends ConsumerWidget {
       // on-device — nothing reads it until `chatbotServiceProvider` is pointed
       // back at HTTP — but kept reachable here for exactly that comparison.
       ('Chatbot service address (HTTP only)', Routes.chatbotSettings, false),
+      // The reminder layer's instrument: permissions, what the app believes it
+      // armed, and the natively-written fire log with real delivery delays.
+      // First stop when a reminder did not arrive.
+      ('Reminder audit (fire timing)', Routes.reminderDiagnostics, false),
     ];
 
     return Scaffold(
