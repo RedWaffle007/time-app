@@ -63,9 +63,10 @@ or in DECISIONS.md.
   marks Done → planner receives the outcome.
 - **Worker transport + `kNotifyEndpoint`. LIVE AND CORRECT.** A real outcome write
   triggered a real push (`sent:1`). The Worker was never the problem.
-- **Firestore rules deployed.** Ruleset `45d5f8bc…` (2026-07-24T15:55:56Z) replaced
-  the 6-day-stale `57de3ae0…`. Both the `fcmTokens` block and the item-create
-  `status` constraint are confirmed present in the *deployed* source.
+- **Firestore rules deployed**, replacing a ruleset that had been six days stale
+  — which is the lesson worth keeping, not the id. Both the `fcmTokens` block and
+  the item-create `status` constraint were confirmed present in the *deployed*
+  source. Ids in DECISIONS.md (2026-07-24).
 - **Token registration.** `users/{uid}/fcmTokens` now populated for both accounts —
   the first tokens ever written in this project.
 - **FOREGROUND push delivery.** Worker → FCM → device → in-app banner, rendered with
@@ -85,15 +86,12 @@ or in DECISIONS.md.
   authz **branched by event**, recipient computed structurally, per-event dedup in
   FLAT fields. Worker deployed on the `{event}` contract; a negative probe with an
   old-shape `{outcome}` body returns 400, proving the new contract is live.
-- **Group C — planner withdraw. SHIPPED + DEPLOYED** (same commits). Rules ruleset
-  `1ced7bb3-ddc8-4dfe-ab27-ae35e60d4a63` (2026-07-24T21:18Z); the withdraw branch
-  is confirmed in the *deployed* source and the earlier fcmTokens + item-create
-  `status` blocks did not regress.
-  **SUPERSEDED — `1ced7bb3…` is NOT the live ruleset.** The current deployed
-  ruleset is `1cff4c97-3dbf-4e6b-abec-8d3d9a048a8e` (released 2026-08-10T18:40:31Z),
-  which carries the §6/§6.1 hardening on top of the above. Quote that id, not
-  `1ced7bb3…`, when reasoning about what is live. (DECISIONS.md → "Security
-  hardening DEPLOYED (2026-08-10)".)
+- **Group C — planner withdraw. SHIPPED + DEPLOYED** (same commits). The withdraw
+  branch was confirmed in the *deployed* source, and the earlier fcmTokens +
+  item-create `status` blocks did not regress. **Two later deploys have replaced
+  that ruleset; the live id is stated in ONE place in this file — under "Leave /
+  remove / stop-planning" below.** The superseded ids and the §6/§6.1 hardening
+  are in DECISIONS.md ("Security hardening DEPLOYED (2026-08-10)").
 - **Design system + UI-RULES.md. SHIPPED** (`c43a4a3` → `c87012b`). Tokens, the
   one status mapping, the lint, the structure/state/temperature doctrine and the
   filled-vs-line firewall. Colour is **committed and closed** — see the standing UI
@@ -155,9 +153,9 @@ passing it does NOT close item 1.
    up yet.** (DECISIONS.md, 2026-07-22.)
 
 **Leave / remove / stop-planning — BUILT + RULES DEPLOYED AND VERIFIED
-2026-08-20.** Live ruleset **`47c62b28-f776-4458-a12f-a5e0d5679168`** (released
-2026-08-20T10:20:36Z), which **supersedes `1cff4c97-…`** named earlier in this
-file — quote this id, not that one. Verification was the real one, not a ruleset
+2026-08-20.** **THE live ruleset is `47c62b28-f776-4458-a12f-a5e0d5679168`**
+(released 2026-08-20T10:20:36Z). It is the only ruleset id in this file, and
+every earlier one is superseded. Verification was the real one, not a ruleset
 id alone: the *deployed source* was fetched back from
 `firebaserules.googleapis.com` and diffed byte-for-byte against `firestore.rules`
 — identical. **Still UNVERIFIED ON A DEVICE:** no leave, remove or stop-planning
@@ -564,10 +562,9 @@ On-device has no address; delete the three together.
 HTTPS). Running the chatbot in a release build over plain HTTP needs a recorded
 decision first.
 
-**`HttpChatbotService` is no longer what the app runs** (see Part 2 below); it is
-kept as the reference implementation to compare the on-device engine against.
-Never run against the live service on a device, and `normalizeBaseUrl` and the
-`/chat` response parsing remain untested.
+**Untested, and it stays that way:** `normalizeBaseUrl` and the `/chat` response
+parsing have no coverage, and this must never be run against the live service on
+a device. (That it is no longer the running engine is said once, above.)
 
 ### On-device engine — Part 2 (it answers) SHIPPED 2026-08-19
 
@@ -615,10 +612,8 @@ either side of the ORT call is covered by tests.
 
 ### On-device model — Part 1 (download + storage) SHIPPED 2026-08-19
 
-The second implementation's **acquisition layer**, recorded as built. (Its "no
-inference yet, provider unchanged" caveats were true for one session and are
-superseded by Part 2 above.) (DECISIONS.md → "On-device chatbot model — download
-+ storage".)
+The second implementation's **acquisition layer**, recorded as built.
+(DECISIONS.md → "On-device chatbot model — download + storage".)
 
 ~143.5MB of model files are **downloaded from a GitHub Release, never bundled**.
 `kModelReleaseBaseUrl` in `data/model_manifest.dart` is the one line to swap. It

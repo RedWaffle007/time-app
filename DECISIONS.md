@@ -613,6 +613,12 @@ first; the gate is the hand-off to the friend.)
   grants B planner → B creates item → A approves + marks Done → B sees outcome —
   has **not** been run on a device. Until it is, "the rules don't break the app"
   is unproven.
+
+  **DISCHARGED — Test 2 PASSED 2026-07-24.** See "Rules Test 2 — on-device happy
+  path PASSED" below, under `# 2026-07-24 (later)`. The paragraph above is left
+  standing rather than rewritten, so the debt and its discharge sit next to each
+  other — same handling as the ARCHITECTURE.md amendment on 2026-08-14. **Test 3
+  below is NOT discharged by it.**
 - **Firestore rules — grant-off negative test (Test 3).** Not run. Need to
   confirm that with the planner grant revoked (`granted:false`), B's item-create
   is rejected with `PERMISSION_DENIED`.
@@ -1451,6 +1457,40 @@ from `c3b921e` **works**.
 hypothetical: the transport, the Worker's authz/recipient resolution, the token
 lookup, and the foreground render are all now exercised against a real second person
 on a real device.
+
+## Rules Test 2 — on-device happy path PASSED
+
+The two-account sequence from the 2026-07-18 debt list, run with a real second
+person on a real device:
+
+    A creates group → B joins by code → A grants B planner →
+    B creates item → A approves → A marks Done → B receives the outcome
+
+Every step succeeded. Test 2 is the deadline condition recorded in that debt
+list — *"Tests 2 & 3 are due BEFORE the debug APK goes to the friend"* — and
+this discharges it **for Test 2 only**.
+
+**Test 3 is still NOT run.** Revoking the grant and confirming B's item-create is
+refused `PERMISSION_DENIED` remains open (CLAUDE.md "Parked & unverified", item
+2). Test 2 shows the rules do not break the app; it says nothing about whether
+they refuse what they are meant to refuse. Do not let one stand in for the other.
+
+**Provenance, stated because this entry is back-dated.** Written 2026-08-21. It
+is a transcription of the assertion that had been carried in CLAUDE.md's
+"VERIFIED 2026-07-24 — do not re-open these" list since that day — not a fresh
+observation and not new evidence. Two details are therefore left unclaimed: the
+exact time, and whether the run sat on the `45d5f8bc…` ruleset deployed at
+15:55:56Z that morning. The same-day grouping implies it, but the original record
+does not say so, and an inferred ruleset id is exactly the kind of thing this
+file exists to stop people quoting as fact.
+
+**Why it is being written down now.** It existed in exactly one place in the
+repo. A condensation pass over CLAUDE.md on 2026-08-21 proposed collapsing that
+list, which would have deleted the only record of the pass — while the debt list
+above still read "has **not** been run on a device". The file would then have
+asserted the opposite of the truth, with nothing to catch it. A verification
+result that lives in one summary line and nowhere else is not recorded, it is
+remembered.
 
 ## REMAINING OPEN QUESTION — backgrounded / killed-app delivery
 
