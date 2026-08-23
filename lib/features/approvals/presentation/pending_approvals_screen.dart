@@ -143,6 +143,9 @@ class _ApprovalCard extends ConsumerWidget {
             item.targetUid,
             item.id,
             reason: controller.text,
+            // `item:` frees the slot lock. A rejected plan has no claim on the
+            // half-hour, and without this it would block it permanently.
+            item: item,
           );
       await ref.read(notificationEventNotifierProvider).notify(
             event: NotifyEvent.decided,

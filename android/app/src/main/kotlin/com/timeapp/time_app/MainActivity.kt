@@ -1,10 +1,14 @@
 package com.timeapp.time_app
 
+import android.app.NotificationManager
+import android.content.Context
+import android.os.Build
 import android.util.Log
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import com.timeapp.time_app.reminders.AlarmSoundService
 import com.timeapp.time_app.reminders.ReminderAuditChannel
 
 /**
@@ -53,6 +57,17 @@ class MainActivity : FlutterFragmentActivity() {
         const val CHANNEL = "time_app/secure_window"
         const val METHOD = "setSecure"
         const val TAG = "SecureWindow"
+
+        // The full-screen-intent capability query. Requesting the grant is the
+        // plugin's job (`requestFullScreenIntentPermission`); only the CHECK has
+        // no Dart-side API, so this one method fills the gap.
+        const val FSI_CHANNEL = "time_app/full_screen_intent"
+        const val FSI_METHOD = "canUseFullScreenIntent"
+
+        // The alarm-playback lifecycle. Dart (`AlarmScreen`) starts the sound on
+        // mount and stops it on dismiss; the sound itself lives in
+        // [AlarmSoundService] so it survives the screen going dark.
+        const val ALARM_CHANNEL = "time_app/alarm_sound"
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -63,6 +78,47 @@ class MainActivity : FlutterFragmentActivity() {
         // activity by hours, and holding an Activity in a PendingIntent's
         // context is how a leak becomes a crash on a 6am delivery.
         ReminderAuditChannel(applicationContext).register(flutterEngine.dartExecutor.binaryMessenger)
+
+        // Can a full-screen reminder actually launch over the top of another app?
+        // On Android 14+ (API 34) USE_FULL_SCREEN_INTENT is user-revocable for a
+        // non-alarm app, so holding the manifest permission is not enough — the
+        // real answer is `NotificationManager.canUseFullScreenIntent()`. Below 34
+        // the permission is granted at install, so the capability is always true.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, FSI_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                if (call.method != FSI_METHOD) {
+                    result.notImplemented()
+                    return@setMethodCallHandler
+                }
+                val allowed =
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                        val nm = getSystemService(Context.NOTIFICATION_SERVICE)
+                            as NotificationManager
+                        nm.canUseFullScreenIntent()
+                    } else {
+                        true
+                    }
+                result.success(allowed)
+            }
+
+        // Start / stop the alarm sound, and drive the window flags that make the
+        // alarm UI show over the lock screen and stay lit while it rings.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, ALARM_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "start" -> {
+                        showOverLockAndWake(true)
+                        AlarmSoundService.start(this)
+                        result.success(null)
+                    }
+                    "stop" -> {
+                        AlarmSoundService.stop(this)
+                        showOverLockAndWake(false)
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
@@ -115,5 +171,32 @@ class MainActivity : FlutterFragmentActivity() {
                     result.success(null)
                 }
             }
+    }
+
+    /**
+     * Show this activity over the lock screen, turn the screen on for it, and
+     * keep it lit while the alarm rings.
+     *
+     * KEEP_SCREEN_ON keeps the alarm UI visible; it is NOT what keeps the sound
+     * going — [AlarmSoundService]'s wake lock does that, independent of the
+     * screen. On API 27+ the show/turn-on flags are Activity setters; below that
+     * they are window flags. Runs on the platform thread (a channel callback), so
+     * the window can be touched directly.
+     */
+    private fun showOverLockAndWake(on: Boolean) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(on)
+            setTurnScreenOn(on)
+        } else {
+            @Suppress("DEPRECATION")
+            val flags = WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+            if (on) window.addFlags(flags) else window.clearFlags(flags)
+        }
+        if (on) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 }

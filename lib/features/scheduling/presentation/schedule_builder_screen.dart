@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:timezone/timezone.dart' as tz;
 
 import '../../../core/format/datetime_format.dart';
 import '../../../core/theme/app_icons.dart';
@@ -15,7 +16,11 @@ import '../../groups/application/group_providers.dart';
 import '../../groups/domain/planner_grant.dart';
 import '../../notifications/application/outcome_notifier.dart';
 import '../application/schedule_providers.dart';
+import '../application/slot_availability.dart';
+import '../application/target_schedule_providers.dart';
+import '../data/schedule_repository.dart';
 import '../domain/schedule_item.dart';
+import 'target_schedule_modal.dart';
 
 /// Planner picks a target they may plan for and creates a timetable item IN THE
 /// TARGET'S LOCAL TIME.
@@ -97,6 +102,38 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     if (picked != null) setState(() => _time = picked);
   }
 
+  /// Open the target's schedule and let the planner pick a free half-hour.
+  ///
+  /// **Gated on the existing grant, not on a new permission.** No active
+  /// `plannerGrants` row over this target means no modal — the same fact the
+  /// rules check before letting the read happen at all.
+  ///
+  /// Self-planning does not use it: a user looking at their own schedule already
+  /// has My Schedule and the calendar, and the plain pickers are less ceremony.
+  Future<void> _pickSlotFromTargetSchedule(String timezone) async {
+    final targetUid = _targetUid;
+    if (targetUid == null) return;
+    final profile = ref.read(profileByUidProvider(targetUid)).value;
+
+    final choice = await showTargetScheduleModal(
+      context,
+      targetUid: targetUid,
+      targetName: profile?.name ?? 'Their',
+      targetTimezone: timezone,
+      initialLocalDay: _date ?? DateTime.now(),
+    );
+    if (choice == null || !mounted) return;
+
+    // The modal hands back an INSTANT; the form holds wall-clock fields in the
+    // target's zone. Converting here keeps `_wall()` the single place that
+    // builds the carrier the repository expects.
+    final local = tz.TZDateTime.from(choice.startUtc, tz.getLocation(timezone));
+    setState(() {
+      _date = DateTime(local.year, local.month, local.day);
+      _time = TimeOfDay(hour: local.hour, minute: local.minute);
+    });
+  }
+
   bool get _canSave =>
       _targetUid != null &&
       _date != null &&
@@ -110,6 +147,32 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     if (!_isSelf && _groupId == null) return; // planning for others needs a group
 
     final wall = _wall();
+
+    // One more check against the live stream before writing. The modal's view
+    // can be seconds stale, and the planner may also have typed a time with the
+    // plain pickers without ever opening it.
+    //
+    // This is a COURTESY, not the guarantee: it reads the same client-side
+    // stream the modal drew from, so it cannot see a write that landed
+    // milliseconds ago. The guarantee is the slot lock inside `createItem`,
+    // which fails the batch atomically. This exists so the common case gets a
+    // clear message instead of a failed write.
+    if (!_isSelf) {
+      final items = ref.read(targetScheduleProvider(_targetUid!)).value;
+      if (items != null &&
+          !isInstantBookable(
+            instantUtc: resolveWallTimeToUtc(wall, timezone),
+            items: items,
+            now: DateTime.now().toUtc(),
+          )) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('That half-hour is taken. Pick another slot.'),
+          ),
+        );
+        return;
+      }
+    }
 
     setState(() => _saving = true);
     try {
@@ -151,6 +214,15 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
         _date = null;
         _time = null;
       });
+    } on SlotTakenException catch (e) {
+      // The write was rejected because the slot was claimed between this
+      // planner opening the modal and submitting — the stale-view case. Its
+      // message is already written for the user, so it is shown as-is rather
+      // than wrapped in "Failed:".
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.message)));
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -218,6 +290,23 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
             onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: Space.lg),
+          // Planning for someone else: offer their schedule as the way to pick a
+          // time, so a conflict is visible before it is chosen rather than
+          // refused afterwards. Gated on the grant — `canViewTargetSchedule`
+          // reads `plannerGrants`, the same consent this whole screen runs on,
+          // so no grant means no button and no modal.
+          if (!_isSelf &&
+              timezone != null &&
+              ref.watch(canViewTargetScheduleProvider(_targetUid!))) ...[
+            FilledButton.tonalIcon(
+              onPressed: () => _pickSlotFromTargetSchedule(timezone),
+              icon: const Icon(AppIcons.navSchedule),
+              label: Text(
+                'See ${selectedProfile?.name ?? 'their'} schedule & pick a slot',
+              ),
+            ),
+            const SizedBox(height: Space.md),
+          ],
           Row(
             children: [
               Expanded(

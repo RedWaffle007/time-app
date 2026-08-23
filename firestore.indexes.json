@@ -4,32 +4,56 @@
       "collectionGroup": "plannerGrants",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
-        { "fieldPath": "granted", "order": "ASCENDING" },
-        { "fieldPath": "plannerUid", "order": "ASCENDING" }
+        {
+          "fieldPath": "granted",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "plannerUid",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "plannerGrants",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
-        { "fieldPath": "granted", "order": "ASCENDING" },
-        { "fieldPath": "targetUid", "order": "ASCENDING" }
+        {
+          "fieldPath": "granted",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "targetUid",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "friendRequests",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "toUid", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" }
+        {
+          "fieldPath": "toUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "friendRequests",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "fromUid", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" }
+        {
+          "fieldPath": "fromUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
       ]
     }
   ],
@@ -38,7 +62,20 @@
       "collectionGroup": "items",
       "fieldPath": "createdByUid",
       "indexes": [
-        { "queryScope": "COLLECTION_GROUP", "order": "ASCENDING" }
+        {
+          "queryScope": "COLLECTION_GROUP",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "plannerGrants",
+      "fieldPath": "targetUid",
+      "indexes": [
+        {
+          "queryScope": "COLLECTION_GROUP",
+          "order": "ASCENDING"
+        }
       ]
     }
   ]

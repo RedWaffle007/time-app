@@ -451,6 +451,28 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
+  group('ReminderPermissionState.isFullyReady', () {
+    ReminderPermissionState state({
+      bool notifications = true,
+      bool exact = true,
+      bool fsi = true,
+    }) =>
+        ReminderPermissionState(
+          notificationsEnabled: notifications,
+          exactAlarmsAllowed: exact,
+          fullScreenIntentAllowed: fsi,
+        );
+
+    test('needs all three — the primer shows until every one is granted', () {
+      expect(state().isFullyReady, isTrue);
+      expect(state(notifications: false).isFullyReady, isFalse);
+      expect(state(exact: false).isFullyReady, isFalse);
+      expect(state(fsi: false).isFullyReady, isFalse,
+          reason: 'full-screen intent is what makes it ring over other apps');
+    });
+  });
+
+  // -------------------------------------------------------------------------
   group('ReminderService', () {
     late _FakeScheduler scheduler;
     late InMemoryReminderMirrorStore store;
@@ -466,6 +488,31 @@ void main() {
       await service.sync(items: [item(id: 'a')], uid: 'me');
       expect(scheduler.scheduled.map((s) => s.$1.itemId), ['a']);
       expect((await store.load()).map((m) => m.itemId), ['a']);
+    });
+
+    test('dismiss cancels the id the MIRROR recorded, not the bare hash',
+        () async {
+      // A collision can move a reminder off `reminderNotificationId(itemId)`, and
+      // the mirror is the authority. Seed a moved id and prove dismiss honours it.
+      final moved = reminderNotificationId('a') + 7;
+      await store.save([
+        ScheduledReminder(
+          itemId: 'a',
+          notificationId: moved,
+          fireAtUtc: DateTime.utc(2030),
+          fingerprint: 'fp',
+        ),
+      ]);
+      await service.dismiss('a');
+      expect(scheduler.cancelled, [moved]);
+      expect(scheduler.cancelled, isNot(contains(reminderNotificationId('a'))));
+    });
+
+    test('dismiss falls back to the hash when the mirror was wiped', () async {
+      // The mirror can be empty after a wipe, but a fired alarm must still be
+      // silenceable — the id is recomputable from the item id alone.
+      await service.dismiss('gone');
+      expect(scheduler.cancelled, [reminderNotificationId('gone')]);
     });
 
     test('a second sync with the same items does nothing at all', () async {

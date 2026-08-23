@@ -31,6 +31,30 @@
          drops every one of them with no error to anyone. This permission is what
          lets both boot receivers below hear about the reboot and re-arm. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+
+    <!-- A reminder must RING OVER whatever app is in the foreground, exactly like
+         a clock alarm. An ordinary heads-up notification does not: HyperOS (and
+         stock Android's own interruption heuristics) suppress a background app's
+         alert — sound included — while another app holds the foreground, which is
+         precisely why a reminder was silent while the user was in another app but
+         loud when the screen was idle. A FULL-SCREEN INTENT is treated as a
+         genuine alarm interruption instead of a suppressible notification, so it
+         alerts unconditionally. On Android 14+ this permission is user-revocable
+         for a non-alarm app; `canUseFullScreenIntent()` (native channel) reports
+         the real state and the primer sends the user to grant it. Reminders are
+         the core of this product, which is the use case this permission names. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
+
+    <!-- The alarm SOUND must survive the screen going dark. FLAG_INSISTENT on the
+         notification loops the tone but holds nothing awake, so when the
+         full-screen intent's screen times out the OS stops servicing it and the
+         sound dies — the "rings a few seconds then cuts out" bug. Real alarm apps
+         play the tone in a FOREGROUND SERVICE holding a PARTIAL_WAKE_LOCK; these
+         three permissions are what that service needs. MEDIA_PLAYBACK is the FGS
+         type Android 14+ requires and the conventional fit for alarm audio. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <application
         android:label="time_app"
         android:name="${applicationName}"
@@ -141,6 +165,16 @@
                 <action android:name="android.intent.action.TIMEZONE_CHANGED"/>
             </intent-filter>
         </receiver>
+
+        <!-- Plays the alarm tone on a PARTIAL_WAKE_LOCK so it keeps ringing with
+             the screen off, until dismissed (or the 10-minute safety cap). Not
+             exported — only this app's MainActivity starts and stops it. The
+             mediaPlayback FGS type matches the AudioAttributes(USAGE_ALARM)
+             playback and satisfies Android 14+'s typed-FGS requirement. -->
+        <service
+            android:name=".reminders.AlarmSoundService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

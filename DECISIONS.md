@@ -3804,3 +3804,120 @@ also 4dp under the minimum touch target, and a calendar cell is a *tap target*
 in every view — it is how a date is selected. Six rows at 48 is 288dp plus the
 day-of-week header, which a phone holds without scrolling, so the floor cost
 nothing here. Had it cost something, the floor would still have won.
+
+---
+
+## "View B's schedule" modal + slot conflicts (2026-08-21)
+
+A planner (A) picking a time for a target (B) can now see B's schedule live, and
+cannot pick a slot B has already filled. `lib/features/scheduling/` (the modal and
+slot logic) plus one new access mirror under `lib/features/groups/`.
+
+### Two blockers found before any code was written
+
+**A could not read B's schedule at all.** `firestore.rules` had
+`allow read: if signedIn() && request.auth.uid == targetUid` on
+`scheduleItems/{targetUid}/items/{itemId}`, and the collection-group rule allowed
+only `resource.data.createdByUid == request.auth.uid`. So A saw *the items A had
+created for B*, never B's schedule. The feature is impossible without a rules
+change; it is not a UI problem.
+
+**`callerHasActiveGrant()` could not be reused as-is.** The helper is exactly the
+right predicate, but it takes a `groupId`, and a read of `scheduleItems/{B}/items`
+carries none. Rules cannot query for "any group in which A holds a grant over B" —
+the same wall the social layer hit, and the reason `social_ids.dart` exists.
+
+### The access mirror — `plannerAccess/{plannerUid}_{targetUid}`
+
+Existence *is* the permission. The id is computed from the two uids, so the rules
+engine can construct it, which is the entire point:
+
+```
+allow read: if request.auth.uid == targetUid
+         || exists(/databases/$(db)/documents/plannerAccess/
+                   $(request.auth.uid + '_' + targetUid));
+```
+
+**It is a denormalization of `plannerGrants`, and that is the cost being paid
+knowingly.** Grants are per-group; this mirror answers the different question
+"does A hold *at least one* active grant over B, in any group". Nothing else can
+answer that inside a rule.
+
+**Only B writes it** — consent stays the target's, exactly as `plannerGrants`
+does. A can read it and nothing else.
+
+**It is maintained off the GRANT STREAM, never off the grant transitions.** Same
+doctrine as reminders and profile stats, and here the argument is stronger than
+in either: a transition-driven mirror that half-fails on revoke leaves A able to
+read B's schedule after B revoked, which is a security staleness rather than a
+missed notification. `PlannerAccessReconciler` watches B's own incoming grants
+and makes the mirror set match — one rule, applied to whatever the stream
+currently says, idempotent. **Adding a mirror write inside `setPlannerGrant()` is
+a regression**, not a belt-and-braces improvement.
+
+That choice also solves backfill for free: every grant that existed before this
+feature gets its mirror the first time B opens the app, with no migration script.
+
+**Stated limitation.** The mirror is client-maintained, so a revoke performed
+while B is offline does not reach it until B is next online. B performs revokes
+*in the app*, so in practice the write and the stream fire together — but the
+window is real and cannot be closed without a Cloud Function.
+
+### Conflicts: 30-minute buckets, and why not real intervals
+
+`ScheduleItem` has **no duration field** — it carries an instant. Real interval
+overlap needs `durationMinutes`, which is the goals-phase decision this file
+already defers, and which would touch the model, the builder, the create-rules
+whitelist and three card screens. So a slot is a **fixed 30-minute bucket**, used
+for display, for blocking and for the lock id. The model is unchanged and the
+goals decision is not pre-empted.
+
+**Buckets are anchored to UTC, not to B's wall clock.**
+`slotIndex = epochMs ~/ 1800000`. A wall-clock anchor is prettier and is wrong
+twice a year: on a fall-back date the local 01:30 bucket happens twice and the
+key is ambiguous, which is precisely the class of bug `tz_resolver.dart` exists
+to prevent. UTC anchoring is total and monotone.
+
+**The cost, stated:** in a zone whose offset is not a whole half-hour (Kathmandu
++05:45, Chatham +12:45), buckets begin at :15 and :45 local rather than :00 and
+:30. Unambiguous beat tidy.
+
+### Server-side re-validation — a lock document, because nothing else is available
+
+The requirement is that a slot taken while A's modal is open must be **rejected at
+write time**, not merely hidden. Two mechanisms do not exist here:
+
+- **Cloud Functions.** There is no `functions/` directory, no functions block in
+  `firebase.json`, and Blaze is unavailable (the same constraint that sent avatars
+  to Supabase).
+- **A rules-side query.** Rules cannot ask "does an overlapping item exist".
+
+What is left is the pattern this repo already uses twice — `usernames/{handle}`
+and `joinCodes/{code}` — a document whose id is computed and whose `create`
+therefore fails if it already exists. `scheduleSlots/{targetUid}/slots/{slotIndex}`
+is written in the **same `WriteBatch`** as the item, so the pair lands atomically:
+if the slot was taken between open and submit, the batch fails and no item is
+created. `allow update: if false` is what makes it a lock rather than an upsert —
+Firestore treats `set` on an existing doc as an update, so the create branch only
+ever sees a genuinely free slot.
+
+**A lock is released when its item dies** — `withdraw()` and `reject()` delete it.
+Without that a rejected plan would block B's slot forever. Release is best-effort
+and deliberately *not* transactional with the status write: a lock that outlives
+its item costs one falsely-blocked slot, while a status write that fails because a
+lock delete failed would break the consent loop, which matters more.
+
+**The items stream stays authoritative for what A SEES.** Locks are a race guard
+only; the modal computes availability from B's live items. Two sources would
+otherwise disagree, and the one the user is looking at should be the real one.
+
+### The modal is not a route
+
+`showTargetScheduleModal()`, a function, matching every other dialog and sheet in
+this app (`showModalBottomSheet` in the calendar, `showDialog` in outcome and
+activity). It is transient state inside the builder, not a location: a user who
+rotated the phone or shared a link should not land in a modal over a form with no
+target selected.
+
+Backdrop is `BackdropFilter` at `Blurs.modalBackdrop`, over a scrim — the app had
+no blurred surface before this, so both are new tokens (UI-RULES.md §6.11).

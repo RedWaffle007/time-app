@@ -165,7 +165,10 @@ class _ActivityCard extends ConsumerWidget {
       ),
     );
     if (confirmed != true) return;
-    await ref.read(scheduleRepositoryProvider).withdraw(item.targetUid, item.id);
+    await ref
+        .read(scheduleRepositoryProvider)
+        // `item:` frees the slot lock this plan was holding.
+        .withdraw(item.targetUid, item.id, item: item);
     await ref.read(notificationEventNotifierProvider).notify(
           event: NotifyEvent.withdrawn,
           targetUid: item.targetUid,

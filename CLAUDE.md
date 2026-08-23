@@ -153,14 +153,17 @@ passing it does NOT close item 1.
    up yet.** (DECISIONS.md, 2026-07-22.)
 
 **Leave / remove / stop-planning — BUILT + RULES DEPLOYED AND VERIFIED
-2026-08-20.** **THE live ruleset is `47c62b28-f776-4458-a12f-a5e0d5679168`**
-(released 2026-08-20T10:20:36Z). It is the only ruleset id in this file, and
-every earlier one is superseded. Verification was the real one, not a ruleset
-id alone: the *deployed source* was fetched back from
+2026-08-20.** **THE live ruleset is `56e11d6d-6c1c-4dd8-ae16-9141defa7b62`**
+(deployed 2026-08-23, superseding `5749e906` and the long-stale `47c62b28` this
+file wrongly recorded as live — the id had drifted; see the 2026-08-23 deploy in
+DECISIONS.md). It is the only ruleset id in this file, and every earlier one is
+superseded. This same live ruleset now also carries the slot-lock + planner-access
+rules (see "View B's schedule modal" below). Verification was the real one, not a
+ruleset id alone: the *deployed source* was fetched back from
 `firebaserules.googleapis.com` and diffed byte-for-byte against `firestore.rules`
-— identical. **Still UNVERIFIED ON A DEVICE:** no leave, remove or stop-planning
-has actually been run against the live rules, and the installed build predates
-the feature.
+— identical (bar a trailing EOF newline the API round-trip adds). **Still
+UNVERIFIED ON A DEVICE:** no leave, remove or stop-planning has actually been run
+against the live rules, and the installed build predates the feature.
 
 These are the first relationship-*ending* controls in the app (DECISIONS.md →
 "Ending a relationship"). Three narrow rules changes — member removal on `/groups`,
@@ -367,10 +370,75 @@ can fire `installer_clear_app_data_caller`, **wiping prefs, the mirror and the
 sign-in**; a post-install run starts from an empty mirror and a signed-out app,
 which is not a bug but will mislead you if unnoticed.
 
+**FIRING VERIFIED 2026-08-23 — and then a foreground-silence bug found and
+fixed.** A self-item reminder fired on the Redmi and rang LOUD on the alarm
+stream **after a recent-apps clear** — the first observed fire, killed-app
+included. BUT it was **silent while another app held the foreground**, loud only
+when the screen was idle. Root cause: the reminder was a *heads-up notification*,
+which HyperOS suppresses (sound included) while another app is foreground. The
+USAGE_ALARM channel had fixed the ringer-mask silence; it did nothing for
+foreground suppression. **Fix (directed, SHIPPED 2026-08-23, NOT YET VERIFIED ON
+DEVICE): full-screen-intent alarm.** The reminder now posts with
+`fullScreenIntent: true`, `category: alarm`, and `FLAG_INSISTENT` (looping tone),
+behind a new `USE_FULL_SCREEN_INTENT` permission. A full-screen intent is treated
+as a genuine alarm interruption, not a suppressible notification, so it rings over
+any foreground app and launches full-screen when locked. New pieces:
+`presentation/alarm_screen.dart` (the full-screen surface, reached via the ONE
+tap route `NotificationRouter.openItem` → `Routes.alarm`; its Dismiss calls
+`ReminderService.dismiss()` which cancels the notification to stop the insistent
+loop), a `canUseFullScreenIntent()` native check on `MainActivity`'s
+`time_app/full_screen_intent` channel (the plugin wraps the request but not the
+query), `fullScreenIntentAllowed` folded into `ReminderPermissionState.isFullyReady`,
+and a third primer branch that requests it. **Alarm stream volume was 3/15 on the
+Redmi — a contributing factor, not the cause; bump it for testing.**
+
+**FOLLOW-UP BUG + FIX 2026-08-23 — the sound tracked the screen, not the alarm.**
+On the Redmi the full-screen alarm lit the screen and rang, but the tone **cut
+out the moment the screen went dark** — useless for waking anyone. Cause:
+`FLAG_INSISTENT` loops the notification tone but holds NOTHING awake, so once the
+FSI's screen timed out the OS stopped servicing it. Fix (SHIPPED 2026-08-23, NOT
+YET VERIFIED ON DEVICE): **playback moved into a wake-lock-backed foreground
+service**, exactly how AOSP DeskClock does it. `AlarmSoundService.kt`
+(`.reminders`) holds a `PARTIAL_WAKE_LOCK` and loops a `MediaPlayer` on
+`USAGE_ALARM`, `startForeground` with `foregroundServiceType=mediaPlayback`, a
+**10-minute safety auto-stop** so a missed dismiss can't ring/hold the lock
+forever. Driven from Dart over `MainActivity`'s `time_app/alarm_sound` channel
+(`data/alarm_sound.dart` → `AlarmSound`): `AlarmScreen` on mount **starts the
+service AND cancels the fired notification** (so the two tones never double up),
+and on Dismiss stops it. `MainActivity.showOverLockAndWake()` sets
+`setShowWhenLocked`/`setTurnScreenOn` + `FLAG_KEEP_SCREEN_ON` (UI visibility only
+— the wake lock, not the screen, is what sustains the sound). New manifest perms:
+`WAKE_LOCK`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK` + the
+`<service>`. **The two audio paths split and never overlap:** foreground-app case
+= the notification's own insistent tone (this screen never opens); locked/off case
+= FSI opens `AlarmScreen` → service takes over on a wake lock. **Do not add a
+per-transition sound hook or move playback back into the notification** — the
+service owns it. `mediaPlayback` is the FGS type; `specialUse` is the fallback if
+Play ever objects.
+
 **Deferred to later parts (do not build until directed):** OEM
 autostart/battery onboarding, iOS, quiet-hours enforcement, recurring reminders,
 snooze, and a lead-time offset (it wants `ScheduleItem.durationMinutes` — decide
 it WITH goals).
+
+## Slot-lock reconciler — SHIPPED 2026-08-23 (self-healing lock release)
+
+`lib/features/scheduling/application/slot_lock_reconciler.dart` +
+`data/slot_lock_repository.dart` + `releasableSlotLocks()` in
+`slot_availability.dart`. **The fourth stream-driven reconciler**, same doctrine
+as reminders/stats/planner-access: one rule — *a `scheduleSlots` lock should
+exist iff a LIVE item (`blocksSlot`) sits in its slot* — applied to the item
+stream, wired at one line in `app.dart` (`slotLockSyncProvider`). It closes the
+gap that `markDone`/`markSkipped` never released a lock (nor did an offline-failed
+withdraw/reject release), so a completed item's stale lock permanently blocked its
+half-hour — the "slot taken no matter what time I pick" bug. It DELETES only
+(creation stays in `createItem`'s batch); it is collision-safe (verifies the
+stored `itemId` matches a dead item and excludes any slot with a live occupant);
+and it self-heals locks that already leaked. **There is deliberately NO
+`releaseSlot()` in `markDone()`/`markSkipped()`** — adding one is a regression, a
+second place that decides. NOT YET VERIFIED ON DEVICE (needs the install that also
+carries the reconciler — the earlier build predated it, which is why the first
+on-device test showed no release).
 
 ## Social profile layer — SHIPPED 2026-08-21
 
@@ -445,6 +513,80 @@ a fourth nav tab (the bar names the three delegation stances).
 both changed; the app fails closed until they are deployed. Verify the deployed
 source, then install. 100 emulator rules tests cover it
 (`firestore-tests/social.test.mjs`).
+
+## "View B's schedule" modal + slot conflicts — SHIPPED 2026-08-21
+
+A planner picking a time for a target sees that target's schedule live, and
+cannot pick a half-hour that is already taken. Reasoning in DECISIONS.md →
+"View B's schedule modal + slot conflicts"; recipes in UI-RULES.md §6.11.
+**NOT VERIFIED ON A DEVICE. RULES + INDEXES DEPLOYED 2026-08-23** (live ruleset
+`56e11d6d-6c1c-4dd8-ae16-9141defa7b62`; `scheduleSlots` + `plannerAccess` +
+`callerHasPlannerAccess` confirmed present in the deployed source, and it diffs
+byte-for-byte against `firestore.rules`). This deploy was forced by a real
+failure: the installed debug build batches a `scheduleSlots` lock write with
+every `createItem`, so with the slot rules undeployed EVERY item-create —
+self-items included — failed atomically with "Missing or insufficient
+permissions." Cause was the undeployed rules, not auth.
+
+**DEPLOY ORDER — RULES FIRST (now done).**
+`firestore.rules` and `firestore.indexes.json` both changed. Until deployed the
+modal's read is denied and the access mirror cannot be written. An old client
+against the new rules is fine (everything added is additive), so rules-then-app
+is safe in that order and only that order.
+
+```
+firebase deploy --only firestore:rules,firestore:indexes
+```
+
+Things not to rediscover:
+
+- **A planner could not read a target's schedule at all** before this. The item
+  rule was target-only and the collection-group rule only exposed items the
+  caller *created*. This was never a UI gap; it needed rules.
+- **`callerHasActiveGrant()` cannot gate it.** That helper needs a `groupId`, and
+  a read of `scheduleItems/{B}/items` carries none — rules construct paths, they
+  do not query. Hence the mirror below. Do not try to "just reuse the helper".
+- **`plannerAccess/{plannerUid}_{targetUid}` — existence IS the permission.**
+  Only the TARGET may write a row (the rules pin `targetUid` to the caller); a
+  planner minting their own would invert the entire model. **The rules cannot
+  verify the mirror against `plannerGrants`** — that check needs the very query
+  that forced the mirror to exist, so it is circular. It is not a hole: only the
+  target can write, and the only power granted is reading the target's own data.
+  Agreement with the grants is a CLIENT invariant.
+- **The mirror is driven off the GRANT STREAM, never off grant transitions**
+  (`PlannerAccessReconciler`, wired at the one line in `app.dart` beside the
+  reminder and stats wires). Same doctrine, sharper argument: a stale mirror is
+  access outliving its revocation, not a missed notification. **Adding a mirror
+  write inside `setPlannerGrant()` is a regression.** It also backfills
+  pre-existing grants on next app open, with no migration.
+  **Known window:** a revoke performed while the target is offline does not reach
+  the mirror until they are next online. Closing it needs a Cloud Function.
+- **A "slot" is a fixed 30-minute bucket, NOT a duration on the item.**
+  `ScheduleItem` still has no duration field and this does not add one — the
+  goals-phase decision is untouched. Buckets are **anchored to the UTC epoch**,
+  because a wall-clock anchor is ambiguous on fall-back dates (local 01:30 twice
+  = one key, two half-hours). Cost: in +05:45 zones buckets start at :15/:45
+  local. `kSlotMinutes` is the one place; **changing it invalidates every
+  existing lock.**
+- **The server-side re-check is a LOCK DOCUMENT, because nothing else exists.**
+  No Cloud Functions in this project (no `functions/`, no Blaze) and rules cannot
+  query. `scheduleSlots/{targetUid}/slots/{slotIndex}` is written in the **same
+  `WriteBatch`** as the item; `allow update: if false` is what makes a colliding
+  `set` fail instead of overwrite — the `usernames/{handle}` device. An emulator
+  test asserts the race directly.
+- **Locks are released on `withdraw()` and `reject()`** via an optional `item:`
+  argument, best-effort and deliberately not batched with the status write. A
+  stale lock costs one falsely-blocked half-hour; a status write that failed
+  because a lock delete failed would break the consent loop.
+- **Items pre-dating this feature have no lock.** They still block in the UI (the
+  items stream is authoritative for what is *shown*), but their half-hour has no
+  atomic guard until something rewrites it.
+- **The modal is a function, not a route** — `showTargetScheduleModal()`, like
+  every other dialog and sheet here.
+
+**Flagged, not built:** freeing a lock when an item is archived or its outcome is
+recorded; any UI for a target to see who holds planner access over them; and a
+"next free slot" hint that looks beyond the day in view.
 
 ## In-app calendar — SHIPPED 2026-08-21
 

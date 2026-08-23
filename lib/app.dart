@@ -10,8 +10,10 @@ import 'core/theme/app_theme.dart';
 import 'features/applock/presentation/app_lock_gate.dart';
 import 'features/auth/application/auth_providers.dart';
 import 'features/notifications/application/messaging_service.dart';
+import 'features/groups/application/planner_access_reconciler.dart';
 import 'features/reminders/application/reminder_providers.dart';
 import 'features/scheduling/application/schedule_providers.dart';
+import 'features/scheduling/application/slot_lock_reconciler.dart';
 import 'features/social/application/stats_providers.dart';
 import 'routing/app_router.dart';
 import 'routing/notification_routing.dart';
@@ -284,6 +286,28 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     // both. Everything else about reminders follows from that — there is no
     // per-transition hook anywhere in the app.
     ref.watch(reminderSyncProvider);
+
+    // THE PLANNER-ACCESS MIRROR'S ONE WIRE — same shape again, and here the
+    // argument is sharper than for either of its neighbours. `plannerAccess` is
+    // what the RULES consult to decide whether a planner may read this user's
+    // schedule, so a stale mirror is not a missed notification, it is access
+    // that outlives its revocation. Driving it off the grant stream means
+    // revoke, re-grant, a second group's grant and being ejected from a group
+    // are all the same code path, and it backfills grants that predate the
+    // feature the first time this user opens the app.
+    //
+    // There is deliberately NO mirror write inside `setPlannerGrant()`.
+    ref.watch(plannerAccessSyncProvider);
+
+    // THE SLOT-LOCK WIRE — the same shape a fourth time. A `scheduleSlots` lock
+    // is born in `createItem`'s batch but released only on withdraw/reject, so a
+    // done/skipped item (or a release that missed while offline) leaves a stale
+    // lock that blocks a half-hour the UI already shows as free. This reconciles
+    // the locks against the item stream — a lock survives iff a live item sits
+    // in its slot — and so it self-heals locks that already leaked.
+    //
+    // There is deliberately NO `releaseSlot()` inside `markDone()`/`markSkipped()`.
+    ref.watch(slotLockSyncProvider);
 
     // THE STATS LAYER'S ONE WIRE, and it is the same shape as the reminder
     // wire above on purpose: **driven off the item stream, never off

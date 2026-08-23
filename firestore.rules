@@ -63,6 +63,20 @@ service cloud.firestore {
       return exists(grant) && get(grant).data.granted == true;
     }
 
+    // Does the CALLER hold planner access over `targetUid`, in ANY group?
+    //
+    // `callerHasActiveGrant()` above cannot answer this: it needs a groupId, and
+    // a read of `scheduleItems/{targetUid}/items` carries none. Rules cannot
+    // query for "some group where a grant exists", so the answer is precomputed
+    // into a document whose id this engine CAN construct — the same device the
+    // social layer uses, and for the same reason.
+    //
+    // The mirror is written ONLY by the target (see /plannerAccess below), so
+    // this stays a consent check and not a self-service one.
+    function callerHasPlannerAccess(targetUid) {
+      return exists(/databases/$(database)/documents/plannerAccess/$(request.auth.uid + '_' + targetUid));
+    }
+
     // Keys whose value this write actually CHANGES (added, removed or altered).
     // A field rewritten with the value it already had does not appear — so an
     // idempotent re-approve is not mistaken for a status transition, while
@@ -746,7 +760,16 @@ service cloud.firestore {
     // field scoping also stops a target rewriting `title`,
     // `scheduledInstantUtc` or `createdByUid` after the fact.
     match /scheduleItems/{targetUid}/items/{itemId} {
-      allow read: if signedIn() && request.auth.uid == targetUid;
+      // The target always. A PLANNER holding access over them may also read —
+      // that is the "view B's schedule before picking a time" modal, and it is
+      // read-only: every write branch below still requires the caller to be the
+      // target or the item's own creator, unchanged by this.
+      //
+      // Full detail, not free/busy, and that is the access model rather than an
+      // oversight: B granted A the power to put things ON this schedule, which
+      // is strictly more than the power to read it.
+      allow read: if signedIn()
+        && (request.auth.uid == targetUid || callerHasPlannerAccess(targetUid));
 
       allow create: if signedIn()
         // The full key set a creator may write (note/decidedAt are optional).
@@ -807,6 +830,87 @@ service cloud.firestore {
     // queries. Both stay resource-scoped so a caller can read ONLY items they
     // created / grants that name them — the query MUST filter on the same field
     // (which the app's queries do) or Firestore denies it.
+    // ---- plannerAccess/{plannerUid_targetUid} ----
+    // "Planner P holds at least one active grant over target T", precomputed so
+    // the rules engine can answer it by path construction. Existence IS the
+    // permission; revocation is a delete.
+    //
+    // ONLY THE TARGET WRITES IT. A planner who could create their own mirror
+    // could grant themselves read access to any schedule in the project, which
+    // is the whole security model inverted. The id is parsed rather than trusted:
+    // `targetUid` in the stored data must equal the caller AND must match the id.
+    //
+    // Read is scoped to the two parties, so it cannot be used to enumerate who
+    // plans for whom.
+    match /plannerAccess/{accessId} {
+      allow get: if signedIn()
+        && (resource.data.plannerUid == request.auth.uid
+            || resource.data.targetUid == request.auth.uid);
+      allow list: if false;
+
+      allow create, update: if signedIn()
+        && request.resource.data.keys().hasOnly(
+             ['plannerUid', 'targetUid', 'updatedAt'])
+        && request.resource.data.targetUid == request.auth.uid
+        && accessId == request.resource.data.plannerUid + '_' + request.auth.uid;
+        //
+        // NOT CHECKED, and it cannot be: that the mirror agrees with
+        // `plannerGrants`. Verifying it would need "does any group exist where
+        // this target granted this planner" — the exact query rules cannot run,
+        // and the exact reason this mirror exists. Trying to close the loop here
+        // is circular.
+        //
+        // It is not a hole. The only party who can write a row is the TARGET,
+        // and the only power it confers is reading the target's OWN schedule. A
+        // target minting a row for a non-grantee is a target choosing to share
+        // their own data, which they are entitled to do. What a planner cannot
+        // do — mint their own access — is what the `targetUid == request.auth.uid`
+        // clause above forbids, and that is the clause that matters.
+        //
+        // Agreement with the grants is therefore a CLIENT invariant, held by
+        // `PlannerAccessReconciler` driving the mirror off the grant stream.
+
+      allow delete: if signedIn() && resource.data.targetUid == request.auth.uid;
+    }
+
+    // ---- scheduleSlots/{targetUid}/slots/{slotIndex} ----
+    // The 30-minute slot LOCK. Its only job is to make "B booked this slot while
+    // A's modal was open" fail at write time instead of double-booking.
+    //
+    // There is no Cloud Function in this project and rules cannot run a query,
+    // so overlap cannot be checked directly. What CAN be done is the pattern
+    // `usernames/{handle}` and `joinCodes/{code}` already use: a computed id
+    // whose `create` fails when the document exists. `update: if false` is what
+    // makes it a lock — Firestore treats `set` on an existing doc as an update,
+    // so the create branch only ever sees a genuinely free slot.
+    //
+    // Written in the same WriteBatch as the item, so the two land together or
+    // not at all.
+    //
+    // Delete releases the slot when the item dies (withdraw / reject). Both the
+    // target and the lock's own creator may do it; nobody else.
+    match /scheduleSlots/{targetUid}/slots/{slotIndex} {
+      allow read: if signedIn()
+        && (request.auth.uid == targetUid || callerHasPlannerAccess(targetUid));
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(
+             ['targetUid', 'createdByUid', 'itemId', 'createdAt'])
+        && request.resource.data.targetUid == targetUid
+        && request.resource.data.createdByUid == request.auth.uid
+        // Exactly the people who may create the ITEM this lock guards: the
+        // target planning for themselves, or a planner with an active grant.
+        // A lock nobody could pair with an item would be a denial-of-service on
+        // someone else's calendar.
+        && (request.auth.uid == targetUid || callerHasPlannerAccess(targetUid));
+
+      allow update: if false;
+
+      allow delete: if signedIn()
+        && (request.auth.uid == targetUid
+            || resource.data.createdByUid == request.auth.uid);
+    }
+
     match /{path=**}/items/{itemId} {
       allow read: if signedIn()
         && resource.data.createdByUid == request.auth.uid;

@@ -126,6 +126,22 @@ class GroupRepository {
         .map((s) => s.docs.map(PlannerGrant.fromDoc).toList());
   }
 
+  /// Every grant OTHER people hold over [targetUid] — the mirror image of
+  /// [watchTargetsFor], from the target's side.
+  ///
+  /// Feeds `PlannerAccessReconciler`, which derives the `plannerAccess` mirror
+  /// from it. Deliberately NOT filtered to `granted == true`: the reconciler has
+  /// to see a grant flip to false in order to delete the row it justified, and a
+  /// server-side filter would make a revoked grant look identical to a deleted
+  /// one — which is exactly the row it must remove.
+  Stream<List<PlannerGrant>> watchGrantsOverTarget(String targetUid) {
+    return _db
+        .collectionGroup('plannerGrants')
+        .where('targetUid', isEqualTo: targetUid)
+        .snapshots()
+        .map((s) => s.docs.map(PlannerGrant.fromDoc).toList());
+  }
+
   /// Target grants (or revokes) a planner permission over themselves. Caller
   /// must be the target — consent is the target's to give.
   Future<void> setPlannerGrant({

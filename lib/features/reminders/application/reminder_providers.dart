@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../routing/notification_routing.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../scheduling/application/schedule_providers.dart';
+import '../data/alarm_sound.dart';
 import '../data/local_notifications_reminder_scheduler.dart';
 import '../data/reminder_audit_log.dart';
 import '../data/reminder_mirror_store.dart';
@@ -20,6 +21,13 @@ final localNotificationsPluginProvider =
 
 final reminderAuditLogProvider = Provider<ReminderAuditLog>((ref) {
   return const ReminderAuditLog();
+});
+
+/// The wake-lock-backed alarm sound (native `AlarmSoundService`). A provider so
+/// the alarm screen can be pumped in a widget test with a fake that records
+/// start/stop instead of touching a platform channel.
+final alarmSoundProvider = Provider<AlarmSound>((ref) {
+  return const PlatformAlarmSound();
 });
 
 final reminderMirrorStoreProvider = Provider<ReminderMirrorStore>((ref) {

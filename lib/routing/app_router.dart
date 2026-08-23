@@ -23,6 +23,7 @@ import '../features/social/presentation/user_profile_screen.dart';
 import '../features/social/presentation/user_search_screen.dart';
 import '../features/home/presentation/home_shell.dart';
 import '../features/outcomes/presentation/outcome_screen.dart';
+import '../features/reminders/presentation/alarm_screen.dart';
 import '../features/reminders/presentation/reminder_diagnostics_screen.dart';
 import '../features/scheduling/presentation/planner_activity_screen.dart';
 import '../features/scheduling/presentation/schedule_builder_screen.dart';
@@ -121,6 +122,19 @@ class Routes {
   static String outcomeForItem(String itemId) => Uri(
         path: outcome,
         queryParameters: {outcomeItemParam: itemId},
+      ).toString();
+
+  /// **The full-screen alarm.** Where a fired reminder lands — top-level and
+  /// OUTSIDE the tab shell on purpose: a ringing alarm is not a tab, it covers
+  /// the whole screen and every route off it goes back INTO the shell via
+  /// `outcomeForItem`. Reached only through `NotificationRouter.openItem`, which
+  /// is the one place a reminder tap or full-screen launch is routed.
+  static const alarm = '/alarm';
+  static const alarmItemParam = 'item';
+
+  static String alarmForItem(String itemId) => Uri(
+        path: alarm,
+        queryParameters: {alarmItemParam: itemId},
       ).toString();
 
   /// **The social layer.** All top-level and pushed, deliberately — the same
@@ -309,6 +323,15 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.archived,
         builder: (context, state) => const ArchivedScreen(),
+      ),
+      // The full-screen alarm surface. Top-level and outside the shell so it
+      // covers the nav bar the way a clock alarm covers everything; its Dismiss
+      // routes back into the shell. Reached only from a fired reminder.
+      GoRoute(
+        path: Routes.alarm,
+        builder: (context, state) => AlarmScreen(
+          itemId: state.uri.queryParameters[Routes.alarmItemParam] ?? '',
+        ),
       ),
       // The calendar. Account-level and pushed, alongside Archived and for the
       // same reason — see the doc on `Routes.calendar`. Its create flow is a

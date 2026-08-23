@@ -65,6 +65,17 @@ abstract final class Motion {
   static const Curve curve = Curves.easeOutCubic;
 }
 
+/// Blur radii. See UI-RULES.md §6.11.
+///
+/// One value, one place: the target-schedule modal is the app's only blurred
+/// surface. A second blur is a design question before it is a token question.
+abstract final class Blurs {
+  /// `ImageFilter.blur` sigma behind a centered modal. Always paired with a
+  /// scrim — blur lowers contrast without raising it anywhere, so blur alone
+  /// makes the §7 floor depend on what happens to be underneath.
+  static const double modalBackdrop = 12;
+}
+
 /// Sizes that recur across recipes.
 abstract final class Sizes {
   /// Minimum touch target (UI-RULES.md §7).
@@ -168,6 +179,14 @@ abstract final class Sizes {
   /// `ScheduleItem` has no duration to be proportional to.
   static const double calendarHourGutter = 56;
   static const double calendarHourRow = 56;
+
+  /// **The target-schedule modal** (UI-RULES.md §6.11).
+  ///
+  /// [slotRowHeight] is the §7 touch target, not a layout preference — a slot
+  /// row is how a time is chosen. Same reasoning as [calendarCellHeight].
+  static const double modalMaxWidth = 420;
+  static const double modalMaxHeightFraction = 0.8;
+  static const double slotRowHeight = 48;
 
   /// The celestial body's limb. Deliberately heavier than [hairline]: in light
   /// mode the sky is light at every hour, so the rim — not the fill — is what

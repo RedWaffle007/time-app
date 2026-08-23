@@ -46,6 +46,7 @@ class ReminderPermissionState {
   const ReminderPermissionState({
     required this.notificationsEnabled,
     required this.exactAlarmsAllowed,
+    required this.fullScreenIntentAllowed,
   });
 
   /// POST_NOTIFICATIONS. False means a scheduled reminder fires and posts
@@ -61,11 +62,22 @@ class ReminderPermissionState {
   /// so it must be re-read at runtime and never cached across a launch.
   final bool exactAlarmsAllowed;
 
-  bool get isFullyReady => notificationsEnabled && exactAlarmsAllowed;
+  /// USE_FULL_SCREEN_INTENT. False means the reminder still posts and still
+  /// sounds when the screen is idle, but it is a suppressible notification — so
+  /// while the user is in another app the OEM can (and on the Redmi does) mute
+  /// it. True is what lets it ring over the top of whatever is foreground.
+  ///
+  /// On Android 14+ this is user-revocable for a non-alarm app; below 34 it is
+  /// granted at install, so this reads true there.
+  final bool fullScreenIntentAllowed;
+
+  bool get isFullyReady =>
+      notificationsEnabled && exactAlarmsAllowed && fullScreenIntentAllowed;
 
   @override
   String toString() => 'ReminderPermissionState(notifications: '
-      '$notificationsEnabled, exactAlarms: $exactAlarmsAllowed)';
+      '$notificationsEnabled, exactAlarms: $exactAlarmsAllowed, '
+      'fullScreenIntent: $fullScreenIntentAllowed)';
 }
 
 /// The permission surface, kept apart from [ReminderScheduler] so that asking
@@ -84,6 +96,11 @@ abstract interface class ReminderPermissions {
   /// Sends the user to the system's exact-alarm settings page. There is no
   /// in-app prompt for this one; Android 14+ only grants it from Settings.
   Future<void> requestExactAlarms();
+
+  /// Sends the user to the system's full-screen-intent settings page (Android
+  /// 14+). Like exact alarms, there is no in-app prompt — the grant is made in
+  /// Settings. A no-op below API 34, where the permission is granted at install.
+  Future<void> requestFullScreenIntent();
 
   /// Opens this app's notification settings — the only route back once the user
   /// has denied POST_NOTIFICATIONS, since the OS will not prompt again.

@@ -137,6 +137,31 @@ class ReminderService {
   /// Sign-out. Drops every scheduled reminder and the mirror with it.
   Future<void> clearAll() => sync(items: const [], uid: null, reason: 'clear');
 
+  /// Silence and clear the alarm notification for [itemId] — the alarm screen's
+  /// Dismiss. FLAG_INSISTENT loops the tone until the notification is cancelled,
+  /// so this is what stops the sound.
+  ///
+  /// It cancels the OS notification but does NOT touch the mirror: the reminder
+  /// has already fired, so on the next reconcile its instant is in the past,
+  /// `desiredReminders` drops it, and the mirror row is cleaned up there. Doing
+  /// it here too would just be a second place deciding the same thing.
+  ///
+  /// The id is the one the mirror recorded (the authority, since a collision may
+  /// have moved it off the bare hash); the hash is the fallback for the case
+  /// where the mirror was wiped — a dismiss must still be able to silence a
+  /// notification it can no longer look up.
+  Future<void> dismiss(String itemId) => _enqueue(() async {
+        final mirror = await _store.load();
+        int? id;
+        for (final m in mirror) {
+          if (m.itemId == itemId) {
+            id = m.notificationId;
+            break;
+          }
+        }
+        await _scheduler.cancel(id ?? reminderNotificationId(itemId));
+      });
+
   /// What the app currently believes is scheduled — for the diagnostics screen
   /// only. Nothing in the scheduling path reads this.
   Future<List<ScheduledReminder>> debugMirror() => _store.load();

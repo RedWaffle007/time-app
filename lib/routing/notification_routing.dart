@@ -21,12 +21,13 @@ class NotificationRouter {
 
   final Ref _ref;
 
-  /// A local reminder fired and the user tapped it. Lands on My Schedule with
-  /// the item singled out — the screen that already carries Done and Skip, so
-  /// the tap ends one gesture away from closing the loop.
+  /// A local reminder fired — either tapped, or auto-launched full-screen while
+  /// the device was locked. Lands on the full-screen alarm, which silences the
+  /// looping tone on Dismiss and then routes into My Schedule (Done / Skip). One
+  /// destination for both entry paths keeps the routing decision in one place.
   void openItem(String itemId) {
     if (itemId.isEmpty) return;
-    _ref.read(routerProvider).go(Routes.outcomeForItem(itemId));
+    _ref.read(routerProvider).go(Routes.alarmForItem(itemId));
   }
 
   /// A push from the Worker. Routes by the event's AUDIENCE: target-facing

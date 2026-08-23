@@ -129,13 +129,23 @@ class ReminderPrimerCard extends ConsumerWidget {
         action: 'Turn on',
       );
     }
+    if (!state.exactAlarmsAllowed) {
+      return const _PrimerCopy(
+        icon: AppIcons.exactTiming,
+        title: 'Reminders may arrive late',
+        body: 'Android needs one more permission before it will wake your phone '
+            'at the exact time. Without it a reminder can be a couple of minutes '
+            'late, or much later while the phone is asleep.',
+        action: 'Fix timing',
+      );
+    }
     return const _PrimerCopy(
-      icon: AppIcons.exactTiming,
-      title: 'Reminders may arrive late',
-      body: 'Android needs one more permission before it will wake your phone '
-          'at the exact time. Without it a reminder can be a couple of minutes '
-          'late, or much later while the phone is asleep.',
-      action: 'Fix timing',
+      icon: AppIcons.reminders,
+      title: 'Reminders won’t ring over other apps',
+      body: 'One more permission lets a reminder ring like an alarm even while '
+          "you're using another app. Without it, the sound can be held back "
+          'until you put the other app down.',
+      action: 'Allow',
     );
   }
 }
@@ -203,6 +213,18 @@ Future<void> runReminderPrimer(BuildContext context, WidgetRef ref) async {
     );
     if (agreed != true) return;
     await permissions.requestExactAlarms();
+  } else if (!state.fullScreenIntentAllowed) {
+    final agreed = await _explain(
+      context,
+      title: 'Ring over other apps',
+      body: 'To ring like a real alarm — over the top of whatever you’re doing, '
+          'and on the lock screen — Android needs one more permission. Without '
+          'it the reminder still appears, but the sound can be muted while you '
+          'are in another app. This opens Android’s settings.',
+      confirm: 'Open settings',
+    );
+    if (agreed != true) return;
+    await permissions.requestFullScreenIntent();
   }
 
   // Whatever happened, the OS is the authority — re-read rather than assume.
