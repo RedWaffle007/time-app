@@ -389,29 +389,35 @@ class _DayCell extends StatelessWidget {
                 ? cs.onSurfaceVariant
                 : cs.onSurface;
 
-    return Container(
-      margin: const EdgeInsets.all(Space.xs),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: isSelected ? cs.primary : null,
-        border: isToday && !isSelected
-            ? Border.all(color: cs.primary, width: Sizes.hairline)
-            : null,
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
+    // The ring/disc wraps ONLY the number badge — a fixed-size circle sized to
+    // the digits — with the marker strip BELOW it. Wrapping the whole column
+    // (number + markers) is what made the circle swallow the number and leave a
+    // stray dot at the bottom.
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: Sizes.calendarDayBadge,
+          height: Sizes.calendarDayBadge,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: isSelected ? cs.primary : null,
+            border: isToday && !isSelected
+                ? Border.all(color: cs.primary, width: Sizes.hairline)
+                : null,
+          ),
+          child: Text(
             formatDayOfMonth(context, day),
             style: context.text.bodyMedium?.copyWith(color: numberColor),
           ),
-          // Outside days carry no markers: their items belong to the month
-          // either side and are shown properly when that month is in view.
-          // Drawing them here doubles every item at a month boundary.
-          CalendarMarkerRow(entries: isOutside ? const [] : entries),
-        ],
-      ),
+        ),
+        // Outside days carry no markers: their items belong to the month either
+        // side and are shown properly when that month is in view. Drawing them
+        // here doubles every item at a month boundary.
+        CalendarMarkerRow(entries: isOutside ? const [] : entries),
+      ],
     );
   }
 }

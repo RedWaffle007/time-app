@@ -52,7 +52,11 @@ class AvatarImage extends StatelessWidget {
     return SizedBox(
       width: size,
       height: size,
-      child: ClipOval(
+      // A rounded SQUARE, not a circle — the app's one avatar shape, so changing
+      // it here changes every list row, header and form at once. The radius is a
+      // token (`Radii.md`) so it stays in step with cards and inputs.
+      child: ClipRRect(
+        borderRadius: Radii.md,
         child: Container(
           color: cs.primaryContainer,
           alignment: Alignment.center,

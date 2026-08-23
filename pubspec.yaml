@@ -88,11 +88,11 @@ dependencies:
   # maintained, BSD-3, and it hands back a file path plus the picked file's
   # bytes — which is all `AvatarUploader` takes.
   #
-  # Deliberately NOT paired with an image-cropping or compression package. Both
-  # work by re-encoding, and re-encoding an animated GIF or WebP is the standard
-  # way to silently flatten it to one frame — the exact thing this feature was
-  # asked to support. Size is enforced by refusing a file that is too large
-  # (`avatar.dart`), never by shrinking one behind the user's back.
+  # Crop/compress is applied to STATIC images only (see `image_cropper` below and
+  # DECISIONS.md 2026-08-23). Re-encoding an animated GIF or WebP flattens it to
+  # one frame, so animated formats keep the never-re-encode path and are size-
+  # capped instead — the original reason this pairing was avoided, now scoped to
+  # the case where it actually bites.
   image_picker: ^1.1.2
 
   # The in-app calendar's month and week grids. Apache-2.0, actively released
@@ -107,6 +107,15 @@ dependencies:
   # day view is therefore an hour RAIL, hand-written in
   # `features/calendar/presentation/calendar_day_view.dart`.
   table_calendar: ^3.2.1
+
+  # Crop-with-zoom UI for the profile picture, used for STATIC images ONLY
+  # (JPEG/PNG). It downscales + compresses as it crops, which is what fixes the
+  # "too large" rejection on a modern camera photo. It re-encodes — so it is
+  # NEVER run on an animated GIF/WebP, which would lose the animation; those take
+  # the direct upload path and a 5MB cap instead. See DECISIONS.md 2026-08-23
+  # ("Avatar crop/compress — static only"). Requires UCropActivity in the Android
+  # manifest.
+  image_cropper: ^12.2.1
 
 dev_dependencies:
   flutter_test:

@@ -3921,3 +3921,35 @@ target selected.
 
 Backdrop is `BackdropFilter` at `Blurs.modalBackdrop`, over a scrim — the app had
 no blurred surface before this, so both are new tokens (UI-RULES.md §6.11).
+
+---
+
+## Avatar crop/compress — static only (2026-08-23)
+
+The avatar upload used to reject any file over the cap (2MB static / 5MB
+animated) with no recourse — a normal camera JPEG blew past 2MB, so "too large"
+was a dead end. `image_picker` was deliberately used WITHOUT `imageQuality` /
+`maxWidth`, and the pubspec explicitly refused a crop/compress package, because
+re-encoding an animated GIF or WebP flattens it to a single frame — the exact
+thing the animated-avatar support exists to prevent.
+
+**Decision: keep that rule, but scope it to the case where it actually bites —
+animated formats — and crop+compress STATIC images.** The reason for "never
+re-encode" is animation loss; a JPEG/PNG has no animation to lose. So:
+
+- **Static (JPEG/PNG):** run `image_cropper` — a square crop-with-zoom UI that
+  downscales (1024px cap) and compresses (JPEG q85). That both delivers the
+  requested crop UX and brings a large photo under 2MB. Output is declared as
+  `image/jpeg` because the crop re-encodes to JPEG.
+- **Animated (GIF/WebP):** unchanged — read the bytes directly, never
+  re-encode, and reject over 5MB with a message that explains it can't just be
+  shrunk without killing the animation.
+
+WebP is treated as animated-capable (the conservative side of
+`kAnimatedCapableMimes`) because nothing cheap distinguishes a still WebP from an
+animated one, and a wrong guess that re-encodes an animated WebP is the failure
+we are avoiding.
+
+Adds the `image_cropper` dependency and its `UCropActivity` in the Android
+manifest. The Worker still sniffs bytes and re-checks size, so the client MIME
+remains a hint, never a fact.

@@ -7,6 +7,7 @@ import '../../../core/theme/app_tokens.dart';
 import '../../../core/format/datetime_format.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../applock/presentation/app_lock_tile.dart';
+import '../../social/presentation/profile_avatar_editor.dart';
 import '../../social/presentation/social_profile_editor.dart';
 import '../application/auth_providers.dart';
 import 'timezone_picker.dart';
@@ -195,6 +196,13 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // The picture is the page anchor: centred at the top, its own
+              // widget, uploaded the instant it is picked (no Save gates it).
+              const ProfileAvatarEditor(),
+
+              // IDENTITY — name and home timezone. The two fields the schedule
+              // and every screen depend on, and the ones the Save below commits.
+              const SectionHeader('Identity'),
               TextField(
                 controller: _nameController,
                 // Border, fill and radius come from InputDecorationTheme.
@@ -204,7 +212,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                 ),
                 onChanged: (_) => setState(() {}),
               ),
-              const SizedBox(height: Space.xl),
+              const SizedBox(height: Space.lg),
               Text('Home timezone (required)', style: context.text.labelLarge),
               const SizedBox(height: Space.sm),
               OutlinedButton.icon(
@@ -212,8 +220,11 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                 icon: const Icon(AppIcons.timezone),
                 label: Text(_timezone ?? 'Tap to choose'),
               ),
-              const SizedBox(height: Space.xl),
-              const Divider(),
+
+              // QUIET HOURS — a window planners are warned about. Its switch and
+              // times are part of the same draft as Identity, so the one Save
+              // below commits both.
+              const SectionHeader('Quiet hours'),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Quiet hours'),
@@ -224,7 +235,8 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                 value: _quietEnabled,
                 onChanged: (v) => setState(() => _quietEnabled = v),
               ),
-              if (_quietEnabled)
+              if (_quietEnabled) ...[
+                const SizedBox(height: Space.sm),
                 Row(
                   children: [
                     Expanded(
@@ -245,7 +257,9 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                     ),
                   ],
                 ),
-              const SizedBox(height: Space.xxl),
+              ],
+              const SizedBox(height: Space.xl),
+              // The Save for Identity + Quiet hours, at the foot of ITS sections.
               FilledButton(
                 onPressed: _canSave ? _save : null,
                 child: _saving
@@ -264,20 +278,21 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                       ?.copyWith(color: context.colors.error),
                 ),
               ],
-              // The social half of the profile — picture, username, bio and
-              // the public/private toggle. Its own section with its own Save
-              // (see SocialProfileEditor): the form above is identity, this is
-              // presentation, and saving them together would mean a privacy
-              // change also rewrote the user's timezone.
-              const SectionHeader('Your public profile'),
+
+              // PUBLIC PROFILE — username, bio and the public/private toggle.
+              // Its own section with its OWN Save (see SocialProfileEditor):
+              // identity above is one thing, presentation is another, and saving
+              // them together would mean a privacy change also rewrote the user's
+              // timezone. The picture that used to live here is the anchor above.
+              const SectionHeader('Public profile'),
               const SocialProfileEditor(),
-              // Below the Save button on purpose: everything above is a draft
-              // the user commits, the app lock applies the instant it is
-              // flipped. A switch that looked like it needed saving would be a
-              // lock people think is on when it is not.
-              // Named for THIS device, because the section above also holds a
-              // privacy control and the two answer different questions:
-              // 'who can see my stats' versus 'who can open this app'.
+
+              // THIS DEVICE — the app lock. No Save: it applies the instant it is
+              // flipped (a switch that looked like it needed saving would be a
+              // lock people think is on when it is not). Named for the device
+              // because the section above also holds a privacy control, and the
+              // two answer different questions: 'who can see my stats' versus
+              // 'who can open this app'.
               const SectionHeader('This device'),
               const AppLockTile(),
             ],

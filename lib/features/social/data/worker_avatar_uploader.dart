@@ -191,6 +191,13 @@ String describeAvatarRejection(AvatarRejection rejection, String mime) {
       return 'Use a JPEG, PNG, GIF or WebP image.';
     case AvatarRejection.tooLarge:
       final mb = avatarMaxBytesFor(mime) ~/ (1024 * 1024);
+      // Static photos are cropped and compressed before this check, so a
+      // too-large file here is almost always an ANIMATED one — say why it can't
+      // just be shrunk.
+      if (kAnimatedCapableMimes.contains(mime)) {
+        return 'That animated image is over ${mb}MB. It can\'t be compressed '
+            'without losing the animation — try a shorter or smaller one.';
+      }
       return 'That picture is over ${mb}MB. Pick a smaller one.';
   }
 }

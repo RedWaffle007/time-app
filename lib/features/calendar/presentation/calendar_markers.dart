@@ -64,7 +64,7 @@ class CalendarMarkerRow extends StatelessWidget {
 
   final List<CalendarEntry> entries;
 
-  static const _maxDots = 4;
+  static const _maxDots = 3;
 
   @override
   Widget build(BuildContext context) {
@@ -77,23 +77,31 @@ class CalendarMarkerRow extends StatelessWidget {
     final shown = entries.take(_maxDots).toList();
     final overflow = entries.length - shown.length;
 
+    // FittedBox(scaleDown) guarantees the strip can never overflow the cell's
+    // width, however narrow the screen — the "Right overflowed by N pixels"
+    // stripe was this Row exceeding the ~43dp cell. Gaps sit BETWEEN dots only
+    // (no trailing gap), and dots are capped at three.
     return SizedBox(
       height: Sizes.calendarMarkerRow,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final entry in shown) ...[
-            CalendarMarkerDot(item: entry.item),
-            const SizedBox(width: Space.xs),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < shown.length; i++) ...[
+              if (i > 0) const SizedBox(width: Space.xs),
+              CalendarMarkerDot(item: shown[i].item),
+            ],
+            if (overflow > 0) ...[
+              const SizedBox(width: Space.xs),
+              Text(
+                '+$overflow',
+                style: context.text.labelSmall
+                    ?.copyWith(color: context.colors.onSurfaceVariant),
+              ),
+            ],
           ],
-          if (overflow > 0)
-            Text(
-              '+$overflow',
-              style: context.text.labelSmall
-                  ?.copyWith(color: context.colors.onSurfaceVariant),
-            ),
-        ],
+        ),
       ),
     );
   }

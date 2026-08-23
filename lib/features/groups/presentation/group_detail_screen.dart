@@ -121,7 +121,23 @@ class GroupDetailScreen extends ConsumerWidget {
               ),
               for (final m in members)
                 ListTile(
-                  leading: CircleAvatar(child: Text(_initial(m.name))),
+                  // A rounded SQUARE initial, matching `AvatarImage` — members
+                  // here have no UserProfile to draw a photo from, but the shape
+                  // and the container tint stay consistent with every avatar.
+                  leading: Container(
+                    width: Sizes.avatarRow,
+                    height: Sizes.avatarRow,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: context.colors.primaryContainer,
+                      borderRadius: Radii.md,
+                    ),
+                    child: Text(
+                      _initial(m.name),
+                      style: context.text.titleMedium
+                          ?.copyWith(color: context.colors.onPrimaryContainer),
+                    ),
+                  ),
                   title: Text(m.uid == myUid ? '${m.name} (you)' : m.name),
                   // The switch's label. It moved off the trailing row to make
                   // width for the overflow menu — three controls on one line is

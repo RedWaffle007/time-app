@@ -158,6 +158,14 @@ abstract final class Sizes {
   /// shrink this to fit more weeks on screen.
   static const double calendarCellHeight = 48;
 
+  /// The circular badge behind a day number (the today ring / selected disc).
+  ///
+  /// Fixed and sized to the number ALONE, not the whole cell: the ring sits
+  /// around the digits, with the marker strip below it — so the circle can never
+  /// swallow the number or the dots. Badge (30) + strip (16) = 46, inside
+  /// [calendarCellHeight]'s 48.
+  static const double calendarDayBadge = 30;
+
   /// One item's dot in a day cell, and the strip they sit in.
   ///
   /// The strip is reserved whether or not a day has items, so cells do not
