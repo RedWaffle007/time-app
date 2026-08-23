@@ -5,6 +5,8 @@ compatibility_date = "2025-01-01"
 # Non-secret config. The project id is a public identifier.
 [vars]
 PROJECT_ID = "time-app-1e1c9"
+SUPABASE_URL = "https://sssbuqrseunytlcqhlqy.supabase.co"
+SUPABASE_BUCKET = "avatars"
 
 # Profile-picture storage (Supabase). Non-secret: the project URL and the
 # bucket name are both public identifiers — the public object URL contains
