@@ -198,6 +198,33 @@ abstract final class AppIcons {
   /// really does destroy the data and nothing references it.
   static const IconData clearLog = Icons.delete_sweep_outlined;
 
+  // ---- permissions onboarding (first-run) ----
+
+  /// The permissions setup flow, as a destination and its own header. Not
+  /// [appLock] or any status glyph: this names "the OS permissions this app
+  /// needs", a distinct concept from any single permission below.
+  static const IconData permissions = Icons.verified_user_outlined;
+
+  /// A permission that is currently GRANTED, in the onboarding checklist.
+  ///
+  /// Deliberately none of [approved] / [done] / [selected]: those are facts
+  /// about a schedule item or a chosen row in the delegation loop, and rule 1
+  /// keeps "the OS granted us this permission" as its own concept. Outlined, per
+  /// rule 2 — it is a resting confirmation, not a selection.
+  static const IconData granted = Icons.check_circle_outline;
+
+  /// The battery / Doze exemption, wherever it is named.
+  static const IconData battery = Icons.battery_saver;
+
+  /// OEM autostart — letting the app launch itself so a reminder can fire after
+  /// the process was killed. A launch glyph, distinct from [reminders].
+  static const IconData autostart = Icons.rocket_launch_outlined;
+
+  /// The full-screen-intent permission — a reminder ringing over whatever is on
+  /// screen. Distinct from [reminders] (whether you are notified at all) and
+  /// [exactTiming] (whether on time): this is whether it takes over the screen.
+  static const IconData ringOverApps = Icons.fullscreen;
+
   // ---- language practice (the chatbot feature) ----
 
   /// Send the composed message. Not [add]: composing and creating are different
@@ -251,17 +278,20 @@ abstract final class AppIcons {
   /// rule 1 gives them different glyphs.
   static const IconData addFriend = Icons.person_add_alt_1_outlined;
 
-  /// Accept an incoming request.
+  /// Accept an incoming request — an explicit tick.
   ///
-  /// Deliberately not [approved]: that means "the target agreed to a plan", a
-  /// fact about a schedule item in the delegation loop. Agreeing to a
-  /// friendship is a different fact, and this file is the one place that
-  /// distinction is kept honest.
-  static const IconData acceptFriend = Icons.how_to_reg_outlined;
+  /// A plain check, deliberately: the accept/decline pair on a pending request
+  /// must read as the universal ✓/✗ decision controls (the earlier
+  /// `how_to_reg` person-glyph did not), and this is the one control whose whole
+  /// job is "yes". Still not [approved] — that is the schedule-item fact in the
+  /// delegation loop, a different agreement — this file keeps them distinct.
+  static const IconData acceptFriend = Icons.check_rounded;
 
-  /// Decline an incoming request. Not [rejected], for the same reason
-  /// [acceptFriend] is not [approved].
-  static const IconData declineFriend = Icons.person_off_outlined;
+  /// Decline an incoming request, or withdraw one you sent — an explicit cross.
+  /// The ✗ half of the accept/decline pair; also used for withdrawing a pending
+  /// outgoing request (clearing a pending thing, either direction). Not
+  /// [rejected], for the same reason [acceptFriend] is not [approved].
+  static const IconData declineFriend = Icons.close_rounded;
 
   /// End a friendship you already have.
   ///

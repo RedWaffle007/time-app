@@ -65,6 +65,12 @@ class ScheduleRepository {
     batch.set(lockRef, {
       'targetUid': targetUid,
       'createdByUid': createdByUid,
+      // Carried so the lock's create rule can verify the SAME active grant the
+      // item does, rather than the `plannerAccess` mirror — which only the
+      // target's device writes, and whose absence otherwise failed this whole
+      // batch cross-device. See DECISIONS.md "Cross-device relationship +
+      // planning denials (2026-08-24)".
+      'groupId': groupId ?? '',
       'itemId': itemRef.id,
       'createdAt': FieldValue.serverTimestamp(),
     });

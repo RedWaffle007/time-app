@@ -1,8 +1,13 @@
 package com.timeapp.time_app
 
 import android.app.NotificationManager
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
 import android.util.Log
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterFragmentActivity
@@ -68,6 +73,60 @@ class MainActivity : FlutterFragmentActivity() {
         // mount and stops it on dismiss; the sound itself lives in
         // [AlarmSoundService] so it survives the screen going dark.
         const val ALARM_CHANNEL = "time_app/alarm_sound"
+
+        // Battery / Doze exemption. `isIgnoring` reports the current state;
+        // `request` fires the DIRECT system yes/no dialog (needs the
+        // REQUEST_IGNORE_BATTERY_OPTIMIZATIONS permission — see the manifest).
+        const val BATTERY_CHANNEL = "time_app/battery"
+
+        // OEM autostart. There is no standard permission and no guaranteed public
+        // intent — each OEM buries it behind its own private Activity, and those
+        // move between versions. So this NEVER blind-launches: it resolve-checks a
+        // candidate component map against the PackageManager and only launches one
+        // the device actually has. `canOpen` lets Dart decide between a deep-link
+        // button and a purely-instructional guided card.
+        const val AUTOSTART_CHANNEL = "time_app/autostart"
+
+        // Candidate autostart / background-launch Activities, most-specific first.
+        // Only the manufacturer's own package is installed on any given device, so
+        // at most one of these resolves; the resolve-check is what makes trying
+        // them all safe. This is the dontkillmyapp.com component list — kept here,
+        // native, because resolving a ComponentName needs the PackageManager.
+        val AUTOSTART_COMPONENTS = listOf(
+            // Xiaomi / Redmi / Poco (MIUI / HyperOS)
+            "com.miui.securitycenter" to
+                "com.miui.permcenter.autostart.AutoStartManagementActivity",
+            // Oppo / Realme (ColorOS)
+            "com.coloros.safecenter" to
+                "com.coloros.safecenter.permission.startup.StartupAppListActivity",
+            "com.coloros.safecenter" to
+                "com.coloros.safecenter.startupapp.StartupAppListActivity",
+            "com.oppo.safe" to
+                "com.oppo.safe.permission.startup.StartupAppListActivity",
+            // Vivo / iQOO
+            "com.vivo.permissionmanager" to
+                "com.vivo.permissionmanager.activity.BgStartUpManagerActivity",
+            "com.iqoo.secure" to
+                "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity",
+            // OnePlus (older OxygenOS; newer is ColorOS-based, covered above)
+            "com.oneplus.security" to
+                "com.oneplus.security.chainlaunch.view.ChainLaunchAppListActivity",
+            // Huawei / Honor
+            "com.huawei.systemmanager" to
+                "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity",
+            "com.huawei.systemmanager" to
+                "com.huawei.systemmanager.optimize.process.ProtectActivity",
+        )
+    }
+
+    // Firebase App Distribution in-app update check. On each foreground of a
+    // DEBUG tester build this pops the "New version available" dialog (and signs
+    // the tester in on the first run); in a release build `AppDistributionUpdate`
+    // is the no-op stub from src/release. See DECISIONS.md "Firebase App
+    // Distribution".
+    override fun onResume() {
+        super.onResume()
+        AppDistributionUpdate.checkForUpdate(this)
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -116,6 +175,29 @@ class MainActivity : FlutterFragmentActivity() {
                         showOverLockAndWake(false)
                         result.success(null)
                     }
+                    else -> result.notImplemented()
+                }
+            }
+
+        // Battery / Doze exemption. `request` is the DIRECT dialog, chosen over
+        // the battery-optimization list so the user taps once and stays in flow.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BATTERY_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "isIgnoring" -> result.success(isIgnoringBatteryOptimizations())
+                    "request" -> result.success(requestIgnoreBatteryOptimizations())
+                    else -> result.notImplemented()
+                }
+            }
+
+        // OEM autostart. `open` resolve-checks and launches; `canOpen` only
+        // reports whether a launchable component exists on THIS device, so Dart
+        // can fall back to a guided card where it does not.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, AUTOSTART_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "canOpen" -> result.success(resolveAutostartIntent() != null)
+                    "open" -> result.success(openAutostartSettings())
                     else -> result.notImplemented()
                 }
             }
@@ -171,6 +253,77 @@ class MainActivity : FlutterFragmentActivity() {
                     result.success(null)
                 }
             }
+    }
+
+    /**
+     * Whether this app is exempt from battery optimizations (Doze). Below
+     * Android M there was no Doze, so nothing to be exempt from → report true.
+     */
+    private fun isIgnoringBatteryOptimizations(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
+        val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return false
+        return pm.isIgnoringBatteryOptimizations(packageName)
+    }
+
+    /**
+     * Fire the direct battery-optimization dialog for THIS app. Returns whether
+     * the intent could be launched at all — never throws, so a locked-down OEM
+     * that refuses the intent degrades to a guided fallback rather than crashing.
+     */
+    private fun requestIgnoreBatteryOptimizations(): Boolean {
+        if (isIgnoringBatteryOptimizations()) return true
+        return try {
+            val intent = Intent(
+                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                Uri.parse("package:$packageName"),
+            )
+            // Resolve-check first: some OEMs strip this action. Never blind-launch.
+            if (intent.resolveActivity(packageManager) == null) {
+                // Fall back to the whole battery-optimization list, which every
+                // device with Doze has. Not the direct dialog, but it gets there.
+                val list = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                if (list.resolveActivity(packageManager) == null) return false
+                startActivity(list)
+                return true
+            }
+            startActivity(intent)
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "battery-exemption request failed: $e")
+            false
+        }
+    }
+
+    /**
+     * The first autostart Activity from [AUTOSTART_COMPONENTS] that actually
+     * resolves on this device, or null if none does (unknown OEM, or the OEM
+     * moved/removed it). Resolving is the whole safety story — a ComponentName
+     * that does not resolve is never launched.
+     */
+    private fun resolveAutostartIntent(): Intent? {
+        for ((pkg, cls) in AUTOSTART_COMPONENTS) {
+            val intent = Intent().apply {
+                component = ComponentName(pkg, cls)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            if (intent.resolveActivity(packageManager) != null) return intent
+        }
+        return null
+    }
+
+    /** Launch the resolved autostart screen; false if none resolves or it throws. */
+    private fun openAutostartSettings(): Boolean {
+        val intent = resolveAutostartIntent() ?: return false
+        return try {
+            startActivity(intent)
+            true
+        } catch (e: Exception) {
+            // A component can resolve and still refuse to launch (permission,
+            // exported=false on a newer build). Report failure so Dart shows the
+            // guided card instead of leaving the user staring at nothing.
+            Log.w(TAG, "autostart launch failed: $e")
+            false
+        }
     }
 
     /**

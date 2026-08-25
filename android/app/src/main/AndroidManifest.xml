@@ -55,6 +55,28 @@
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+
+    <!-- Battery / Doze exemption, requested as a DIRECT system dialog.
+
+         Holding this permission is what lets the app fire
+         `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` with a `package:` URI and
+         get a one-tap yes/no dialog, instead of dumping the user into the whole
+         battery-optimization LIST and asking them to hunt for us. It is the
+         Doze-exemption analogue of SCHEDULE_EXACT_ALARM: reliable delivery is the
+         whole product, and the OneKeyClean/Boost finding (CLAUDE.md checklist
+         item 1) proved that a non-exempt process is killed with its alarms.
+
+         DELIBERATE Play-policy declaration. Google restricts this permission to
+         an acceptable-use list, and "the app schedules user-facing alarms /
+         reminders and needs to run in the background to deliver them" is on it —
+         we are a reminder/alarm app, which is exactly the qualifying case. This
+         is on record for submission (DECISIONS.md → "Battery-exemption direct
+         dialog — deliberate Play-policy declaration (2026-08-23)"). If review
+         ever objects, the fallback is the non-declared
+         ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS list intent, which needs no
+         permission — a copy change in onboarding, not an architecture change. -->
+    <uses-permission
+        android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <application
         android:label="time_app"
         android:name="${applicationName}"

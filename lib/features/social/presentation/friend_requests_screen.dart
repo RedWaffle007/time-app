@@ -6,6 +6,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../core/widgets/section_header.dart';
+import '../../notifications/application/friend_notifier.dart';
 import '../application/social_providers.dart';
 import '../domain/friend_request.dart';
 import 'user_row.dart';
@@ -93,6 +94,13 @@ class _IncomingRowState extends ConsumerState<_IncomingRow> {
   @override
   Widget build(BuildContext context) {
     final repo = ref.read(friendRepositoryProvider);
+    // Captured HERE, while the row is alive. Accepting removes this request from
+    // the pending list, which disposes the row — so reading the notifier AFTER
+    // `acceptRequest`'s await would run `ref.read` on a dead widget and throw
+    // before the push fires (silently, since `mounted` is then false). Holding
+    // the notifier object across the await avoids that. See DECISIONS.md
+    // "Friend-request push".
+    final notifier = ref.read(friendEventNotifierProvider);
     return UserRow(
       uid: widget.request.fromUid,
       subtitle: 'Wants to be friends',
@@ -114,8 +122,17 @@ class _IncomingRowState extends ConsumerState<_IncomingRow> {
                 IconButton.filled(
                   tooltip: 'Accept',
                   icon: const Icon(AppIcons.acceptFriend),
-                  onPressed: () =>
-                      _decide(() => repo.acceptRequest(widget.request)),
+                  onPressed: () => _decide(() async {
+                    await repo.acceptRequest(widget.request);
+                    // Notify the original sender they were accepted. `notifier`
+                    // is captured in build(), NOT read here — this row is
+                    // disposed the instant the accept lands.
+                    await notifier.notify(
+                      event: FriendNotifyEvent.friendAccept,
+                      fromUid: widget.request.fromUid,
+                      toUid: widget.request.toUid,
+                    );
+                  }),
                 ),
               ],
             ),

@@ -89,13 +89,19 @@ class UserProfile {
   bool get hasQuietHours =>
       quietHoursStartMinutes != null && quietHoursEndMinutes != null;
 
-  /// A profile is only usable once it has both a name and a home timezone.
+  /// A profile is only usable once it has a name, a home timezone AND a
+  /// username.
   ///
-  /// Deliberately does NOT require a username. Handles arrived after the core
-  /// loop shipped, so demanding one here would route every existing user
-  /// straight back into `CompleteProfileScreen` on upgrade — locking them out
-  /// of a working app over a field that is optional to it.
-  bool get isComplete => name.trim().isNotEmpty && homeTimezone.trim().isNotEmpty;
+  /// The username requirement was added 2026-08-24 (DECISIONS.md "Mandatory
+  /// username at onboarding"): an account with no handle cannot be found by
+  /// search, so it can send requests but never be added back — a dead end. This
+  /// deliberately routes EXISTING handle-less accounts through
+  /// `CompleteProfileScreen` once, to set a handle, which is the intended
+  /// "no account without a handle" behaviour rather than a regression.
+  bool get isComplete =>
+      name.trim().isNotEmpty &&
+      homeTimezone.trim().isNotEmpty &&
+      (username?.trim().isNotEmpty ?? false);
 
   /// The picture to draw, or null for the initial-letter fallback.
   ///

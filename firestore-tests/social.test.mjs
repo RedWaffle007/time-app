@@ -472,9 +472,36 @@ describe('friend requests', () => {
     );
   });
 
-  it('DENIES deleting a request — the row IS the record', async () => {
-    await assertFails(
+  it('ALLOWS the recipient to delete a request (decline removes the row)', async () => {
+    await assertSucceeds(
       deleteDoc(doc(as(ANNA), 'friendRequests', `${CARA}_${ANNA}`)),
+    );
+  });
+
+  it('ALLOWS the sender to delete their own request (withdraw)', async () => {
+    await assertSucceeds(
+      deleteDoc(doc(as(CARA), 'friendRequests', `${CARA}_${ANNA}`)),
+    );
+  });
+
+  it('DENIES a third party deleting a request they are not in', async () => {
+    await assertFails(
+      deleteDoc(doc(as(BEN), 'friendRequests', `${CARA}_${ANNA}`)),
+    );
+  });
+
+  it('ALLOWS re-sending after the request was deleted (re-add works)', async () => {
+    // The whole point of Issue 3's fix: once the declined row is gone, a fresh
+    // request is a clean create, not a denied update.
+    await assertSucceeds(
+      deleteDoc(doc(as(ANNA), 'friendRequests', `${CARA}_${ANNA}`)),
+    );
+    await assertSucceeds(
+      setDoc(doc(as(CARA), 'friendRequests', `${CARA}_${ANNA}`), {
+        fromUid: CARA, toUid: ANNA, participants: [CARA, ANNA],
+        status: 'pending', createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }),
     );
   });
 });

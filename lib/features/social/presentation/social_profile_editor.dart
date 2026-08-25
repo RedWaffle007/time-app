@@ -65,7 +65,11 @@ class _SocialProfileEditorState extends ConsumerState<SocialProfileEditor> {
 
   String? get _usernameError {
     final raw = _usernameController.text.trim();
-    if (raw.isEmpty) return null; // Optional — see UserProfile.isComplete.
+    // A username is REQUIRED now (UserProfile.isComplete), so an empty field is
+    // an error on EDIT exactly as at creation — clearing it must not silently
+    // "save" and keep the old handle. (This exemption dated from when the handle
+    // was optional; see DECISIONS.md "Mandatory username at onboarding".)
+    if (raw.isEmpty) return 'Username is required.';
     final problem = validateUsername(canonicalUsername(raw));
     return problem == UsernameProblem.none
         ? null
@@ -90,6 +94,22 @@ class _SocialProfileEditorState extends ConsumerState<SocialProfileEditor> {
     try {
       final wanted = canonicalUsername(_usernameController.text);
 
+      // Belt-and-braces: `_canSaveText` already disables Save on an invalid
+      // handle, but re-validate here so NO code path can slip a blank or
+      // whitespace-only username past to a write and then falsely report
+      // success. Same validateUsername/describeUsernameProblem as onboarding, so
+      // creation and edit enforce identically. Runs entirely client-side, before
+      // any Firestore write.
+      final problem = validateUsername(wanted);
+      if (problem != UsernameProblem.none) {
+        if (mounted) {
+          setState(() => _textError = wanted.isEmpty
+              ? 'Username is required.'
+              : describeUsernameProblem(problem));
+        }
+        return; // finally resets _savingText; no claim, no update, no success.
+      }
+
       // Claim the handle FIRST. It is the write that can be refused, and doing
       // it before the bio means a rejected claim leaves nothing half-saved —
       // the alternative order writes the bio, fails on the handle, and leaves
@@ -110,7 +130,8 @@ class _SocialProfileEditorState extends ConsumerState<SocialProfileEditor> {
 
       if (!mounted) return;
       setState(() {
-        _savedUsername = wanted.isEmpty ? _savedUsername : wanted;
+        // `wanted` is guaranteed non-empty and valid past the guard above.
+        _savedUsername = wanted;
         _savedBio = _bioController.text.trim();
       });
       ScaffoldMessenger.of(context)
@@ -175,7 +196,9 @@ class _SocialProfileEditorState extends ConsumerState<SocialProfileEditor> {
           decoration: InputDecoration(
             labelText: 'Username',
             prefixIcon: const Icon(AppIcons.username),
-            helperText: 'How people find you. Lowercase letters, numbers and _',
+            helperText: 'How people find you — $kUsernameMinLength–'
+                '$kUsernameMaxLength chars, lowercase letters, numbers and _, '
+                'starting with a letter.',
             errorText: _usernameError,
           ),
           onChanged: (_) => setState(() {}),

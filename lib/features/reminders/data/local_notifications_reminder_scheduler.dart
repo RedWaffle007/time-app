@@ -8,6 +8,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
+import '../../../core/platform/oem_info.dart';
+import '../../../core/platform/oem_profile.dart';
+import '../../../core/platform/system_permissions.dart';
 import '../domain/reminder.dart';
 import 'reminder_audit_log.dart';
 import 'reminder_scheduler.dart';
@@ -236,9 +239,21 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
 /// The Android permission surface. Split from the scheduler on purpose — see
 /// [ReminderPermissions].
 class LocalNotificationsReminderPermissions implements ReminderPermissions {
-  LocalNotificationsReminderPermissions(this._plugin);
+  LocalNotificationsReminderPermissions(
+    this._plugin, {
+    SystemPermissions system = const MethodChannelSystemPermissions(),
+    OemInfo oem = const DeviceInfoOemInfo(),
+  })  : _system = system,
+        _oem = oem;
 
   final FlutterLocalNotificationsPlugin _plugin;
+
+  /// Battery + autostart, the two surfaces the plugin does not cover. Injected so
+  /// tests can drive `read()` and the new asks without a platform channel.
+  final SystemPermissions _system;
+
+  /// Reads `Build.MANUFACTURER` for the autostart branch decision.
+  final OemInfo _oem;
 
   /// The native side of the full-screen-intent CAPABILITY check — the one thing
   /// the plugin exposes no Dart API for (it wraps the request, not the query).
@@ -266,17 +281,24 @@ class LocalNotificationsReminderPermissions implements ReminderPermissions {
     if (android == null) {
       // Not Android. Part 1 is Android-only by scope; reporting "not ready"
       // rather than "ready" keeps a future iOS build from silently believing it
-      // has permissions it never asked for.
+      // has permissions it never asked for. Battery/autostart are Android-only
+      // concepts — reported as "no restriction, no step" so onboarding does not
+      // invent an ask that has no meaning here.
       return const ReminderPermissionState(
         notificationsEnabled: false,
         exactAlarmsAllowed: false,
         fullScreenIntentAllowed: false,
+        batteryUnrestricted: true,
+        autostartLikelyNeeded: false,
       );
     }
+    final oem = oemProfileFor(await _oem.manufacturer());
     return ReminderPermissionState(
       notificationsEnabled: await android.areNotificationsEnabled() ?? false,
       exactAlarmsAllowed: await android.canScheduleExactNotifications() ?? false,
       fullScreenIntentAllowed: await _canUseFullScreenIntent(),
+      batteryUnrestricted: await _system.isBatteryUnrestricted(),
+      autostartLikelyNeeded: oem.autostartLikelyNeeded,
     );
   }
 
@@ -295,6 +317,12 @@ class LocalNotificationsReminderPermissions implements ReminderPermissions {
     // MANAGE_APP_USE_FULL_SCREEN_INTENT settings page. A no-op below API 34.
     await _android?.requestFullScreenIntentPermission();
   }
+
+  @override
+  Future<bool> requestBatteryExemption() => _system.requestBatteryExemption();
+
+  @override
+  Future<bool> openAutostartSettings() => _system.openAutostartSettings();
 
   @override
   Future<void> openSystemSettings() async {

@@ -153,12 +153,16 @@ passing it does NOT close item 1.
    up yet.** (DECISIONS.md, 2026-07-22.)
 
 **Leave / remove / stop-planning — BUILT + RULES DEPLOYED AND VERIFIED
-2026-08-20.** **THE live ruleset is `56e11d6d-6c1c-4dd8-ae16-9141defa7b62`**
-(deployed 2026-08-23, superseding `5749e906` and the long-stale `47c62b28` this
-file wrongly recorded as live — the id had drifted; see the 2026-08-23 deploy in
-DECISIONS.md). It is the only ruleset id in this file, and every earlier one is
-superseded. This same live ruleset now also carries the slot-lock + planner-access
-rules (see "View B's schedule modal" below). Verification was the real one, not a
+2026-08-20.** **THE live ruleset is `33468095-920e-4b5d-a8ae-e1e3b611e4b1`**
+(deployed 2026-08-24, superseding `56e11d6d` and every earlier id; verified the
+same way — deployed source re-fetched and diffed byte-for-byte). It is the only
+ruleset id in this file, and every earlier one is superseded. This live ruleset
+carries the slot-lock + planner-access rules (see "View B's schedule modal"
+below) AND the 2026-08-24 cross-device fixes: the slot-lock create now gates on
+`callerHasActiveGrant` (not the plannerAccess mirror), and `friendRequests`
+`allow delete: if isParty()` (decline/withdraw now delete). See DECISIONS.md
+"Cross-device relationship + planning denials" and "Friend-request reactivity +
+lifecycle". Verification was the real one, not a
 ruleset id alone: the *deployed source* was fetched back from
 `firebaserules.googleapis.com` and diffed byte-for-byte against `firestore.rules`
 — identical (bar a trailing EOF newline the API round-trip adds). **Still
@@ -420,6 +424,37 @@ Play ever objects.
 autostart/battery onboarding, iOS, quiet-hours enforcement, recurring reminders,
 snooze, and a lead-time offset (it wants `ScheduleItem.durationMinutes` — decide
 it WITH goals).
+
+## Permissions onboarding — SHIPPED 2026-08-23 (first-run, deep-linked, OEM-aware)
+
+`lib/features/onboarding/` + `lib/core/platform/`. One first-run flow that asks
+for every permission a reminder needs, explained, most-consequential first, shown
+once per device after profile completion and re-runnable from the account menu
+(`/permissions`). Full reasoning in DECISIONS.md → "Permissions onboarding" and
+"Battery-exemption direct dialog". **NOT VERIFIED ON A DEVICE — the Redmi pass is
+the acceptance test** (grant each, revoke and re-run, and check an aggressive-OEM
+autostart card).
+
+- **The doctrine held, do not regress it:** no raw OS prompt fires before an
+  on-screen explanation, and the flow runs after auth+profile, never at splash.
+  The existing primer card is untouched and stays the repair path for the three
+  delivery permissions.
+- **Runtime dialog:** POST_NOTIFICATIONS. **Deep-linked to this app's toggle:**
+  SCHEDULE_EXACT_ALARM, USE_FULL_SCREEN_INTENT. **Direct dialog:** battery/Doze
+  (new `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` — a deliberate Play-policy
+  declaration). **OEM-guided:** autostart — resolve-checked native component map,
+  **never blind-launched**, per-OEM guided card where nothing resolves.
+- **Two new `MainActivity` channels** (`time_app/battery`, `time_app/autostart`),
+  thin-channel pattern, no `permission_handler`. `device_info_plus` reads
+  `Build.MANUFACTURER` for the OEM branch.
+- **`ReminderPermissionState`/`ReminderPermissions` extended** with
+  `batteryUnrestricted` + `autostartLikelyNeeded` and two new asks.
+  **`isFullyReady` deliberately still the delivery trio only** — adding
+  battery/autostart would show the primer with no branch. Scheduler/firing path
+  NOT touched.
+- **Pure, testable core:** `oem_profile.dart` (OEM branch selection) and
+  `onboarding_plan.dart` (auto-skip granted / skip-on-unsupported-API /
+  unknown-OEM-skips-autostart). Covered by `test/onboarding_test.dart`.
 
 ## Slot-lock reconciler — SHIPPED 2026-08-23 (self-healing lock release)
 

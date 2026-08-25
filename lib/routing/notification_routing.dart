@@ -43,6 +43,12 @@ class NotificationRouter {
       case 'decided':
       case 'outcome':
         router.go(Routes.plannerActivity);
+      // Friend-graph pushes: a new request opens the requests inbox; an accept
+      // opens the friends list, where the new friend now appears.
+      case 'friendRequest':
+        router.go(Routes.friendRequests);
+      case 'friendAccept':
+        router.go(Routes.friends);
       default:
         if (data['type'] == 'outcome') {
           router.go(Routes.plannerActivity);

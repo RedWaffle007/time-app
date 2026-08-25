@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../domain/friend_request.dart';
 import '../domain/social_ids.dart';
 import '../domain/user_block.dart';
+import 'relation_stream.dart';
 
 /// Blocking, and the cleanup that has to come with it.
 ///
@@ -83,19 +84,46 @@ class BlockRepository {
     var iBlocked = false;
     var theyBlocked = false;
     final controller = StreamController<({bool iBlocked, bool theyBlocked})>();
+    // A block id names the caller (blocker or blocked), so a `permission-denied`
+    // on it means the document is absent, i.e. no block — see [isAbsenceDenial]
+    // and DECISIONS.md "Cross-device relationship + planning denials". Map that
+    // one error to `false` rather than failing the whole pair; a real outage
+    // still propagates.
+    void onMine(Object e, StackTrace st) {
+      if (isAbsenceDenial(e)) {
+        iBlocked = false;
+        if (!controller.isClosed) {
+          controller.add((iBlocked: iBlocked, theyBlocked: theyBlocked));
+        }
+      } else if (!controller.isClosed) {
+        controller.addError(e, st);
+      }
+    }
+
+    void onTheirs(Object e, StackTrace st) {
+      if (isAbsenceDenial(e)) {
+        theyBlocked = false;
+        if (!controller.isClosed) {
+          controller.add((iBlocked: iBlocked, theyBlocked: theyBlocked));
+        }
+      } else if (!controller.isClosed) {
+        controller.addError(e, st);
+      }
+    }
+
     final subs = [
       mine.listen((d) {
         iBlocked = d.exists;
         if (!controller.isClosed) {
           controller.add((iBlocked: iBlocked, theyBlocked: theyBlocked));
         }
-      }, onError: controller.addError),
+      }, onError: onMine),
       theirs.listen((d) {
         theyBlocked = d.exists;
         if (!controller.isClosed) {
           controller.add((iBlocked: iBlocked, theyBlocked: theyBlocked));
         }
-      }, onError: controller.addError),
+      }, onError: onTheirs),
     ];
     controller.onCancel = () async {
       for (final s in subs) {

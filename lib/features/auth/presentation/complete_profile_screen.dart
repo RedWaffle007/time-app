@@ -6,6 +6,9 @@ import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../notifications/application/messaging_service.dart';
+import '../../social/application/social_providers.dart';
+import '../../social/data/username_repository.dart';
+import '../../social/domain/username.dart';
 import '../application/auth_providers.dart';
 import 'timezone_picker.dart';
 
@@ -21,9 +24,22 @@ class CompleteProfileScreen extends ConsumerStatefulWidget {
 
 class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
   final _nameController = TextEditingController();
+  final _usernameController = TextEditingController();
   String? _timezone; // null until detected/picked
   bool _saving = false;
   String? _error;
+
+  /// The live format problem with the typed handle, or null when it is empty or
+  /// valid. Availability (uniqueness) is not checked here — [claim] decides that
+  /// atomically on Save, and surfaces a "taken" message if it loses the race.
+  String? get _usernameProblem {
+    final raw = _usernameController.text;
+    if (raw.trim().isEmpty) return null; // Emptiness is handled by _canSave.
+    final problem = validateUsername(canonicalUsername(raw));
+    return problem == UsernameProblem.none
+        ? null
+        : describeUsernameProblem(problem);
+  }
 
   @override
   void initState() {
@@ -49,6 +65,7 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
   @override
   void dispose() {
     _nameController.dispose();
+    _usernameController.dispose();
     super.dispose();
   }
 
@@ -61,11 +78,20 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
 
   bool get _canSave =>
       _nameController.text.trim().isNotEmpty &&
-      (_timezone?.isNotEmpty ?? false);
+      (_timezone?.isNotEmpty ?? false) &&
+      _usernameController.text.trim().isNotEmpty &&
+      _usernameProblem == null;
 
   Future<void> _save() async {
     final user = ref.read(authRepositoryProvider).currentUser;
     if (user == null) return; // shouldn't happen — router guards this.
+
+    final handle = canonicalUsername(_usernameController.text);
+    final problem = validateUsername(handle);
+    if (problem != UsernameProblem.none) {
+      setState(() => _error = describeUsernameProblem(problem));
+      return;
+    }
 
     setState(() {
       _saving = true;
@@ -78,7 +104,19 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
             homeTimezone: _timezone!,
             avatarUrl: user.photoURL,
           );
-      // profileProvider will emit the new profile and the gate moves us on.
+      // The username is a SECOND write (reservation + mirror), and it can fail
+      // where the profile did not — the handle may have been taken between the
+      // last keystroke and Save. Claiming AFTER createProfile means a taken
+      // handle leaves a name+tz profile that is still `!isComplete` (no
+      // username), so the gate keeps us here to pick another — rather than
+      // stranding a half-account. See DECISIONS.md "Mandatory username".
+      await ref.read(usernameRepositoryProvider).claim(
+            uid: user.uid,
+            rawHandle: handle,
+          );
+      // profileProvider will emit the now-complete profile and the gate moves on.
+    } on UsernameUnavailable catch (e) {
+      if (mounted) setState(() => _error = e.message);
     } catch (e) {
       if (mounted) setState(() => _error = 'Could not save profile: $e');
     } finally {
@@ -108,6 +146,28 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
               // Border, fill and radius come from InputDecorationTheme.
               decoration: const InputDecoration(labelText: 'Your name'),
               onChanged: (_) => setState(() {}), // refresh _canSave
+            ),
+            const SizedBox(height: Space.xl),
+            // Required username — the handle people search for. Without one the
+            // account is invisible to search (see UserProfile.isComplete).
+            TextField(
+              controller: _usernameController,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: InputDecoration(
+                labelText: 'Username',
+                prefixIcon: const Icon(AppIcons.username),
+                errorText: _usernameProblem,
+              ),
+              onChanged: (_) => setState(() {}), // refresh _canSave + error
+            ),
+            const SizedBox(height: Space.sm),
+            Text(
+              'This is how friends find you, so it has to be unique. Use '
+              '$kUsernameMinLength–$kUsernameMaxLength characters: lowercase '
+              'letters, numbers and underscores, starting with a letter.',
+              style: context.text.bodySmall
+                  ?.copyWith(color: context.colors.onSurfaceVariant),
             ),
             const SizedBox(height: Space.xl),
             // Required home timezone.

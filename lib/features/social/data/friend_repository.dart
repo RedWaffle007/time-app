@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../domain/friend_request.dart';
 import '../domain/friendship.dart';
 import '../domain/social_ids.dart';
+import 'relation_stream.dart';
 
 /// Friend requests and friendships.
 ///
@@ -79,10 +80,11 @@ class FriendRepository {
   /// the other party accepts while it is open.
   Stream<bool> watchFriendship(String uidA, String uidB) {
     if (uidA == uidB) return Stream.value(false);
-    return _friendships
-        .doc(friendshipId(uidA, uidB))
-        .snapshots()
-        .map((d) => d.exists);
+    return relationStreamAbsentOnDenied<bool>(
+      _friendships.doc(friendshipId(uidA, uidB)).snapshots(),
+      (d) => d.exists,
+      false,
+    );
   }
 
   /// The request between two users in a given direction, live. Null when none
@@ -92,31 +94,35 @@ class FriendRepository {
     required String toUid,
   }) {
     if (fromUid == toUid) return Stream.value(null);
-    return _requests
-        .doc(friendRequestId(fromUid: fromUid, toUid: toUid))
-        .snapshots()
-        .map((d) => d.exists ? FriendRequest.fromDoc(d) : null);
+    return relationStreamAbsentOnDenied<FriendRequest?>(
+      _requests.doc(friendRequestId(fromUid: fromUid, toUid: toUid)).snapshots(),
+      (d) => d.exists ? FriendRequest.fromDoc(d) : null,
+      null,
+    );
   }
 
   // --- writes ---
 
   /// Send a friend request from [fromUid] to [toUid].
   ///
-  /// A `set` on a deterministic id, so sending twice overwrites rather than
-  /// duplicating — the recipient never has to decline the same person twice.
+  /// A `set` on a deterministic id, so sending twice never duplicates. Decline
+  /// and withdraw now DELETE the request (see [rejectRequest] / [cancelRequest]
+  /// and DECISIONS.md "Friend-request reactivity + lifecycle"), so the common
+  /// re-add path is a clean create.
   ///
-  /// Re-sending after a rejection is permitted here and **denied by the
-  /// rules**, which refuse an update that revives a `rejected` row. The
-  /// asymmetry is intentional and is the safe direction described in
-  /// `profile_visibility.dart`: the client does not silently swallow the case,
-  /// so the failure is visible and explainable rather than a button that
-  /// quietly does nothing.
+  /// **Self-healing on a leftover doc.** A settled request predating that change
+  /// — an old `rejected`/`cancelled` row, or an `accepted` one whose friendship
+  /// was later removed — would turn this `set` into an *update* the rules forbid
+  /// (`permission-denied`). When that happens we delete the stale row and create
+  /// fresh. If the real reason was a BLOCK, the retried create is denied again
+  /// and that error surfaces — the block is still enforced.
   Future<void> sendRequest({
     required String fromUid,
     required String toUid,
-  }) {
+  }) async {
     final id = friendRequestId(fromUid: fromUid, toUid: toUid);
-    return _requests.doc(id).set({
+    final ref = _requests.doc(id);
+    final body = {
       'fromUid': fromUid,
       'toUid': toUid,
       // Both parties in one array so each side can list their own requests
@@ -125,7 +131,19 @@ class FriendRepository {
       'status': FriendRequestStatus.pending.name,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
-    });
+    };
+    try {
+      await ref.set(body);
+    } on FirebaseException catch (e) {
+      if (e.code != 'permission-denied') rethrow;
+      // A stale settled row is in the way. Clear it (ignored if it is absent or
+      // the delete itself is refused) and create fresh; a genuine block still
+      // fails the create below.
+      try {
+        await ref.delete();
+      } catch (_) {}
+      await ref.set(body);
+    }
   }
 
   /// The recipient accepts. Creates the friendship and settles the request.
@@ -162,38 +180,56 @@ class FriendRepository {
     }, SetOptions(merge: true));
   }
 
-  /// The recipient declines. The row is kept, not deleted — see
-  /// [FriendRequestStatus] for why "no" has to be a stored fact.
+  /// The recipient declines — the request is DELETED, not flagged.
+  ///
+  /// Keeping a `rejected` row was the earlier design; it made re-adding
+  /// impossible (the sender's next `sendRequest` collided with the stale doc and
+  /// was denied) and it let a determined sender detect the decline. Deleting
+  /// leaves the pair exactly as if no request had been sent: re-requestable, and
+  /// the decline is not announced. Spam is throttled by blocking, not by a
+  /// permanent "no". See DECISIONS.md "Friend-request reactivity + lifecycle".
   Future<void> rejectRequest(FriendRequest request) {
-    return _requests.doc(request.id).set({
-      'status': FriendRequestStatus.rejected.name,
-      'decidedAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    return _requests.doc(request.id).delete();
   }
 
-  /// The sender withdraws before a decision, or either party clears a settled
-  /// row. Distinct from [rejectRequest] because who backed out is a fact worth
-  /// keeping — the same reasoning that keeps `cancelled` and `withdrawn`
-  /// separate on a schedule item.
+  /// The sender withdraws a pending request (or either party clears one) — also
+  /// a DELETE, for the same reasons as [rejectRequest]. A withdrawn request that
+  /// lingered would block the sender from ever re-adding.
   Future<void> cancelRequest(FriendRequest request) {
-    return _requests.doc(request.id).set({
-      'status': FriendRequestStatus.cancelled.name,
-      'decidedAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    return _requests.doc(request.id).delete();
   }
 
   /// End a friendship. Either party may, and neither is notified.
   ///
   /// Deleting the document rather than flagging it: a friendship has no status
   /// and never did, and an `active: false` row would be a second thing every
-  /// privacy rule had to read. Any pending request between the two is left
-  /// alone — it is already settled or already inert.
+  /// privacy rule had to read.
+  ///
+  /// The leftover `accepted` request row is ALSO cleared (best-effort, both
+  /// directions), so the overflow's promise — "either of you can send a new
+  /// request later" — is actually true; otherwise that stale row would deny the
+  /// next `sendRequest`. The friendship delete comes first and is the write that
+  /// matters; a failure to clear the request leaves inert residue that
+  /// `sendRequest` self-heals anyway.
   Future<void> removeFriend({
     required String uid,
     required String otherUid,
-  }) {
-    return _friendships.doc(friendshipId(uid, otherUid)).delete();
+  }) async {
+    await _friendships.doc(friendshipId(uid, otherUid)).delete();
+    await _deleteRequestBetween(uid, otherUid);
+  }
+
+  /// Best-effort delete of any request row in either direction between two
+  /// users. A delete on an absent doc is refused by the `isParty` rule (a null
+  /// resource has no parties) and simply ignored.
+  Future<void> _deleteRequestBetween(String a, String b) async {
+    for (final id in [
+      friendRequestId(fromUid: a, toUid: b),
+      friendRequestId(fromUid: b, toUid: a),
+    ]) {
+      try {
+        await _requests.doc(id).delete();
+      } catch (_) {}
+    }
   }
 }

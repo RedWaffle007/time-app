@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
+version: 1.0.0+3
 
 environment:
   sdk: ^3.12.2
@@ -83,6 +83,13 @@ dependencies:
   flutter_onnxruntime: ^1.8.3
   characters: ^1.4.1
   flutter_local_notifications: ^22.3.0
+
+  # Reads Build.MANUFACTURER (and model/SDK) so first-run permission onboarding
+  # can decide whether an OEM needs the autostart step and which per-OEM guided
+  # copy to show. Flutter-community maintained; adds no permission of its own.
+  # The actual autostart intent resolve+launch and the battery-exemption dialog
+  # live natively in MainActivity — device_info_plus is only the branch selector.
+  device_info_plus: ^13.2.0
 
   # Choosing a profile picture from the gallery or camera. Flutter-team
   # maintained, BSD-3, and it hands back a file path plus the picked file's

@@ -5,6 +5,7 @@ import '../../../core/widgets/async_view.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../auth/domain/user_profile.dart';
 import '../../auth/presentation/complete_profile_screen.dart';
+import '../../onboarding/presentation/onboarding_gate.dart';
 
 /// The signed-in landing point. Decides between:
 ///   - a loading state (with a 12s timeout → Retry, via AsyncView) while the
@@ -37,7 +38,10 @@ class HomeGate extends ConsumerWidget {
           if (profile == null || !profile.isComplete) {
             return const CompleteProfileScreen();
           }
-          return child;
+          // Permissions come after profile completion and before the app: a
+          // first-run device grants what reminders need, once. Returning devices
+          // pass straight through (see OnboardingGate).
+          return OnboardingGate(child: child);
         },
       ),
     );

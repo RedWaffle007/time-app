@@ -16,6 +16,7 @@ import '../features/chatbot/presentation/chatbot_settings_screen.dart';
 import '../features/chatbot/presentation/model_setup_screen.dart';
 import '../features/calendar/presentation/calendar_screen.dart';
 import '../features/home/presentation/home_gate.dart';
+import '../features/onboarding/presentation/onboarding_screen.dart';
 import '../features/social/presentation/blocked_users_screen.dart';
 import '../features/social/presentation/friend_requests_screen.dart';
 import '../features/social/presentation/friends_screen.dart';
@@ -48,6 +49,12 @@ class Routes {
   static const scheduleBuilder = '$plannerActivity/schedule-builder';
   static const approvals = '$outcome/approvals';
   static const archived = '/archived';
+
+  /// **Permissions onboarding**, re-runnable from the account menu. Top-level
+  /// and pushed, like [profile] and [archived] — it belongs to no tab. The
+  /// first-run flow reaches the same screen inline through `OnboardingGate`;
+  /// this route is the "review / fix my permissions" door after that.
+  static const permissions = '/permissions';
 
   /// **The calendar** — a month/week/day view over the items that already
   /// exist. Top-level and pushed, reached from the account menu, for exactly
@@ -323,6 +330,17 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.archived,
         builder: (context, state) => const ArchivedScreen(),
+      ),
+      // Permissions onboarding as a re-runnable destination. Same screen the
+      // first-run gate shows inline; here it is pushed and its finish pops back
+      // to whichever tab launched it.
+      GoRoute(
+        path: Routes.permissions,
+        builder: (context, state) => OnboardingScreen(
+          onFinished: () {
+            if (context.canPop()) context.pop();
+          },
+        ),
       ),
       // The full-screen alarm surface. Top-level and outside the shell so it
       // covers the nav bar the way a clock alarm covers everything; its Dismiss

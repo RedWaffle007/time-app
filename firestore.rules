@@ -599,7 +599,14 @@ service cloud.firestore {
           )
         );
 
-      allow delete: if false;
+      // Either party may delete the request. This is how a decline (recipient)
+      // and a withdraw (sender) now work: the row is removed, not flagged, so
+      // the pair is immediately re-requestable and the decline is not left as a
+      // detectable record. Deleting grants nothing and reveals nothing — the
+      // consent model is unchanged; only the lifecycle is. A block still can't
+      // be side-stepped, because creating the fresh request re-checks `blocked`.
+      // See DECISIONS.md "Friend-request reactivity + lifecycle (2026-08-24)".
+      allow delete: if signedIn() && isParty();
     }
 
     // ---- friendships/{pairId} ----
@@ -895,14 +902,25 @@ service cloud.firestore {
 
       allow create: if signedIn()
         && request.resource.data.keys().hasOnly(
-             ['targetUid', 'createdByUid', 'itemId', 'createdAt'])
+             ['targetUid', 'createdByUid', 'groupId', 'itemId', 'createdAt'])
         && request.resource.data.targetUid == targetUid
         && request.resource.data.createdByUid == request.auth.uid
-        // Exactly the people who may create the ITEM this lock guards: the
-        // target planning for themselves, or a planner with an active grant.
-        // A lock nobody could pair with an item would be a denial-of-service on
-        // someone else's calendar.
-        && (request.auth.uid == targetUid || callerHasPlannerAccess(targetUid));
+        // Exactly the people who may create the ITEM this lock guards, checked
+        // the SAME way the item is: the target planning for themselves, or a
+        // planner holding an ACTIVE grant over the target in this group.
+        //
+        // This deliberately does NOT gate on `callerHasPlannerAccess` (the
+        // plannerAccess mirror). The lock is written in the SAME batch as the
+        // item, which already proves `callerHasActiveGrant`; gating the lock on
+        // the mirror instead coupled every cross-device plan to a document only
+        // the TARGET's device writes, so a planner was denied whenever the
+        // target had not yet synced the mirror. Carrying `groupId` on the lock
+        // lets it verify the real grant directly — strictly stronger than a
+        // mirror that can outlive a revocation. The mirror still gates the
+        // read path (viewing B's schedule), which carries no groupId.
+        // See DECISIONS.md "Cross-device relationship + planning denials".
+        && (request.auth.uid == targetUid
+            || callerHasActiveGrant(targetUid, request.resource.data.groupId));
 
       allow update: if false;
 

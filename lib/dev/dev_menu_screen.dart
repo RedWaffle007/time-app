@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../features/notifications/application/messaging_service.dart';
+import '../features/onboarding/application/onboarding_providers.dart';
 import '../routing/app_router.dart';
 import '../core/theme/app_icons.dart';
 import '../core/theme/app_theme.dart';
@@ -106,6 +107,30 @@ class DevMenuScreen extends ConsumerWidget {
               trailing: const Icon(AppIcons.openRow),
               onTap: () => inShell ? context.go(route) : context.push(route),
             ),
+          const Divider(),
+          // Reset the first-run permission flow and drop back through the gate.
+          //
+          // Debug-only (this whole screen is), so a tester can re-run onboarding
+          // on-device without the reinstall that would otherwise be the only way
+          // — and a reinstall is worse than useless here, because on this Redmi
+          // it ALSO wipes prefs and revokes SCHEDULE_EXACT_ALARM (spike README
+          // traps), changing the very state under test. This clears just the one
+          // completion flag.
+          //
+          // `reset()` clears the flag; invalidating the provider makes the gate
+          // re-read it as false; `go(home)` returns to the shell, where
+          // `OnboardingGate` now recomputes against the live OS state and shows
+          // the flow again (on this OEM the autostart step always keeps work to
+          // do, so it will show).
+          ListTile(
+            leading: const Icon(AppIcons.retry),
+            title: const Text('Reset onboarding (re-run first-run flow)'),
+            onTap: () async {
+              await ref.read(onboardingStoreProvider).reset();
+              ref.invalidate(onboardingCompletedProvider);
+              if (context.mounted) context.go(Routes.home);
+            },
+          ),
         ],
       ),
     );

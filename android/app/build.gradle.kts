@@ -51,6 +51,22 @@ dependencies {
     // The desugared java.time (and friends) implementation. Version is the one
     // flutter_local_notifications 22.x documents as its minimum.
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+
+    // Firebase App Distribution — the in-app "new version available" prompt for
+    // tester builds. DEBUG ONLY, and this is not optional: the full
+    // `firebase-appdistribution` SDK self-downloads/installs APKs, which Google
+    // Play policy forbids in a shipped app. It exists only in the debug variant;
+    // release builds compile against the no-op `AppDistributionUpdate` in
+    // src/release. (`-api` is the lightweight feedback SDK and does NOT show the
+    // update dialog, so it is deliberately not the one used here.)
+    //
+    // VERSION IS PINNED EXPLICITLY, on purpose: the full App Distribution SDK is
+    // a BETA library and is NOT part of `firebase-bom` (the BoM covers only GA
+    // libraries), so a versionless `firebase-appdistribution` resolves to an
+    // EMPTY version and fails `:app:mergeDebugAssets`. A BoM does nothing for it.
+    // 16.0.0-beta20 is the latest published on Google's Maven (dl.google.com).
+    // See DECISIONS.md "Firebase App Distribution (2026-08-24)".
+    debugImplementation("com.google.firebase:firebase-appdistribution:16.0.0-beta20")
 }
 
 kotlin {

@@ -49,6 +49,19 @@ async function seedAccess() {
   });
 }
 
+/** An ACTIVE planner grant PLANNER->TARGET in group g1. This — not the mirror —
+ * is what now authorises a planner to write a slot lock (see the create rule
+ * for scheduleSlots and DECISIONS.md "Cross-device relationship + planning
+ * denials"). */
+async function seedGrant() {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), `groups/g1/plannerGrants/${PLANNER}_${TARGET}`), {
+      plannerUid: PLANNER, targetUid: TARGET, groupId: 'g1',
+      granted: true, grantedByUid: TARGET,
+    });
+  });
+}
+
 async function seedItem() {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), `scheduleItems/${TARGET}/items/i1`), {
@@ -155,7 +168,8 @@ describe('the slot lock — the server-side conflict re-check', () => {
   const lockPath = `scheduleSlots/${TARGET}/slots/${SLOT}`;
 
   const lock = (by) => ({
-    targetUid: TARGET, createdByUid: by, itemId: 'i1', createdAt: new Date(),
+    targetUid: TARGET, createdByUid: by, groupId: 'g1', itemId: 'i1',
+    createdAt: new Date(),
   });
 
   it('the target may claim a free slot', async () => {
@@ -163,13 +177,18 @@ describe('the slot lock — the server-side conflict re-check', () => {
     await assertSucceeds(setDoc(doc(db, lockPath), lock(TARGET)));
   });
 
-  it('a planner with access may claim a free slot', async () => {
-    await seedAccess();
+  it('a planner with an ACTIVE GRANT may claim a free slot — with NO mirror', async () => {
+    // The regression guard for the cross-device planning denial: the lock is now
+    // authorised by the grant the item also proves, not by the plannerAccess
+    // mirror, so a planner can plan before the target's device has written it.
+    await seedGrant();
     const db = testEnv.authenticatedContext(PLANNER).firestore();
     await assertSucceeds(setDoc(doc(db, lockPath), lock(PLANNER)));
   });
 
-  it('a planner WITHOUT access cannot claim one', async () => {
+  it('a planner WITHOUT a grant cannot claim one (a mirror is NOT enough)', async () => {
+    // The mirror alone must not authorise a WRITE — only a read.
+    await seedAccess();
     const db = testEnv.authenticatedContext(PLANNER).firestore();
     await assertFails(setDoc(doc(db, lockPath), lock(PLANNER)));
   });
@@ -177,7 +196,7 @@ describe('the slot lock — the server-side conflict re-check', () => {
   it('THE RACE: the second writer loses', async () => {
     // This is the requirement. B books the slot while A's modal is open; A
     // submits against a stale view; A's write must be refused.
-    await seedAccess();
+    await seedGrant();
     const target = testEnv.authenticatedContext(TARGET).firestore();
     await assertSucceeds(setDoc(doc(target, lockPath), lock(TARGET)));
 
@@ -194,7 +213,7 @@ describe('the slot lock — the server-side conflict re-check', () => {
   });
 
   it('createdByUid cannot be forged', async () => {
-    await seedAccess();
+    await seedGrant();
     const db = testEnv.authenticatedContext(PLANNER).firestore();
     await assertFails(setDoc(doc(db, lockPath), lock(TARGET)));
   });
@@ -203,16 +222,10 @@ describe('the slot lock — the server-side conflict re-check', () => {
     // What `createItem` actually does. If the lock half fails, no item exists —
     // which is the property that makes this a real re-check rather than a UI
     // nicety.
-    await seedAccess();
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), lockPath), lock(TARGET));
     });
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), `groups/g1/plannerGrants/${PLANNER}_${TARGET}`), {
-        plannerUid: PLANNER, targetUid: TARGET, groupId: 'g1',
-        granted: true, grantedByUid: TARGET,
-      });
-    });
+    await seedGrant();
 
     const db = testEnv.authenticatedContext(PLANNER).firestore();
     const batch = writeBatch(db);
@@ -233,7 +246,7 @@ describe('the slot lock — the server-side conflict re-check', () => {
   });
 
   it('releasing: the target and the lock owner may delete; nobody else', async () => {
-    await seedAccess();
+    await seedGrant();
     const planner = testEnv.authenticatedContext(PLANNER).firestore();
     await assertSucceeds(setDoc(doc(planner, lockPath), lock(PLANNER)));
 

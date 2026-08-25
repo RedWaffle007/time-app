@@ -15,7 +15,11 @@ import { verifyFirebaseIdToken, IdTokenError } from './verify-id-token.js';
 import { getAccessToken } from './google-auth.js';
 import { makeFirestoreDb } from './firestore-rest.js';
 import { makeFcm } from './fcm-rest.js';
-import { sendEventNotification } from './notify.js';
+import {
+  sendEventNotification,
+  sendFriendNotification,
+  FRIEND_EVENTS,
+} from './notify.js';
 import { handleAvatarUpload, handleAvatarDelete } from './avatar.js';
 
 const MAX_BODY_BYTES = 2048;
@@ -88,6 +92,13 @@ export default {
       return json({ error: 'invalid-json' }, 400);
     }
 
+    // Friend-graph events use a different body shape (no itemId) and a different
+    // authz rule, so they are handled here — the item path below is left exactly
+    // as it was, and proven.
+    if (FRIEND_EVENTS.has(body && body.event)) {
+      return handleFriendEvent(request, env, body);
+    }
+
     const { event, targetUid, itemId } = body || {};
     if (
       typeof targetUid !== 'string' ||
@@ -153,6 +164,79 @@ export default {
     }
   },
 };
+
+/**
+ * Friend-request / friend-accept push. Same shell contract as the item path —
+ * verify the ID token, build a service-account-backed db, authorize, hand off to
+ * notify.js — but the AUTHZ is different: the ACTOR triggers, and only for a
+ * relationship that actually exists in Firestore. A caller cannot aim a friend
+ * push at an arbitrary user: `friendRequest` requires a pending request they
+ * sent; `friendAccept` requires the friendship to exist. Fails CLOSED.
+ */
+async function handleFriendEvent(request, env, body) {
+  const { event, fromUid, toUid } = body || {};
+  if (
+    typeof fromUid !== 'string' ||
+    typeof toUid !== 'string' ||
+    fromUid === toUid
+  ) {
+    return json({ error: 'invalid-body' }, 400);
+  }
+
+  const projectId = env.PROJECT_ID;
+  let callerUid;
+  try {
+    callerUid = await requireUid(request, projectId);
+  } catch (e) {
+    if (e instanceof IdTokenError) return json({ error: 'unauthorized' }, 401);
+    throw e;
+  }
+
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
+  } catch {
+    return json({ error: 'server-misconfigured' }, 500);
+  }
+
+  try {
+    const accessToken = await getAccessToken(serviceAccount);
+    const db = makeFirestoreDb(projectId, accessToken);
+
+    if (event === 'friendRequest') {
+      // The sender notifies the recipient — only with a real pending request
+      // they own. This is the anti-abuse gate: no request, no push.
+      if (callerUid !== fromUid) return json({ error: 'forbidden' }, 403);
+      const req = await db.getDoc(`friendRequests/${fromUid}_${toUid}`);
+      if (!req) return json({ error: 'request-not-found' }, 404);
+      if (
+        req.fromUid !== fromUid ||
+        req.toUid !== toUid ||
+        req.status !== 'pending'
+      ) {
+        return json({ error: 'forbidden' }, 403);
+      }
+    } else {
+      // friendAccept: the accepter (toUid) notifies the original sender — only
+      // once the friendship actually exists. Its id is the sorted pair.
+      if (callerUid !== toUid) return json({ error: 'forbidden' }, 403);
+      const pairId = [fromUid, toUid].sort().join('_');
+      const friendship = await db.getDoc(`friendships/${pairId}`);
+      if (!friendship) return json({ error: 'forbidden' }, 403);
+    }
+
+    const ctx = {
+      projectId,
+      db,
+      fcm: makeFcm(projectId, accessToken),
+    };
+    const res = await sendFriendNotification(ctx, { event, fromUid, toUid });
+    console.log(JSON.stringify(res));
+    return json(res, 200);
+  } catch (e) {
+    return json({ error: 'send-failed', detail: String(e && e.message) }, 500);
+  }
+}
 
 /**
  * The verified caller's uid, or throw.

@@ -7,6 +7,7 @@ import '../../../core/theme/app_tokens.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../auth/domain/user_profile.dart';
+import '../../notifications/application/friend_notifier.dart';
 import '../application/social_providers.dart';
 import '../domain/profile_visibility.dart';
 import 'avatar_image.dart';
@@ -205,6 +206,10 @@ class _RelationshipActionsState extends ConsumerState<_RelationshipActions> {
     final me = ref.watch(currentUidProvider);
     if (me == null || widget.visibility.isSelf) return const SizedBox.shrink();
     final repo = ref.read(friendRepositoryProvider);
+    // Captured while alive, then used across awaits — see the note in
+    // friend_requests_screen.dart. Here the widget usually survives the action,
+    // but capturing keeps every friend-notify site on the same safe pattern.
+    final notifier = ref.read(friendEventNotifierProvider);
 
     switch (widget.visibility.relation) {
       case ProfileRelation.none:
@@ -212,9 +217,15 @@ class _RelationshipActionsState extends ConsumerState<_RelationshipActions> {
           icon: AppIcons.addFriend,
           label: 'Add friend',
           busy: _busy,
-          onPressed: () => _run(
-            () => repo.sendRequest(fromUid: me, toUid: widget.uid),
-          ),
+          onPressed: () => _run(() async {
+            await repo.sendRequest(fromUid: me, toUid: widget.uid);
+            // Best-effort push to the recipient — never blocks the state change.
+            await notifier.notify(
+              event: FriendNotifyEvent.friendRequest,
+              fromUid: me,
+              toUid: widget.uid,
+            );
+          }),
         );
 
       case ProfileRelation.requestSent:
@@ -243,7 +254,15 @@ class _RelationshipActionsState extends ConsumerState<_RelationshipActions> {
                 busy: _busy,
                 onPressed: request == null
                     ? null
-                    : () => _run(() => repo.acceptRequest(request)),
+                    : () => _run(() async {
+                          await repo.acceptRequest(request);
+                          // Notify the original sender they were accepted.
+                          await notifier.notify(
+                            event: FriendNotifyEvent.friendAccept,
+                            fromUid: request.fromUid,
+                            toUid: me,
+                          );
+                        }),
               ),
             ),
             const SizedBox(width: Space.md),

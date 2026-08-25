@@ -134,30 +134,51 @@ final blockPairProvider =
 });
 
 /// Whether the signed-in user and [otherUid] are friends.
-final isFriendProvider = StreamProvider.family<bool, String>((ref, otherUid) {
+///
+/// **Derived from the caller-scoped [myFriendshipsProvider] query, NOT a
+/// per-pair `friendships/{id}` doc listener.** A single-doc listener on a
+/// computed id that does not exist yet is denied (the rule dereferences a null
+/// `resource`) and, being a Firestore listener, TERMINATES on that error — so it
+/// never observes the friendship formed afterwards, and a profile button stays
+/// stale. The `participants array-contains me` query never hits that denial and
+/// stays live, so accepting a request flips this the instant the friendship
+/// lands. Same reasoning for the two request providers below. See DECISIONS.md
+/// "Friend-request reactivity + lifecycle (2026-08-24)".
+final isFriendProvider = Provider.family<AsyncValue<bool>, String>((ref, otherUid) {
   final uid = ref.watch(currentUidProvider);
-  if (uid == null || uid == otherUid) return Stream.value(false);
-  return ref.watch(friendRepositoryProvider).watchFriendship(uid, otherUid);
+  if (uid == null || uid == otherUid) return const AsyncData(false);
+  return ref
+      .watch(myFriendUidsProvider)
+      .whenData((uids) => uids.contains(otherUid));
 });
 
-/// The signed-in user's outgoing request to [otherUid], if any.
+/// The signed-in user's PENDING outgoing request to [otherUid], if any.
+/// Derived from [outgoingRequestsProvider] (a live, caller-scoped query) so the
+/// button reflects a just-sent request immediately — see [isFriendProvider].
 final outgoingRequestToProvider =
-    StreamProvider.family<FriendRequest?, String>((ref, otherUid) {
+    Provider.family<AsyncValue<FriendRequest?>, String>((ref, otherUid) {
   final uid = ref.watch(currentUidProvider);
-  if (uid == null || uid == otherUid) return Stream.value(null);
-  return ref
-      .watch(friendRepositoryProvider)
-      .watchRequest(fromUid: uid, toUid: otherUid);
+  if (uid == null || uid == otherUid) return const AsyncData(null);
+  return ref.watch(outgoingRequestsProvider).whenData((requests) {
+    for (final r in requests) {
+      if (r.toUid == otherUid) return r;
+    }
+    return null;
+  });
 });
 
-/// [otherUid]'s request to the signed-in user, if any.
+/// [otherUid]'s PENDING request to the signed-in user, if any. Derived from
+/// [incomingRequestsProvider] — see [isFriendProvider].
 final incomingRequestFromProvider =
-    StreamProvider.family<FriendRequest?, String>((ref, otherUid) {
+    Provider.family<AsyncValue<FriendRequest?>, String>((ref, otherUid) {
   final uid = ref.watch(currentUidProvider);
-  if (uid == null || uid == otherUid) return Stream.value(null);
-  return ref
-      .watch(friendRepositoryProvider)
-      .watchRequest(fromUid: otherUid, toUid: uid);
+  if (uid == null || uid == otherUid) return const AsyncData(null);
+  return ref.watch(incomingRequestsProvider).whenData((requests) {
+    for (final r in requests) {
+      if (r.fromUid == otherUid) return r;
+    }
+    return null;
+  });
 });
 
 /// **The profile screen's single source of truth for what to render.**

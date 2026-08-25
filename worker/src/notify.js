@@ -196,3 +196,66 @@ function buildMessage(event, subtype, item, targetUid, itemId) {
 function result(sent, cleaned, recipientUid, reason) {
   return { sent, cleaned, recipientUid, reason };
 }
+
+// ---------------------------------------------------------------------------
+// Friend-graph notifications. A SEPARATE family from the item events above:
+// different body shape ({fromUid, toUid}, no itemId), different recipient rule,
+// and no dedup slot. Dedup is unnecessary because the friendRequests row is
+// DELETED on decline/withdraw, so a re-request is a genuinely new event; a rare
+// double-fire from the client's self-heal retry is harmless.
+//
+//   event          triggered by       notifies
+//   -------------  ----------------   -----------------------------
+//   friendRequest  sender (fromUid)   recipient (toUid)
+//   friendAccept   accepter (toUid)   original sender (fromUid)
+//
+// The actor's display name is read from Firestore, never trusted from the
+// caller, so the push body cannot be spoofed. Authorization (that the caller is
+// the actor, and that the request/friendship actually exists) is enforced by the
+// transport shell BEFORE this runs — see index.js handleFriendEvent.
+export const FRIEND_EVENTS = new Set(['friendRequest', 'friendAccept']);
+
+export async function sendFriendNotification(ctx, { event, fromUid, toUid }) {
+  if (!FRIEND_EVENTS.has(event) || !fromUid || !toUid || fromUid === toUid) {
+    return result(0, 0, null, 'bad-args');
+  }
+
+  const recipientUid = event === 'friendRequest' ? toUid : fromUid;
+  const actorUid = event === 'friendRequest' ? fromUid : toUid;
+
+  const actor = await ctx.db.getDoc(`users/${actorUid}`);
+  const who = actor && actor.name ? String(actor.name) : 'Someone';
+
+  const tokens = await ctx.db.listDocIds(`users/${recipientUid}/fcmTokens`);
+  if (tokens.length === 0) return result(0, 0, recipientUid, 'no-tokens');
+
+  const message = buildFriendMessage(event, who, fromUid, toUid);
+
+  let sent = 0;
+  let cleaned = 0;
+  for (const token of tokens) {
+    const res = await ctx.fcm.send(token, message);
+    if (res.ok) {
+      sent += 1;
+    } else if (res.error === 'UNREGISTERED' || res.error === 'INVALID') {
+      await ctx.db.deleteDoc(`users/${recipientUid}/fcmTokens/${token}`);
+      cleaned += 1;
+    }
+  }
+
+  return result(sent, cleaned, recipientUid, sent > 0 ? 'sent' : 'no-delivery');
+}
+
+// Carries only the actor's display name — a fact the recipient is entitled to
+// (they are about to see it in the request / friends list anyway). `data` drives
+// tap-routing (notification_routing.dart).
+function buildFriendMessage(event, who, fromUid, toUid) {
+  const notification = event === 'friendRequest'
+    ? { title: 'New friend request', body: `${who} sent you a friend request` }
+    : { title: 'Friend request accepted', body: `${who} accepted your friend request` };
+
+  return {
+    notification,
+    data: { type: event, event, fromUid, toUid },
+  };
+}

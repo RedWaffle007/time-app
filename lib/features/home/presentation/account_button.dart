@@ -58,6 +58,8 @@ class AccountButton extends ConsumerWidget {
             context.push(Routes.profile);
           case 'archived':
             context.push(Routes.archived);
+          case 'permissions':
+            context.push(Routes.permissions);
           case 'dev':
             context.push(Routes.devMenu);
           case 'signout':
@@ -112,6 +114,13 @@ class AccountButton extends ConsumerWidget {
         // both roles, and it lives here because it is a place you visit rarely
         // and deliberately.
         const PopupMenuItem(value: 'archived', child: Text('Archived')),
+        // Re-run / review the permissions the reminder layer needs. An account
+        // action rather than a destination — it changes how THIS device
+        // behaves — so it sits below the divider with the account block.
+        const PopupMenuItem(
+          value: 'permissions',
+          child: Text('Reminders & permissions'),
+        ),
         // Debug-only escape hatch to the dev menu; stripped from release builds.
         if (kDebugMode)
           const PopupMenuItem(value: 'dev', child: Text('Dev menu (debug)')),

@@ -47,6 +47,8 @@ class ReminderPermissionState {
     required this.notificationsEnabled,
     required this.exactAlarmsAllowed,
     required this.fullScreenIntentAllowed,
+    this.batteryUnrestricted = true,
+    this.autostartLikelyNeeded = false,
   });
 
   /// POST_NOTIFICATIONS. False means a scheduled reminder fires and posts
@@ -71,13 +73,36 @@ class ReminderPermissionState {
   /// granted at install, so this reads true there.
   final bool fullScreenIntentAllowed;
 
+  /// REQUEST_IGNORE_BATTERY_OPTIMIZATIONS — the Doze/battery exemption. False
+  /// means the OS (and OEM battery layers) may defer or kill the process, which
+  /// on the Redmi meant a Boost silently discarded every armed alarm. Defaults
+  /// true because below Android M there is no Doze to be exempt from, and off
+  /// Android the concept does not apply.
+  ///
+  /// **Deliberately NOT part of [isFullyReady].** That getter drives the
+  /// existing primer card, whose copy only covers the three delivery
+  /// permissions; battery and autostart are handled by the onboarding flow, so
+  /// folding them in here would make the primer show with no branch to render.
+  final bool batteryUnrestricted;
+
+  /// Whether this device's manufacturer is one known to kill background apps
+  /// with an autostart gate that has no reliable public intent (Xiaomi, Oppo,
+  /// Vivo, Huawei, Samsung…). Derived from `Build.MANUFACTURER`, NOT an OS grant
+  /// query — there is no API to read whether autostart is allowed, only whether
+  /// this OEM has the setting at all. Onboarding uses it to decide whether to
+  /// show the autostart step; false for stock Android and unknown OEMs, which is
+  /// what makes an untested device skip the step gracefully.
+  final bool autostartLikelyNeeded;
+
   bool get isFullyReady =>
       notificationsEnabled && exactAlarmsAllowed && fullScreenIntentAllowed;
 
   @override
   String toString() => 'ReminderPermissionState(notifications: '
       '$notificationsEnabled, exactAlarms: $exactAlarmsAllowed, '
-      'fullScreenIntent: $fullScreenIntentAllowed)';
+      'fullScreenIntent: $fullScreenIntentAllowed, '
+      'batteryUnrestricted: $batteryUnrestricted, '
+      'autostartLikelyNeeded: $autostartLikelyNeeded)';
 }
 
 /// The permission surface, kept apart from [ReminderScheduler] so that asking
@@ -101,6 +126,19 @@ abstract interface class ReminderPermissions {
   /// 14+). Like exact alarms, there is no in-app prompt — the grant is made in
   /// Settings. A no-op below API 34, where the permission is granted at install.
   Future<void> requestFullScreenIntent();
+
+  /// Fires the DIRECT battery-optimization dialog for this app (a one-tap
+  /// yes/no), falling back to the battery-optimization list where the direct
+  /// action is unavailable. Returns whether anything could be launched — false
+  /// means neither surface exists, so onboarding shows a guided card. Never
+  /// throws.
+  Future<bool> requestBatteryExemption();
+
+  /// Opens the OEM's autostart / background-launch screen, resolve-checked so it
+  /// never blind-launches a component this device lacks. Returns whether a screen
+  /// was actually opened; false means no launchable autostart Activity exists
+  /// here, and onboarding falls back to the per-OEM guided card. Never throws.
+  Future<bool> openAutostartSettings();
 
   /// Opens this app's notification settings — the only route back once the user
   /// has denied POST_NOTIFICATIONS, since the OS will not prompt again.

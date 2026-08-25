@@ -3953,3 +3953,325 @@ we are avoiding.
 Adds the `image_cropper` dependency and its `UCropActivity` in the Android
 manifest. The Worker still sniffs bytes and re-checks size, so the client MIME
 remains a hint, never a fact.
+
+## Battery-exemption direct dialog — deliberate Play-policy declaration (2026-08-23)
+
+**Decision: declare `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` and use the DIRECT
+system dialog** (`ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` with a `package:`
+URI), not the battery-optimization LIST intent.
+
+The list intent (`ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS`) needs no
+permission but dumps the user into a screen of every app and asks them to hunt
+for ours. The direct dialog is one tap — yes/no, for this app — and holding the
+permission is what unlocks it.
+
+**This is a deliberate Play-policy declaration, on record for submission.**
+Google restricts `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` to an acceptable-use
+list, and *"the app schedules user-facing alarms/reminders and must run in the
+background to deliver them"* is on it. We are a reminder/alarm app — the
+qualifying case — and reliable delivery is the entire product (the OneKeyClean
+finding proved a non-exempt process is killed with its alarms). It is the
+Doze-exemption analogue of the `SCHEDULE_EXACT_ALARM` decision.
+
+**Fallback if review ever objects:** the native `requestIgnoreBatteryOptimizations`
+already falls through to the non-declared list intent when the direct action is
+unavailable, so dropping the permission is a copy change in onboarding, not an
+architecture change. The manifest carries the full reasoning inline.
+
+## Permissions onboarding — first-run flow (2026-08-23)
+
+**A single first-run flow that asks for every permission a reminder depends on,
+explained, most-consequential first.** `lib/features/onboarding/`. Built after the
+Part-3 plan was approved with all its open decisions settled. **NOT VERIFIED ON A
+DEVICE** — the Redmi pass is the acceptance test.
+
+**The doctrine it must not regress: no raw OS prompt fires before the user has
+read why.** The reminder layer moved the POST_NOTIFICATIONS ask off cold launch
+precisely because Android spends that prompt once and a launch-time surprise
+wastes it. Onboarding keeps that: every step shows its reason ON SCREEN before its
+button touches an OS surface, and the flow runs AFTER auth + profile completion,
+never at splash. The existing primer card is untouched and stays the repair path
+for the three delivery permissions.
+
+**Per-permission mechanics** (the approved Part-3 table):
+- **POST_NOTIFICATIONS** — the one runtime dialog. Denied → offer app
+  notification settings (Android won't re-ask in-app).
+- **SCHEDULE_EXACT_ALARM** / **USE_FULL_SCREEN_INTENT** — settings-only, so
+  deep-linked to *this app's* toggle via the plugin's own request intents. On the
+  APIs where they are install-granted the state reads granted and the step is
+  skipped.
+- **Battery/Doze** — the direct dialog (see the entry above).
+- **OEM autostart** — no standard permission and no guaranteed public intent, so
+  it is **resolve-checked** natively against a dontkillmyapp component map and
+  **never blind-launched**; where nothing resolves (or the launch is refused) a
+  per-OEM guided card gives the manual path. Autostart grant cannot be read back,
+  so the step is offered whenever `Build.MANUFACTURER` is a known-aggressive OEM
+  and completion is tracked by a stored flag instead.
+
+**The pieces:**
+- `core/platform/oem_profile.dart` — the PURE OEM branch selector
+  (`oemProfileFor`), device-free so the "which OEMs need autostart" decision is
+  unit-tested rather than only on hardware. Unknown/stock → skip the step.
+- `core/platform/oem_info.dart` — `Build.MANUFACTURER` over `device_info_plus`.
+- `core/platform/system_permissions.dart` — the battery + autostart channel seam
+  (`time_app/battery`, `time_app/autostart`). **No method throws**; each degrades
+  to a safe default, because a permission surface that can throw would take down
+  the flow that drives it.
+- `features/onboarding/application/onboarding_plan.dart` — `remainingSteps` /
+  `hasOnboardingWork`, PURE, applied to the LIVE `ReminderPermissionState` so the
+  flow is resumable and self-skipping (a granted step drops out on the next
+  resume). Same doctrine as the reminder reconciler.
+- `OnboardingGate` (inside `HomeGate`) shows the flow once per device; a completed
+  device never even reads permission state. Re-runnable from the account menu at
+  `/permissions`.
+
+**Two native method channels on `MainActivity`** (thin-channel pattern, no
+`permission_handler`): battery check+request, autostart resolve+launch. The
+autostart component map lives native because resolving a `ComponentName` needs the
+`PackageManager`.
+
+**`ReminderPermissionState`/`ReminderPermissions` extended** with
+`batteryUnrestricted` + `autostartLikelyNeeded` and `requestBatteryExemption()` /
+`openAutostartSettings()`. **`isFullyReady` deliberately excludes battery/
+autostart** — it drives the primer card, whose copy only covers the delivery
+trio, so folding them in would show the primer with no branch to render. The two
+new state fields default to the safe no-op values so the existing three-arg
+constructor sites and the primer are unmoved. The scheduler/firing path was not
+touched.
+
+Coverage: `test/onboarding_test.dart` — the step plan (auto-skip granted,
+consequence order, autostart-always-for-aggressive-OEM), the OEM branch selection
+(families, case-insensitivity, stock/unknown skip), the state-field defaults, and
+the never-throws channel seam.
+
+## Cross-device relationship + planning denials (2026-08-24)
+
+Two failures surfaced on the first real multi-device test (Nothing 4a +
+Redmi, two accounts, both signed in). Both were diagnosed against the LIVE
+backend, not by reasoning alone: the deployed ruleset
+(`56e11d6d-6c1c-4dd8-ae16-9141defa7b62`) was re-fetched and diffed byte-for-byte
+against `firestore.rules` (identical), the actual Firestore documents were read
+with an admin token (rules bypassed), and both mechanisms were reproduced in the
+rules emulator (`firestore-tests/repro_bugs.test.mjs`). Neither was an
+undeployed-rule or offline-cache artifact — the reads reach the backend and are
+genuinely denied there.
+
+### Bug 1 — username search spins forever (fixed CLIENT-side)
+
+**Not a Supabase issue and not the username read.** Username search is served by
+Firestore (`usernames/{handle}`, `allow get: if signedIn()`); both live handles
+resolve to real uids. The failure is downstream: after the uid resolves,
+`profileVisibilityProvider` listens to `watchFriendship`, a single-doc
+`.snapshots()` on `friendships/{sortedPairId(me,other)}`. For two strangers that
+document does not exist, and the read rule (`request.auth.uid in
+resource.data.participants`) dereferences `resource.data` on a **null** resource
+→ `permission-denied`, not an empty snapshot. That error becomes an `AsyncError`,
+and `_SearchResult` renders a spinner forever while `visibility.value == null`.
+`watchRequest` and `watchBlockPair` have the same latent trap.
+
+**Confirmed** on device (spinner) and in the emulator: reading a non-existent
+`friendships/{pair}` is DENIED; a party reading an existing one succeeds.
+
+**Fix is on the client, deliberately NOT the rules.** A rules-side `resource ==
+null` allowance would let anyone probe whether two *other* users are
+friends/blocked (the id is attacker-constructable), reopening exactly the
+enumeration hole the social layer closes. Instead, `data/relation_stream.dart`
+maps this one `permission-denied` to the benign "absent" value. This is sound
+because these ids always name the caller: a document the caller could not read
+cannot exist at this id, so a denial here can only mean absence. Any other error
+is rethrown. Applied to `watchFriendship`, `watchRequest`
+(`relationStreamAbsentOnDenied`) and `watchBlockPair` (`isAbsenceDenial` on each
+listener's `onError`). Reactivity caveat: a Firestore listener terminates on
+error, so once absent the stream ends after yielding the fallback; a relationship
+formed mid-view is picked up on the next provider rebuild. The fuller fix
+(derive isFriend/block/request from the caller-scoped `array-contains me` query
+streams, which never deny) is deferred — the error-mapping is the minimal
+change and the rules stay untouched.
+
+### Bug 2 — planning cross-device is permission-denied (fixed RULES + schema)
+
+The rules were already correctly split (item ↔ `plannerGrants`, mirror ↔
+`plannerAccess`). The failure is one layer out: `ScheduleRepository.createItem`
+commits ONE atomic `WriteBatch` of the item AND a `scheduleSlots` lock. The item
+write passes (`callerHasActiveGrant` — the test group had `granted:true` both
+ways), but the lock's create rule required `callerHasPlannerAccess(target)` =
+`exists(plannerAccess/{planner}_{target})`, and **`plannerAccess` was empty
+project-wide**. The lock was denied and, being atomic, took the item with it.
+Backend proof: the mirror collection had zero docs while a live grant existed;
+the emulator named the failing statement (`evaluation error at L896 for
+'create'`). The mirror is written ONLY by the target's device
+(`PlannerAccessReconciler`, off the grant stream), which has never run on the
+installed build — so the planner was structurally unable to create the document
+its own write depended on. A `plannerAccess` mirror is the right gate for the
+READ path (the "view B's schedule" modal, which carries no groupId) but the wrong
+one for a WRITE that already travels beside the item.
+
+**Fix: decouple the lock write from the mirror.** The `scheduleSlots` lock now
+carries `groupId` (added to `createItem`'s batch — the only place a lock is
+created), and its create rule gates on `callerHasActiveGrant(targetUid,
+groupId)` — the identical check the item proves in the same batch — instead of
+`callerHasPlannerAccess`. This is strictly stronger (a real active grant vs. a
+mirror that can outlive a revocation), keeps consent target-controlled (the grant
+is), and unblocks planning regardless of whether the target's device has synced
+the mirror. The lock READ rule stays on `callerHasPlannerAccess` — a read carries
+no groupId, so the mirror remains its gate. `allow update: if false` is
+unchanged, so the doc is still a create-once lock.
+
+**Follow-ups, NOT done here:** (a) the `plannerAccess` mirror is still empty, so
+the "view B's schedule" modal read remains broken until
+`PlannerAccessReconciler` is verified to populate it on the installed build — a
+separate device check. (b) `repro_bugs.test.mjs` and the updated
+`slots.test.mjs` now assert the fixed contract (grant + no mirror → batch
+succeeds; mirror alone → denied); full suite 124/124 green.
+
+**Deploy order — RULES FIRST.** `firestore.rules` changed (the lock create
+whitelist gained `groupId` and the gate swapped). An old client (lock without
+`groupId`) planning as a planner will now be denied its lock — acceptable, since
+the old client is exactly the one that was already failing; the new client always
+sends `groupId`. Self-planning is unaffected (the `request.auth.uid == targetUid`
+branch short-circuits before `groupId` is read). Deploy, re-fetch the deployed
+source and diff, then install the new client.
+
+## Friend-request reactivity + lifecycle (2026-08-24)
+
+Three issues on the friend-request flow, all reproduced against the LIVE rules
+(the emulator runs the same `firestore.rules`; the device already showed the
+Firestore `permission-denied`, so these are real backend denials, not offline
+cache). All found right after the cross-device relationship fix above.
+
+### Issues 1 & 2 — button never leaves "Add friend"; a second tap is denied
+
+Root cause is a side-effect of the Bug 1 fix. The profile button already
+switches on `ProfileVisibility.relation`, but the outgoing-request state feeding
+it came from `watchRequest`, a single-doc `.snapshots()` listener. Via
+`relationStreamAbsentOnDenied` that listener yields "absent" and then TERMINATES
+on the initial non-existent-doc denial (a Firestore listener ends on error), so
+it never observes the request created afterwards. The button stays "Add friend"
+(Issue 1); a second tap re-runs `sendRequest`, whose `.set()` on the now-existing
+pending doc is an UPDATE that changes `createdAt`, which the update rule forbids
+→ `permission-denied` (Issue 2, emulator-confirmed).
+
+**Fix — derive per-user relationship state from the caller-scoped QUERY
+streams**, not per-pair doc listeners. `isFriendProvider`,
+`outgoingRequestToProvider` and `incomingRequestFromProvider` now read from
+`myFriendUidsProvider` / `outgoingRequestsProvider` / `incomingRequestsProvider`
+(the `array-contains me` / `fromUid==me` / `toUid==me` queries). A query never
+hits the non-existent-doc denial and stays live, so the button flips to
+"Requested" the instant the write lands — which also makes the duplicate write
+structurally impossible. Rules unchanged. `blockPairProvider` was left on the
+doc-read path (its `iBlocked` half has the same latent staleness, but blocks are
+not part of this flow — a follow-up if it ever surfaces).
+
+### Issue 3 — re-add after a decline is denied (lifecycle)
+
+A declined request persisted as `status:'rejected'`, and `sendRequest`'s `.set()`
+is an UPDATE on that existing doc, which no update branch permits
+(`rejected → pending` is forbidden by design). So the re-add collided with the
+stale row → `permission-denied` (emulator-confirmed). The same latent flaw hit
+withdraw-then-re-add (`cancelled`) and unfriend-then-re-friend (`accepted`); the
+overflow's "either of you can send a new request later" was not actually true.
+
+**Decision (reverses the earlier "a rejected row is never revived"): a settled
+request is DELETED, not flagged.** `rejectRequest` (decline) and `cancelRequest`
+(withdraw) now delete the doc; `removeFriend` also clears the leftover `accepted`
+row in both directions; and `sendRequest` self-heals any pre-existing stale row
+(on a `permission-denied`, delete then re-create) so no migration is needed for
+rows written before this change. Re-adding is then a clean create. Rule change:
+`friendRequests` `allow delete: if signedIn() && isParty()` (was `if false`).
+
+**Why this keeps consent intact:** deleting a request grants nothing and reveals
+nothing, so the model is unchanged — only the lifecycle is. A block is still
+enforced because the re-created request re-checks `blocked()` on create. The
+cost, accepted: the persisted "no" is gone, so re-requests are unlimited;
+blocking, not a permanent rejected row, is the throttle (rate-limiting has no
+home without Blaze anyway). Declines are now also indistinguishable from
+never-sent, which matches the app's block-indistinguishability stance.
+
+### UI — explicit tick/cross for accept/decline
+
+`AppIcons.acceptFriend` → `Icons.check_rounded` (✓) and `declineFriend` →
+`Icons.close_rounded` (✗). The old `how_to_reg` / `person_off` glyphs did not
+read as actionable accept/decline controls. `declineFriend` is also the withdraw
+glyph (clearing a pending request, either direction), for which a cross reads
+correctly. This is an icon-vocabulary change (the one place raw `Icons.*` is
+allowed); the §2.7 firewall lint stays green.
+
+### Coverage / deploy
+
+`social.test.mjs` now asserts the delete contract (either party may delete; a
+third party may not; re-add after delete succeeds); full suite 127/127. Only
+`firestore.rules` changed (the `friendRequests` delete rule), so
+`firebase deploy --only firestore:rules`; re-fetch the deployed source and diff,
+then reinstall the client (all three fixes need the new client). Device: the
+re-add is issued by the SENDER, so the decline-then-re-add case reproduces on the
+sender's phone (the Nothing).
+
+## Friend-request push + mandatory username (2026-08-24)
+
+Two gaps found testing on a third device (Motorola Edge 70). Both confirmed
+against the live backend before any change: the friend-request docs and FCM
+tokens were read directly from Firestore (admin token, rules bypassed).
+
+### Friend-request push — was NEVER built (not a delivery failure)
+
+Traced the whole path: no `functions/` dir, the Worker's events were
+`{created, decided, outcome, withdrawn}` (schedule items only), and nothing in
+`lib/` POSTed to the notifier on a `friendRequests` write. FCM tokens WERE
+present for all three active devices (Motorola/Nothing/Redmi), so delivery was
+never the problem — there was simply no trigger. This matches the social-layer
+"NOT DONE" note ("push for friend events … does not fit one"). Directed to build
+it now, both directions.
+
+**Design — two events on the SAME Worker, a separate family from item events.**
+`friendRequest` (sender → recipient) and `friendAccept` (accepter → original
+sender). Body is `{event, fromUid, toUid}` (no itemId); `FRIEND_EVENTS` is a
+distinct set and `notify.js` gains `sendFriendNotification` / `buildFriendMessage`
+beside the untouched item policy. The item path in `index.js` is left
+byte-identical — friend events are dispatched to a new `handleFriendEvent` right
+after JSON parse, before the item body validation.
+
+Things that make it safe rather than an abuse vector:
+- **The actor triggers, and only for a relationship that exists.**
+  `friendRequest` requires the caller to be `fromUid` AND a `pending`
+  `friendRequests/{fromUid}_{toUid}` to exist; `friendAccept` requires the caller
+  to be `toUid` AND the `friendships/{sortedPair}` to exist. No request/friendship
+  → 403/404, no push. So a caller cannot spray friend pushes at arbitrary users.
+- **The actor's display name is read server-side** (`users/{actorUid}.name`),
+  never taken from the client, so the push body cannot be spoofed.
+- **No dedup slot, deliberately.** The request row is deleted on decline/withdraw
+  (the lifecycle fix above), so a re-request is a genuinely new event; a rare
+  double-fire from `sendRequest`'s self-heal retry is harmless. (Contrast the item
+  events, which carry `notified*` guards because their docs persist.)
+- **No rules change.** The Worker reads via its service account; the client only
+  POSTs. Client seam mirrors the item notifier exactly: `FriendEventNotifier` +
+  `HttpFriendEventNotifier`, best-effort, no retry, ID token identifies the actor.
+  Tap routing: `friendRequest` → Friend requests, `friendAccept` → Friends list
+  (`notification_routing.dart`).
+
+**Deploy:** the WORKER must be redeployed (`wrangler deploy` in `worker/`); no
+Firestore rules changed. Then reinstall the client.
+
+### Mandatory username at onboarding
+
+`UserProfile.isComplete` deliberately required only name + timezone, so an account
+could exist with no handle — and a handle-less account is invisible to search, so
+it can send requests but can never be added back (a dead end; hit on the
+Motorola). Directed to make usernames mandatory.
+
+- `isComplete` now also requires `username`. **Effect (chosen, not incidental):**
+  existing handle-less accounts are routed through `CompleteProfileScreen` once to
+  set a handle — the intended "no account without a handle", grandfathering
+  nobody.
+- `CompleteProfileScreen` gains a required username field with **live format
+  validation** (`validateUsername` → `describeUsernameProblem`) and the
+  constraints stated in plain text (3–20 chars, lowercase letters/numbers/
+  underscore, start with a letter, unique). Save does `createProfile` THEN
+  `claim`: the claim is a second write that can lose a uniqueness race, and doing
+  it after means a taken handle leaves a still-`!isComplete` profile (the gate
+  keeps the user on the screen to pick another) rather than a half-account.
+  Uniqueness is decided atomically by `claim`, which surfaces "taken" via
+  `UsernameUnavailable`.
+
+No Firestore rules change (the `usernames`/`users` rules already enforce claim +
+mirror). Full existing suites stay green (Dart analyze clean; flutter social/lint
+tests 51/51; the 127 rules tests are unaffected).
