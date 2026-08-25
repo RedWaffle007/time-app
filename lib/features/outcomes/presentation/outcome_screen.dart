@@ -17,6 +17,7 @@ import '../../notifications/application/outcome_notifier.dart';
 import '../../reminders/presentation/reminder_primer.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
+import '../../time_tracking/presentation/log_from_done_prompt.dart';
 import 'hero_band.dart';
 
 /// The target's approved items — where they mark Done or Skip, and where a
@@ -28,11 +29,18 @@ import 'hero_band.dart';
 /// holds the Done and Skip controls, so the tap ends one gesture from closing
 /// the loop, and there is no second rendering of an item to keep in step.
 class OutcomeScreen extends ConsumerStatefulWidget {
-  const OutcomeScreen({super.key, this.highlightItemId});
+  const OutcomeScreen({super.key, this.highlightItemId, this.embedded = false});
 
   /// From `?item=` — the item a reminder was tapped for. Null in every other
   /// route onto this screen.
   final String? highlightItemId;
+
+  /// When true, this is the My Schedule sub-tab inside the Plan shell (slice
+  /// S4): the shell owns the app bar and carries the pending-approvals action +
+  /// badge, so the app bar is suppressed here. Default false = the standalone
+  /// old-bar screen, unchanged. (Reminder-highlight routing still lands on the
+  /// old `/outcome` branch until S5, so `highlightItemId` is null when embedded.)
+  final bool embedded;
 
   @override
   ConsumerState<OutcomeScreen> createState() => _OutcomeScreenState();
@@ -111,21 +119,23 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
         0;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('My Schedule'),
-        actions: [
-          IconButton(
-            tooltip: 'Pending approvals',
-            icon: Badge(
-              isLabelVisible: pendingCount > 0,
-              label: Text('$pendingCount'),
-              child: const Icon(AppIcons.approvals),
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              title: const Text('My Schedule'),
+              actions: [
+                IconButton(
+                  tooltip: 'Pending approvals',
+                  icon: Badge(
+                    isLabelVisible: pendingCount > 0,
+                    label: Text('$pendingCount'),
+                    child: const Icon(AppIcons.approvals),
+                  ),
+                  onPressed: () => context.push(Routes.approvals),
+                ),
+                const AccountButton(),
+              ],
             ),
-            onPressed: () => context.push(Routes.approvals),
-          ),
-          const AccountButton(),
-        ],
-      ),
       body: AsyncView<List<ScheduleItem>>(
         value: itemsAsync,
         // Retry the SOURCE stream — see the note in planner_activity_screen.
@@ -242,7 +252,7 @@ class _OutcomeCard extends ConsumerWidget {
                   ),
                   const SizedBox(width: Space.sm),
                   FilledButton(
-                    onPressed: () => _markDone(ref),
+                    onPressed: () => _markDone(context, ref),
                     child: const Text('Done'),
                   ),
                 ],
@@ -282,14 +292,27 @@ class _OutcomeCard extends ConsumerWidget {
   /// The reminder needs no cancelling here: recording an outcome makes the item
   /// undesired, the item stream re-emits, and the reconciler cancels it. That is
   /// the point of driving reminders off the stream rather than off transitions.
-  Future<void> _markDone(WidgetRef ref) async {
+  Future<void> _markDone(BuildContext context, WidgetRef ref) async {
     await ref.read(scheduleRepositoryProvider).markDone(item.targetUid, item.id);
-    if (_isSelfPlanned) return; // no point notifying yourself
-    await ref.read(notificationEventNotifierProvider).notify(
-          event: NotifyEvent.outcome,
-          targetUid: item.targetUid,
-          itemId: item.id,
-        );
+    // The planner push is skipped for a self-planned item (no one else to tell),
+    // but the time-tracking prompt is NOT — self-planned items are exactly the
+    // ones a user logs their own time against. So the early-out only guards the
+    // notify; the Done→track hook below runs for every completed item.
+    if (!_isSelfPlanned) {
+      await ref.read(notificationEventNotifierProvider).notify(
+            event: NotifyEvent.outcome,
+            targetUid: item.targetUid,
+            itemId: item.id,
+          );
+    }
+    if (!context.mounted) return;
+    await promptLogFromDone(
+      context,
+      ref,
+      taskName: item.title,
+      sourceItemId: item.id,
+      timezone: item.timezone,
+    );
   }
 
   Future<void> _skip(BuildContext context, WidgetRef ref) async {

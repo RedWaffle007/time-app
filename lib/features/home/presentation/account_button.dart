@@ -48,6 +48,12 @@ class AccountButton extends ConsumerWidget {
           // Pushed for the same reason /chatbot is: a root-level route
           // outside the shell, covering the nav bar, with Back returning to
           // whichever tab launched it.
+          case 'you':
+            context.push(Routes.you);
+          case 'plan':
+            context.push(Routes.plan);
+          case 'track':
+            context.push(Routes.track);
           case 'calendar':
             context.push(Routes.calendar);
           case 'chatbot':
@@ -75,6 +81,23 @@ class AccountButton extends ConsumerWidget {
         const PopupMenuItem(
           value: 'calendar',
           child: Text('Calendar'),
+        ),
+        // TEMPORARY door to the Plan shell during the redesign migration (slice
+        // S4): the inner-TabBar preview of My Schedule / Activity / Groups,
+        // walkable in isolation without flipping the bottom bar. Removed at the
+        // S5 cutover, when Plan becomes the first bottom-bar pillar — see
+        // DECISIONS.md "UI redesign — S4".
+        const PopupMenuItem(
+          value: 'plan',
+          child: Text('Plan (preview)'),
+        ),
+        // TEMPORARY door to the Track pillar during the redesign migration
+        // (slice S1). It becomes a bottom-bar destination at the S5 cutover, at
+        // which point this menu item is removed — see DECISIONS.md "UI redesign
+        // — Hearth + Candidate A".
+        const PopupMenuItem(
+          value: 'track',
+          child: Text('Track time'),
         ),
         // A destination, not an account action — hence its place above the
         // divider. Worded as the feature, not as "chatbot": the label names what
@@ -109,6 +132,11 @@ class AccountButton extends ConsumerWidget {
           ),
         ),
         const PopupMenuDivider(),
+        // TEMPORARY door to the You hub during the redesign migration (slice
+        // S3): the real home for the account block below, which it re-houses.
+        // The individual items below stay wired (they still route) until the S5
+        // cutover retires this whole popup. See DECISIONS.md "UI redesign".
+        const PopupMenuItem(value: 'you', child: Text('You')),
         const PopupMenuItem(value: 'profile', child: Text('Edit profile')),
         // Archived is account-level, not tab-level: it holds settled items from
         // both roles, and it lives here because it is a place you visit rarely

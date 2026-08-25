@@ -20,25 +20,36 @@ import '../domain/schedule_item.dart';
 /// approves/rejects and marks Done/Skip (Option B: no push, just a Firestore
 /// listener). This is where the loop closes for the planner.
 class PlannerActivityScreen extends ConsumerWidget {
-  const PlannerActivityScreen({super.key});
+  const PlannerActivityScreen({super.key, this.embedded = false});
+
+  /// When true, this is a sub-tab inside the Plan shell (slice S4): the shell
+  /// owns the app bar and surfaces "Plan an item" as an app-bar `＋` action (the
+  /// single-FAB rule is reserved for the S5 voice FAB), so both are suppressed
+  /// here. Default false = the standalone old-bar screen, unchanged.
+  final bool embedded;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final itemsAsync = ref.watch(myItemsAsPlannerProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Activity'),
-        actions: const [AccountButton()],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        // Unique tag — this tab is mounted alongside GroupsScreen's FAB inside
-        // HomeShell's IndexedStack, so the default shared FAB hero tag collides.
-        heroTag: 'activityFab',
-        onPressed: () => context.push(Routes.scheduleBuilder),
-        icon: const Icon(AppIcons.add),
-        label: const Text('Plan an item'),
-      ),
+      appBar: embedded
+          ? null
+          : AppBar(
+              title: const Text('Activity'),
+              actions: const [AccountButton()],
+            ),
+      floatingActionButton: embedded
+          ? null
+          : FloatingActionButton.extended(
+              // Unique tag — this tab is mounted alongside GroupsScreen's FAB
+              // inside HomeShell's IndexedStack, so the default shared FAB hero
+              // tag collides.
+              heroTag: 'activityFab',
+              onPressed: () => context.push(Routes.scheduleBuilder),
+              icon: const Icon(AppIcons.add),
+              label: const Text('Plan an item'),
+            ),
       body: AsyncView<List<ScheduleItem>>(
         value: itemsAsync,
         // Retry the SOURCE stream. `myItemsAsPlannerProvider` is a derived

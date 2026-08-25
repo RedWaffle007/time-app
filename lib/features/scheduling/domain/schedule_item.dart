@@ -49,6 +49,7 @@ class ScheduleItem {
     this.outcome,
     this.rejectionReason,
     this.createdAt,
+    this.decidedAt,
   });
 
   final String id;
@@ -71,6 +72,15 @@ class ScheduleItem {
   final ScheduleOutcome? outcome;
   final String? rejectionReason;
   final DateTime? createdAt;
+
+  /// When the target decided (approved/rejected), or when a self-authored item
+  /// was created already-approved. Written by `approve`/`reject`/self-create and
+  /// permitted by the item rules' decision whitelist. The source for future
+  /// response-latency stats (`decidedAt - createdAt`), which is why it is
+  /// captured now: it cannot be reconstructed for a plan decided before the
+  /// field existed. Null on a still-pending item and on planner-withdrawn items
+  /// (a withdrawal is not a target decision; it carries `withdrawnAt` instead).
+  final DateTime? decidedAt;
 
   // -------------------------------------------------------------------------
   // Archive eligibility (DECISIONS.md "Archive — the terminal-state split").
@@ -138,6 +148,7 @@ class ScheduleItem {
       outcome: ScheduleOutcome.fromMap(d['outcome'] as Map<String, dynamic>?),
       rejectionReason: d['rejectionReason'] as String?,
       createdAt: (d['createdAt'] as Timestamp?)?.toDate(),
+      decidedAt: (d['decidedAt'] as Timestamp?)?.toDate(),
     );
   }
 }

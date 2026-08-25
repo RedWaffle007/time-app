@@ -4275,3 +4275,476 @@ Motorola). Directed to make usernames mandatory.
 No Firestore rules change (the `usernames`/`users` rules already enforce claim +
 mirror). Full existing suites stay green (Dart analyze clean; flutter social/lint
 tests 51/51; the 127 rules tests are unaffected).
+
+## Stats capture foundation — Step 1: `decidedAt` parsed into the item (2026-08-25)
+
+**Context.** Starting the stats-feature *data-capture foundation* while the stats
+page/computation, voice layer and UI redesign stay parked. The one piece that is
+irreversible if deferred is response-latency history: `decidedAt - createdAt`
+cannot be reconstructed for any plan decided before the field is captured.
+
+**Finding: the write side was already live.** `schedule_repository.dart` already
+stamps `decidedAt = serverTimestamp()` on `approve()`, on `reject()`, and on a
+self-authored `approved` `createItem()`. `firestore.rules` already whitelists it
+on item create (the optional key set) and on the target-decision update
+(`changedKeys().hasOnly(['status','decidedAt','rejectionReason','outcome','updatedAt'])`).
+So the server accepts and persists it — **no offline-lie risk**, verified by
+reading the deployed-shape rules, not just the client.
+
+**The only gap, now closed.** `ScheduleItem.fromDoc` never parsed `decidedAt`, so
+it was written but invisible to Dart. Added `DateTime? decidedAt` to the domain
+object + `fromDoc`. Additive, no migration, no rules change.
+
+**Semantics locked (so future stats read it correctly):**
+- `decidedAt` = when the TARGET decided (approve/reject), or when a self-authored
+  item was created already-approved (parity, stamped at create).
+- It is **null on planner-withdrawn items** — a withdrawal is not a target
+  decision. Withdraw carries `withdrawnAt` instead. This matches the locked rate-
+  stat rule: rate stats count DECIDED plans only (approved+rejected); pending and
+  withdrawn are each their own separate count, never folded into a decision rate.
+- Old plans decided before this ship simply have no `decidedAt`; response-latency
+  stats must treat missing `decidedAt` as "unknown", never as zero latency.
+
+## Stats capture foundation — Step 2: tracked-time model + rules (2026-08-25)
+
+**Personal manual time-tracking — a genuinely SEPARATE feature.** Its own tree,
+its own domain, never coupled to a plan except via one optional soft link. No
+existing rule, collection or index changed; purely additive, so rules-then-code
+is safe and an old client is unaffected.
+
+**Location.** `users/{uid}/trackedTime/{entryId}` (auto-id), a subcollection with
+its own `match` block — the `fcmTokens`/`state` pattern. **Owner-only in BOTH
+directions** (`request.auth.uid == uid`): unlike `profileStats`, reads are NOT
+opened to friends or the public. Nobody but the owner ever reads or writes their
+tracked time.
+
+**Schema (one entry):**
+- `taskName` string, free-form, trimmed non-empty, ≤ 200. The task need not
+  correspond to any plan/alarm.
+- `durationMinutes` **int, 1..1440**. The authoritative unit — always whole
+  minutes, never fractional hours; display rolls to `Xh Ym` past 59.
+- `logDate` string `YYYY-MM-DD`, a **wall date in the owner's home tz** at
+  creation. Lexical order = chronological, so today/this-week/streak reads are
+  plain string ranges with **no timezone math at read time**. Every entry belongs
+  to exactly ONE day. (No `timezone` field: `logDate` is already the resolved
+  answer.)
+- `startLocal`/`endLocal` optional `HH:mm`, both-or-neither. **Display metadata
+  only** — duration is authoritative and need not agree with the range; the range
+  is never used to derive duration.
+- `sourceItemId` optional string — the soft link to the plan a Done-hook entry
+  came from. **Recorded, never verified** against the plan tree (a `get()` there
+  would re-couple the two features; a malformed value only mislabels the owner's
+  own row). Its presence/absence is what a future "share of tracked time that came
+  from plans" stat reads.
+- `createdAt`/`updatedAt` server timestamps.
+
+**The 1440 cap is derived, not arbitrary.** Because every entry is one day, one
+entry can never hold more than a day. Enforced on BOTH sides — `firestore.rules`
+`trackedTime.validEntry` and `TrackedEntry`'s own assert + `kMaxEntryMinutes`.
+This keeps every day-bucketed stat coherent: no query can ever see "more than 24h
+in a day".
+
+**Multi-day logging = ONE ENTRY PER DAY, never a spanning row.** A log that
+transcends a day is not stored as one oversized entry and introduces no
+date-range shape. Instead the client apportions the minutes across the chosen
+days and writes N single-day entries in one batch (`logAcrossDays`), each ≤ 1440.
+So no stat query ever has to understand spans, and there is nothing to migrate.
+- **Implemented now (not stubbed):** the pure `apportionAcrossDays(total, dates)`
+  helper (even split, remainder spread one minute at a time, re-sums exactly,
+  throws `ApportionmentImpossible` when the total cannot fit the chosen days) and
+  the batch writer `TrackedTimeRepository.logAcrossDays`. Both are the data-side
+  seam and are unit-tested.
+- **Stubbed / deferred:** the actual multi-day PROMPT UI (pick the days, adjust
+  the apportionment). It is UI, out of scope this session, and the pure helper is
+  the clean seam it will drive. The data model already assumes one-entry-per-day,
+  so building the prompt later needs no schema change.
+
+**Rules validation** (mirrors the model): full `keys().hasOnly` set on create AND
+update, `taskName` 1..200, `durationMinutes` int 1..1440, `logDate` a 10-char
+string, `sourceItemId` any string when present, range both-or-neither. `delete`
+owner-only — users have the full right to delete their own entries anytime.
+
+**Files:** `lib/features/time_tracking/domain/tracked_entry.dart`,
+`data/tracked_time_repository.dart`, `application/time_tracking_providers.dart`;
+rules block in `firestore.rules`; `firestore-tests/tracked_time.test.mjs` (12
+tests) and `test/tracked_entry_test.dart` (10 tests).
+
+**Green:** `flutter analyze` clean; the 12 new rules tests pass inside the full
+suite (139/139); the 10 Dart unit tests pass. **Rules NOT deployed yet** — deploy
+is a separate, user-run step; no tracked entry has hit the real backend.
+
+## Stats capture foundation — Step 3: the Done→track hook (2026-08-25)
+
+**When a user marks a planned item Done, offer to log it to personal time
+tracking.** The capture side of the "% of tracked time that came from plans"
+stat, and the first bridge between planning and the (otherwise separate) tracker
+— a bridge that runs in ONE direction only, via the optional `sourceItemId`.
+
+**Where it fires.** `_OutcomeCard._markDone` (`outcome_screen.dart`), right after
+the `markDone` write. Reordered deliberately: the old `if (_isSelfPlanned) return`
+short-circuited before the notify — now it guards ONLY the planner push, because
+a self-planned item is exactly the kind a user logs their own time against. The
+prompt therefore runs for EVERY completed item (self- and other-planned alike),
+which is correct: the stat counts any plan you completed, including ones others
+made for you.
+
+**The UI is one dialog, not a screen** (`promptLogFromDone` in
+`time_tracking/presentation/log_from_done_prompt.dart`): "Log this to time
+tracking?" + the task name + a "Minutes spent" field + Not now / Log. Confirm and
+duration are combined on purpose — the smaller surface, and the prefillable field
+IS the voice seam. A plan has no duration of its own, so the duration must be
+asked; typed for now.
+
+**The voice seam.** Duration is a single prefillable field: a future "track time"
+voice flow parses the spoken minutes and passes them as `initialMinutes`; the
+same dialog then needs only a confirming tap. Nothing on the write path changes.
+
+**Feature separation preserved.** The prompt takes only primitives — `taskName`,
+`sourceItemId`, `timezone` — so `time_tracking` never imports the scheduling
+domain. `outcome_screen` (scheduling side) imports the prompt, not the reverse.
+
+**One Done → one day → one entry.** The completion is "now", so `logDate` is
+today in the user's own zone (`logDateFor`), and a single `TrackedTimeRepository.log`
+writes one entry with `sourceItemId` set. The `apportionAcrossDays`/`logAcrossDays`
+multi-day path never applies here and is not invoked. Manual/voice entries (later)
+leave `sourceItemId` absent.
+
+**Dedup seam exists, not wired.** `TrackedTimeRepository.hasEntryForItem` can
+guard a double-log, but marking Done twice is not reachable from this screen (the
+Done control disappears once an outcome exists), so it is left for a caller that
+needs it.
+
+**Scope:** logic + the single confirm/duration dialog only. No stats page, no
+stats computation, no voice, no redesign. `flutter analyze` clean; UI-RULES lint
+green. NOT verified on a device.
+
+## Stats capture foundation — rules deploy verified (2026-08-25)
+
+The Step 2 `trackedTime` rules are now DEPLOYED and byte-verified. Live ruleset
+`d31d2f84-83bf-4fc6-a85e-e45ec03614bf` (release `cloud.firestore`, updateTime
+2026-08-25T09:49:49Z), superseding `33468095-920e-4b5d-a8ae-e1e3b611e4b1` and
+every earlier id. Verified the real way: the deployed source was fetched back
+from `firebaserules.googleapis.com` and diffed byte-for-byte against
+`firestore.rules` — IDENTICAL (53412 bytes each, sha256
+`89354ee89b9e9d710e551d9f05e00a326a1e06bf493da5eb0e21118eff7222dd`), with no
+trailing-newline drift this round. So tracked-time reads/writes now actually
+reach and are enforced by the backend — no offline-lie path. Still nothing
+written to the real collection from a device.
+
+## UI redesign — Hearth spine + Candidate A IA (design locked 2026-08-25)
+
+A three-session design pass (IA audit → target IA → visual direction → migration
+plan) settled the app's next-phase structure and look. **Design and decisions
+only across those sessions; step zero below is the first code.**
+
+### Information architecture — Candidate A (product-pillar bar)
+
+The bar is regrouped from the three delegation stances to the app's **pillars**:
+
+```
+[ Plan ]   [ Track ]   ( ⊕ voice )   [ Stats ]   [ You ]
+```
+
+- **Plan** — the delegation hub. The three stances (My Schedule / Activity /
+  Groups) become a **swipeable, keep-alive inner TabBar**, landing on My
+  Schedule. Calendar = a Plan app-bar action; **Archived = Plan overflow** (it is
+  settled *plan* content — keeps You as pure identity/account). Approvals inbox
+  stays a My Schedule action.
+- **Track** — time-tracking's first real home: free-form log + history with
+  edit/delete, on the existing `TrackedTimeRepository`. No longer subordinate to
+  planning.
+- **Stats** — a personal dashboard, distinct from the social-profile stats on
+  `/u/:uid`.
+- **You** — profile, Friends, Language practice, Reminders & permissions, Sign
+  out, Dev(debug). Dissolves the account-popup "junk drawer".
+- **Voice FAB** — persistent docked centre mic spanning both features: Track time
+  → Track log sheet; Plan time → schedule-builder. Every voice action is also
+  doable manually.
+
+**Regressions accepted with eyes open:** Groups 0→1 tap (it is setup/admin, not
+the daily return view); the pending badge moves to Plan-aggregate + the My
+Schedule sub-tab; stance-switching becomes a swipe. Landing = My Schedule (the
+"what do I need to do" view), not Groups.
+
+**Candidates B (keep 3 stance-tabs + a "Me" hub) and C (unified People + role
+toggle) were rejected:** B kept tracking/stats a tab-level below planning; C
+re-mixed groups with the friend graph, which the data model keeps apart.
+
+### Visual direction — Hearth
+
+Chosen over **Momentum** (energetic/gamified — fights the app's "caring, not
+coercive" identity, costliest AA re-verify) and **Graphite** (precise mono tool —
+sheds the warm identity; its tabular numerals collide with the localized-digit
+rule). **Hearth** is the warm humanist companion: ivory + sage (action) +
+terracotta (attention), flat/hairlines, airy, humanist — an *evolution* of the
+existing, already-AA-verified system, so the contrast work is not reopened. Stats
+and Track may feel celebratory (number-heroes, quick-add chips) **within** the
+warm palette. It is the single source of truth in `lib/core/theme/` + UI-RULES.md
+that every migrated screen pulls from.
+
+### Migration plan — temporary-door strategy, no big-bang
+
+New pillars are built **behind the existing account popup** as a temporary door;
+the old 3-tab bar stays intact and shippable until ONE reviewable cutover.
+
+- **S0 — step zero: Hearth tokens + UI-RULES** (this slice; additive, nothing
+  renders differently).
+- **S1 — Track screen**, **S2 — Stats shell**, **S3 — You hub** — each a new
+  route reachable from the popup; mutually independent; depend only on S0.
+- **S4 — Plan inner-TabBar keep-alive shell** — the one structural nav change,
+  reviewed **in isolation**.
+- **S5 — bottom-bar cutover + voice FAB (manual routing)** — the integration
+  gate; needs S1–S4 to exist. **S4 and S5 are two separate reviewable slices,
+  released together** (option a) so users never see a transitional bar.
+- **S6 — voice STT layer**; **S7 — Hearth polish sweep** (any time after S0).
+
+**S2 caveat:** the actual stat computations (rejection rate, follow-through,
+tracking totals) are a separate, **ungreenlit** build. S2 ships the dashboard
+shell; tiles render placeholder/empty until fed — honestly, never faked zeros.
+
+### Step zero — what actually landed (2026-08-25)
+
+Additive and centralizing; **nothing renders differently** (the new token is
+unused, the rest is doctrine):
+
+- **`lib/core/theme/dataviz_tokens.dart` (NEW)** — `AppDataVizColors`, the one
+  source every chart/meter pulls from. **No new hex**: every role maps onto an
+  already-verified scheme colour (sage series/fill, terracotta attention as
+  **line/marker only**, neutral grid/track). Deliberately **no orange-fill
+  getter** — one would spend the §2.7 "waiting on you" signal on decoration AND
+  launder the banned `tertiaryContainer` past the §2.7 lint. Used by nothing yet.
+- **UI-RULES.md** — new **§2.8 Data-viz colour** (charts are not an exception to
+  the two hues; the §2.7 firewall extends onto charts) and **§6.12–§6.14** (the
+  product-pillar bar + docked voice FAB; the Track log sheet; the Stats
+  dashboard). §6.14 composes the *existing* §6.7 progress and §6.9 stat tiles —
+  it invents nothing.
+- **`app_text.dart`** — doc-only: `displaySmall` now names the Stats number-hero
+  as a **sanctioned third use** (alongside the auth hero and the My Schedule
+  band), so UI-RULES §6.14 and the token agree. No value changed.
+
+Per UI-RULES §9 (doctrine → document → code), the reasoning is here first, the
+document (UI-RULES) second, and the code conforms. `flutter analyze` clean; the
+UI-RULES lint stays green (the new theme file is outside the governed set; no
+screen changed).
+
+## UI redesign — S1: the Track pillar (2026-08-25)
+
+The first migration slice, and the first real consumer of the S0 Hearth
+foundation. Personal time-tracking gets a real home — no longer a dialog
+subordinate to planning.
+
+**What landed**
+- **`track_screen.dart`** (`/track`): the history list, entries grouped by
+  `logDate` into day sections (SectionHeader), each a flat outlined Card. Tap →
+  edit; swipe → delete with an Undo snackbar. Reads `myTrackedEntriesProvider`
+  (repo sorts `logDate` desc). Empty state: "log time you spent on anything — it
+  need not be a plan."
+- **`log_time_sheet.dart`** — the canonical §6.13 sheet (`showLogTimeSheet`),
+  create OR edit. Task name + minutes (digits-only, 1..1440), sage quick-add
+  chips that SET the field (never submit), optional both-or-neither time-of-day
+  range. Manual entries carry **no `sourceItemId`**. Writes via the existing
+  `TrackedTimeRepository`; edit preserves `logDate`, `createdAt` and provenance.
+- **Temporary door:** an account-popup item "Track time" → `Routes.track`
+  (top-level pushed). No bottom-bar change. Removed at the S5 cutover.
+
+**Foundation validation (S1's second job).** Two gaps the first consumer found,
+both fixed centrally rather than worked around:
+1. **No shared duration formatter.** `log_from_done_prompt` had a private
+   Latin-digit `_formatMinutes`, violating the worldwide-digit rule. Added
+   `formatDurationMinutes(context, minutes)` to the ONE format helper
+   (`datetime_format.dart`, §1) — localized digits, the "Xh Ym past 59" unit
+   rule in one place — and refactored the Done prompt onto it. One source now.
+2. **No Track icon vocabulary.** Added `track`/`trackSelected` (the filled form
+   awaits the S5 bar slot), `logTime`, `duration`, `edit`, `delete`,
+   `emptyTrack` to `app_icons.dart` (§6.6). The §6.9/§6.7 recipes already
+   existed and needed nothing.
+
+Otherwise the S0 tokens/recipes held: §6.13 (quick-add chips sage, minutes
+primary), §6.1 card, SectionHeader, AsyncView all applied with no new token.
+
+**Multi-day apportion untouched** — single manual entries never trigger it; the
+`apportionAcrossDays`/`logAcrossDays` helpers are as-is for the future multi-day
+prompt.
+
+**Green:** `flutter analyze` clean; UI-RULES lint + tracked-entry tests pass;
+**`flutter build apk --debug` succeeds** (device-buildable). Not yet run on a
+device. Scope held: no Plan shell, no bar change.
+
+## UI redesign — S3: the You hub (2026-08-25)
+
+Resolves the audit's most overloaded surface: the account popup that jumbled
+feature launchers, account settings and device config behind one closed menu.
+
+**What landed**
+- **`you_screen.dart`** (`/you`): a profile header card (AvatarImage + name +
+  @username → Edit profile), then two SectionHeader groups — **Places** (Friends
+  with the pending-count badge · Calendar · Language practice) and **Account &
+  device** (Reminders & permissions · Dev menu [debug] · Sign out). Each row is a
+  flat outlined `_YouTile` (§6.1) with a leading icon and a chevron.
+- **A re-housing, not a rebuild.** Every row pushes exactly the route the popup
+  pushes today; no destination screen changed (their Hearth polish is S7). Sign
+  out still goes through `signOutWithTokenCleanup(ref)`.
+- **Temporary door:** account-popup → "You" → `/you`. The existing popup items
+  stay wired (they still route) until the S5 cutover retires the popup.
+
+**Flagged discrepancy (deliberate).** The S3 brief houses **Calendar** in You;
+the locked IA has it as a Plan app-bar action. The Plan shell does not exist
+until S4, so Calendar lives in You for now and relocates at S4/S5. Recorded so it
+is not lost.
+
+**Foundation validation (second consumer).** The S0 recipes held — §6.1 card,
+SectionHeader, AvatarImage (§6.8), PendingCountBadge (§2.7) all applied with no
+new token. Only additions were icon-vocabulary entries (`languagePractice`,
+`editProfile`, `devMenu`) in `app_icons.dart` (§6.6) — the same central-fix
+pattern as S1, not a workaround. One API nit: this Riverpod exposes `.value`,
+not `.valueOrNull`, on `AsyncValue` (noted for later slices).
+
+**Green:** `flutter analyze` clean; UI-RULES lint passes; `flutter build apk
+--debug` succeeds (device-buildable).
+
+## UI redesign — S4: the Plan inner-TabBar keep-alive shell (2026-08-25)
+
+The one **structural** nav change of the migration, isolated in its own slice.
+It collapses the three old delegation-stance bottom-bar tabs (My Schedule /
+Activity / Groups) into ONE **Plan** branch with a swipeable, keep-alive inner
+TabBar, landing on My Schedule. **S4 is NOT the bar cutover (S5):** the old
+three-tab bar is untouched and shippable, and the shell is reachable only behind
+a temporary account-popup door so it can be reviewed in isolation. S4 and S5
+release together (option a) but are built and reviewed separately.
+
+**What landed**
+- **`plan_shell.dart` (`PlanShell`)** — a `Scaffold` with one `AppBar(title:
+  "Plan")` whose `bottom` is a `TabBar` (My Schedule · Activity · Groups,
+  `initialIndex 0`), body a swipeable `TabBarView`. The §6.12 look comes from the
+  new central `tabBarTheme` (below), not inline styling.
+- **Route `/plan`** (`Routes.plan`), top-level and pushed, with three
+  **sub-routes** — `schedule-builder`, `approvals`, `groups/:groupId` — so each
+  sub-tab's detail push stacks over the shell and Back returns to it. This is the
+  documented `/calendar/new` precedent (a root-pushed screen whose create flow
+  must not escape into a shell branch); they are second registrations, and since
+  nothing deep-links to them the D2 ambiguity does not apply.
+- **Temporary door:** account-popup → "Plan (preview)" → `/plan`. Same strategy
+  as S1/S3; removed at S5.
+
+**The keep-alive property — how the old `StatefulShellBranch` behaviour is
+reproduced.** The property to preserve is that switching sub-tabs drops neither
+live Firestore listeners nor scroll/selection. Two INDEPENDENT mechanisms, which
+is what lets a swipeable `TabBarView` replace the old always-built `IndexedStack`
+at no cost:
+1. **Widget-state survival** — each page is wrapped in a `_KeepAlivePage`
+   (`AutomaticKeepAliveClientMixin`, `wantKeepAlive => true`), so the
+   `TabBarView`'s `PageView` keeps each page's element subtree mounted once built
+   rather than disposing it off-screen. Scroll offsets and local state (e.g.
+   `OutcomeScreen`'s highlight timer) survive a swipe.
+2. **Listener liveness is independent of mounting** — the three feeds are
+   non-`autoDispose` Riverpod providers, so their Firestore subscriptions stay
+   live regardless of any widget. A `TabBarView` builds a page lazily on first
+   visit; immaterial, because liveness never depended on the mount. The
+   keep-alive is purely for widget state.
+
+**Sub-tab reuse without touching the old bar.** Each of the three screens gained
+one `embedded` bool (default **false** = byte-identical old-bar behaviour): when
+true, its own `appBar` and `floatingActionButton` are `null` and the shell
+provides them. The two Groups dialogs were lifted to top-level
+`showGroupCreateDialog` / `showGroupJoinDialog` so the shell's app-bar actions
+reuse the exact flows. Group-row taps push `/plan/groups/:id` when embedded,
+`/groups/:id` otherwise.
+
+**Per-sub-tab app-bar actions** (swapped by `_tabController.index`): My Schedule
+→ approvals inbox; Activity → **`＋ Plan`** (the old standalone FAB, now an
+app-bar action — the single-FAB rule is reserved for the S5 voice FAB, so no
+competing FAB was added); Groups → `＋ New group` + `Join by code`. Constant Plan
+actions: **Calendar** (a Plan app-bar action per the locked IA) and an overflow
+`⋮` housing **Archived** (the locked "Archived lives in Plan" call).
+
+**Approvals badge migration + the aggregate.** New `planAttentionCountProvider`
+is a **documented sum** of the per-sub-tab attention signals. Today only My
+Schedule contributes one (items where the user is target and `status ==
+pending`); Activity and Groups add 0, so the aggregate currently *equals* the old
+My-Schedule count — kept as a sum so a future signal is a one-line add. It rides
+the **My Schedule sub-tab** badge now and will ride the **Plan bottom-bar
+pillar** at S5, from the SAME provider so the two can never disagree. Per the
+accepted regression, the count is no longer a bar-level tab badge.
+
+**Central fix (flag-not-workaround, per S1/S3).** §6.12's Plan TabBar had no
+recipe token: added a central **`tabBarTheme`** (`TabBarThemeData`) to
+`app_theme.dart` — soft sage (`primary`) underline hugging the label
+(`indicatorSize: label`), understated `labelLarge` text tabs, inactive in
+`onSurfaceVariant`, `outlineVariant` divider, no fill. Every future TabBar now
+inherits Hearth by default, the same discipline as `navigationBarTheme`.
+
+**Deferred to S5 (correctly out of scope):** the bottom-bar rewire, the voice
+FAB, and reminder-highlight routing into the new shell (a tapped reminder still
+lands on the old `/outcome` branch, so `highlightItemId` is null when embedded).
+
+**Green:** `flutter analyze` clean; UI-RULES lint + tests pass; `flutter build
+apk --debug` succeeds (device-buildable). **NOT run on a device** — added to the
+pre-S5 ledger below.
+
+## UI redesign — device-verification ledger (as of 2026-08-25)
+
+Slices are stacking up built-and-green but **NOT run on a device**. The list to
+clear before (or at) the S5 cutover, so nothing is lost:
+
+- **Tracked-time capture (Steps 1–3, 2026-08-25):** `decidedAt` parse; the
+  `trackedTime` model + rules (rules ARE deployed + byte-verified, but no entry
+  has been written from a device); the Done→track hook + confirm dialog. None
+  exercised on-device.
+- **S0 — Hearth tokens/UI-RULES:** invisible by design (unused token), so nothing
+  to see, but the dataviz roles have never rendered.
+- **S1 — Track pillar:** the log sheet (create/edit, quick-add chips, optional
+  range), the history list, swipe-delete + undo, `formatDurationMinutes` — all
+  unrun on-device. First real write to `users/{uid}/trackedTime` will happen
+  here.
+- **S3 — You hub:** navigation and the profile header unrun on-device.
+- **S4 — Plan inner-TabBar shell:** unrun on-device. Specifically to check: the
+  swipe between the three sub-tabs; that scroll position and selection survive
+  switching (the keep-alive claim); the soft-sage underline and understated text
+  tabs render as Hearth in light + dark + RTL; the My Schedule sub-tab pending
+  badge appears/clears; each sub-tab's app-bar actions fire (approvals, ＋ Plan,
+  ＋ New group / Join, Calendar, Archived overflow) and their detail pushes stack
+  over the shell with a working Back; and — the point of the slice — that the OLD
+  three-tab bar is unchanged beside it.
+
+**Device pass to schedule before S5:** sign in on the Redmi (debug build), log a
+manual entry (confirm it reaches `trackedTime`), edit it, delete + undo; mark a
+plan Done and log from the prompt (confirm `sourceItemId` set); open the You hub
+and confirm every row routes; open **Plan (preview)** and run the S4 checks
+above; check light + dark and an RTL locale. The bar flip (S5) should not ship
+until this ledger is cleared.
+
+## Tracked-time — the range END is derived, not independent (2026-08-25)
+
+**Supersedes** the Step-2 decision that the time-of-day range is "independent
+display metadata that need not agree with `durationMinutes`". It now MUST agree:
+`startLocal` is user-set and `endLocal` is always `start + durationMinutes`
+(`deriveEndLocal`), so the two can never disagree.
+
+**Why:** a range and a duration that could differ was a second, contradictable
+source of "how long". Deriving the end from the authoritative duration removes
+the contradiction and simplifies the UI (one picker, not two).
+
+**Behaviour**
+- **Create:** opting into a range asks ONLY for the start; the end is computed
+  from start + the duration already entered. No start set → no range stored.
+- **Edit:** if the entry already has a range, changing the duration (or the
+  start) recomputes the end — 30→90 min on a `2:00–2:30` entry becomes
+  `2:00–3:30`. If the entry has NO range, changing the duration never invents
+  one.
+- **Both-or-neither is now structural:** a range exists iff a start is set, and
+  a start always yields an end — so a half-range can no longer be constructed.
+  The stored shape (`startLocal`/`endLocal` strings) is unchanged, so **no rules
+  change and no migration** — the rules' both-or-neither check still holds.
+
+**Midnight crossing:** `end = (startMinutes + durationMinutes) mod 1440`. When
+`end <= start` the range wrapped to the next day (e.g. `23:00` + 90 → `00:30`);
+this is truthful because duration is the source of truth for length. It is
+surfaced as a `(+1d)` suffix in the Track list and a live "Ends … (+1d)" preview
+in the sheet, so an earlier-looking end never reads as a mistake.
+
+`deriveEndLocal` is a pure helper in `tracked_entry.dart`, unit-tested (same-day,
+wrap, full-day-back-to-start, malformed-start). `flutter analyze` clean.
+
+**Device-verify-pending (ledger):** the derived-end edit/create behaviour and the
+`(+1d)` display are built and analyzer-green but **not yet run on the device** —
+added to the pre-S5 device pass alongside the S1/S3 items already listed.

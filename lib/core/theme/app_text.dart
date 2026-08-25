@@ -18,7 +18,12 @@ abstract final class AppText {
   /// nothing to verify — both uses are genuinely the largest thing on their
   /// screen, which is the whole definition of the slot.
   ///
-  /// It is still not a general-purpose "big text": two heroes, no more.
+  /// A THIRD sanctioned use was added with the Hearth redesign (UI-RULES.md
+  /// §6.14): the Stats dashboard's single number-hero — a streak or a total the
+  /// dashboard may lead with. Same test as the other two: it is genuinely the
+  /// largest thing on its screen. It is still not a general-purpose "big text"
+  /// slot — three heroes now, each earning it, and no more without the same
+  /// justification.
   static const displaySmall = TextStyle(
     fontSize: 32,
     height: 40 / 32,

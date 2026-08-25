@@ -227,6 +227,10 @@ abstract final class AppIcons {
 
   // ---- language practice (the chatbot feature) ----
 
+  /// The language-practice feature's own entry (the You hub, the account menu).
+  /// Names the activity, not "chatbot".
+  static const IconData languagePractice = Icons.translate;
+
   /// Send the composed message. Not [add]: composing and creating are different
   /// acts, and only one of them is a schedule item.
   static const IconData send = Icons.send;
@@ -405,6 +409,34 @@ abstract final class AppIcons {
   /// archived nothing" and "this day is free" are different messages. A free day
   /// is a good thing, which is exactly what the other two glyphs fail to say.
   static const IconData emptyDay = Icons.event_available_outlined;
+
+  // ---- time-tracking (the Track pillar) ----
+
+  /// The Track pillar and its account-popup entry, outlined / filled per the
+  /// §6.6 nav convention (the filled form is for the future bottom-bar slot).
+  static const IconData track = Icons.timer_outlined;
+  static const IconData trackSelected = Icons.timer;
+
+  /// The "log time" create action (an app-bar +, per §6.12's single-FAB rule).
+  static const IconData logTime = Icons.more_time_outlined;
+
+  /// A logged entry's duration, and its optional time-of-day range.
+  static const IconData duration = Icons.hourglass_bottom_outlined;
+
+  /// Editing and deleting an owned entry.
+  static const IconData edit = Icons.edit_outlined;
+  static const IconData delete = Icons.delete_outline;
+
+  /// "You have logged no time yet" — a fourth emptiness, distinct from the
+  /// inbox / archive / free-day ones (§emptyGeneric).
+  static const IconData emptyTrack = Icons.timelapse_outlined;
+
+  // ---- the You hub (account pillar) ----
+
+  /// The You pillar / account destination, and its list rows: editing your
+  /// profile, and the account block. Reuses [account] for the pillar itself.
+  static const IconData editProfile = Icons.person_outline;
+  static const IconData devMenu = Icons.build_outlined;
 
   // ---- dev-only scaffolding (lib/dev is governed too — §6.6) ----
 

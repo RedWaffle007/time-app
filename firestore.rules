@@ -337,6 +337,63 @@ service cloud.firestore {
       match /state/{doc} {
         allow read, write: if signedIn() && request.auth.uid == uid;
       }
+
+      // ---- users/{uid}/trackedTime/{entryId} ----
+      // Personal, manual time-tracking. A genuinely SEPARATE feature from
+      // planning: it lives in its own tree, and owner-only in BOTH directions —
+      // unlike `profileStats`, reads are NOT opened to friends or the public.
+      // Nobody but the owner ever reads or writes their tracked time.
+      //
+      // `sourceItemId` is the OPTIONAL soft link to the plan a Done-hook entry
+      // came from. It is a plain string the owner writes about their OWN entry
+      // and is deliberately NOT verified against `scheduleItems` — a get() into
+      // the plan tree would re-couple the two features the whole shape keeps
+      // apart, and a malformed value only ever mislabels the owner's own row.
+      // The origin is RECORDED (so a future "share of tracked time that came
+      // from plans" stat can be computed) but never rule-enforced.
+      //
+      // Every entry belongs to exactly ONE day (`logDate`, a YYYY-MM-DD wall
+      // date in the owner's home tz), so the per-entry duration is capped at one
+      // day: 1 ≤ durationMinutes ≤ 1440. A log that transcends a day is written
+      // by the client as N single-day entries (one per day), each obeying this
+      // cap — so no day-bucketed stat can ever see "more than 24h in a day", and
+      // no query needs to understand spanning entries.
+      match /trackedTime/{entryId} {
+        function validEntry() {
+          return request.resource.data.taskName is string
+            && request.resource.data.taskName.size() > 0
+            && request.resource.data.taskName.size() <= 200
+            && request.resource.data.durationMinutes is int
+            && request.resource.data.durationMinutes >= 1
+            && request.resource.data.durationMinutes <= 1440
+            && request.resource.data.logDate is string
+            && request.resource.data.logDate.size() == 10
+            && (!('sourceItemId' in request.resource.data)
+                || request.resource.data.sourceItemId is string)
+            // The optional time-of-day range is both-or-neither, and each half a
+            // string when present. It is display metadata only — durationMinutes
+            // is authoritative and need not agree with it.
+            && (('startLocal' in request.resource.data)
+                == ('endLocal' in request.resource.data))
+            && (!('startLocal' in request.resource.data)
+                || (request.resource.data.startLocal is string
+                    && request.resource.data.endLocal is string));
+        }
+        allow read: if signedIn() && request.auth.uid == uid;
+        allow create: if signedIn() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly([
+               'taskName', 'durationMinutes', 'logDate',
+               'startLocal', 'endLocal', 'sourceItemId',
+               'createdAt', 'updatedAt'])
+          && validEntry();
+        allow update: if signedIn() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly([
+               'taskName', 'durationMinutes', 'logDate',
+               'startLocal', 'endLocal', 'sourceItemId',
+               'createdAt', 'updatedAt'])
+          && validEntry();
+        allow delete: if signedIn() && request.auth.uid == uid;
+      }
     }
 
     // ---- groups/{groupId} ----

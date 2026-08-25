@@ -241,6 +241,35 @@ so always-on orange elements would spend the trust that makes the badge readable
 An always-on orange app-bar rule was mocked, costed, and **held** (DECISIONS.md,
 2026-07-25); taking it would require amending §2.1.
 
+### 2.8 Data-viz colour — charts are not an exception to the two hues
+
+Charts, meters and sparklines pull colour from ONE place:
+`AppDataVizColors` in `lib/core/theme/dataviz_tokens.dart`, an extension over the
+scheme. A chart never invents a palette, and it introduces **no new hex** — every
+role maps onto an already-verified colour (§7), so adding data-viz adds nothing
+to check.
+
+| Role | Maps to | Use |
+|---|---|---|
+| `seriesPrimary` | `primary` (sage) | The main series; every progress fill; "completed / good". |
+| `seriesAttention` | `tertiary` (terracotta) | The pending / attention series — **line or marker only**. |
+| `seriesMuted` | `primaryContainer` | A comparison series, when one is not enough. Not a third hue. |
+| `chartGrid` | `outlineVariant` | Gridlines, ticks — decorative structure. |
+| `chartAxisLabel` | `onSurfaceVariant` | Axis labels, legends. |
+| `progressTrack` | `surfaceContainerHigh` | The unfilled part of a meter/ring. |
+
+**The §2.7 firewall extends onto charts.** A filled area is state; a filled
+*orange* area is the "waiting on you" signal. So the attention series is drawn as
+a **line, dot or label**, never a filled region — a filled region uses
+`seriesPrimary` (sage), which §2.7 does not restrict. There is deliberately no
+orange-fill getter in `dataviz_tokens.dart`: adding one would both spend the
+signal on decoration and launder the banned `tertiaryContainer` past the §2.7
+lint. If a chart needs a filled "pending" area, that is a new state — it belongs
+in `status_style.dart` (§2.3), not inlined into a chart.
+
+More than two series: add neutral *shape* (dashed vs solid, marker glyph), never a
+new hue. The palette stays two.
+
 ---
 
 ## 3. Type
@@ -674,6 +703,66 @@ always labelled with the zone; the planner's own equivalent is secondary
 `labelSmall`. Never render a bare "4pm" in this modal — whose 4pm is the exact
 confusion it exists to prevent. All of it through
 `core/format/datetime_format.dart` (§1).
+
+---
+
+### 6.12 Product-pillar navigation & the docked voice FAB
+
+The bar names the app's **pillars**: `Plan · Track · ⊕ · Stats · You` — a change
+from the earlier "three delegation stances" (those three are now sub-navigation
+*inside* Plan). Full reasoning in DECISIONS.md "UI redesign — Hearth + Candidate
+A". Recipes so it stays Hearth:
+
+- **The bar is flat chrome** (`Elevations.nav`), scaffold-background fill, active
+  pillar = filled sage icon + label (§6.6 filled-selected), inactive = outline
+  icon in `onSurfaceVariant`. The pending-attention **count** rides the **Plan**
+  icon (aggregate) and the **My Schedule** sub-tab — the one orange the bar may
+  carry (§2.7), rendering nothing at zero.
+- **One FAB on screen, always.** The docked centre **voice FAB** is a standard
+  (56) circular `primary` (sage) FAB with a mic glyph and a *gentle* floating
+  shadow (`Elevations.floating`) — inviting, not shouting (Hearth). Manual create
+  for planning and tracking are **app-bar `＋` actions**, never a second FAB, so
+  nothing competes with it. Tapping it opens a bottom sheet (§ below) offering
+  **Track time** / **Plan time**; both are also reachable manually, so the FAB is
+  additive, never the only door.
+- **Plan inner TabBar:** the three sub-tabs (My Schedule / Activity / Groups) use
+  a soft `primary` underline indicator on a scaffold-background bar, swipeable,
+  all kept alive. It is nav between sub-screens, not a filter — so a TabBar, not
+  segmented buttons. Labels are text; the bar carries no fill.
+
+### 6.13 The Track log sheet
+
+Logging time is a bottom sheet, not a screen (`Radii.lg`, `Elevations.floating`):
+
+- **The minutes field is the primary control** — a numeric input, digits-only,
+  validated 1..1440 (`kMaxEntryMinutes`, §data model). Store minutes; display
+  rolls to `Xh Ym` only past 59 (the unit rule).
+- **Quick-add chips are sage, not orange.** Optional `15 / 30 / 45 / 60` chips
+  are `ChoiceChip`s on a `primaryContainer` tint with `Radii.pill` — a convenience
+  fill, and a sage one, so it stays clear of the §2.7 firewall. They *set* the
+  minutes field; they never submit on their own.
+- **Actions:** `Not now` (text) / `Log` (filled sage, §6.4). The Done→track prompt
+  (`log_from_done_prompt.dart`) is the same recipe with the task name pre-filled;
+  the voice flow is the same recipe with the minutes pre-filled — one sheet, three
+  entry points.
+
+### 6.14 The Stats dashboard
+
+Composes primitives that already exist — it invents nothing:
+
+- **Stat tiles** are §6.9 exactly: flat, outlined, reflowing, `—` for absence
+  (never zero). Until the stat computations land (a separate, ungreenlit build)
+  every tile is a `placeholder` with its "Coming soon" caption — the dashboard is
+  shipped empty-but-honest, not faked.
+- **A number-hero** — the one large figure a dashboard may lead with (a streak, a
+  total) — reuses `AppText.displaySmall`. This is a **sanctioned third use** of
+  that token (alongside the auth hero and the My Schedule band); it is still not a
+  general-purpose big-text slot. Hearth allows the figure to feel celebratory
+  through *size and warmth*, never through a new hue.
+- **Charts** pull every colour from §2.8 (`AppDataVizColors`) and every meter from
+  §6.7. Personal-dashboard numbers are distinct from the social-profile stats on
+  `/u/:uid`: same tile recipe, different surface and framing ("my dashboard", not
+  "someone's profile").
 
 ---
 

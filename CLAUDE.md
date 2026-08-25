@@ -153,10 +153,14 @@ passing it does NOT close item 1.
    up yet.** (DECISIONS.md, 2026-07-22.)
 
 **Leave / remove / stop-planning — BUILT + RULES DEPLOYED AND VERIFIED
-2026-08-20.** **THE live ruleset is `33468095-920e-4b5d-a8ae-e1e3b611e4b1`**
-(deployed 2026-08-24, superseding `56e11d6d` and every earlier id; verified the
-same way — deployed source re-fetched and diffed byte-for-byte). It is the only
-ruleset id in this file, and every earlier one is superseded. This live ruleset
+2026-08-20.** **THE live ruleset is `d31d2f84-83bf-4fc6-a85e-e45ec03614bf`**
+(deployed 2026-08-25, superseding `33468095`, `56e11d6d` and every earlier id;
+verified the same way — deployed source re-fetched and diffed byte-for-byte,
+IDENTICAL this time with no trailing-newline drift, sha256 `89354ee8…7222dd`).
+It is the only ruleset id in this file, and every earlier one is superseded. The
+2026-08-25 deploy added the `users/{uid}/trackedTime` block (personal
+time-tracking — see DECISIONS.md "Stats capture foundation — Step 2"); it did not
+touch the relationship/slot-lock rules below. This live ruleset
 carries the slot-lock + planner-access rules (see "View B's schedule modal"
 below) AND the 2026-08-24 cross-device fixes: the slot-lock create now gates on
 `callerHasActiveGrant` (not the plannerAccess mirror), and `friendRequests`
@@ -165,7 +169,7 @@ below) AND the 2026-08-24 cross-device fixes: the slot-lock create now gates on
 lifecycle". Verification was the real one, not a
 ruleset id alone: the *deployed source* was fetched back from
 `firebaserules.googleapis.com` and diffed byte-for-byte against `firestore.rules`
-— identical (bar a trailing EOF newline the API round-trip adds). **Still
+— identical. **Still
 UNVERIFIED ON A DEVICE:** no leave, remove or stop-planning has actually been run
 against the live rules, and the installed build predates the feature.
 

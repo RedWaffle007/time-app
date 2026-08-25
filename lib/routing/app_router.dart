@@ -28,6 +28,9 @@ import '../features/reminders/presentation/alarm_screen.dart';
 import '../features/reminders/presentation/reminder_diagnostics_screen.dart';
 import '../features/scheduling/presentation/planner_activity_screen.dart';
 import '../features/scheduling/presentation/schedule_builder_screen.dart';
+import '../features/home/presentation/you_screen.dart';
+import '../features/plan/presentation/plan_shell.dart';
+import '../features/time_tracking/presentation/track_screen.dart';
 import 'go_router_refresh_stream.dart';
 
 /// Central list of route paths/names, so screens don't hardcode strings.
@@ -172,6 +175,35 @@ class Routes {
   static const userProfile = '/u';
 
   static String userProfileFor(String uid) => '$userProfile/$uid';
+
+  /// **The Track pillar** (personal time-tracking). Top-level and pushed for now,
+  /// reached through a TEMPORARY account-popup entry (the redesign's
+  /// temporary-door strategy — DECISIONS.md "UI redesign — Hearth + Candidate
+  /// A"). It becomes a bottom-bar pillar at the S5 cutover; until then it lives
+  /// beside the other account-menu destinations, covering the bar and returning
+  /// to whichever tab launched it.
+  static const track = '/track';
+
+  /// **The You hub** (profile / friends / calendar / language practice /
+  /// permissions / sign out / dev). The account popup promoted to a screen —
+  /// top-level and pushed during migration, reached through a TEMPORARY
+  /// account-popup entry. Becomes the fifth bottom-bar pillar at the S5 cutover
+  /// (DECISIONS.md "UI redesign — Hearth + Candidate A").
+  static const you = '/you';
+
+  /// **The Plan shell** (redesign slice S4) — the delegation hub's inner-TabBar
+  /// preview: My Schedule / Activity / Groups as swipeable, keep-alive sub-tabs.
+  /// Top-level and pushed during migration, reached through a TEMPORARY
+  /// account-popup entry ("Plan (preview)"), the same temporary-door strategy as
+  /// [track] and [you]. It becomes the first bottom-bar pillar at the S5 cutover.
+  ///
+  /// Its detail screens are SUB-ROUTES (`schedule-builder`, `groups/:groupId`,
+  /// `approvals`) so each pushes into the Plan shell's own stack and Back returns
+  /// here — the `/calendar/new` precedent for a root-pushed screen whose create
+  /// flows must not escape into a shell branch (see the `calendarNew` doc). They
+  /// are second registrations of screens the old shell also registers; nothing
+  /// deep-links to them, so the D2 ambiguity does not apply.
+  static const plan = '/plan';
 
   /// The language-practice chatbot — a self-contained feature that shares the
   /// theme and this router with the delegation app and nothing else. Top-level,
@@ -364,6 +396,43 @@ final routerProvider = Provider<GoRouter>((ref) {
               initialDate: Routes.calendarDateFrom(
                 state.uri.queryParameters[Routes.calendarDateParam],
               ),
+            ),
+          ),
+        ],
+      ),
+      // The Track pillar, pushed at the root during the redesign migration. It
+      // will move into the bottom bar at S5; a top-level pushed route now keeps
+      // it reachable behind the temporary account-popup door with no bar change.
+      GoRoute(
+        path: Routes.track,
+        builder: (context, state) => const TrackScreen(),
+      ),
+      // The You hub, pushed at the root during migration (S3). Moves into the
+      // bottom bar at S5; a top-level pushed route keeps it reachable behind the
+      // temporary account-popup door with no bar change.
+      GoRoute(
+        path: Routes.you,
+        builder: (context, state) => const YouScreen(),
+      ),
+      // The Plan shell (S4), pushed at the root behind the temporary door. Its
+      // three sub-tabs' detail pushes are sub-routes here so they stack over the
+      // shell and Back returns to it — see the `Routes.plan` doc.
+      GoRoute(
+        path: Routes.plan,
+        builder: (context, state) => const PlanShell(),
+        routes: [
+          GoRoute(
+            path: 'schedule-builder',
+            builder: (context, state) => const ScheduleBuilderScreen(),
+          ),
+          GoRoute(
+            path: 'approvals',
+            builder: (context, state) => const PendingApprovalsScreen(),
+          ),
+          GoRoute(
+            path: 'groups/:groupId',
+            builder: (context, state) => GroupDetailScreen(
+              groupId: state.pathParameters['groupId']!,
             ),
           ),
         ],

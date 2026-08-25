@@ -59,6 +59,22 @@ String formatTimeOfDay(BuildContext context, TimeOfDay time) =>
 String formatMinutesOfDayLocalized(BuildContext context, int minutes) =>
     formatTimeOfDay(context, TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60));
 
+/// A DURATION in whole minutes, rendered per the unit rule: minutes are the
+/// base, hours appear only past 59 — "45 min", "1h 30m", "2h". Digits are
+/// localized (worldwide requirement), so this is the one helper every tracked
+/// duration renders through, never a hand-built `'$m min'`.
+///
+/// The unit abbreviations (`min` / `h` / `m`) are fixed and not localized —
+/// matching how the app already renders compact time — so a full-locale unit
+/// translation, if ever wanted, lands here in one place.
+String formatDurationMinutes(BuildContext context, int minutes) {
+  final n = NumberFormat.decimalPattern(_locale(context));
+  if (minutes < 60) return '${n.format(minutes)} min';
+  final h = minutes ~/ 60;
+  final m = minutes % 60;
+  return m == 0 ? '${n.format(h)}h' : '${n.format(h)}h ${n.format(m)}m';
+}
+
 // ---------------------------------------------------------------------------
 // The calendar (UI-RULES.md §6.10).
 //

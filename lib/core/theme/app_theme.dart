@@ -133,6 +133,23 @@ abstract final class AppTheme {
         ),
       ),
 
+      // The Plan inner TabBar (UI-RULES.md §6.12). Understated *text* tabs on a
+      // scaffold-background bar — no fill, no pill — with a soft sage (`primary`)
+      // underline that hugs the label (`indicatorSize: label`), not the whole
+      // tab, so the indicator reads as a gentle marker rather than a selected
+      // slab. Inactive labels sit in `onSurfaceVariant`; the active one takes
+      // `primary`. Central here (not inline on the TabBar) so every future TabBar
+      // inherits Hearth by default — the same discipline as the nav bar above.
+      tabBarTheme: TabBarThemeData(
+        indicatorColor: cs.primary,
+        indicatorSize: TabBarIndicatorSize.label,
+        labelColor: cs.primary,
+        unselectedLabelColor: cs.onSurfaceVariant,
+        labelStyle: AppText.labelLarge,
+        unselectedLabelStyle: AppText.labelLarge,
+        dividerColor: cs.outlineVariant,
+      ),
+
       // Green owns the primary action (UI-RULES.md §2.1). The FAB uses the
       // container tone rather than the solid fill — a full-strength green slab
       // is the loudest thing on screen and fights "calm".
