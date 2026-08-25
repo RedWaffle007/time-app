@@ -9,6 +9,7 @@ import '../../../core/theme/app_tokens.dart';
 import '../../../core/theme/status_style.dart';
 import '../../../routing/app_router.dart';
 import '../../auth/application/auth_providers.dart';
+import '../../plan/application/plan_intent.dart';
 import '../../scheduling/domain/schedule_item.dart';
 import '../application/calendar_grouping.dart';
 
@@ -27,7 +28,7 @@ import '../application/calendar_grouping.dart';
 /// *Does not act* is a choice, and the reason is `OutcomeScreen`'s own: Done and
 /// Skip live on the screen that owns them, and two renderings of one item's
 /// controls are two things to keep in step. So the sheet's primary action
-/// **routes** — and `Routes.outcomeForItem` already scrolls to the card and
+/// **routes** — and `Routes.planForItem` already scrolls to the card and
 /// outlines it, so the tap still ends one gesture from closing the loop.
 Future<void> showCalendarItemSheet(
   BuildContext context,
@@ -135,7 +136,7 @@ class _CalendarItemSheet extends ConsumerWidget {
                 // top of a `go()` would drop the user back onto a sheet
                 // belonging to a screen they have left.
                 Navigator.of(context).pop();
-                _open(context, item, isMine: isMine);
+                _open(context, ref, item, isMine: isMine);
               },
               icon: const Icon(AppIcons.openRow),
               label: Text(isMine ? 'Open in My Schedule' : 'Open in Activity'),
@@ -151,18 +152,27 @@ class _CalendarItemSheet extends ConsumerWidget {
   /// `go`, not `push`: both destinations are inside the tab shell, so go_router
   /// selects the owning branch and the nav bar comes with it. That is the whole
   /// point of the D2/D11 refactor and is easy to lose by pushing.
-  void _open(BuildContext context, ScheduleItem item, {required bool isMine}) {
-    // A pending item targeted at you belongs in the approvals queue, which is
-    // where Approve and Reject actually live; an approved one belongs on My
-    // Schedule, singled out. `outcomeForItem` scrolls to it and outlines it.
+  void _open(
+    BuildContext context,
+    WidgetRef ref,
+    ScheduleItem item, {
+    required bool isMine,
+  }) {
+    // A pending item targeted at you belongs in the approvals queue, where
+    // Approve/Reject live; an approved one belongs on My Schedule, singled out
+    // (highlight → scroll + outline). Both are inside the Plan pillar. The
+    // sub-tab/highlight is set on `planIntentProvider` BEFORE `go` — the
+    // deterministic signal the shell listens to (query params were unreliable).
     if (isMine) {
-      context.go(
-        item.status == ScheduleItemStatus.pending
-            ? Routes.approvals
-            : Routes.outcomeForItem(item.id),
-      );
+      if (item.status == ScheduleItemStatus.pending) {
+        context.go(Routes.approvals);
+      } else {
+        ref.read(planIntentProvider.notifier).highlightItem(item.id);
+        context.go(Routes.plan);
+      }
     } else {
-      context.go(Routes.plannerActivity);
+      ref.read(planIntentProvider.notifier).openTab(PlanTab.activity);
+      context.go(Routes.plan);
     }
   }
 

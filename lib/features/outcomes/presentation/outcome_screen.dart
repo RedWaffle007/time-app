@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -12,7 +13,6 @@ import '../../../core/theme/status_style.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../routing/app_router.dart';
 import '../../archive/presentation/archive_menu_button.dart';
-import '../../home/presentation/account_button.dart';
 import '../../notifications/application/outcome_notifier.dart';
 import '../../reminders/presentation/reminder_primer.dart';
 import '../../scheduling/application/schedule_providers.dart';
@@ -23,24 +23,38 @@ import 'hero_band.dart';
 /// The target's approved items — where they mark Done or Skip, and where a
 /// tapped reminder lands.
 ///
-/// A reminder carries only the item id (`Routes.outcomeForItem`), and this
-/// screen resolves it: the matching card is scrolled into view and outlined for
+/// A reminder carries only the item id (`Routes.planForItem`), and the Plan
+/// shell forwards it here as `highlightItemId`: the matching card is scrolled
+/// into view and outlined for
 /// a few seconds. Deliberately not a separate detail screen — this list already
 /// holds the Done and Skip controls, so the tap ends one gesture from closing
 /// the loop, and there is no second rendering of an item to keep in step.
 class OutcomeScreen extends ConsumerStatefulWidget {
-  const OutcomeScreen({super.key, this.highlightItemId, this.embedded = false});
+  const OutcomeScreen({
+    super.key,
+    this.highlightItemId,
+    this.embedded = false,
+    this.highlightToken = 0,
+  });
 
   /// From `?item=` — the item a reminder was tapped for. Null in every other
   /// route onto this screen.
   final String? highlightItemId;
 
-  /// When true, this is the My Schedule sub-tab inside the Plan shell (slice
-  /// S4): the shell owns the app bar and carries the pending-approvals action +
-  /// badge, so the app bar is suppressed here. Default false = the standalone
-  /// old-bar screen, unchanged. (Reminder-highlight routing still lands on the
-  /// old `/outcome` branch until S5, so `highlightItemId` is null when embedded.)
+  /// When true, this is the My Schedule sub-tab inside the Plan shell: the shell
+  /// owns the app bar and carries the pending-approvals action + badge, so the
+  /// app bar is suppressed here. Since the S5 cutover a tapped reminder reaches
+  /// here embedded — the Plan shell forwards `highlightItemId` down. Default
+  /// false is now dead (the old bar is gone) but kept so the screen still renders
+  /// standalone in tests.
   final bool embedded;
+
+  /// Re-trigger token for the highlight. It equals the `PlanIntent.seq` that
+  /// carried [highlightItemId], so RE-highlighting the SAME item (a repeated
+  /// reminder / calendar tap) still fires — the item string alone is unchanged,
+  /// which is why keying off it silently swallowed repeats (found on the S5
+  /// device pass). Ignored when [highlightItemId] is null.
+  final int highlightToken;
 
   @override
   ConsumerState<OutcomeScreen> createState() => _OutcomeScreenState();
@@ -55,10 +69,21 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
   String? _highlighted;
   Timer? _fade;
 
-  /// Keys for the cards, so the highlighted one can be scrolled to. Only ever
-  /// holds the one id we care about — a key per row in a long list is waste.
+  /// Key on the highlighted card, so it can be scrolled to precisely once built.
   final _highlightKey = GlobalKey();
-  bool _scrolled = false;
+
+  /// Drives the highlight scroll by index — the card may be far off-screen and
+  /// therefore NOT built (a lazy `ListView` only builds near the viewport), so
+  /// we cannot wait for its `build` to trigger the scroll (the "no scroll" bug
+  /// found on the S5 device pass). We jump toward its index to force it to
+  /// build, then `ensureVisible` lands it exactly.
+  final _scrollController = ScrollController();
+
+  /// The highlighted item's index among the approved cards, and how many there
+  /// are — both set during [build], read by [_tryScroll]. Null index = the
+  /// highlighted item is not in the list.
+  int? _highlightIndex;
+  int _approvedCount = 0;
 
   static const _highlightDuration = Duration(seconds: 6);
 
@@ -71,7 +96,10 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
   @override
   void didUpdateWidget(OutcomeScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.highlightItemId != oldWidget.highlightItemId) {
+    // Re-apply when the item changes OR the token advances — the token is what
+    // lets a repeat of the SAME item re-highlight.
+    if (widget.highlightItemId != oldWidget.highlightItemId ||
+        widget.highlightToken != oldWidget.highlightToken) {
       _applyHighlight(widget.highlightItemId);
     }
   }
@@ -79,35 +107,88 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
   @override
   void dispose() {
     _fade?.cancel();
+    _scrollController.dispose();
     super.dispose();
   }
 
   void _applyHighlight(String? itemId) {
     _fade?.cancel();
     _highlighted = itemId;
-    _scrolled = false;
     if (itemId == null) return;
     _fade = Timer(_highlightDuration, () {
       if (mounted) setState(() => _highlighted = null);
     });
+    // Kick the index-driven scroll. Its post-frame runs AFTER the build that
+    // sets `_highlightIndex`, so the index is available by the time it reads it.
+    _tryScroll(0);
   }
 
-  /// Runs after the frame that first built the highlighted card, because
-  /// `ensureVisible` needs a laid-out element. Once only — re-scrolling on every
-  /// rebuild would fight the user the moment they scrolled away themselves.
-  void _scrollToHighlightAfterBuild() {
-    if (_scrolled) return;
-    _scrolled = true;
+  /// Bring the highlighted card into view, retrying across frames.
+  ///
+  /// Two stages, because the card may not be built yet:
+  ///  - **Not built** (far off-screen in a lazy `ListView`): jump the controller
+  ///    toward the card's index fraction, which forces the list to build that
+  ///    region — next frame the card exists.
+  ///  - **Built**: `ensureVisible` lands it exactly, at a comfortable alignment.
+  ///
+  /// This also covers the WARM path where the deep link arrives mid inner-TabBar
+  /// slide — we simply keep retrying (a no-op once landed) until visible or a
+  /// bounded budget runs out. Cold start / a near-top card lands on frame 0.
+  void _tryScroll(int attempt) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _highlighted == null) return;
       final ctx = _highlightKey.currentContext;
-      if (ctx == null) return;
-      Scrollable.ensureVisible(
-        ctx,
-        duration: Motion.normal,
-        curve: Motion.curve,
-        alignment: 0.2,
-      );
+      if (ctx != null) {
+        if (_isFullyVisible(ctx)) return; // done.
+        Scrollable.ensureVisible(
+          ctx,
+          duration: Motion.fast,
+          curve: Motion.curve,
+          alignment: 0.2,
+        );
+      } else if (_scrollController.hasClients &&
+          _highlightIndex != null &&
+          _approvedCount > 0) {
+        // The card is not built — jump roughly to its position so it does, then
+        // the next frame refines with `ensureVisible` above.
+        final max = _scrollController.position.maxScrollExtent;
+        final frac =
+            _approvedCount <= 1 ? 0.0 : _highlightIndex! / (_approvedCount - 1);
+        _scrollController.jumpTo((frac * max).clamp(0.0, max));
+      }
+      if (attempt < 60) _tryScroll(attempt + 1);
     });
+  }
+
+  /// Whether [ctx]'s render box is laid out and currently within the nearest
+  /// scroll viewport — the signal that the highlight scroll has landed.
+  ///
+  /// Overlap-based, not "pixels == target reveal offset": near the list ends the
+  /// card cannot reach the 0.2 alignment, so `ensureVisible` clamps and the exact
+  /// offset is never hit — a strict equality check then loops forever (the
+  /// "SCROLL exhausted" seen on the device pass). The box is visible when the
+  /// current scroll window contains it.
+  bool _isFullyVisible(BuildContext ctx) {
+    final box = ctx.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return false;
+    final viewport = RenderAbstractViewport.maybeOf(box);
+    if (viewport == null) return false;
+    final position = Scrollable.maybeOf(ctx)?.position;
+    if (position == null ||
+        !position.hasPixels ||
+        !position.hasViewportDimension) {
+      return false;
+    }
+    // `getOffsetToReveal(box, 0.0).offset` IS the box's top in content
+    // coordinates. The box is on screen when its extent overlaps the current
+    // viewport window — an OVERLAP test, not "exactly aligned", so a near-list-end
+    // card that clamps at `maxScrollExtent` (and can never reach a 0.2 alignment)
+    // still counts as landed instead of retrying forever.
+    final boxTop = viewport.getOffsetToReveal(box, 0.0).offset;
+    final boxBottom = boxTop + box.size.height;
+    final viewTop = position.pixels;
+    final viewBottom = position.pixels + position.viewportDimension;
+    return boxTop < viewBottom && boxBottom > viewTop;
   }
 
   @override
@@ -133,7 +214,6 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
                   ),
                   onPressed: () => context.push(Routes.approvals),
                 ),
-                const AccountButton(),
               ],
             ),
       body: AsyncView<List<ScheduleItem>>(
@@ -159,7 +239,15 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
               .toList();
           final hasUpcoming = upcoming.isNotEmpty;
 
+          // Record where the highlighted card sits, for the index-driven scroll.
+          _approvedCount = approved.length;
+          final idx = _highlighted == null
+              ? -1
+              : approved.indexWhere((i) => i.id == _highlighted);
+          _highlightIndex = idx < 0 ? null : idx;
+
           return ListView(
+            controller: _scrollController,
             children: [
               // `approved` is already sorted by instant, so the first upcoming
               // item IS the next one. The band reads the same list the cards
@@ -173,7 +261,6 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
                   // The key rides on the highlighted card only; that is all
                   // `ensureVisible` needs to find it.
                   cardKey: item.id == _highlighted ? _highlightKey : null,
-                  onNeedsScroll: _scrollToHighlightAfterBuild,
                 ),
             ],
           );
@@ -188,13 +275,11 @@ class _OutcomeCard extends ConsumerWidget {
     required this.item,
     this.highlighted = false,
     this.cardKey,
-    this.onNeedsScroll,
   });
 
   final ScheduleItem item;
   final bool highlighted;
   final Key? cardKey;
-  final VoidCallback? onNeedsScroll;
 
   /// A self-planned item has the same person as creator and target — no planner
   /// on the other end to notify.
@@ -203,7 +288,6 @@ class _OutcomeCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final outcome = item.outcome;
-    if (highlighted) onNeedsScroll?.call();
 
     return Card(
       key: cardKey,

@@ -9,7 +9,6 @@ import '../features/archive/presentation/archived_screen.dart';
 import '../features/auth/application/auth_providers.dart';
 import '../features/auth/presentation/auth_screen.dart';
 import '../features/groups/presentation/group_detail_screen.dart';
-import '../features/groups/presentation/groups_screen.dart';
 import '../features/auth/presentation/profile_edit_screen.dart';
 import '../features/chatbot/presentation/chat_gate.dart';
 import '../features/chatbot/presentation/chatbot_settings_screen.dart';
@@ -23,34 +22,29 @@ import '../features/social/presentation/friends_screen.dart';
 import '../features/social/presentation/user_profile_screen.dart';
 import '../features/social/presentation/user_search_screen.dart';
 import '../features/home/presentation/home_shell.dart';
-import '../features/outcomes/presentation/outcome_screen.dart';
 import '../features/reminders/presentation/alarm_screen.dart';
 import '../features/reminders/presentation/reminder_diagnostics_screen.dart';
-import '../features/scheduling/presentation/planner_activity_screen.dart';
 import '../features/scheduling/presentation/schedule_builder_screen.dart';
 import '../features/home/presentation/you_screen.dart';
 import '../features/plan/presentation/plan_shell.dart';
+import '../features/stats/presentation/stats_screen.dart';
 import '../features/time_tracking/presentation/track_screen.dart';
 import 'go_router_refresh_stream.dart';
 
 /// Central list of route paths/names, so screens don't hardcode strings.
 ///
-/// The three tab roots are `/groups`, `/outcome` and `/activity`. A route that
-/// belongs *to* a tab is nested under that tab's path, so its location names
-/// the branch it lives in — `go()` from a notification therefore lands inside
-/// the right tab with the nav bar and a back stack, not on a bare screen.
-/// Account-level routes (`/profile`, `/archived`, `/dev`) stay top-level: they
-/// are reached from the account menu on any tab and belong to no tab.
+/// Since the S5 cutover the five pillar roots are `/plan`, `/track`, `/stats`
+/// and `/you` (the ⊕ voice FAB is not a route). A route that belongs *to* a
+/// pillar is nested under its path, so its location names the branch it lives in
+/// — `go()` from a notification lands inside the right pillar with the bottom bar
+/// and a back stack, not on a bare screen. Account-level routes (`/profile`,
+/// `/archived`, `/calendar`, `/friends`, `/dev`) stay top-level: they are reached
+/// from the You pillar and belong to no single pillar. The three old delegation
+/// stances live as sub-tabs inside `/plan` (see [plan]).
 class Routes {
   static const home = '/'; // HomeGate: profile-completion or app home.
   static const auth = '/auth';
   static const profile = '/profile';
-  static const groups = '/groups';
-  static const outcome = '/outcome';
-  static const plannerActivity = '/activity';
-  // Nested under the tab each one belongs to (see the class doc).
-  static const scheduleBuilder = '$plannerActivity/schedule-builder';
-  static const approvals = '$outcome/approvals';
   static const archived = '/archived';
 
   /// **Permissions onboarding**, re-runnable from the account menu. Top-level
@@ -119,21 +113,6 @@ class Routes {
     return DateTime(year, month, day);
   }
 
-  /// Query parameter naming ONE item on [outcome], so a tapped reminder can
-  /// single out the card it belongs to.
-  ///
-  /// A query parameter rather than a `/outcome/item/:id` sub-route on purpose:
-  /// the destination is the same screen with the same list and the same Done /
-  /// Skip controls, just scrolled and marked. A sub-route would be a second
-  /// rendering of one item to keep in step with the first, and Back would drop
-  /// the user onto the list they were already looking at.
-  static const outcomeItemParam = 'item';
-
-  static String outcomeForItem(String itemId) => Uri(
-        path: outcome,
-        queryParameters: {outcomeItemParam: itemId},
-      ).toString();
-
   /// **The full-screen alarm.** Where a fired reminder lands — top-level and
   /// OUTSIDE the tab shell on purpose: a ringing alarm is not a tab, it covers
   /// the whole screen and every route off it goes back INTO the shell via
@@ -179,31 +158,41 @@ class Routes {
   /// **The Track pillar** (personal time-tracking). Top-level and pushed for now,
   /// reached through a TEMPORARY account-popup entry (the redesign's
   /// temporary-door strategy — DECISIONS.md "UI redesign — Hearth + Candidate
-  /// A"). It becomes a bottom-bar pillar at the S5 cutover; until then it lives
-  /// beside the other account-menu destinations, covering the bar and returning
-  /// to whichever tab launched it.
+  /// A"). Since the S5 cutover it is the **Track pillar** — a branch of the
+  /// five-pillar shell, no longer a pushed route.
   static const track = '/track';
 
-  /// **The You hub** (profile / friends / calendar / language practice /
-  /// permissions / sign out / dev). The account popup promoted to a screen —
-  /// top-level and pushed during migration, reached through a TEMPORARY
-  /// account-popup entry. Becomes the fifth bottom-bar pillar at the S5 cutover
-  /// (DECISIONS.md "UI redesign — Hearth + Candidate A").
+  /// **The You pillar** (profile / friends / calendar / language practice /
+  /// permissions / sign out / dev). The old account popup, promoted to the fifth
+  /// bottom-bar pillar at the S5 cutover — a branch of the shell.
   static const you = '/you';
 
-  /// **The Plan shell** (redesign slice S4) — the delegation hub's inner-TabBar
-  /// preview: My Schedule / Activity / Groups as swipeable, keep-alive sub-tabs.
-  /// Top-level and pushed during migration, reached through a TEMPORARY
-  /// account-popup entry ("Plan (preview)"), the same temporary-door strategy as
-  /// [track] and [you]. It becomes the first bottom-bar pillar at the S5 cutover.
+  /// **The Stats pillar** — a placeholder dashboard shell (S5). The real
+  /// computations are ungreenlit and out of that slice, so it renders honestly
+  /// empty. A branch of the shell.
+  static const stats = '/stats';
+
+  /// **The Plan pillar** — the delegation hub, and the FIRST bottom-bar pillar
+  /// since the S5 cutover (a branch of the five-pillar shell; `/` redirects
+  /// here). It hosts the keep-alive inner TabBar: My Schedule / Activity /
+  /// Groups (DECISIONS.md → "UI redesign — S4" and "— S5").
   ///
-  /// Its detail screens are SUB-ROUTES (`schedule-builder`, `groups/:groupId`,
-  /// `approvals`) so each pushes into the Plan shell's own stack and Back returns
-  /// here — the `/calendar/new` precedent for a root-pushed screen whose create
-  /// flows must not escape into a shell branch (see the `calendarNew` doc). They
-  /// are second registrations of screens the old shell also registers; nothing
-  /// deep-links to them, so the D2 ambiguity does not apply.
+  /// Its detail screens are SUB-ROUTES ([scheduleBuilder], [approvals],
+  /// `groups/:groupId`) so each pushes into the Plan branch's own stack and Back
+  /// returns here. The sub-tab to show and the item to highlight are NOT encoded
+  /// in the URL — they come from `planIntentProvider`, set by the call site
+  /// right before `go(plan)`. go_router caches this branch page, so query-only
+  /// changes were unreliable (the intermittent highlight/tab-switch bug on the
+  /// S5 device pass); a Riverpod intent notifies deterministically instead.
   static const plan = '/plan';
+
+  /// The planner's create flow — a Plan sub-route so it stacks over the shell.
+  /// (Was `/activity/schedule-builder` before the S5 cutover.)
+  static const scheduleBuilder = '$plan/schedule-builder';
+
+  /// The target's pending-approvals inbox — a Plan sub-route. (Was
+  /// `/outcome/approvals` before the S5 cutover.)
+  static const approvals = '$plan/approvals';
 
   /// The language-practice chatbot — a self-contained feature that shares the
   /// theme and this router with the delegation app and nothing else. Top-level,
@@ -270,23 +259,25 @@ final routerProvider = Provider<GoRouter>((ref) {
       // registered means `redirect` (and any saved `/` link) still resolves.
       GoRoute(
         path: Routes.home,
-        redirect: (context, state) => Routes.groups,
+        redirect: (context, state) => Routes.plan,
       ),
       GoRoute(
         path: Routes.auth,
         builder: (context, state) => const AuthScreen(),
       ),
-      // The tabbed home. Each tab is a BRANCH with its own navigator, so a
-      // screen is registered exactly once (D2 was the same three screens being
-      // registered twice — as tabs here and as flat top-level paths below) and
-      // anything pushed inside a branch keeps the NavigationBar beneath it.
+      // The five-PILLAR home (S5 cutover). Each pillar is a BRANCH with its own
+      // navigator, so a screen is registered exactly once and anything pushed
+      // inside a branch keeps the bottom bar beneath it. The bar names the app's
+      // pillars — Plan · Track · ⊕voice · Stats · You — where the ⊕ voice FAB is
+      // NOT a branch but a docked FAB on `HomeShell` (§6.12). The three old
+      // delegation stances (Groups / My Schedule / Activity) are now the
+      // keep-alive sub-tabs INSIDE Plan (`PlanShell`), not branches here.
       //
-      // Each tab's detail screens are SUB-ROUTES of that tab, so they resolve
-      // into the branch's own navigator: the bar stays, Back returns to the
-      // tab, and every branch keeps its own stack. Sub-route paths are relative
-      // (go_router forbids a leading `/` below the root), so the full location
-      // is the tab path plus the segment — which is what the `Routes` constants
-      // spell out.
+      // Each branch's detail screens are SUB-ROUTES, so they resolve into the
+      // branch's own navigator: the bar stays, Back returns to the pillar, and
+      // every branch keeps its own stack. The Plan sub-tabs are a `TabController`
+      // rather than routes, so two query params deep-link into them (`?tab=`,
+      // `?item=`) — see the `Routes.plan` doc.
       //
       // HomeGate wraps the shell rather than gating in `redirect` — see the
       // synchronous-redirect note above and HomeGate's own doc comment.
@@ -294,14 +285,28 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state, navigationShell) =>
             HomeGate(child: HomeShell(navigationShell: navigationShell)),
         branches: [
+          // Pillar 0 — Plan (the landing pillar; `/` redirects here).
           StatefulShellBranch(
             routes: [
               GoRoute(
-                path: Routes.groups,
-                builder: (context, state) => const GroupsScreen(),
+                path: Routes.plan,
+                // The sub-tab + highlight come from `planIntentProvider` (set by
+                // the call site before `go`), not query params — go_router caches
+                // this branch page, so query-only changes were unreliable.
+                builder: (context, state) => const PlanShell(),
                 routes: [
                   GoRoute(
-                    path: ':groupId',
+                    path: 'schedule-builder',
+                    builder: (context, state) => const ScheduleBuilderScreen(),
+                  ),
+                  // The target's inbox — the AppBar shortcut and the
+                  // `created`/`withdrawn` notifications both land here.
+                  GoRoute(
+                    path: 'approvals',
+                    builder: (context, state) => const PendingApprovalsScreen(),
+                  ),
+                  GoRoute(
+                    path: 'groups/:groupId',
                     builder: (context, state) => GroupDetailScreen(
                       groupId: state.pathParameters['groupId']!,
                     ),
@@ -310,39 +315,30 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
             ],
           ),
+          // Pillar 1 — Track.
           StatefulShellBranch(
             routes: [
               GoRoute(
-                path: Routes.outcome,
-                builder: (context, state) => OutcomeScreen(
-                  highlightItemId:
-                      state.uri.queryParameters[Routes.outcomeItemParam],
-                ),
-                routes: [
-                  // The target's inbox belongs to My Schedule: the AppBar
-                  // shortcut and the `created`/`withdrawn` notifications both
-                  // land here, and Back drops to the tab either way.
-                  GoRoute(
-                    path: 'approvals',
-                    builder: (context, state) => const PendingApprovalsScreen(),
-                  ),
-                ],
+                path: Routes.track,
+                builder: (context, state) => const TrackScreen(),
               ),
             ],
           ),
+          // Pillar 2 — Stats (placeholder shell; computations ungreenlit).
           StatefulShellBranch(
             routes: [
               GoRoute(
-                path: Routes.plannerActivity,
-                builder: (context, state) => const PlannerActivityScreen(),
-                routes: [
-                  // Reached from Activity's FAB; planning an item is the
-                  // planner's own flow, so it stacks over the planner tab.
-                  GoRoute(
-                    path: 'schedule-builder',
-                    builder: (context, state) => const ScheduleBuilderScreen(),
-                  ),
-                ],
+                path: Routes.stats,
+                builder: (context, state) => const StatsScreen(),
+              ),
+            ],
+          ),
+          // Pillar 3 — You.
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: Routes.you,
+                builder: (context, state) => const YouScreen(),
               ),
             ],
           ),
@@ -396,43 +392,6 @@ final routerProvider = Provider<GoRouter>((ref) {
               initialDate: Routes.calendarDateFrom(
                 state.uri.queryParameters[Routes.calendarDateParam],
               ),
-            ),
-          ),
-        ],
-      ),
-      // The Track pillar, pushed at the root during the redesign migration. It
-      // will move into the bottom bar at S5; a top-level pushed route now keeps
-      // it reachable behind the temporary account-popup door with no bar change.
-      GoRoute(
-        path: Routes.track,
-        builder: (context, state) => const TrackScreen(),
-      ),
-      // The You hub, pushed at the root during migration (S3). Moves into the
-      // bottom bar at S5; a top-level pushed route keeps it reachable behind the
-      // temporary account-popup door with no bar change.
-      GoRoute(
-        path: Routes.you,
-        builder: (context, state) => const YouScreen(),
-      ),
-      // The Plan shell (S4), pushed at the root behind the temporary door. Its
-      // three sub-tabs' detail pushes are sub-routes here so they stack over the
-      // shell and Back returns to it — see the `Routes.plan` doc.
-      GoRoute(
-        path: Routes.plan,
-        builder: (context, state) => const PlanShell(),
-        routes: [
-          GoRoute(
-            path: 'schedule-builder',
-            builder: (context, state) => const ScheduleBuilderScreen(),
-          ),
-          GoRoute(
-            path: 'approvals',
-            builder: (context, state) => const PendingApprovalsScreen(),
-          ),
-          GoRoute(
-            path: 'groups/:groupId',
-            builder: (context, state) => GroupDetailScreen(
-              groupId: state.pathParameters['groupId']!,
             ),
           ),
         ],

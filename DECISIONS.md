@@ -4681,6 +4681,127 @@ lands on the old `/outcome` branch, so `highlightItemId` is null when embedded).
 apk --debug` succeeds (device-buildable). **NOT run on a device** — added to the
 pre-S5 ledger below.
 
+## UI redesign — S5: bottom-bar cutover + voice FAB (2026-08-25)
+
+The **one irreversible, user-facing flip**. The three delegation-stance bottom
+tabs become five product pillars — `[ Plan · Track · ⊕voice · Stats · You ]` —
+with the docked centre voice FAB. Built and reviewed as its own slice but
+**released together with S4** (option a), so users never see a transitional bar.
+The temporary account-popup doors are retired here.
+
+**Route tree — 3 stance branches → 4 pillar branches.** `StatefulShellRoute
+.indexedStack` now has branches Plan / Track / Stats / You (the ⊕ voice FAB is
+NOT a branch — a docked FAB on `HomeShell`). The Plan branch hosts the S4
+`PlanShell` (its 3 sub-tabs are a `TabController`, not routes) with sub-routes
+`schedule-builder`, `approvals`, `groups/:groupId`. `/track`, `/you`, `/plan`
+stop being top-level *pushed* routes (S1/S3/S4 temp state) and BECOME branches;
+`/stats` is new. `/` redirects to `/plan` (was `/groups`). Everything outside the
+shell is unchanged (`/profile /archived /calendar /friends /u/:uid /chatbot /dev
+/alarm /permissions`).
+
+**Stranding audit — every old-path reference migrated, all internal (no external
+deep links; manifest is MAIN/LAUNCHER only).** The `Routes` constants were
+repointed so no caller was left dangling: `approvals`→`/plan/approvals`,
+`scheduleBuilder`→`/plan/schedule-builder`; `plannerActivity`/`outcome`/`groups`
+removed and replaced with `planActivity` (`/plan?tab=activity`) and
+`planForItem(id)` (`/plan?item=`). Call sites updated: `notification_routing`
+(created/withdrawn→approvals, decided/outcome→planActivity), `alarm_screen`
+Dismiss (→`/plan` or `/plan?item=`), `calendar_item_sheet` (approvals /
+planForItem / planActivity), `dev_menu` (5 links → Plan equivalents). A **re-grep
+proved zero live references to `/groups|/outcome|/activity`** remain (only two
+historical doc comments). A latent strander — the dead non-embedded
+`/groups/:id` literal in `GroupsScreen` — was removed (the row tap is now always
+the Plan sub-route).
+
+**The headline path — reminder highlight into a KEPT-ALIVE shell.** `/plan?item=
+<id>` → the Plan branch builder reads the query param → `PlanShell(highlightItemId,
+initialTab)`. On a param change while the shell is already mounted (branch root
+rebuilds with fresh params, `initState` does not re-run, sub-tabs kept alive),
+`PlanShell.didUpdateWidget` steers the `TabController` to My Schedule and forwards
+`highlightItemId` down; the embedded `OutcomeScreen`'s own `didUpdateWidget`
+re-scrolls and re-outlines. **This is the top item on the S5 device pass.**
+
+**The five-pillar bar (§6.12).** `HomeShell` replaced its `NavigationBar` with a
+`BottomAppBar` (`CircularNotchedRectangle`, flat `Elevations.nav`, surface fill)
+holding four custom `_PillarButton`s `[Plan][Track] · notch · [Stats][You]` —
+filled-sage/label when active, outline `onSurfaceVariant` when not (§6.6). The
+**docked centre voice FAB** (`FloatingActionButtonLocation.centerDocked`, sage,
+`Elevations.floating`, mic) opens a two-choice sheet: **Track time** →
+`showLogTimeSheet` (S1, empty), **Plan time** → the schedule-builder (its own
+first step IS the person-picker). **No STT (S6); the FAB's manual routing works
+now behind the same seam.** Single-FAB rule holds — `PlanShell` has no FAB. The
+Plan **aggregate badge** (`planAttentionCountProvider`) now rides the Plan pillar
+AND the My Schedule sub-tab.
+
+**Stats pillar = honest placeholder (accepted).** S2 was never built; rather than
+a dead tab, `StatsScreen` renders the §6.14 shell with flat outlined tiles
+showing `—` + "Coming soon" — never faked zeros. **The real dashboard and the
+stat computations remain ungreenlit and out of this slice**; the placeholder
+labels are the one thing that slice will edit.
+
+**Account popup retired.** `AccountButton` was **deleted** — every item it held
+now lives in the **You** pillar (Friends, Calendar, Language practice, Reminders
+& permissions, Dev menu, Sign out, Edit profile) or **Plan** (Archived → Plan
+overflow). Its usages were removed from the three (now embedded-only) stance
+screens and from Calendar (a pushed screen with a Back arrow).
+
+**Central fixes (flag-not-workaround).** `app_icons.dart` gained the pillar pairs
+`navPlan/navPlanSelected`, `navStats/navStatsSelected`, `navYou/navYouSelected`,
+`navTrack` (reusing `track`), and `voice` — none existed. No new token was
+needed for the notch (`BottomAppBar` supplies it).
+
+**Green:** `flutter analyze` clean; UI-RULES lint passes; the alarm test's route
+expectation updated (`/outcome`→`/plan`) and green; `flutter build apk --debug`
+succeeds (device-buildable). **One pre-existing, date-triggered test flake**
+(`calendar_screen_test` "another day": `find.text('27').first` collides with a
+leading outside-month cell when today+2's day-number repeats — today is Aug 25 →
+Jul 27 shows in the grid). It is **independent of S5** (the calendar test harness
+is a plain `MaterialApp` over `CalendarScreen`, never the router; the only S5
+calendar change was removing an AppBar action) and is left for a separate
+calendar-test fix, not folded into the cutover diff.
+
+### S5 device pass — the headline highlight path, fixed on-device (2026-08-26)
+
+The Redmi pass ran the headline `#1` (reminder/calendar → Plan → My Schedule,
+item scrolled-to + outlined) and it was **intermittent, then broken in layers**.
+Three distinct bugs were found and fixed; the path now works reliably from every
+start state (My Schedule / Activity / Groups sub-tab, and repeats of the same
+item). Diagnosed with temporary `PLANHL` logging (since removed).
+
+- **Bug 1 — the sub-tab never switched / no highlight (root cause).** The intent
+  was first encoded in the URL (`/plan?item=`, `?tab=`) and PlanShell reacted to
+  go_router location notifications. **go_router caches the Plan branch's root
+  page**, so a query-only change did not reliably re-run the builder OR fire a
+  location notification — the "works 1-in-7, sequence-dependent" behaviour.
+  **Fix: a deterministic Riverpod `planIntentProvider`** (`plan_intent.dart`,
+  with `PlanTab` moved here). A call site (`calendar_item_sheet`, `alarm_screen`,
+  `notification_routing`) sets the intent *immediately before* `go(Routes.plan)`;
+  PlanShell listens via `ref.listen` (+ an `initState` `ref.read` for the intent
+  set just before a cold build). Riverpod notifies every time. **The query-param
+  route helpers (`planForItem`/`planActivity`/`planTabFrom`/`planItemParam`/
+  `planTabParam`) were removed** — the URL is just `/plan`.
+- **Bug 2 — a repeat of the SAME item did nothing.** OutcomeScreen keyed the
+  highlight off `highlightItemId`, whose string is unchanged on a repeat, so its
+  `didUpdateWidget` skipped. **Fix: a `highlightToken` (the `PlanIntent.seq`)**
+  is passed alongside the id; a changed token re-fires the highlight even for the
+  same item.
+- **Bug 3 — no scroll (the visible symptom that survived 1+2).** The scroll was
+  triggered from the highlighted **card's `build`** — but a lazy `ListView` does
+  **not build an off-screen card**, so a far-down target never built, never
+  triggered, and `ensureVisible` had no context. Only items already near the top
+  highlighted. **Fix: an index-driven scroll** (`_tryScroll` on a `ScrollController`):
+  jump to the item's index fraction to force it to build, then `ensureVisible`
+  lands it exactly; retried across frames (covers the inner-TabBar slide) with an
+  overlap-based visibility test (a near-list-end card clamps at
+  `maxScrollExtent` and can't reach a 0.2 alignment, which a strict test looped
+  on).
+
+**The doctrine that held:** intent delivery is now a single deterministic signal
+(the provider), the highlight re-fires on a token, and the scroll is driven by
+index off state — none of it depends on go_router re-running a cached builder.
+`flutter analyze` clean; suite 314 pass / the one pre-existing calendar flake;
+device-buildable; **verified working on the Redmi.**
+
 ## UI redesign — device-verification ledger (as of 2026-08-25)
 
 Slices are stacking up built-and-green but **NOT run on a device**. The list to
@@ -4710,8 +4831,42 @@ clear before (or at) the S5 cutover, so nothing is lost:
 manual entry (confirm it reaches `trackedTime`), edit it, delete + undo; mark a
 plan Done and log from the prompt (confirm `sourceItemId` set); open the You hub
 and confirm every row routes; open **Plan (preview)** and run the S4 checks
-above; check light + dark and an RTL locale. The bar flip (S5) should not ship
-until this ledger is cleared.
+above; check light + dark and an RTL locale.
+
+**This pre-S5 ledger was CLEARED on the Redmi 2026-08-25** (real `trackedTime`
+writes commit; derived-end/midnight `(+1d)` holds; log-from-Done sets
+`sourceItemId`; You hub routes; Plan shell swipe/keep-alive/Hearth underline pass
+in light + dark + RTL). The ground is verified; S5 was then built.
+
+- **S5 — bottom-bar cutover + voice FAB — THE CRITICAL PRE-SHIP FLIP, NOT RUN ON
+  DEVICE.** This is the one irreversible user-facing change and **must get its own
+  Redmi pass before any real user sees it.** In order:
+  1. **HEADLINE — reminder highlight into the kept-alive shell. VERIFIED WORKING
+     2026-08-26** after three bugs were found and fixed (see "S5 device pass — the
+     headline highlight path" above): lands on **Plan → My Schedule** with the
+     right card scrolled-to and outlined, from every start sub-tab and on repeats.
+     The mechanism changed from a URL query param to `planIntentProvider`; the
+     scroll is index-driven. The **real fired-reminder** variant (killed-app tap →
+     alarm → Dismiss → highlight) still to be exercised, but it shares the exact
+     same `highlightItem` + provider path as the calendar driver that was verified.
+  2. **The bar itself:** four pillars switch and restore branch state; the docked
+     voice FAB sits notched centre and does not overlap labels; Plan aggregate
+     badge shows/clears; light + dark + RTL.
+  3. **Voice FAB sheet:** Track time → the log sheet; Plan time → the
+     schedule-builder (target-pick first). Confirm `context.push(/plan/
+     schedule-builder)` from the FAB when the current pillar is NOT Plan behaves
+     (flagged risk — fallback is goBranch(0) then push).
+  4. **Notification routing:** a `created`/`withdrawn` push → `/plan/approvals`; a
+     `decided`/`outcome` push → `/plan?tab=activity` (Activity sub-tab). (Needs
+     the second device / a live token — folded into the notification retest.)
+  5. **Stats pillar:** renders the honest "Coming soon" placeholder, no faked
+     zeros.
+  6. **Popup retired:** every former account-popup destination is reachable via
+     **You** (or Archived via Plan overflow); no dead ends.
+  7. **`/` and Back:** cold start lands on Plan; Back from a non-Plan pillar goes
+     to Plan; Back on Plan double-press-to-exit still works.
+
+The bar flip must not ship to a real user until THIS S5 pass is clean.
 
 ## Tracked-time — the range END is derived, not independent (2026-08-25)
 

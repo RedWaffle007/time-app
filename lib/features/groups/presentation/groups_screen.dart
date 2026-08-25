@@ -6,7 +6,6 @@ import '../../../core/theme/app_icons.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../routing/app_router.dart';
 import '../../auth/application/auth_providers.dart';
-import '../../home/presentation/account_button.dart';
 import '../application/group_providers.dart';
 import '../domain/group.dart';
 
@@ -36,7 +35,6 @@ class GroupsScreen extends ConsumerWidget {
                   icon: const Icon(AppIcons.joinGroup),
                   onPressed: () => showGroupJoinDialog(context, ref),
                 ),
-                const AccountButton(),
               ],
             ),
       floatingActionButton: embedded
@@ -64,13 +62,11 @@ class GroupsScreen extends ConsumerWidget {
                 title: Text(g.name),
                 subtitle: Text('Code: ${g.joinCode} · ${g.memberUids.length} member(s)'),
                 trailing: const Icon(AppIcons.openRow),
-                // In the Plan shell the group-detail push must stay in the Plan
-                // stack (`/plan/groups/:id`); in the old bar it stays in the
-                // Groups branch (`/groups/:id`). Back returns to the right place
-                // either way.
-                onTap: () => context.push(
-                  embedded ? '${Routes.plan}/groups/${g.id}' : '/groups/${g.id}',
-                ),
+                // Group detail is a Plan sub-route, so it stacks over the Plan
+                // shell and Back returns here. (Post-S5 this screen only ever
+                // renders embedded inside Plan; the old `/groups/:id` branch is
+                // gone.)
+                onTap: () => context.push('${Routes.plan}/groups/${g.id}'),
               ),
           ],
         ),

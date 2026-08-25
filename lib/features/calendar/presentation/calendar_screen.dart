@@ -10,7 +10,6 @@ import '../../../core/theme/app_tokens.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../routing/app_router.dart';
-import '../../home/presentation/account_button.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../application/calendar_grouping.dart';
 import '../application/calendar_providers.dart';
@@ -131,7 +130,6 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
             icon: const Icon(AppIcons.today),
             onPressed: _goToToday,
           ),
-          const AccountButton(),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(

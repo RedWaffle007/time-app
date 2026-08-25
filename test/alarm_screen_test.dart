@@ -48,8 +48,10 @@ void main() {
           builder: (_, _) => const AlarmScreen(itemId: 'a'),
         ),
         GoRoute(
-          path: '/outcome',
-          builder: (_, _) => const Scaffold(body: Text('OUTCOME')),
+          // Post-S5: a reminder Dismiss lands on the Plan pillar
+          // (`/plan?item=<id>`), which forwards the highlight into My Schedule.
+          path: '/plan',
+          builder: (_, _) => const Scaffold(body: Text('PLAN')),
         ),
       ],
     );
@@ -94,7 +96,7 @@ void main() {
     await t.pumpAndSettle();
 
     expect(sound.stops, 1);
-    expect(find.text('OUTCOME'), findsOneWidget);
+    expect(find.text('PLAN'), findsOneWidget);
   });
 }
 

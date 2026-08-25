@@ -11,7 +11,6 @@ import '../../../core/widgets/async_view.dart';
 import '../../../routing/app_router.dart';
 import '../../archive/presentation/archive_menu_button.dart';
 import '../../auth/application/auth_providers.dart';
-import '../../home/presentation/account_button.dart';
 import '../../notifications/application/outcome_notifier.dart';
 import '../application/schedule_providers.dart';
 import '../domain/schedule_item.dart';
@@ -35,10 +34,7 @@ class PlannerActivityScreen extends ConsumerWidget {
     return Scaffold(
       appBar: embedded
           ? null
-          : AppBar(
-              title: const Text('Activity'),
-              actions: const [AccountButton()],
-            ),
+          : AppBar(title: const Text('Activity')),
       floatingActionButton: embedded
           ? null
           : FloatingActionButton.extended(

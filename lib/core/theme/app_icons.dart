@@ -54,6 +54,27 @@ abstract final class AppIcons {
   static const IconData navActivity = Icons.insights_outlined;
   static const IconData navActivitySelected = Icons.insights;
 
+  // ---- the five product pillars (UI-RULES.md §6.12) ----
+  //
+  // The bottom bar names the app's pillars, not the three delegation stances
+  // (those are now sub-navigation inside Plan). Each carries the outline/filled
+  // pair the §6.6 filled-selected rule needs. `navPlan` is the delegation hub —
+  // deliberately the calendar-check glyph, distinct from `navSchedule`
+  // (`event`), which now names only the My Schedule *sub-tab* inside Plan.
+  static const IconData navPlan = Icons.event_note_outlined;
+  static const IconData navPlanSelected = Icons.event_note;
+  static const IconData navTrack = track; // timer_outlined
+  static const IconData navTrackSelected = trackSelected; // timer
+  static const IconData navStats = Icons.bar_chart_outlined;
+  static const IconData navStatsSelected = Icons.bar_chart;
+  static const IconData navYou = Icons.person_outline;
+  static const IconData navYouSelected = Icons.person;
+
+  /// The docked centre **voice FAB** (§6.12) — one mic glyph for the whole
+  /// speak-to-create affordance spanning Track and Plan. Not a nav destination,
+  /// so it has no filled/outline pair.
+  static const IconData voice = Icons.mic_none_outlined;
+
   // ---- objects ----
 
   /// A person — the target of a plan, or yourself.

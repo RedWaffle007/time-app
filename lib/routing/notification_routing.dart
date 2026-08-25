@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../features/plan/application/plan_intent.dart';
 import 'app_router.dart';
 
 /// **The one place that decides where a notification tap lands.**
@@ -31,9 +32,11 @@ class NotificationRouter {
   }
 
   /// A push from the Worker. Routes by the event's AUDIENCE: target-facing
-  /// events (a plan created for you, or withdrawn) open your pending queue;
-  /// planner-facing ones (your plan was decided, or its outcome recorded) open
-  /// Activity. `type == 'outcome'` is the legacy payload, kept working.
+  /// events (a plan created for you, or withdrawn) open your pending queue
+  /// (`/plan/approvals`); planner-facing ones (your plan was decided, or its
+  /// outcome recorded) open the Plan shell's Activity sub-tab
+  /// (`/plan?tab=activity`). `type == 'outcome'` is the legacy payload, kept
+  /// working. Both were `/outcome/…` and `/activity` before the S5 cutover.
   void openForPushEvent(Map<String, dynamic> data) {
     final router = _ref.read(routerProvider);
     switch (data['event']) {
@@ -42,7 +45,7 @@ class NotificationRouter {
         router.go(Routes.approvals);
       case 'decided':
       case 'outcome':
-        router.go(Routes.plannerActivity);
+        _openPlanActivity();
       // Friend-graph pushes: a new request opens the requests inbox; an accept
       // opens the friends list, where the new friend now appears.
       case 'friendRequest':
@@ -51,9 +54,16 @@ class NotificationRouter {
         router.go(Routes.friends);
       default:
         if (data['type'] == 'outcome') {
-          router.go(Routes.plannerActivity);
+          _openPlanActivity();
         }
     }
+  }
+
+  /// Open the Plan pillar on its Activity sub-tab. Sets the intent BEFORE `go`,
+  /// the deterministic signal the Plan shell listens to.
+  void _openPlanActivity() {
+    _ref.read(planIntentProvider.notifier).openTab(PlanTab.activity);
+    _ref.read(routerProvider).go(Routes.plan);
   }
 }
 

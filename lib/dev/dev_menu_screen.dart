@@ -47,11 +47,13 @@ class DevMenuScreen extends ConsumerWidget {
     // registration.
     final destinations = <(String label, String route, bool inShell)>[
       ('Edit Profile', Routes.profile, false),
-      ('Groups & Invite', Routes.groups, true),
+      // Post-S5: the three old stances are sub-tabs inside the Plan pillar. The
+      // sub-tab is chosen by `planIntentProvider`, not a route, so these debug
+      // links just open the Plan pillar (landing on My Schedule) or its real
+      // sub-routes. All `go` (in-shell).
+      ('Plan (My Schedule / stances)', Routes.plan, true),
       ('Schedule Builder (planner)', Routes.scheduleBuilder, true),
-      ('Activity (planner)', Routes.plannerActivity, true),
       ('Pending Approvals (target)', Routes.approvals, true),
-      ('My Schedule / Outcomes (target)', Routes.outcome, true),
       // Root-level, so it is pushed and Back returns here. The chatbot shares
       // nothing with the delegation features but the theme and the router.
       ('Language practice (chatbot)', Routes.chatbot, false),

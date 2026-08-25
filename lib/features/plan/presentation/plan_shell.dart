@@ -9,6 +9,7 @@ import '../../groups/presentation/groups_screen.dart';
 import '../../outcomes/presentation/outcome_screen.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/presentation/planner_activity_screen.dart';
+import '../application/plan_intent.dart';
 
 /// **The Plan pillar** (redesign slice S4) — the delegation hub that collapses
 /// the three old stance tabs (My Schedule / Activity / Groups) into ONE branch
@@ -55,22 +56,59 @@ class _PlanShellState extends ConsumerState<PlanShell>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
 
-  // The three sub-tabs, in the locked order (My Schedule first = the landing
-  // sub-tab; DECISIONS.md). Distinct from the OLD bottom bar's order.
   static const _mySchedule = 0;
   static const _activity = 1;
   static const _groups = 2;
 
+  /// The item currently forwarded to the embedded My Schedule sub-tab for
+  /// highlighting, and the intent seq that carried it — passed as the
+  /// re-trigger token so a repeat of the SAME item still re-highlights.
+  String? _highlightItemId;
+  int _highlightSeq = 0;
+
+  /// The [PlanIntent.seq] of the last intent applied, so the same intent is not
+  /// applied twice (once from the initial [initState] read and again from the
+  /// first [ref.listen] fire).
+  int _appliedSeq = -1;
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    // A pending intent may already be set (a call site did `highlightItem(...)`
+    // then `go(Routes.plan)`, building this shell) — apply it to the initial tab
+    // and highlight. Warm changes arrive via `ref.listen` in [build].
+    final intent = ref.read(planIntentProvider);
+    var initialIndex = _mySchedule;
+    if (intent != null) {
+      _appliedSeq = intent.seq;
+      _highlightItemId = intent.itemId;
+      _highlightSeq = intent.seq;
+      initialIndex = intent.itemId != null
+          ? _mySchedule
+          : (intent.tab?.index ?? _mySchedule);
+    }
+    _tabController =
+        TabController(length: 3, vsync: this, initialIndex: initialIndex);
     // App-bar actions depend on the active sub-tab, so rebuild when it settles.
     // Guarded to the settle only (`!indexIsChanging`) so a drag does not storm
     // setState every frame.
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) setState(() {});
     });
+  }
+
+  /// Steer the inner TabBar and/or the highlight to match a [PlanIntent]. A
+  /// highlight wins over a `tab` (it forces My Schedule).
+  void _applyIntent(PlanIntent intent) {
+    if (intent.itemId != null) {
+      _tabController.animateTo(_mySchedule);
+      setState(() {
+        _highlightItemId = intent.itemId;
+        _highlightSeq = intent.seq;
+      });
+    } else if (intent.tab != null) {
+      _tabController.animateTo(intent.tab!.index);
+    }
   }
 
   @override
@@ -81,6 +119,18 @@ class _PlanShellState extends ConsumerState<PlanShell>
 
   @override
   Widget build(BuildContext context) {
+    // React to deep-link intents deterministically (the WARM path): a call site
+    // set a `PlanIntent` right before `go(Routes.plan)`. Riverpod notifies every
+    // time — no dependence on go_router re-running this builder — which fixes the
+    // intermittent "sub-tab doesn't switch / no outline" behaviour. The seq guard
+    // avoids re-applying the intent `initState` already handled.
+    ref.listen<PlanIntent?>(planIntentProvider, (_, next) {
+      if (next != null && next.seq != _appliedSeq) {
+        _appliedSeq = next.seq;
+        _applyIntent(next);
+      }
+    });
+
     // The Plan aggregate attention count — a documented sum; today it equals the
     // My Schedule pending-approval count (see `planAttentionCountProvider`). It
     // rides the My Schedule sub-tab here and will ride the Plan bottom-bar pillar
@@ -111,11 +161,19 @@ class _PlanShellState extends ConsumerState<PlanShell>
         controller: _tabController,
         // Order matches the tabs above. Each wrapped so its state survives a
         // swipe (see the class doc). `embedded: true` suppresses each screen's
-        // own app bar + FAB; the shell provides them.
-        children: const [
-          _KeepAlivePage(child: OutcomeScreen(embedded: true)),
-          _KeepAlivePage(child: PlannerActivityScreen(embedded: true)),
-          _KeepAlivePage(child: GroupsScreen(embedded: true)),
+        // own app bar + FAB; the shell provides them. The My Schedule child
+        // takes the deep-link `highlightItemId` — kept alive, so its own
+        // didUpdateWidget handles a highlight that arrives after first build.
+        children: [
+          _KeepAlivePage(
+            child: OutcomeScreen(
+              embedded: true,
+              highlightItemId: _highlightItemId,
+              highlightToken: _highlightSeq,
+            ),
+          ),
+          const _KeepAlivePage(child: PlannerActivityScreen(embedded: true)),
+          const _KeepAlivePage(child: GroupsScreen(embedded: true)),
         ],
       ),
     );

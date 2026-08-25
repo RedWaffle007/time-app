@@ -7,6 +7,7 @@ import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../routing/app_router.dart';
+import '../../plan/application/plan_intent.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
 import '../application/reminder_providers.dart';
@@ -73,11 +74,13 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
     _dismissing = true;
     await ref.read(alarmSoundProvider).stop();
     if (!mounted) return;
-    if (widget.itemId.isEmpty) {
-      context.go(Routes.outcome);
-    } else {
-      context.go(Routes.outcomeForItem(widget.itemId));
+    if (widget.itemId.isNotEmpty) {
+      // Set the highlight intent BEFORE navigating — the deterministic signal
+      // the Plan shell listens to (query params were unreliable on the cached
+      // branch page).
+      ref.read(planIntentProvider.notifier).highlightItem(widget.itemId);
     }
+    context.go(Routes.plan);
   }
 
   @override
