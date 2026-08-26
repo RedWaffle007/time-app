@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -450,6 +452,7 @@ class _PlanningPermissionSectionState
       );
     }
 
+    final notifier = ref.read(friendEventNotifierProvider);
     return _Action(
       icon: emergency ? AppIcons.emergency : AppIcons.navPlan,
       label: emergency
@@ -457,8 +460,17 @@ class _PlanningPermissionSectionState
           : 'Ask to plan for ${widget.name}',
       filled: false,
       busy: false,
-      onPressed: () => _run(() =>
-          repo.sendRequest(fromUid: me, toUid: widget.uid, kind: kind)),
+      onPressed: () => _run(() async {
+        await repo.sendRequest(fromUid: me, toUid: widget.uid, kind: kind);
+        // Best-effort push, NOT awaited — `notify()` refreshes the auth token
+        // with no timeout; the inbox entry already delivered the request.
+        unawaited(notifier.notify(
+          event: FriendNotifyEvent.planningRequest,
+          fromUid: me,
+          toUid: widget.uid,
+          kind: kind.name,
+        ));
+      }),
     );
   }
 }

@@ -174,12 +174,16 @@ export default {
  * sent; `friendAccept` requires the friendship to exist. Fails CLOSED.
  */
 async function handleFriendEvent(request, env, body) {
-  const { event, fromUid, toUid } = body || {};
+  const { event, fromUid, toUid, kind } = body || {};
   if (
     typeof fromUid !== 'string' ||
     typeof toUid !== 'string' ||
     fromUid === toUid
   ) {
+    return json({ error: 'invalid-body' }, 400);
+  }
+  const isPlanning = event === 'planningRequest' || event === 'planningApprove';
+  if (isPlanning && kind !== 'normal' && kind !== 'emergency') {
     return json({ error: 'invalid-body' }, 400);
   }
 
@@ -216,13 +220,41 @@ async function handleFriendEvent(request, env, body) {
       ) {
         return json({ error: 'forbidden' }, 403);
       }
-    } else {
+    } else if (event === 'friendAccept') {
       // friendAccept: the accepter (toUid) notifies the original sender — only
       // once the friendship actually exists. Its id is the sorted pair.
       if (callerUid !== toUid) return json({ error: 'forbidden' }, 403);
       const pairId = [fromUid, toUid].sort().join('_');
       const friendship = await db.getDoc(`friendships/${pairId}`);
       if (!friendship) return json({ error: 'forbidden' }, 403);
+    } else if (event === 'planningRequest') {
+      // The requester notifies the target — only with a real pending planning
+      // request they own, of the stated kind. No request, no push.
+      if (callerUid !== fromUid) return json({ error: 'forbidden' }, 403);
+      const req = await db.getDoc(`planningRequests/${fromUid}_${toUid}_${kind}`);
+      if (!req) return json({ error: 'request-not-found' }, 404);
+      if (
+        req.fromUid !== fromUid ||
+        req.toUid !== toUid ||
+        req.kind !== kind ||
+        req.status !== 'pending'
+      ) {
+        return json({ error: 'forbidden' }, 403);
+      }
+    } else {
+      // planningApprove: the approver (toUid) notifies the original requester
+      // (fromUid) — only once the GRANT actually exists (the approval wrote it).
+      // planner=fromUid, target=toUid; normal → plannerGrants, emergency →
+      // emergencyGrants, at the sorted friendship pair.
+      if (callerUid !== toUid) return json({ error: 'forbidden' }, 403);
+      const pairId = [fromUid, toUid].sort().join('_');
+      const sub = kind === 'emergency' ? 'emergencyGrants' : 'plannerGrants';
+      const grant = await db.getDoc(
+        `friendships/${pairId}/${sub}/${fromUid}_${toUid}`,
+      );
+      if (!grant || grant.granted !== true) {
+        return json({ error: 'forbidden' }, 403);
+      }
     }
 
     const ctx = {
@@ -230,7 +262,7 @@ async function handleFriendEvent(request, env, body) {
       db,
       fcm: makeFcm(projectId, accessToken),
     };
-    const res = await sendFriendNotification(ctx, { event, fromUid, toUid });
+    const res = await sendFriendNotification(ctx, { event, fromUid, toUid, kind });
     console.log(JSON.stringify(res));
     return json(res, 200);
   } catch (e) {

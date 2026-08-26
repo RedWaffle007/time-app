@@ -153,14 +153,15 @@ passing it does NOT close item 1.
    up yet.** (DECISIONS.md, 2026-07-22.)
 
 **Leave / remove / stop-planning — BUILT + RULES DEPLOYED AND VERIFIED
-2026-08-20.** **THE live ruleset is `d31d2f84-83bf-4fc6-a85e-e45ec03614bf`**
-(deployed 2026-08-25, superseding `33468095`, `56e11d6d` and every earlier id;
-verified the same way — deployed source re-fetched and diffed byte-for-byte,
-IDENTICAL this time with no trailing-newline drift, sha256 `89354ee8…7222dd`).
-It is the only ruleset id in this file, and every earlier one is superseded. The
-2026-08-25 deploy added the `users/{uid}/trackedTime` block (personal
-time-tracking — see DECISIONS.md "Stats capture foundation — Step 2"); it did not
-touch the relationship/slot-lock rules below. This live ruleset
+2026-08-20.** **THE live ruleset is now `32ca90f0-0fa0-4cc2-bb44-afe07ff5a980`**
+(deployed 2026-08-26 — see "Session 2026-08-26" below for what it added). It
+supersedes `d31d2f84-83bf-4fc6-a85e-e45ec03614bf` (2026-08-25) and, through it,
+`33468095`, `56e11d6d` and every earlier id — all verified the same way (deployed
+source re-fetched from `firebaserules.googleapis.com` and diffed byte-for-byte).
+**`32ca90f0` is the only current ruleset id in this file; every earlier one is
+superseded.** The 2026-08-25 predecessor added the `users/{uid}/trackedTime`
+block (personal time-tracking — DECISIONS.md "Stats capture foundation — Step
+2"); it did not touch the relationship/slot-lock rules. The live ruleset
 carries the slot-lock + planner-access rules (see "View B's schedule modal"
 below) AND the 2026-08-24 cross-device fixes: the slot-lock create now gates on
 `callerHasActiveGrant` (not the plannerAccess mirror), and `friendRequests`
@@ -180,6 +181,106 @@ These are the first relationship-*ending* controls in the app (DECISIONS.md →
 Two facts not to rediscover: **the owner cannot leave their own group** (an ownerless group
 would be uncleanable under `delete: if false`), and ejecting a member leaves that
 member's grants with *third parties* stale-but-inert.
+
+## Session 2026-08-26 — friendship grants, emergency tier, group features (SHIPPED + DEPLOYED)
+
+Five things shipped and deployed this session (full reasoning in the dated
+DECISIONS.md entries named below). **Live ruleset `32ca90f0-…`** (byte-verified);
+all NON-two-device verification passed on the Redmi. **Everything cross-account
+is two-device-DEFERRED — see the single checklist at the end of this section.**
+
+1. **Live-checked planner schedule access** (DECISIONS.md "Live-checked planner
+   schedule access"). Fixed the "ask them to open the app once" dead end: the
+   `plannerAccess/{planner}_{target}` row is now a **groupId HINT the PLANNER
+   writes**, and the schedule-read rule re-verifies the LIVE grant through it
+   (`callerHasPlannerAccess` = exists + non-empty groupId + `callerHasActiveGrant`).
+   So access needs no target action, and revocation denies the read immediately.
+   `PlannerAccessReconciler` moved planner-side (off `myPlanningTargetsProvider`);
+   `plannerAccess` create allows the planner (with a live grant), list scoped to
+   the parties, delete by either party. A's self-plans reflect live in B's
+   preview via the existing stream.
+
+2. **#4 — Friendship planning grants** (DECISIONS.md "Friendship-scoped planning
+   grants"). Planning permission can originate from a FRIENDSHIP, target-
+   controlled, per-direction; **the friendship still grants nothing by itself.**
+   Grant at `friendships/{sortedPair}/plannerGrants/{planner}_{target}`,
+   `groupId:''`, authorized DIRECTLY by `callerHasFriendGrant` (a computed pair
+   id, no mirror), which **also requires `areFriends`** so a grant is void the
+   instant the friendship ends. Two opt-in paths: a "Let X plan for me" toggle
+   (default OFF) and a `planningRequests/{from}_{to}_{kind}` request (distinct
+   from friendRequests and from the per-item queue; approval = the target authors
+   the grant, then deletes the ask). Groups reuse the same `plannerGrants`
+   collection id, so the target picker + grants-over-me query pick friend grants
+   up with no change. Push is a fast-follow (see item 6).
+
+3. **#5 — Emergency item tier** (DECISIONS.md "Emergency item tier"). New
+   `ScheduleItem.tier` (`normal`/`emergency`, absent = normal → old clients
+   unaffected). An emergency item is **born `approved`** by a planner holding a
+   SEPARATE `friendships/{pair}/emergencyGrants/…` grant — skips the queue, fires
+   directly, and the reminder engine arms it through the EXISTING approved-item
+   reconciler (no firing-path change). **The both-way invariant is
+   rules-enforced and emulator-proven:** a normal grant can NEVER create an
+   emergency item, and an emergency grant can NEVER create or queue a normal one
+   (two distinct grant docs; the create rule's three branches force it). Emergency
+   read access is DIRECT via `callerHasEmergencyGrant` (Option 1 — the
+   `emergencyAccess` mirror was dropped). Creator may recall an approved emergency
+   item. Its own toggle (default OFF) + `kind:'emergency'` request; builder gains
+   an **Emergency** switch when the grant is held.
+
+4. **Group features — planning, accountability, leaderboard** (DECISIONS.md
+   "Group features"). Groups repurposed, data model + grants intact.
+   - *Group planning*: "Plan for the group" fans ONE item out to every member
+     the planner holds a grant over (plus self), each in THAT member's home
+     timezone — a plain `createItem` loop (`ScheduleRepository.planForGroup`),
+     **no rules change**, best-effort per member.
+   - *Accountability + leaderboard*: a new **published** collection
+     `groups/{groupId}/memberStats/{uid}` (self-write, member-read) —
+     `GroupStatsPublisher` republishes each member's OVERALL profileStats numbers
+     into every group they're in, off the item stream. `GroupProgressScreen`
+     shows a **shared streak** (the smallest current streak among members) +
+     group follow-through + a leaderboard ranked by follow-through.
+
+5. **My Schedule ordering** (DECISIONS.md "Order My Schedule"). Upcoming items
+   on top (soonest next first), a **Past** divider, then past/done items
+   most-recent-first. Was ascending (past buried the next thing at the top).
+
+6. **Push fast-follow — planning-permission requests. DONE + DELIVERY-CONFIRMED.**
+   The `planningRequest` / `planningApprove` Worker events ride the existing
+   friend-event family (same `{fromUid,toUid}` wire + a `kind`); authz mirrors
+   the friend events (requester owns a pending `planningRequests` doc / approver
+   holds the written grant). Fired fire-and-forget from the profile "Ask" and
+   the inbox "Allow". **Worker DEPLOYED and `wrangler tail`-confirmed `sent:1`**
+   to the recipient for both a normal and an emergency request (2026-08-26).
+   **Gotcha worth keeping:** on this account `wrangler deploy` only UPLOADS a
+   version; you must `wrangler versions deploy <id>@100%` to promote it — and
+   even then the live `*.workers.dev` route lags the version by a few minutes
+   (the version PREVIEW url `<id>-time-app-notify.timeapp.workers.dev` serves the
+   new code instantly, which is how to confirm a deploy without waiting).
+
+**TWO-DEVICE CHECKLIST — the single deferred list (needs a second account/device;
+do NOT start until the user has one).** Nothing here has run cross-account:
+- **Live schedule access:** B opens the builder for A (whom A granted) and sees
+  A's schedule **without A doing anything**; A revokes → B's read is denied
+  immediately; A self-plans while B's preview is open → it greys the slot live.
+- **#4 friendship grant:** A toggles "Let B plan for me" → B can create a pending
+  item for A; B's "Ask to plan for A" → A approves in the Requests inbox → B can
+  plan; unfriending voids it (B can no longer plan/read).
+- **#4 request delivery:** inbox + PUSH both confirmed (item 6 shipped; a
+  `wrangler tail` `sent:1` reached the recipient). Two-device residual: confirm
+  the push renders + taps through on the recipient's phone.
+- **#5 emergency:** A grants B emergency → B's **Emergency** switch appears → B
+  creates an emergency item → it lands `approved` on A's device and **fires
+  without A approving**; A only had normal grant → B has no Emergency switch and
+  cannot create one (invariant, live); B recalls an emergency they placed.
+- **Group planning:** B (a grantee) receives a PENDING item from A's "Plan for
+  the group"; each member gets it in their own timezone.
+- **Group accountability/leaderboard:** a second member appears on
+  `GroupProgressScreen` with THEIR published stats; the shared streak reflects
+  both.
+- **Carried from before:** the four notification events end-to-end (created /
+  decided / outcome / withdrawn), backgrounded/killed-app delivery, the
+  two-timezone DST loop, Rules Test 3 (grant-off negative). See "Parked &
+  unverified" above.
 
 **Queued build work (agreed order, 2026-07-25 feature-planning pass — not started).**
 One feature at a time, plan → sign-off → build. Most strictly for goals.

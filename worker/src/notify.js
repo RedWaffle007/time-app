@@ -204,24 +204,35 @@ function result(sent, cleaned, recipientUid, reason) {
 // DELETED on decline/withdraw, so a re-request is a genuinely new event; a rare
 // double-fire from the client's self-heal retry is harmless.
 //
-//   event          triggered by       notifies
-//   -------------  ----------------   -----------------------------
-//   friendRequest  sender (fromUid)   recipient (toUid)
-//   friendAccept   accepter (toUid)   original sender (fromUid)
+//   event            triggered by       notifies
+//   ---------------  ----------------   -----------------------------
+//   friendRequest    sender (fromUid)   recipient (toUid)
+//   friendAccept     accepter (toUid)   original sender (fromUid)
+//   planningRequest  requester (fromUid) recipient (toUid)      [#4/#5]
+//   planningApprove  approver (toUid)   original requester (fromUid)
+//
+// The two planning events (a request for permission to PLAN, and its approval)
+// ride the SAME wire shape and the SAME two directions as the friend events;
+// they carry an extra `kind` (`normal`/`emergency`) that only changes the copy.
 //
 // The actor's display name is read from Firestore, never trusted from the
 // caller, so the push body cannot be spoofed. Authorization (that the caller is
-// the actor, and that the request/friendship actually exists) is enforced by the
-// transport shell BEFORE this runs — see index.js handleFriendEvent.
-export const FRIEND_EVENTS = new Set(['friendRequest', 'friendAccept']);
+// the actor, and that the request/friendship/grant actually exists) is enforced
+// by the transport shell BEFORE this runs — see index.js handleFriendEvent.
+export const FRIEND_EVENTS = new Set([
+  'friendRequest', 'friendAccept', 'planningRequest', 'planningApprove',
+]);
 
-export async function sendFriendNotification(ctx, { event, fromUid, toUid }) {
+// Events whose recipient is the `toUid` (the other two notify the `fromUid`).
+const NOTIFIES_TO_UID = new Set(['friendRequest', 'planningRequest']);
+
+export async function sendFriendNotification(ctx, { event, fromUid, toUid, kind }) {
   if (!FRIEND_EVENTS.has(event) || !fromUid || !toUid || fromUid === toUid) {
     return result(0, 0, null, 'bad-args');
   }
 
-  const recipientUid = event === 'friendRequest' ? toUid : fromUid;
-  const actorUid = event === 'friendRequest' ? fromUid : toUid;
+  const recipientUid = NOTIFIES_TO_UID.has(event) ? toUid : fromUid;
+  const actorUid = NOTIFIES_TO_UID.has(event) ? fromUid : toUid;
 
   const actor = await ctx.db.getDoc(`users/${actorUid}`);
   const who = actor && actor.name ? String(actor.name) : 'Someone';
@@ -229,7 +240,7 @@ export async function sendFriendNotification(ctx, { event, fromUid, toUid }) {
   const tokens = await ctx.db.listDocIds(`users/${recipientUid}/fcmTokens`);
   if (tokens.length === 0) return result(0, 0, recipientUid, 'no-tokens');
 
-  const message = buildFriendMessage(event, who, fromUid, toUid);
+  const message = buildFriendMessage(event, who, fromUid, toUid, kind);
 
   let sent = 0;
   let cleaned = 0;
@@ -249,13 +260,54 @@ export async function sendFriendNotification(ctx, { event, fromUid, toUid }) {
 // Carries only the actor's display name — a fact the recipient is entitled to
 // (they are about to see it in the request / friends list anyway). `data` drives
 // tap-routing (notification_routing.dart).
-function buildFriendMessage(event, who, fromUid, toUid) {
-  const notification = event === 'friendRequest'
-    ? { title: 'New friend request', body: `${who} sent you a friend request` }
-    : { title: 'Friend request accepted', body: `${who} accepted your friend request` };
+function buildFriendMessage(event, who, fromUid, toUid, kind) {
+  const emergency = kind === 'emergency';
+  let notification;
+  switch (event) {
+    case 'friendRequest':
+      notification = {
+        title: 'New friend request',
+        body: `${who} sent you a friend request`,
+      };
+      break;
+    case 'friendAccept':
+      notification = {
+        title: 'Friend request accepted',
+        body: `${who} accepted your friend request`,
+      };
+      break;
+    case 'planningRequest':
+      notification = emergency
+        ? {
+            title: 'Emergency planning request',
+            body: `${who} wants to set emergency alarms for you`,
+          }
+        : {
+            title: 'Planning request',
+            body: `${who} wants to plan for you`,
+          };
+      break;
+    case 'planningApprove':
+      notification = emergency
+        ? {
+            title: 'Emergency planning approved',
+            body: `${who} let you set emergency alarms for them`,
+          }
+        : {
+            title: 'Planning approved',
+            body: `${who} let you plan for them`,
+          };
+      break;
+  }
 
   return {
     notification,
-    data: { type: event, event, fromUid, toUid },
+    data: {
+      type: event,
+      event,
+      fromUid,
+      toUid,
+      ...(kind ? { kind } : {}),
+    },
   };
 }

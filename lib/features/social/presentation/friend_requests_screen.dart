@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -187,6 +189,10 @@ class _PlanningRowState extends ConsumerState<_PlanningRow> {
   @override
   Widget build(BuildContext context) {
     final repo = ref.read(planningPermissionRepositoryProvider);
+    // Captured while the row is alive — approving deletes the request, which
+    // disposes this row, so reading the notifier after the await would run on a
+    // dead widget. Same pattern as the friend-accept row above.
+    final notifier = ref.read(friendEventNotifierProvider);
     final emergency = widget.request.kind == PlanningKind.emergency;
     return UserRow(
       uid: widget.request.fromUid,
@@ -211,7 +217,17 @@ class _PlanningRowState extends ConsumerState<_PlanningRow> {
                 IconButton.filled(
                   tooltip: 'Allow',
                   icon: const Icon(AppIcons.acceptFriend),
-                  onPressed: () => _decide(() => repo.approve(widget.request)),
+                  onPressed: () => _decide(() async {
+                    await repo.approve(widget.request);
+                    // Tell the requester it was granted. Best-effort, NOT
+                    // awaited; `notifier` was captured in build().
+                    unawaited(notifier.notify(
+                      event: FriendNotifyEvent.planningApprove,
+                      fromUid: widget.request.fromUid,
+                      toUid: widget.request.toUid,
+                      kind: widget.request.kind.name,
+                    ));
+                  }),
                 ),
               ],
             ),
