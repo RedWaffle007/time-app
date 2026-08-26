@@ -25,7 +25,15 @@ import 'target_schedule_modal.dart';
 /// Planner picks a target they may plan for and creates a timetable item IN THE
 /// TARGET'S LOCAL TIME.
 class ScheduleBuilderScreen extends ConsumerStatefulWidget {
-  const ScheduleBuilderScreen({super.key, this.initialDate});
+  const ScheduleBuilderScreen({
+    super.key,
+    this.initialDate,
+    this.initialTargetUid,
+    this.initialGroupId,
+    this.initialIsSelf = false,
+    this.initialTitle,
+    this.initialTime,
+  });
 
   /// A date to open with, seeded by the calendar when a user plans from a
   /// tapped day (`Routes.calendarNew`). Null everywhere else, and null behaves
@@ -41,6 +49,18 @@ class ScheduleBuilderScreen extends ConsumerStatefulWidget {
   /// with the builder. The calendar deliberately has no create flow of its own.
   final DateTime? initialDate;
 
+  /// Voice-flow seeds (S6). The Plan voice flow picks the target FIRST (its own
+  /// person-picker), captures speech, parses it, and pushes this screen with the
+  /// target already chosen and whatever the parser read pre-filled. All are
+  /// optional and null everywhere else; the form is otherwise unchanged, and
+  /// `_canSave` still requires a title, date and time, so an incomplete voice
+  /// parse cannot submit straight through — it lands here for confirm/edit.
+  final String? initialTargetUid;
+  final String? initialGroupId;
+  final bool initialIsSelf;
+  final String? initialTitle;
+  final TimeOfDay? initialTime;
+
   @override
   ConsumerState<ScheduleBuilderScreen> createState() =>
       _ScheduleBuilderScreenState();
@@ -50,6 +70,12 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
   String? _targetUid; // selected target
   String? _groupId; // group the grant came from (null when planning for self)
   bool _isSelf = false; // selected target is me → skip queue, no group
+
+  /// Targets whose schedule preview has already auto-opened this screen session.
+  /// The preview pops up the first time a granted, non-self target is selected
+  /// (so their commitments are visible before a time is chosen); reopening is
+  /// the manual button. A Set — not a single latch — so A→B→A does not re-nag.
+  final _autoShownTargets = <String>{};
   final _titleController = TextEditingController();
   final _noteController = TextEditingController();
   DateTime? _date;
@@ -60,6 +86,16 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
   void initState() {
     super.initState();
     _date = widget.initialDate;
+    // Voice-flow seeds (S6). The target was chosen in the voice person-picker,
+    // so honour it and its group here; the tiles below render it selected
+    // because `_targetUid`/`_isSelf` already match.
+    _isSelf = widget.initialIsSelf;
+    _targetUid = widget.initialTargetUid;
+    _groupId = widget.initialGroupId;
+    _time = widget.initialTime;
+    if (widget.initialTitle != null) {
+      _titleController.text = widget.initialTitle!;
+    }
   }
 
   @override
@@ -100,6 +136,20 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       initialTime: _time ?? TimeOfDay.now(),
     );
     if (picked != null) setState(() => _time = picked);
+  }
+
+  /// Auto-open the preview the first time a granted, non-self target is selected.
+  ///
+  /// Scheduled post-frame (never shows a dialog during build) and latched per
+  /// target via [_autoShownTargets], so it fires once and the manual button
+  /// handles every reopen. The caller has already checked grant + timezone.
+  void _maybeAutoShowPreview(String targetUid, String timezone) {
+    if (!_autoShownTargets.add(targetUid)) return; // already shown this session
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Re-check: the target may have changed (or gone self) before the frame.
+      if (!mounted || _isSelf || _targetUid != targetUid) return;
+      _pickSlotFromTargetSchedule(timezone);
+    });
   }
 
   /// Open the target's schedule and let the planner pick a free half-hour.
@@ -147,6 +197,23 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     if (!_isSelf && _groupId == null) return; // planning for others needs a group
 
     final wall = _wall();
+    final instantUtc = resolveWallTimeToUtc(wall, timezone);
+
+    // No planning in the past — the real chokepoint for it, not the date
+    // picker's `firstDate`. The picker guard only runs when the user opens the
+    // picker; a voice-parsed draft (or a calendar seed) pre-fills the fields
+    // directly and never touches it, so a spoken day/time that has already gone
+    // would otherwise create a plan in the past. Checked on the resolved INSTANT
+    // in the target's zone, so it is correct across timezones, and it covers
+    // self, planner, manual and voice alike.
+    if (!instantUtc.isAfter(DateTime.now().toUtc())) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('That time has already passed. Pick a later time.'),
+        ),
+      );
+      return;
+    }
 
     // One more check against the live stream before writing. The modal's view
     // can be seconds stale, and the planner may also have typed a time with the
@@ -161,7 +228,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       final items = ref.read(targetScheduleProvider(_targetUid!)).value;
       if (items != null &&
           !isInstantBookable(
-            instantUtc: resolveWallTimeToUtc(wall, timezone),
+            instantUtc: instantUtc,
             items: items,
             now: DateTime.now().toUtc(),
           )) {
@@ -255,6 +322,16 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
         _targetUid == null ? null : ref.watch(profileByUidProvider(_targetUid!)).value;
     final timezone = selectedProfile?.homeTimezone;
 
+    // Planning for someone else, with a live grant and their zone resolved:
+    // surface their schedule up front. Same fact the button and the modal read
+    // are gated on (`plannerGrants`) — no grant, no preview and no button.
+    final canViewTarget = !_isSelf &&
+        _targetUid != null &&
+        ref.watch(canViewTargetScheduleProvider(_targetUid!));
+    if (canViewTarget && timezone != null) {
+      _maybeAutoShowPreview(_targetUid!, timezone);
+    }
+
     return ListView(
       padding: Space.screenList,
       children: [
@@ -290,14 +367,13 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
             onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: Space.lg),
-          // Planning for someone else: offer their schedule as the way to pick a
-          // time, so a conflict is visible before it is chosen rather than
-          // refused afterwards. Gated on the grant — `canViewTargetSchedule`
-          // reads `plannerGrants`, the same consent this whole screen runs on,
-          // so no grant means no button and no modal.
-          if (!_isSelf &&
-              timezone != null &&
-              ref.watch(canViewTargetScheduleProvider(_targetUid!))) ...[
+          // Planning for someone else: their schedule auto-opens on selection
+          // (see `_maybeAutoShowPreview`); this button reopens it so a conflict
+          // stays visible before a time is chosen rather than refused after.
+          // Gated on the grant — `canViewTargetSchedule` reads `plannerGrants`,
+          // the same consent this whole screen runs on, so no grant means no
+          // button and no modal.
+          if (canViewTarget && timezone != null) ...[
             FilledButton.tonalIcon(
               onPressed: () => _pickSlotFromTargetSchedule(timezone),
               icon: const Icon(AppIcons.navSchedule),

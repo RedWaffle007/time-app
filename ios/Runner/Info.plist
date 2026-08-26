@@ -138,6 +138,13 @@
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!-- Voice STT (S6). speech_to_text needs both: microphone to capture
+	     audio and speech-recognition to transcribe it. WRITTEN, NOT VERIFIED
+	     - no iOS target is wired up yet (DECISIONS.md ledger). -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Speak to log time or create a plan instead of typing. You can always type instead.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Your speech is transcribed to fill in a time log or plan for you to confirm.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

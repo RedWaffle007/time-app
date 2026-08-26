@@ -9,6 +9,13 @@
          firebase_messaging). Declared explicitly for clarity. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
+    <!-- Voice STT (redesign S6). The mic is requested at runtime by
+         speech_to_text's initialize(), and ONLY after the on-screen rationale
+         sheet — no raw prompt fires first, the same doctrine as the reminder
+         permissions. Every voice path falls back to the identical manual flow
+         if this is denied, so the app is fully usable without it. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+
     <!-- ===================== THE REMINDER LAYER ===================== -->
 
     <!-- EXACT alarms, the user-granted route.
@@ -220,6 +227,14 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Voice STT (S6). From Android 11 package visibility is filtered, so
+             speech_to_text cannot see the system recognition service unless we
+             declare that we query for it. Without this, initialize() reports the
+             device has no recognizer and every voice capture falls straight
+             through to the manual flow. -->
+        <intent>
+            <action android:name="android.speech.RecognitionService"/>
         </intent>
     </queries>
 </manifest>

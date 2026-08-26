@@ -19,24 +19,42 @@ import '../domain/tracked_entry.dart';
 /// through the existing [TrackedTimeRepository]; the one-day cap (1..1440) and
 /// the minutes-are-the-unit rule are enforced here and in the rules.
 ///
+/// [prefillTaskName]/[prefillMinutes] seed a NEW (never editing) sheet from a
+/// voice capture (S6). They are ignored when [existing] is set, and either may
+/// be null — a voice parse that read only the task leaves minutes empty and
+/// focused. The sheet is always the confirm/edit step; nothing is committed
+/// until the user taps Log.
+///
 /// Returns true if something was written.
 Future<bool> showLogTimeSheet(
   BuildContext context,
   WidgetRef ref, {
   TrackedEntry? existing,
+  String? prefillTaskName,
+  int? prefillMinutes,
 }) async {
   final result = await showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    builder: (_) => _LogTimeSheet(existing: existing),
+    builder: (_) => _LogTimeSheet(
+      existing: existing,
+      prefillTaskName: prefillTaskName,
+      prefillMinutes: prefillMinutes,
+    ),
   );
   return result ?? false;
 }
 
 class _LogTimeSheet extends ConsumerStatefulWidget {
-  const _LogTimeSheet({this.existing});
+  const _LogTimeSheet({
+    this.existing,
+    this.prefillTaskName,
+    this.prefillMinutes,
+  });
   final TrackedEntry? existing;
+  final String? prefillTaskName;
+  final int? prefillMinutes;
 
   @override
   ConsumerState<_LogTimeSheet> createState() => _LogTimeSheetState();
@@ -45,10 +63,12 @@ class _LogTimeSheet extends ConsumerStatefulWidget {
 class _LogTimeSheetState extends ConsumerState<_LogTimeSheet> {
   static const _quickAdds = [15, 30, 45, 60];
 
-  late final TextEditingController _task =
-      TextEditingController(text: widget.existing?.taskName ?? '');
+  late final TextEditingController _task = TextEditingController(
+      text: widget.existing?.taskName ?? widget.prefillTaskName ?? '');
   late final TextEditingController _minutes = TextEditingController(
-      text: widget.existing?.durationMinutes.toString() ?? '');
+      text: widget.existing?.durationMinutes.toString() ??
+          widget.prefillMinutes?.toString() ??
+          '');
 
   late bool _rangeOn = widget.existing?.hasRange ?? false;
   // Only the START is user-set; the end is derived from start + duration.
@@ -126,6 +146,10 @@ class _LogTimeSheetState extends ConsumerState<_LogTimeSheet> {
     final uid = ref.read(currentUidProvider);
     if (uid == null) return;
     final repo = ref.read(trackedTimeRepositoryProvider);
+    // Captured before the await + pop: the sheet's own context is gone once it
+    // closes, but this resolves to the app-root messenger, so the confirmation
+    // shows on the screen underneath after the sheet dismisses.
+    final messenger = ScaffoldMessenger.of(context);
 
     if (_isEditing) {
       final e = widget.existing!;
@@ -157,7 +181,16 @@ class _LogTimeSheetState extends ConsumerState<_LogTimeSheet> {
         ),
       );
     }
-    if (mounted) Navigator.pop(context, true);
+    if (!mounted) return;
+    // Success feedback — the same on the voice-track and manual paths, since
+    // both commit through this one sheet. Duration goes through the locale-aware
+    // helper (worldwide requirement), never a hand-built '$m min'.
+    messenger.showSnackBar(SnackBar(
+      content: Text(_isEditing
+          ? 'Entry updated.'
+          : 'Logged "$task" · ${formatDurationMinutes(context, minutes)}'),
+    ));
+    Navigator.pop(context, true);
   }
 
   @override

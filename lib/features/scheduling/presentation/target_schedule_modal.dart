@@ -1,5 +1,6 @@
 import 'dart:ui';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -124,12 +125,24 @@ class _TargetScheduleModalState extends ConsumerState<_TargetScheduleModal> {
                 _header(context),
                 Divider(height: Sizes.hairline, color: context.colors.outlineVariant),
                 Flexible(
-                  child: AsyncView<List<ScheduleItem>>(
-                    value: itemsAsync,
-                    onRetry: () => ref
-                        .invalidate(targetScheduleProvider(widget.targetUid)),
-                    builder: (context, items) => _slotList(context, items),
-                  ),
+                  // A `permission-denied` here is not a fault to retry — it is
+                  // the expected two-device state: the target has a live grant
+                  // but has never opened the app online since, so their
+                  // `plannerAccess/{me}_{target}` mirror row does not exist yet
+                  // and the rules deny the read. Show a plain, actionable
+                  // message instead of the raw exception + Retry, which would
+                  // never succeed until THEY act. Every other error still falls
+                  // through to AsyncView. (DECISIONS.md → "View B's schedule
+                  // modal + slot conflicts", plannerAccess mirror.)
+                  child: _isAccessNotReady(itemsAsync.error)
+                      ? _accessPending(context)
+                      : AsyncView<List<ScheduleItem>>(
+                          value: itemsAsync,
+                          onRetry: () => ref.invalidate(
+                              targetScheduleProvider(widget.targetUid)),
+                          builder: (context, items) =>
+                              _slotList(context, items),
+                        ),
                 ),
               ],
             ),
@@ -201,6 +214,41 @@ class _TargetScheduleModalState extends ConsumerState<_TargetScheduleModal> {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  /// True when the schedule read failed *only* because the target has not yet
+  /// published their `plannerAccess` mirror row (the two-device sync gap), not
+  /// for any other reason.
+  bool _isAccessNotReady(Object? error) =>
+      error is FirebaseException && error.code == 'permission-denied';
+
+  /// The friendly stand-in for a raw permission error: the grant is real, the
+  /// mirror just has not synced. Matches the §6.5 empty-state recipe.
+  Widget _accessPending(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: Space.screenForm,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(AppIcons.pending,
+                size: Sizes.emptyStateIcon,
+                color: context.colors.onSurfaceVariant),
+            const SizedBox(height: Space.md),
+            Text("Can't load their schedule yet",
+                style: context.text.titleMedium, textAlign: TextAlign.center),
+            const SizedBox(height: Space.sm),
+            Text(
+              'Ask ${widget.targetName} to open the app once so their '
+              'schedule can sync, then reopen this.',
+              textAlign: TextAlign.center,
+              style: context.text.bodySmall
+                  ?.copyWith(color: context.colors.onSurfaceVariant),
+            ),
+          ],
+        ),
       ),
     );
   }

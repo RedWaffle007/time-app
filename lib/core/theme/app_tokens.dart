@@ -100,6 +100,12 @@ abstract final class Sizes {
   /// the label, so the button doesn't change height mid-action.
   static const double buttonSpinner = 20;
 
+  /// The pulsing mic disc at the centre of the voice-capture sheet (S6).
+  static const double voicePulse = 96;
+
+  /// The mic glyph inside [voicePulse].
+  static const double voicePulseIcon = 40;
+
   /// The warning panel's left rule (UI-RULES.md §6.3) and the section header's
   /// rule (§2.7) — both are 3px line work.
   static const double ruleWidth = 3;

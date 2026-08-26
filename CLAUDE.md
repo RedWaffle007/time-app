@@ -479,6 +479,33 @@ second place that decides. NOT YET VERIFIED ON DEVICE (needs the install that al
 carries the reconciler — the earlier build predated it, which is why the first
 on-device test showed no release).
 
+## First-run walkthrough — SHIPPED 2026-08-26 (coach-mark tour, replayable)
+
+`lib/features/walkthrough/`. A first-launch coach-mark tour of the five-pillar
+bar — dimmed scrim + spotlight + tooltip/arrow + Skip/Next — five steps in
+**spatial order** Plan → Track → ⊕voice → Stats → You, one line each. Full
+reasoning + copy in DECISIONS.md → "First-run orientation walkthrough
+(2026-08-26)". Queued build item 2; **item 3 (schedule-preview modal) NOT
+started.**
+
+- **Custom overlay, no package** (would fight the §1 lint). Full-screen sibling
+  stacked OVER `HomeShell`'s `Scaffold` so it can spotlight the bottom bar + the
+  docked FAB. `context.colors.scrim` @ 0.72, hole via `Path.combine(difference)`.
+- **Gating mirrors `OnboardingStore`:** device-scoped `shared_preferences` flag
+  `walkthrough_completed_v1`. Hosted inside `HomeShell` (only reached past
+  auth → profile → **permissions onboarding**), so it sequences after permissions
+  and never blocks a gate. Auto-shows once when the flag resolves false; Skip and
+  final Done both write the flag → never auto-shows again.
+- **Replay is orthogonal to the flag** — You → "How this app works" bumps
+  `walkthroughTriggerProvider` (a `Notifier<int>` nonce; Riverpod 3 dropped legacy
+  `StateProvider`) and `go`s to Plan. Replay does NOT clear the completed flag.
+- New icon `AppIcons.walkthrough` (`explore_outlined`). Pure copy unit-tested
+  (`test/walkthrough_test.dart`). **analyzer-green, lint + tour tests pass, debug
+  APK builds.**
+- **NOT VERIFIED ON A DEVICE.** Ledger in DECISIONS.md: fresh-install auto-show
+  once + no re-show, Skip, Next through all five spotlights (FAB circular),
+  tap-to-advance, You replay, dark mode, RTL.
+
 ## Social profile layer — SHIPPED 2026-08-21
 
 `lib/features/social/`. Usernames, friend requests, friendships, blocking, a
@@ -626,6 +653,16 @@ Things not to rediscover:
 **Flagged, not built:** freeing a lock when an item is archived or its outcome is
 recorded; any UI for a target to see who holds planner access over them; and a
 "next free slot" hint that looks beyond the day in view.
+
+**AUTO-OPEN added 2026-08-26 (build item 3).** The preview no longer waits for a
+button tap: it opens automatically the first time a **granted, non-self** target
+is selected in the builder (once per target, via a `Set` latch, scheduled
+post-frame), with the button kept as the reopen path. Diagnosis that preceded it:
+the modal was already wired AND already the centered blurred+dimmed dialog — the
+single-device "doesn't appear" was the grant + `plannerAccess`-mirror gates, which
+need a second account. **Two-device verification is DEFERRED** (DECISIONS.md →
+"Schedule-preview modal — auto-open on target select (2026-08-26)"); single-device
+gives only analyzer/lint/build, since the self path shows no preview by design.
 
 ## In-app calendar — SHIPPED 2026-08-21
 

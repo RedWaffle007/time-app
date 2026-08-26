@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show TimeOfDay;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -190,6 +191,77 @@ class Routes {
   /// (Was `/activity/schedule-builder` before the S5 cutover.)
   static const scheduleBuilder = '$plan/schedule-builder';
 
+  /// Voice-flow query params seeding [scheduleBuilder] (S6). The Plan voice flow
+  /// picks the target first, parses the spoken details, and pushes the builder
+  /// with these filled. All are optional; a missing/malformed one degrades to
+  /// the ordinary empty builder rather than throwing.
+  static const sbTargetParam = 'target';
+  static const sbGroupParam = 'group';
+  static const sbSelfParam = 'self';
+  static const sbTitleParam = 'title';
+  static const sbTimeParam = 'time'; // 'HH:mm'
+
+  /// Build the seeded builder URL. Only the fields that were actually parsed are
+  /// carried; the rest are omitted and stay unset in the form.
+  static String scheduleBuilderVoice({
+    required String targetUid,
+    required bool isSelf,
+    String? groupId,
+    String? title,
+    DateTime? date,
+    TimeOfDay? time,
+  }) =>
+      Uri(
+        path: scheduleBuilder,
+        queryParameters: _voiceParams(
+          targetUid: targetUid,
+          isSelf: isSelf,
+          groupId: groupId,
+          title: title,
+          date: date,
+          time: time,
+        ),
+      ).toString();
+
+  static Map<String, String> _voiceParams({
+    required String targetUid,
+    required bool isSelf,
+    String? groupId,
+    String? title,
+    DateTime? date,
+    TimeOfDay? time,
+  }) {
+    final params = <String, String>{
+      sbTargetParam: targetUid,
+      sbSelfParam: isSelf ? '1' : '0',
+    };
+    if (groupId != null) params[sbGroupParam] = groupId;
+    if (title != null && title.trim().isNotEmpty) params[sbTitleParam] = title;
+    if (date != null) {
+      params[calendarDateParam] = '${date.year.toString().padLeft(4, '0')}-'
+          '${date.month.toString().padLeft(2, '0')}-'
+          '${date.day.toString().padLeft(2, '0')}';
+    }
+    if (time != null) {
+      params[sbTimeParam] = '${time.hour.toString().padLeft(2, '0')}:'
+          '${time.minute.toString().padLeft(2, '0')}';
+    }
+    return params;
+  }
+
+  /// Parse [sbTimeParam] ('HH:mm') back to a [TimeOfDay]; null if absent/bad.
+  static TimeOfDay? timeOfDayFrom(String? raw) {
+    if (raw == null) return null;
+    final parts = raw.split(':');
+    if (parts.length != 2) return null;
+    final h = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    if (h == null || m == null || h < 0 || h > 23 || m < 0 || m > 59) {
+      return null;
+    }
+    return TimeOfDay(hour: h, minute: m);
+  }
+
   /// The target's pending-approvals inbox — a Plan sub-route. (Was
   /// `/outcome/approvals` before the S5 cutover.)
   static const approvals = '$plan/approvals';
@@ -297,7 +369,24 @@ final routerProvider = Provider<GoRouter>((ref) {
                 routes: [
                   GoRoute(
                     path: 'schedule-builder',
-                    builder: (context, state) => const ScheduleBuilderScreen(),
+                    // Voice-flow seeds (S6) ride in as query params on the pushed
+                    // URL. This is a PUSHED sub-route (rebuilt each push), not the
+                    // cached branch root, so query params are reliable here — the
+                    // reason `planIntentProvider` exists for `/plan` does not apply.
+                    builder: (context, state) {
+                      final q = state.uri.queryParameters;
+                      final target = q[Routes.sbTargetParam];
+                      if (target == null) return const ScheduleBuilderScreen();
+                      return ScheduleBuilderScreen(
+                        initialTargetUid: target,
+                        initialGroupId: q[Routes.sbGroupParam],
+                        initialIsSelf: q[Routes.sbSelfParam] == '1',
+                        initialTitle: q[Routes.sbTitleParam],
+                        initialDate:
+                            Routes.calendarDateFrom(q[Routes.calendarDateParam]),
+                        initialTime: Routes.timeOfDayFrom(q[Routes.sbTimeParam]),
+                      );
+                    },
                   ),
                   // The target's inbox — the AppBar shortcut and the
                   // `created`/`withdrawn` notifications both land here.

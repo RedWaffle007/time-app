@@ -4802,6 +4802,111 @@ index off state — none of it depends on go_router re-running a cached builder.
 `flutter analyze` clean; suite 314 pass / the one pre-existing calendar flake;
 device-buildable; **verified working on the Redmi.**
 
+## UI redesign — S6: voice STT (2026-08-26)
+
+The final planned slice, and the one that makes the docked voice FAB actually
+listen. S5 shipped the FAB + the two-choice sheet with **manual routing only**;
+the mic "did nothing on speech" because speech capture was never built. S6 fills
+both flows behind that existing seam. **Nothing about the FAB or the sheet
+changed** — only what each choice does after the sheet closes.
+
+**Two flows, both prefill-only.**
+- **Track time** → speak *"What are we logging?"* → parse `"[task] [duration]"`
+  (e.g. "walking 30 mins" → task "walking", 30 min) → open the **existing** log
+  sheet PRE-FILLED for confirm/edit.
+- **Plan time** → **person-picker FIRST** (self / anyone who granted planning) →
+  speak *"Please give alarm details"* → parse `"[Day][Time][Alarm name]"` → push
+  the **existing** schedule-builder with the target chosen and the fields filled
+  for confirm/edit.
+
+**The non-negotiable: nothing is ever committed by voice.** Both parsers produce
+a DRAFT that seeds the same manual sheet/builder the app already had; the user
+still taps Log / Send. A misparse is a visible edit, never a bad write. And every
+branch — dismissal, a denied mic, an unavailable recognizer, an empty or
+unparseable utterance — falls back to the **identical manual flow**, so voice is
+strictly additive and never the only way in.
+
+### The engine — platform recognizer, free, behind a seam
+
+- **`speech_to_text` (7.4.0)** wraps the PLATFORM recognizer (Android
+  `SpeechRecognizer`, iOS `SFSpeechRecognizer`) — on-device where the OS ships
+  offline models, otherwise routed by the OS to its own free service. **No API
+  key, no per-call billing, no network code of ours** — the same no-Blaze posture
+  as the on-device chatbot. It is the ONLY thing that requests `RECORD_AUDIO`.
+- **`flutter_tts` (4.x)** speaks the two prompts aloud ("audio + on-screen text")
+  through the platform TTS; needs no permission and degrades silently (the prompt
+  is always on screen too).
+- **The seam is `voice/data/speech_service.dart`**, same discipline as
+  `chatbot_service.dart`: `SpeechService` exposes `ensureReady / speak / listen /
+  stop / cancel / dispose` and **no OS vocabulary crosses it** — only
+  `String`/`bool`. `PlatformSpeechService` contains every plugin type. An iOS or
+  on-device-custom engine is a second implementation at the one
+  `speechServiceProvider` line, with no screen change. A denied mic is **not an
+  exception** — `ensureReady()` returns `false` and the caller falls back.
+
+### The parsers — pure, English-only, exhaustively tested
+
+`voice/application/voice_parsers.dart` holds the two pure functions
+(`parseTrackUtterance`, `parsePlanUtterance`) — no plugins, no clock (the plan
+parser takes `now` as an argument), no Firestore. **All the logic that can be
+wrong lives here**, which is why `test/voice_parsers_test.dart` (27 cases) pins
+it without a device — the `reminder_policy.dart` doctrine.
+
+- **Track** finds the LAST `<number> <unit>` group; everything before it is the
+  task. A **unit token is required** — a bare trailing number ("route 66") stays
+  part of the task, so a number that is really part of the name is never mistaken
+  for a duration. Handles digits, decimals ("1.5 hours"), fused tokens ("20min"),
+  spelled numbers ("thirty", "twenty five"), and the article traps: **"half an
+  hour" is 30, "an hour" is 60, "an hour and a half" is 90** (a trailing "a/an" is
+  the unit's article, dropped only when another number word remains).
+- **Plan** is order-tolerant: it finds a **day** (today/tomorrow/weekday →
+  nearest occurrence incl. today), a **time** (`7am`, `19:30`, `half past seven`,
+  `quarter to eight`, `noon`, `seven thirty`), and the **remainder is the title**
+  with edge filler ("set an alarm for") trimmed but interior words ("clean the
+  kitchen") kept. Any field may be null; the builder's `_canSave` still requires
+  title + date + time, so an incomplete parse cannot submit straight through — the
+  same guard the calendar-seed path relies on.
+- **English-only for v1, logged as a limitation.** The worldwide requirement
+  governs how the prefilled date/time is RENDERED (still through the one format
+  helper); it does not require multilingual speech *parsing*.
+
+### The mic-permission UX — rationale before the raw prompt
+
+Mic is **not** a reminder-delivery permission, so it stays out of
+`ReminderPermissionState` and the onboarding flow. The doctrine still holds: on
+first use the capture sheet shows an on-screen rationale ("Speak and it fills in
+the form… this uses the microphone") with **Start listening / Type instead**;
+only **Start** calls `ensureReady()`, which fires the OS prompt. A device-local
+`shared_preferences` flag (`voice_mic_rationale_accepted`, like the app-lock flag
+— never on the Firestore profile) lets later captures skip the intro straight to
+listening. Denial → a "type it instead" branch. The listening UI is a pulsing
+filled mic, live partial transcript, a **Done** button (`stop()` → final result),
+and an ever-present **Type instead**.
+
+### Wiring — minimal, additive, seam-preserving
+
+- New `lib/features/voice/{data,application,presentation}`. `home_shell`'s
+  `_showVoiceSheet` now routes each choice into `_voiceTrack` / `_voicePlan`.
+- **`showLogTimeSheet` gained `prefillTaskName`/`prefillMinutes`** (a NEW,
+  never-editing seed distinct from `existing:`); **`ScheduleBuilderScreen` gained
+  `initialTargetUid`/`initialGroupId`/`initialIsSelf`/`initialTitle`/`initialTime`**
+  beside the existing `initialDate`. All null-default; behaviour identical when
+  null.
+- The Plan seeds ride as **query params on the pushed `/plan/schedule-builder`
+  URL** (`Routes.scheduleBuilderVoice(...)`), read in the route builder. This is a
+  PUSHED sub-route rebuilt each push — not the cached `/plan` branch root — so
+  query params are reliable here; the reason `planIntentProvider` exists does not
+  apply.
+- New icons (`voiceListening`, `voiceStop`, `typeInstead`) and Sizes
+  (`voicePulse`, `voicePulseIcon`) added to the vocabularies. `RECORD_AUDIO` +
+  the `RecognitionService` `<queries>` entry added to the Android manifest; iOS
+  `NSMicrophoneUsageDescription` + `NSSpeechRecognitionUsageDescription` written
+  (unverified — no iOS target).
+
+`flutter analyze` clean; the UI-RULES §1/§2.7 lint stays green; 27 parser tests
+pass; **debug APK builds** with both new plugins. **NOT VERIFIED ON A DEVICE** —
+see the ledger below.
+
 ## UI redesign — device-verification ledger (as of 2026-08-25)
 
 Slices are stacking up built-and-green but **NOT run on a device**. The list to
@@ -4868,6 +4973,37 @@ in light + dark + RTL). The ground is verified; S5 was then built.
 
 The bar flip must not ship to a real user until THIS S5 pass is clean.
 
+- **S6 — voice STT — BUILT + ANALYZER/LINT/UNIT GREEN, NOT RUN ON A DEVICE
+  (2026-08-26).** Everything below the microphone and the recognizer is covered
+  by the 27 pure parser tests; everything at/below the plugin boundary is
+  device-only and unverified. To exercise on the Redmi (debug build):
+  1. **Mic-permission doctrine:** first FAB → Track/Plan shows the rationale
+     BEFORE any OS prompt; **Start listening** fires the prompt; grant, then
+     confirm the second capture skips the intro (the `shared_preferences` flag).
+     Revoke the mic in Settings and confirm the "type it instead" branch appears
+     and routes to the manual flow.
+  2. **STT accuracy (device-only, unmeasured):** whether the platform recognizer
+     transcribes "walking 30 mins" / "Monday 7am gym" well enough that the parser
+     lands the right draft. On-device vs cloud routing, latency, and offline
+     (airplane-mode) behaviour are all unknown until run.
+  3. **TTS (device-only):** whether the two prompts actually speak, and that the
+     mic does not hear the TTS (speak completes before listen starts).
+  4. **Track prefill:** a good parse pre-fills the log sheet (task + minutes) for
+     confirm/edit; a task-only parse leaves minutes empty; Log writes to
+     `trackedTime`.
+  5. **Plan prefill:** the person-picker lists self + granted targets; picking one
+     then speaking pushes the builder with that target selected and the parsed
+     day/time/title filled; `_canSave` still gates an incomplete parse; Send works.
+  6. **Fallbacks:** dismissing the voice sheet (Track → nothing; Plan → builder
+     with target, manual), **Type instead**, and an empty/garbled utterance all
+     land in the identical manual flow.
+- **S6 — iOS config WRITTEN, UNVERIFIED.** `NSMicrophoneUsageDescription` +
+  `NSSpeechRecognitionUsageDescription` are in `Info.plist`, but no iOS target is
+  wired up, so nothing has run there.
+- **S6 — English-only parsing is a KNOWN v1 limitation, not a bug.** A
+  non-English utterance falls back to the manual flow (misparse → editable), never
+  a bad write.
+
 ## Tracked-time — the range END is derived, not independent (2026-08-25)
 
 **Supersedes** the Step-2 decision that the time-of-day range is "independent
@@ -4903,3 +5039,163 @@ wrap, full-day-back-to-start, malformed-start). `flutter analyze` clean.
 **Device-verify-pending (ledger):** the derived-end edit/create behaviour and the
 `(+1d)` display are built and analyzer-green but **not yet run on the device** —
 added to the pre-S5 device pass alongside the S1/S3 items already listed.
+
+## First-run orientation walkthrough — coach marks over the five-pillar bar (2026-08-26)
+
+**What.** A first-launch coach-mark tour of the five-pillar bar: a dimmed scrim
+with a spotlight cut out around each target, a tooltip card + downward arrow, and
+Skip / Next controls. Five steps in **spatial bottom-bar order** — Plan → Track →
+⊕voice(FAB) → Stats → You — one short line each. `lib/features/walkthrough/`.
+Queued build item 2 of the current feature set; item 3 (the schedule-preview
+modal) is NOT started.
+
+**Copy (one line per target):**
+- Plan — "Build schedules and set reminders — for you, or people you support."
+- Track — "Log time you've spent and see where it goes."
+- Speak to create — "Tap and talk to log time or plan a reminder — hands-free."
+- Stats — "Your totals and trends, at a glance."
+- You — "Profile, friends, calendar and permissions — all in one place."
+
+**Why spatial order.** All five targets live in the always-visible bottom bar, so
+nothing is navigated — the arrow just walks left-to-right across the bar, matching
+the eye's scan, with the voice FAB as the natural mid-tour centrepiece.
+
+**Custom overlay, no package.** A coach-mark package would fight the UI-RULES §1
+lint (raw `Colors`, literal radii/spacing) and the theme. The overlay is a
+`CustomPaint` scrim (`context.colors.scrim` at 0.72, a rounded/circular hole via
+`Path.combine(difference)`) with a token-built card; it passes the lint. It is a
+full-screen sibling stacked OVER `HomeShell`'s `Scaffold` — deliberately, so it
+can spotlight the bottom bar and the docked FAB, which a body-level overlay could
+not reach.
+
+**Gating — mirrors `OnboardingStore` exactly.** A device-scoped
+`shared_preferences` flag `walkthrough_completed_v1` in its own `WalkthroughStore`
+(a new device earns its own tour; versioned key so a future bar change can
+re-show intentionally). The tour is hosted inside `HomeShell`, which is only
+reached past auth → profile → **permissions onboarding**, so it sequences after
+permissions and never blocks a gate. First run: `HomeShell` watches
+`walkthroughCompletedProvider`; when it resolves `false` a one-shot latch raises
+the overlay post-frame. Skip and the final Done both write the flag + invalidate
+the provider, so it never auto-shows again.
+
+**Replay is orthogonal to the flag.** "How this app works" in You → Account &
+device bumps `walkthroughTriggerProvider` (a `Notifier<int>` nonce — Riverpod 3
+dropped the legacy `StateProvider` from default exports) and `go`s to Plan;
+`HomeShell` listens and raises the tour. Replay does NOT clear the completed flag,
+so the flag means exactly "should the tour appear uninvited on launch". Placed in
+You because it is the settings/help hub, beside the permissions-onboarding replay
+that already lives there.
+
+**Pieces.** `data/walkthrough_store.dart`, `application/walkthrough_providers.dart`
+(store + `walkthroughCompletedProvider` + `markWalkthroughCompleted` +
+`walkthroughTriggerProvider`/`replayWalkthrough`),
+`presentation/walkthrough_overlay.dart` (`kWalkthroughStepCopy`, `WalkthroughStep`,
+`WalkthroughScrim`). `HomeShell` owns the five `GlobalKey`s (the bar is persistent,
+so target rects resolve on first build) and the show/finish logic. New icon
+`AppIcons.walkthrough` (`explore_outlined`). Pure copy list is unit-tested
+(`test/walkthrough_test.dart`): five steps, spatial order, single-line bodies.
+
+**Status: analyzer-green, lint + tour tests pass, debug APK builds. NOT VERIFIED
+ON A DEVICE** — see the ledger below.
+
+**Device-verify-pending (ledger):** on the Redmi (debug build, since prefs must be
+readable) — (a) fresh install / cleared data: the tour auto-shows once after the
+permissions flow, on Plan, and does NOT reappear on the next launch; (b) Skip on
+step 1 dismisses and never re-shows; (c) Next walks all five spotlights, the
+arrow points at each bar item, the FAB spotlight is circular; (d) tap-on-dim
+advances; (e) You → "How this app works" replays it, and replaying does not make
+it auto-show on a later launch; (f) dark mode (UI-RULES §8) and a right-to-left
+locale, neither of which the overlay has been run in.
+
+## Schedule-preview modal — auto-open on target select (2026-08-26)
+
+**Diagnosis first (the question was "failing to fire, or never wired?").** Neither.
+The "view B's schedule" modal was already **wired** — `schedule_builder_screen.dart`
+renders a grant-gated button that calls `showTargetScheduleModal` — and already
+the requested **centered + dimmed + blurred** dialog: `showGeneralDialog` with a
+`BackdropFilter` (`Blurs.modalBackdrop`) PLUS a scrim (`context.colors.scrim` @
+0.4) and a centered `ConstrainedBox` card (built 2026-08-21; there has never been
+a plain-sheet version in git). No competing sheet exists — the only bottom sheets
+in the plan/voice paths are the voice target-picker and voice-capture sheets.
+
+**Why it read as "doesn't appear" on one device.** Two structural gates, both
+needing a real second account/device: (1) the button is grant-gated
+(`canViewTargetScheduleProvider` reads `plannerGrants` where you are the planner —
+no grant from another account ⇒ no button); (2) the read is mirror-gated —
+`targetScheduleProvider` needs `plannerAccess/{planner}_{target}`, which
+`planner_access_reconciler.dart` writes from the **target's** device off *their*
+grant stream, so until the target has been online the read is `permission-denied`.
+So single-device there is simply no granted target to preview.
+
+**Change (chosen: auto-open on target select).** The preview now opens
+automatically the first time a **granted, non-self** target is selected, so their
+commitments are visible before a time is picked — matching "should show before
+scheduling." Kept minimal and non-nagging:
+- `_maybeAutoShowPreview(targetUid, timezone)` latches per target in a
+  `Set<String> _autoShownTargets` (A→B→A does not re-nag) and schedules the open
+  **post-frame** (never a dialog during build), re-checking `mounted` / target /
+  self before firing. It reuses `_pickSlotFromTargetSchedule`, so the chosen slot
+  flows back exactly as the manual path did.
+- `canViewTarget` (grant + non-self) is computed once and now gates BOTH the
+  auto-open and the existing button; the button stays as the **reopen** path.
+- No styling change — the dialog was already the "Settings-in-Claude" treatment.
+- No rules/model/provider change; the modal's own read path is untouched.
+
+`flutter analyze` clean, UI-RULES §1/§2.7 lint green, debug APK builds.
+
+**Device-verify-pending (ledger) — TWO-DEVICE, deferred.** The whole point (a
+*granted* non-self target) cannot be exercised single-device, as the diagnosis
+above shows. On two accounts/devices: A grants B planner rights; on B's device open
+the Schedule Builder, select A → the preview **auto-opens once**, centered with the
+blurred+dimmed backdrop, showing A's real items in A's timezone; dismiss and the
+"See A's schedule & pick a slot" button **reopens** it; picking a slot fills date +
+time; selecting a second granted target auto-opens for them too, and returning to
+A does not re-nag. Also confirm the `plannerAccess` mirror is present (A online at
+least once) so the read is not `permission-denied`. Single-device confirmed here:
+analyzer/lint/build only — the self path deliberately shows no preview.
+
+## Voice-session cleanup — Track success feedback + past-date guard (2026-08-26)
+
+Two fixes closing out the voice/track session before the #4/#5 friendship-grant
+build. The Track blank-screen intermittent (the third thread) did **not**
+reproduce and the hunt is dropped until it resurfaces with a log.
+
+**Fix 1 — Track had no success feedback.** Logging a time entry (voice *or*
+manual) popped the sheet with no confirmation. The Plan path already snackbars
+("Item sent for approval" / "Added to your schedule"); Track did not. The
+confirmation now lives in **one place** — `_LogTimeSheet._save()` — so the
+voice-track and manual paths are consistent by construction (both commit through
+this one sheet). Create → `Logged "<task>" · <duration>`; edit → `Entry updated.`.
+Duration renders through `formatDurationMinutes` (locale-aware, worldwide
+requirement), never a hand-built `'$m min'`. The `ScaffoldMessenger` is captured
+**before** the await/pop because the sheet's own context is gone once it closes;
+it resolves to the app-root messenger, so the snackbar shows on the screen
+underneath after dismissal.
+
+**Fix 2 — voice bypassed the past-date guard.** Saying a day/time already gone
+created a plan in the past. Root cause was **two** things, fixed at two layers:
+
+1. *The guard lived only in the date picker* (`_pickDate`'s `firstDate`), so it
+   ran only when the user opened the picker. A voice-parsed draft (and a
+   calendar seed) pre-fills the date/time fields directly and never touches the
+   picker — so the guard was silently skipped. **Fix:** a hard past-instant check
+   at the real chokepoint, `ScheduleBuilderScreen._save()`, before any write:
+   `if (!instantUtc.isAfter(now)) { snackbar; return; }`. Checked on the resolved
+   **instant in the target's timezone**, so it is correct across zones, and it
+   covers self / planner / manual / voice alike — not just the pre-filled paths.
+   Message: "That time has already passed. Pick a later time."
+2. *Weekday resolution could land on today with a past time.* `parsePlanUtterance`
+   resolves a bare weekday to its nearest occurrence **including today**
+   (delta 0), so "Wednesday 10am" said on a Wednesday afternoon resolved to this
+   morning — a past instant. **Fix:** after resolving day+time, a
+   weekday-sourced date whose day+time is not in the future rolls +7 to next
+   week. **Only weekday names roll** — "today"/"tomorrow"/an explicit calendar
+   date are taken as said (a past "today 9am" is the speaker's error, caught by
+   the builder guard, not silently moved a week). The parser's `now` is the
+   device clock; the builder re-checks the instant in the *target's* zone, so the
+   parser is the sensible-default layer and the builder is the guarantee. Two new
+   pure tests in `voice_parsers_test.dart` (rolls when past, stays when future).
+
+analyzer-green, `ui_rules_lint` + all 34 voice-parser tests pass, debug APK
+builds. **NOT device-verified** (the reproduce-on-device pass was for the blank
+screen only). Not committed.

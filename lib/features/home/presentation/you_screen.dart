@@ -13,6 +13,7 @@ import '../../auth/application/auth_providers.dart';
 import '../../notifications/application/messaging_service.dart';
 import '../../social/application/social_providers.dart';
 import '../../social/presentation/avatar_image.dart';
+import '../../walkthrough/application/walkthrough_providers.dart';
 
 /// **The You hub** (migration slice S3) — the account popup promoted to a real
 /// screen, which resolves the audit's most overloaded surface: the junk-drawer
@@ -73,6 +74,17 @@ class YouScreen extends ConsumerWidget {
           ),
 
           const SectionHeader('Account & device'),
+          _YouTile(
+            icon: AppIcons.walkthrough,
+            label: 'How this app works',
+            // Replay the first-run orientation tour. It lives on `HomeShell`
+            // (the bar it points at), so this bumps the trigger and returns to
+            // the tabs; the shell raises the coach marks over Plan.
+            onTap: () {
+              replayWalkthrough(ref);
+              context.go(Routes.plan);
+            },
+          ),
           _YouTile(
             icon: AppIcons.permissions,
             label: 'Reminders & permissions',

@@ -75,6 +75,17 @@ abstract final class AppIcons {
   /// so it has no filled/outline pair.
   static const IconData voice = Icons.mic_none_outlined;
 
+  /// The ACTIVE mic while a voice capture is listening (S6) — filled, because it
+  /// is a live state, not the at-rest affordance the [voice] FAB is.
+  static const IconData voiceListening = Icons.mic;
+
+  /// "I'm done talking" — stop the current voice capture and take the result.
+  static const IconData voiceStop = Icons.stop_circle_outlined;
+
+  /// "Type instead" — the always-present fallback from any voice flow to the
+  /// identical manual entry (S6). The mic is never the only way in.
+  static const IconData typeInstead = Icons.keyboard_outlined;
+
   // ---- objects ----
 
   /// A person — the target of a plan, or yourself.
@@ -458,6 +469,21 @@ abstract final class AppIcons {
   /// profile, and the account block. Reuses [account] for the pillar itself.
   static const IconData editProfile = Icons.person_outline;
   static const IconData devMenu = Icons.build_outlined;
+
+  /// The first-run orientation tour, as a replayable entry in the You hub
+  /// ("How this app works"). A compass/explore glyph — "show me around" — and
+  /// distinct from [permissions] (the OS-permission flow), [noMatch]
+  /// (`help_outline`, the chatbot fallback marker) and [languagePractice]:
+  /// re-touring the UI is its own concept (rule 1).
+  static const IconData walkthrough = Icons.explore_outlined;
+
+  /// Step backward / forward through the orientation tour's coach marks.
+  ///
+  /// Distinct from [previousPeriod]/[nextPeriod] (calendar paging) and [openRow]
+  /// (drill into a row) per rule 1 — moving between tour explanations is its own
+  /// concept. A plain directional arrow, not a chevron.
+  static const IconData stepBack = Icons.arrow_back;
+  static const IconData stepForward = Icons.arrow_forward;
 
   // ---- dev-only scaffolding (lib/dev is governed too — §6.6) ----
 
