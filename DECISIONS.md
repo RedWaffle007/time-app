@@ -5406,3 +5406,75 @@ emulator tests, analyzer/lint/debug build green. **NOT device-verified —
 two-device deferred.** (One unrelated pre-existing calendar test flakes on
 today's date: it taps a day-number that August 2026's grid also shows as a July
 outside-day; not a #5 regression.)
+
+## Group features — planning, accountability, leaderboard (2026-08-26)
+
+Groups repurposed with three real jobs; the group data model and grants are
+untouched (the friendship grant stays additive). Build order: planning (no
+rules) → accountability + leaderboard (one new published collection).
+
+**1 — Group planning (fan-out).** "Plan for the group" creates the SAME item for
+every member the planner holds an active grant over (plus themselves), each
+resolved in THAT member's own home timezone — so "9am" is 9am locally for each
+person, not one absolute instant. It is a plain loop of `createItem`
+(`ScheduleRepository.planForGroup`), best-effort per member (a taken slot,
+missing grant or past time skips only that one), so **no rules change and no
+batch** — every write is already authorized by the group-grant branch, and items
+already carry `groupId`. Self → `approved`; everyone else → `pending`. Reached
+from a card on the group detail screen (shown only when ≥1 other grantee exists);
+a per-member `created` push fires like single planning.
+
+**2 + 3 — Accountability + leaderboard (shared `memberStats`).** Two views of one
+new published collection `groups/{groupId}/memberStats/{uid}`. A group member
+cannot read another member's items nor their friend-gated `profileStats`, so —
+**published, not derived**, same doctrine as `ProfileStatsRepository` — each
+member's device publishes a small summary and fellow members read it.
+- **Stats are the OVERALL profileStats numbers**, reused from
+  `myComputedStatsProvider` (no per-group recomputation) and republished into
+  each group I belong to. Fields: `name, tasksCompleted, currentStreak,
+  followThrough, updatedAt`.
+- **Driven off the item stream, never transitions** — `GroupStatsPublisher`
+  alongside `ProfileStatsPublisher` in the same `app.dart` wire, idempotent via a
+  signature; plus a `myGroupsProvider` listener so joining a group seeds it. Reset
+  on sign-out.
+- **Shared streak = the smallest current streak among members** — the run
+  EVERYONE currently has going, so the group only holds it while everyone shows
+  up (its "everyone must show" property is the point). This refines the proposed
+  "consecutive days all completed" to something computable from the published
+  summary — no per-day history to publish.
+- **Leaderboard** ranks by follow-through %, then tasks done, then name — same
+  data, a second view. One screen, `GroupProgressScreen` (`.../groups/:id/
+  progress`), reached from a group-detail card.
+- **Rules:** `memberStats/{uid}` — read if `callerInGroup`, create/update if
+  `uid == caller` and a member (self-write only, so no one forges another's
+  numbers), field-whitelisted; self-delete. Values are unverifiable by rules (a
+  member could inflate their OWN board position) but describe only the writer's
+  own record — the ceiling is self-inflation, never reading anyone else's data.
+  No index (a plain subcollection read).
+
+analyzer/lint/debug build green; 183/183 emulator tests (7 new for memberStats).
+**Rules NOT yet deployed / NOT device-verified** — two-device proof deferred.
+
+**Device-pass fixes (group planning, 2026-08-26).** Three issues surfaced on the
+Redmi while testing the fan-out, all fixed:
+- **Infinite spinner — the real cause.** Resolving each member's timezone via
+  `ref.read(profileByUidProvider(uid).future)` never returned: a bare read of a
+  `StreamProvider.family` instance nothing else keeps alive stalls its `.future`
+  (it hung on the very FIRST candidate, self). Fixed by resolving timezones in
+  PARALLEL via a one-shot `repo.watchProfile(uid).first.timeout(8s)`, skipping
+  any member that can't be resolved. (Connectivity was fine — Firestore pinged
+  at ~30ms; the DNS errors in logcat were an unrelated Xiaomi service.)
+- **Pushes must not block the UI.** The fan-out awaited a `created` push per
+  member, and `notify()` calls `getIdToken()` which has no timeout — a latent
+  freeze. Now fire-and-forget (`unawaited`), in both the group sheet and the
+  single-plan builder. The Firestore writes are the durable work; the pushes are
+  best-effort.
+- **"No one could be planned for" was opaque.** All-skipped is usually a PAST
+  time; `planForGroup` now returns `skippedPast`/`skippedOther` split, and the
+  sheet says "That time has already passed. Pick a later time." when that's why.
+
+**Single-device device pass: PASSED** — group progress screen renders (shared
+streak + follow-through + leaderboard, own row), and the group-plan fan-out
+sends cleanly for a future time (self item appears approved). Two-device proof
+(seeing another member on the board / another member receiving a pending item)
+stays deferred.

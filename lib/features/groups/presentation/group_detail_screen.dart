@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../core/theme/app_icons.dart';
@@ -8,7 +9,9 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../core/widgets/section_header.dart';
+import '../../../routing/app_router.dart';
 import '../../auth/application/auth_providers.dart';
+import '../../scheduling/presentation/group_plan_sheet.dart';
 import '../application/group_providers.dart';
 import '../domain/membership.dart';
 import '../domain/planner_grant.dart';
@@ -105,6 +108,50 @@ class GroupDetailScreen extends ConsumerWidget {
                   ),
                 ),
               ),
+              // Group accountability + leaderboard — shared follow-through and a
+              // ranked board, from each member's published summary.
+              if (group != null)
+                Card(
+                  child: ListTile(
+                    leading: const Icon(AppIcons.stats),
+                    title: const Text('Group progress'),
+                    subtitle:
+                        const Text('Shared streak, follow-through & leaderboard'),
+                    trailing: const Icon(AppIcons.nextPeriod),
+                    onTap: () => context.push(
+                        '${Routes.plan}/groups/$groupId/progress'),
+                  ),
+                ),
+              // Group planning: one item for everyone the caller may plan for.
+              // Shown only when there is at least one OTHER member who granted
+              // permission — planning for only yourself is just self-planning.
+              if (group != null && myUid != null)
+                Builder(builder: (context) {
+                  final candidates = <GroupPlanCandidate>[
+                    (uid: myUid, isSelf: true),
+                    for (final m in members)
+                      if (m.uid != myUid && iPlanFor(m.uid))
+                        (uid: m.uid, isSelf: false),
+                  ];
+                  final others = candidates.where((c) => !c.isSelf).length;
+                  if (others == 0) return const SizedBox.shrink();
+                  return Card(
+                    child: ListTile(
+                      leading: const Icon(AppIcons.navPlan),
+                      title: const Text('Plan for the group'),
+                      subtitle: Text('One item for $others '
+                          '${others == 1 ? 'member' : 'members'} you can plan '
+                          'for, plus you'),
+                      onTap: () => showGroupPlanSheet(
+                        context,
+                        ref,
+                        groupId: groupId,
+                        groupName: group.name,
+                        candidates: candidates,
+                      ),
+                    ),
+                  );
+                }),
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: Space.lg),
                 child: SectionHeader('Members'),

@@ -10,6 +10,8 @@ import 'core/theme/app_theme.dart';
 import 'features/applock/presentation/app_lock_gate.dart';
 import 'features/auth/application/auth_providers.dart';
 import 'features/notifications/application/messaging_service.dart';
+import 'features/groups/application/group_providers.dart';
+import 'features/groups/application/group_stats_providers.dart';
 import 'features/groups/application/planner_access_reconciler.dart';
 import 'features/reminders/application/reminder_providers.dart';
 import 'features/scheduling/application/schedule_providers.dart';
@@ -271,6 +273,7 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
       // published stats stale — or, if the two happened to differ, written
       // under the wrong uid's document by a race on the way out.
       ref.read(profileStatsPublisherProvider).reset();
+      ref.read(groupStatsPublisherProvider).reset();
     });
 
     // Register / refresh the device token whenever a user is signed in. The
@@ -326,6 +329,18 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     ref.listen(myComputedStatsProvider, (previous, next) {
       if (next.hasValue) {
         ref.read(profileStatsPublisherProvider).publishIfChanged();
+        // Group accountability + leaderboard: the SAME computation, republished
+        // into each of my groups so fellow members can read it (they cannot read
+        // my items or my friend-gated profileStats). Same idempotent, off-stream
+        // discipline. See group_stats_providers.dart.
+        ref.read(groupStatsPublisherProvider).publishIfChanged();
+      }
+    });
+    // Also republish when my group membership changes — joining a group has to
+    // seed my summary into it without waiting for the next stats recomputation.
+    ref.listen(myGroupsProvider, (previous, next) {
+      if (next.hasValue) {
+        ref.read(groupStatsPublisherProvider).publishIfChanged();
       }
     });
 

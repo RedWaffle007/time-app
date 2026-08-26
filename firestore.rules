@@ -534,6 +534,32 @@ service cloud.firestore {
               || request.auth.uid == groupOwnerUid(groupId));
       }
 
+      // ---- memberStats/{uid} ----
+      // Group accountability + leaderboard (DECISIONS.md "Group accountability
+      // + leaderboard"). Each member PUBLISHES their own summary here so fellow
+      // members can see shared follow-through and a ranked board — the same
+      // "published, not derived" doctrine as `users/{uid}/profileStats`, and for
+      // the same reason: a group member cannot read another member's items, nor
+      // their friend-gated profileStats. So the owner's device writes the small
+      // summary and any group member reads it.
+      //
+      // WRITE is self-only (`uid == caller`) and member-only, so no one can
+      // forge another member's numbers. READ is any group member. The values
+      // are unverifiable by rules (they summarise a subtree only the writer can
+      // read) — but they describe only the writer's OWN record, so a member
+      // inflating their own board position is the ceiling, not reading anyone
+      // else's data.
+      match /memberStats/{uid} {
+        allow read: if callerInGroup(groupId);
+        allow create, update: if signedIn()
+          && uid == request.auth.uid
+          && callerInGroup(groupId)
+          && request.resource.data.keys().hasOnly(
+               ['name', 'tasksCompleted', 'currentStreak', 'followThrough',
+                'updatedAt']);
+        allow delete: if signedIn() && uid == request.auth.uid;
+      }
+
       // ---- plannerGrants/{grantId} ----
       // This SPECIFIC-path rule serves DIRECT, path-scoped access only (the
       // roster list watchGrants(groupId), where groupId is bound so get() is

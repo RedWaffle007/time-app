@@ -126,6 +126,70 @@ class ScheduleRepository {
           .collection('slots')
           .doc(slotLockId(slotIndex));
 
+  /// **Group planning — the fan-out** (pairwise friendships cannot do this).
+  ///
+  /// Creates the SAME plan (title/time/note) for every [targets] entry, each
+  /// resolved in THAT member's own home timezone — so "9am" means 9am locally
+  /// for each person, not one absolute instant. It is a plain loop of
+  /// [createItem], so every write goes through the exact same authorization and
+  /// slot lock; there is no new rule and no batch (a member's failure — a taken
+  /// slot, a missing grant, a past time — must not sink everyone else's plan).
+  ///
+  /// The planner themselves (`isSelf`) is created `approved`; every other member
+  /// is `pending` for their own approval, unchanged from single planning. A
+  /// target whose resolved instant is already in the past is skipped, matching
+  /// the builder's past guard.
+  ///
+  /// Returns the items actually created (uid + id + isSelf, so the caller can
+  /// fire the per-member `created` push) and the skip counts, split so the UI
+  /// can say WHY nobody got planned: [skippedPast] (the chosen time is already
+  /// gone in that member's zone) versus [skippedOther] (a taken slot, a missing
+  /// grant, any write failure).
+  Future<
+      ({
+        List<({String uid, String itemId, bool isSelf})> sent,
+        int skippedPast,
+        int skippedOther,
+      })> planForGroup({
+    required String groupId,
+    required String createdByUid,
+    required List<({String uid, String timezone, bool isSelf})> targets,
+    required String title,
+    String? note,
+    required DateTime wall,
+  }) async {
+    final sent = <({String uid, String itemId, bool isSelf})>[];
+    var skippedPast = 0;
+    var skippedOther = 0;
+    final now = DateTime.now().toUtc();
+    for (final t in targets) {
+      if (!resolveWallTimeToUtc(wall, t.timezone).isAfter(now)) {
+        skippedPast++;
+        continue;
+      }
+      try {
+        final id = await createItem(
+          targetUid: t.uid,
+          createdByUid: createdByUid,
+          groupId: t.isSelf ? null : groupId,
+          title: title,
+          note: note,
+          wall: wall,
+          timezone: t.timezone,
+          status: t.isSelf
+              ? ScheduleItemStatus.approved
+              : ScheduleItemStatus.pending,
+        );
+        sent.add((uid: t.uid, itemId: id, isSelf: t.isSelf));
+      } catch (_) {
+        // Best-effort: a taken slot or any per-member failure is skipped, never
+        // fatal to the rest of the fan-out.
+        skippedOther++;
+      }
+    }
+    return (sent: sent, skippedPast: skippedPast, skippedOther: skippedOther);
+  }
+
   Future<bool> _slotIsTaken(
     DocumentReference<Map<String, dynamic>> lockRef,
   ) async {

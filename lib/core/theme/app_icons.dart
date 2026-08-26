@@ -67,6 +67,10 @@ abstract final class AppIcons {
   static const IconData navTrackSelected = trackSelected; // timer
   static const IconData navStats = Icons.bar_chart_outlined;
   static const IconData navStatsSelected = Icons.bar_chart;
+
+  /// A run of consecutive days — the group's shared streak (and any streak
+  /// header). The fire glyph is the near-universal "streak" convention.
+  static const IconData streak = Icons.local_fire_department_outlined;
   static const IconData navYou = Icons.person_outline;
   static const IconData navYouSelected = Icons.person;
 

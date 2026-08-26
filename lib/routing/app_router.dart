@@ -10,6 +10,7 @@ import '../features/archive/presentation/archived_screen.dart';
 import '../features/auth/application/auth_providers.dart';
 import '../features/auth/presentation/auth_screen.dart';
 import '../features/groups/presentation/group_detail_screen.dart';
+import '../features/groups/presentation/group_progress_screen.dart';
 import '../features/auth/presentation/profile_edit_screen.dart';
 import '../features/chatbot/presentation/chat_gate.dart';
 import '../features/chatbot/presentation/chatbot_settings_screen.dart';
@@ -399,6 +400,14 @@ final routerProvider = Provider<GoRouter>((ref) {
                     builder: (context, state) => GroupDetailScreen(
                       groupId: state.pathParameters['groupId']!,
                     ),
+                    routes: [
+                      GoRoute(
+                        path: 'progress',
+                        builder: (context, state) => GroupProgressScreen(
+                          groupId: state.pathParameters['groupId']!,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

@@ -28,6 +28,7 @@ import {
   addDoc,
   collection,
   collectionGroup,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -663,3 +664,46 @@ describe('issue 2 — every legitimate write still works', () => {
   });
 });
 
+
+// --- Group memberStats (accountability + leaderboard, 2026-08-26) ----------
+// Each member publishes their OWN summary; any member reads; no one forges
+// another's. Same published-not-derived doctrine as profileStats.
+describe('group memberStats — publish own, read as a member', () => {
+  const statPath = (uid) => `groups/${GROUP}/memberStats/${uid}`;
+  const stats = (o = {}) => ({
+    name: 'Alice', tasksCompleted: 5, currentStreak: 3, followThrough: 80,
+    updatedAt: serverTimestamp(), ...o,
+  });
+
+  it('a member publishes their OWN stats', async () => {
+    await assertSucceeds(setDoc(doc(as(ALICE), statPath(ALICE)), stats()));
+  });
+
+  it('a member cannot forge ANOTHER member\'s stats', async () => {
+    await assertFails(setDoc(doc(as(BOB), statPath(ALICE)), stats()));
+  });
+
+  it('a non-member cannot publish', async () => {
+    await assertFails(setDoc(doc(as(MALLORY), statPath(MALLORY)), stats()));
+  });
+
+  it('a member reads a fellow member\'s stats', async () => {
+    await setDoc(doc(as(ALICE), statPath(ALICE)), stats());
+    await assertSucceeds(getDoc(doc(as(BOB), statPath(ALICE))));
+  });
+
+  it('a non-member cannot read', async () => {
+    await setDoc(doc(as(ALICE), statPath(ALICE)), stats());
+    await assertFails(getDoc(doc(as(MALLORY), statPath(ALICE))));
+  });
+
+  it('an unknown field is rejected', async () => {
+    await assertFails(
+      setDoc(doc(as(ALICE), statPath(ALICE)), stats({ secretRank: 1 })));
+  });
+
+  it('a member may delete their own stats', async () => {
+    await setDoc(doc(as(ALICE), statPath(ALICE)), stats());
+    await assertSucceeds(deleteDoc(doc(as(ALICE), statPath(ALICE))));
+  });
+});

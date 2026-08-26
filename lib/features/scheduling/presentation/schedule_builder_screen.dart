@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:timezone/timezone.dart' as tz;
@@ -274,11 +276,14 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       // Notify the target that a plan was created for them. Self-planned items
       // have no one else to tell (the Worker would skip them anyway).
       if (!_isSelf) {
-        await ref.read(notificationEventNotifierProvider).notify(
+        // Best-effort, NOT awaited: `notify()` refreshes the auth token, which
+        // has no timeout and hangs on a degraded network — the write above is
+        // already durable, so the push must never block this flow.
+        unawaited(ref.read(notificationEventNotifierProvider).notify(
               event: NotifyEvent.created,
               targetUid: _targetUid!,
               itemId: itemId,
-            );
+            ));
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
