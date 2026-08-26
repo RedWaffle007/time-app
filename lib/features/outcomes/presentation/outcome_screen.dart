@@ -11,6 +11,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/theme/status_style.dart';
 import '../../../core/widgets/async_view.dart';
+import '../../../core/widgets/section_header.dart';
 import '../../../routing/app_router.dart';
 import '../../archive/presentation/archive_menu_button.dart';
 import '../../notifications/application/outcome_notifier.dart';
@@ -226,35 +227,58 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
         builder: (context, items) {
           final approved = items
               .where((i) => i.status == ScheduleItemStatus.approved)
-              .toList()
-            ..sort((a, b) => a.scheduledInstantUtc.compareTo(b.scheduledInstantUtc));
+              .toList();
 
-          // The primer's precondition: something is actually going to need a
-          // reminder. Matches `desiredReminders`' rule, so the card never claims
-          // a reminder is missing for an item that would not have had one.
+          // What's coming up rises to the top; what's done or gone SINKS below.
+          // (Chosen 2026-08-26 — the old ascending order buried the next thing
+          // under old cards.) An item is "past" once it has an outcome OR its
+          // instant has passed. UPCOMING is soonest-first (the very next thing
+          // is at the very top); PAST is most-recent-first (recent history above
+          // older).
           final now = DateTime.now().toUtc();
           final upcoming = approved
               .where((i) =>
                   i.outcome == null && i.scheduledInstantUtc.isAfter(now))
-              .toList();
+              .toList()
+            ..sort((a, b) =>
+                a.scheduledInstantUtc.compareTo(b.scheduledInstantUtc));
+          final past = approved
+              .where((i) =>
+                  i.outcome != null || !i.scheduledInstantUtc.isAfter(now))
+              .toList()
+            ..sort((a, b) =>
+                b.scheduledInstantUtc.compareTo(a.scheduledInstantUtc));
+          final ordered = [...upcoming, ...past];
           final hasUpcoming = upcoming.isNotEmpty;
+          // Only label the sections when BOTH exist — a lone header over an
+          // all-future (or all-past) list is noise.
+          final showHeaders = upcoming.isNotEmpty && past.isNotEmpty;
 
-          // Record where the highlighted card sits, for the index-driven scroll.
-          _approvedCount = approved.length;
+          // Record where the highlighted card sits in the RENDERED order, for
+          // the first-frame approximate scroll (ensureVisible refines it).
+          _approvedCount = ordered.length;
           final idx = _highlighted == null
               ? -1
-              : approved.indexWhere((i) => i.id == _highlighted);
+              : ordered.indexWhere((i) => i.id == _highlighted);
           _highlightIndex = idx < 0 ? null : idx;
 
           return ListView(
             controller: _scrollController,
             children: [
-              // `approved` is already sorted by instant, so the first upcoming
-              // item IS the next one. The band reads the same list the cards
-              // do — it never queries separately, so it cannot disagree.
+              // The band names the NEXT upcoming item — `upcoming` is
+              // soonest-first, so its first element is that item. It reads the
+              // same list the cards do, so it cannot disagree.
               HeroBand(nextItem: upcoming.isEmpty ? null : upcoming.first),
               ReminderPrimerCard(hasUpcomingItems: hasUpcoming),
-              for (final item in approved)
+              if (showHeaders) const SectionHeader('Upcoming'),
+              for (final item in upcoming)
+                _OutcomeCard(
+                  item: item,
+                  highlighted: item.id == _highlighted,
+                  cardKey: item.id == _highlighted ? _highlightKey : null,
+                ),
+              if (past.isNotEmpty) const SectionHeader('Past'),
+              for (final item in past)
                 _OutcomeCard(
                   item: item,
                   highlighted: item.id == _highlighted,
