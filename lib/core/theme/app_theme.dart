@@ -213,7 +213,17 @@ abstract final class AppTheme {
 
       chipTheme: ChipThemeData(
         elevation: Elevations.flat,
-        labelStyle: AppText.labelSmall,
+        // An explicit unselected FILL — without it a ChoiceChip is transparent,
+        // and on the white `surface` of a sheet the hairline `outlineVariant`
+        // border alone is invisible (the "all-white chips" light-mode bug). The
+        // selected fill is the primaryContainer tint used everywhere else a
+        // selection is shown, so it stays clear of the §2.7 firewall.
+        backgroundColor: cs.surfaceContainerHighest,
+        selectedColor: cs.primaryContainer,
+        showCheckmark: false,
+        labelStyle: AppText.labelSmall.copyWith(color: cs.onSurfaceVariant),
+        secondaryLabelStyle:
+            AppText.labelSmall.copyWith(color: cs.onPrimaryContainer),
         side: BorderSide(color: cs.outlineVariant, width: Sizes.hairline),
         shape: const RoundedRectangleBorder(borderRadius: Radii.pill),
       ),

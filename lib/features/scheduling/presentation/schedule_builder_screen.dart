@@ -15,6 +15,7 @@ import '../../auth/application/auth_providers.dart';
 import '../../groups/application/group_providers.dart';
 import '../../groups/domain/planner_grant.dart';
 import '../../notifications/application/outcome_notifier.dart';
+import '../../social/application/social_providers.dart';
 import '../application/schedule_providers.dart';
 import '../application/slot_availability.dart';
 import '../application/target_schedule_providers.dart';
@@ -81,6 +82,12 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
   DateTime? _date;
   TimeOfDay? _time;
   bool _saving = false;
+
+  /// Emergency tier (#5): when the selected target is a friend who granted me
+  /// the SEPARATE emergency permission, this creates the item already-approved
+  /// so it fires without their per-item approval. Reset whenever the target
+  /// changes — the grant is per-target.
+  bool _emergency = false;
 
   @override
   void initState() {
@@ -241,10 +248,16 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       }
     }
 
+    // Emergency is re-checked against the live grant at save time, so a grant
+    // revoked while the form sat open cannot slip an auto-approved item through.
+    final isEmergency = !_isSelf &&
+        _emergency &&
+        (ref.read(iCanEmergencyPlanForProvider(_targetUid!)).value ?? false);
+
     setState(() => _saving = true);
     try {
-      // Self-authored items are born approved (skip the queue); planner items
-      // stay pending for the target to approve.
+      // Self-authored AND emergency items are born approved (skip the queue);
+      // normal planner items stay pending for the target to approve.
       final itemId = await ref.read(scheduleRepositoryProvider).createItem(
             targetUid: _targetUid!,
             createdByUid: me.uid,
@@ -253,9 +266,10 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
             note: _noteController.text,
             wall: wall,
             timezone: timezone,
-            status: _isSelf
+            status: (_isSelf || isEmergency)
                 ? ScheduleItemStatus.approved
                 : ScheduleItemStatus.pending,
+            tier: isEmergency ? ItemTier.emergency : ItemTier.normal,
           );
       // Notify the target that a plan was created for them. Self-planned items
       // have no one else to tell (the Worker would skip them anyway).
@@ -271,7 +285,9 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
         SnackBar(
           content: Text(_isSelf
               ? 'Added to your schedule.'
-              : 'Item sent for approval.'),
+              : isEmergency
+                  ? 'Emergency item added — it will fire without approval.'
+                  : 'Item sent for approval.'),
         ),
       );
       // Reset for the next item, keep the same target.
@@ -280,6 +296,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
         _noteController.clear();
         _date = null;
         _time = null;
+        _emergency = false;
       });
     } on SlotTakenException catch (e) {
       // The write was rejected because the slot was claimed between this
@@ -331,6 +348,12 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     if (canViewTarget && timezone != null) {
       _maybeAutoShowPreview(_targetUid!, timezone);
     }
+
+    // Whether I hold the SEPARATE emergency grant over this (non-self) target.
+    final canEmergency = !_isSelf &&
+        _targetUid != null &&
+        (ref.watch(iCanEmergencyPlanForProvider(_targetUid!)).value ?? false);
+    final isEmergency = canEmergency && _emergency;
 
     return ListView(
       padding: Space.screenList,
@@ -411,6 +434,22 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
             controller: _noteController,
             decoration: const InputDecoration(labelText: 'Note (optional)'),
           ),
+          // Emergency tier — only when this friend granted me the SEPARATE
+          // emergency permission. An emergency item skips their approval queue
+          // and fires directly, so it is opt-in per plan and clearly labelled.
+          if (canEmergency) ...[
+            const SizedBox(height: Space.sm),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Emergency'),
+              subtitle: Text(
+                'Fires immediately — ${selectedProfile?.name ?? 'they'} '
+                "won't need to approve it.",
+              ),
+              value: _emergency,
+              onChanged: (v) => setState(() => _emergency = v),
+            ),
+          ],
           if (timezone != null && _date != null && _time != null) ...[
             const SizedBox(height: Space.lg),
             Text(
@@ -434,7 +473,11 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
                     width: Sizes.buttonSpinner,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : Text(_isSelf ? 'Add to my schedule' : 'Send for approval'),
+                : Text(_isSelf
+                    ? 'Add to my schedule'
+                    : isEmergency
+                        ? 'Add emergency item'
+                        : 'Send for approval'),
           ),
         ],
       ],
@@ -463,6 +506,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
           _isSelf = true;
           _targetUid = me.uid;
           _groupId = null;
+          _emergency = false;
         }),
       ),
     );
@@ -482,6 +526,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
           _isSelf = false;
           _targetUid = grant.targetUid;
           _groupId = grant.groupId;
+          _emergency = false;
         }),
       ),
     );

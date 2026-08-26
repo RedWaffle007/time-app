@@ -1,8 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 
-import 'package:time_app/features/groups/application/planner_access_reconciler.dart';
-import 'package:time_app/features/groups/domain/planner_grant.dart';
 import 'package:time_app/features/scheduling/application/slot_availability.dart';
 import 'package:time_app/features/scheduling/domain/schedule_item.dart';
 import 'package:time_app/features/scheduling/domain/slot.dart';
@@ -272,54 +270,8 @@ void main() {
     });
   });
 
-  group('the access mirror rule', () {
-    PlannerGrant grant({
-      required String planner,
-      String target = 'B',
-      String group = 'g1',
-      bool granted = true,
-    }) =>
-        PlannerGrant(
-          plannerUid: planner,
-          targetUid: target,
-          groupId: group,
-          granted: granted,
-        );
-
-    Set<String> desired(List<PlannerGrant> grants) =>
-        PlannerAccessReconciler.desiredPlanners(targetUid: 'B', grants: grants);
-
-    test('an active grant produces a row', () {
-      expect(desired([grant(planner: 'A')]), {'A'});
-    });
-
-    test('a revoked grant produces none', () {
-      expect(desired([grant(planner: 'A', granted: false)]), isEmpty);
-    });
-
-    test('two groups are ONE row, and revoking one keeps it', () {
-      // The mirror answers "any active grant", so a planner granted in two
-      // groups must survive losing one of them. Getting this wrong cuts off a
-      // planner who still has permission.
-      expect(
-        desired([
-          grant(planner: 'A', group: 'g1'),
-          grant(planner: 'A', group: 'g2', granted: false),
-        ]),
-        {'A'},
-      );
-    });
-
-    test('a grant over someone else is not mine to mirror', () {
-      expect(desired([grant(planner: 'A', target: 'C')]), isEmpty);
-    });
-
-    test('a self-grant is dropped', () {
-      // The rules already let a target read their own schedule; a self row
-      // would be dead weight that reads as though it meant something.
-      expect(desired([grant(planner: 'B')]), isEmpty);
-    });
-  });
+  // The planner-access hint rule (`desiredAccess`) moved to planner-side and is
+  // covered by test/planner_access_reconciler_test.dart.
 
   group('releasableSlotLocks — keep only live FUTURE slots', () {
     // A fixed clock: everything before noon is past, everything after is future.

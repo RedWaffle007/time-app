@@ -5199,3 +5199,210 @@ created a plan in the past. Root cause was **two** things, fixed at two layers:
 analyzer-green, `ui_rules_lint` + all 34 voice-parser tests pass, debug APK
 builds. **NOT device-verified** (the reproduce-on-device pass was for the blank
 screen only). Not committed.
+
+**Device-pass follow-ups (2026-08-26, same session).** Two defects surfaced
+during the single-device pass and fixed before commit:
+
+- **STT "a.m." leaked into the title.** Android speech returns "8 a.m." with
+  periods; the time scan matched only bare `am`/`pm`, so "a.m." was neither read
+  as a meridian nor kept out of the title — "Wednesday 8 a.m. gym" produced title
+  "a.m. gym". Fix in `voice_parsers.dart`: `_normalizeMeridian` folds
+  `a.m./a.m/am.` → `am` (and the p.m. variants → `pm`) when building the token
+  list, and the title assembly drops any stray unconsumed `am`/`pm` token as
+  speech residue. Two new pure tests. (Time + roll-forward were already correct
+  on device; only the title was wrong.)
+- **Light-mode quick-add chips invisible.** The global `chipTheme` set no
+  `backgroundColor`, so an unselected `ChoiceChip` was transparent with only a
+  hairline `outlineVariant` border — invisible on a sheet's white `surface`.
+  `AppText.labelSmall` also carries no colour. Fix in `app_theme.dart`: explicit
+  `backgroundColor: surfaceContainerHighest`, `selectedColor: primaryContainer`
+  (the selection tint used elsewhere — clears the §2.7 firewall),
+  `showCheckmark: false`, and label/secondaryLabel colours. Centralized: the
+  quick-add chips are the only chips in the app. Theme file, so §1's raw-value
+  lint does not apply.
+
+analyzer-green, lint + 36 voice-parser tests pass, debug APK rebuilt and
+reinstalled on the Redmi for retest.
+
+## Live-checked planner schedule access (2026-08-26)
+
+**The problem.** Reading A's schedule was gated by "does `plannerAccess/{B}_{A}`
+exist", and that row was written ONLY by A's device (`PlannerAccessReconciler`
+off A's grant stream). So B could not view A's schedule until A had been online
+to provision it — the "ask them to open the app once so it can sync" dead end.
+There is often no way to make A open the app.
+
+**The fix — the row is a groupId HINT, authorization is the LIVE grant.** A read
+of `scheduleItems/{A}/items` carries no groupId and rules cannot query, which is
+the only reason the mirror ever existed. Now the planner leaves a row naming a
+group they were granted in, and `callerHasPlannerAccess` re-verifies
+`callerHasActiveGrant(A, row.groupId)` on every read. Consequences:
+
+- **The PLANNER writes their own row** (planner-side reconciler off the grants
+  THEY hold — `myPlanningTargetsProvider`), so access needs no action from A.
+  Safe because the planner cannot fabricate a grant: the create rule requires
+  `callerHasActiveGrant(target, groupId)`, so a self-written row with no matching
+  live grant is refused, and a row naming a group they lack a grant in is refused.
+- **Revocation denies the read immediately** — a row that outlives a revoked
+  grant fails the live check. No stale-access window, in either direction. (Old
+  design erred toward "missing access"; this errs toward nothing — the grant is
+  the single source of truth on every read.) Writes were already live-gated, so
+  the item-create/slot-lock paths are unchanged.
+- **A's self-plans reflect live in B's preview** with no extra work: the preview
+  is already a `.snapshots()` stream (`targetScheduleProvider`), so once the read
+  is authorized, an item A creates for themselves greys the slot under B in real
+  time.
+- The empty-groupId legacy row (old target-written mirror) no longer authorizes a
+  read; the planner-side reconciler re-provisions a groupId-carrying row on next
+  app open. **Migration is automatic and graceful** — no error to the user, no
+  data loss; the "ask them to open the app" message survives only as the genuine
+  no-grant fallback (and a brief pre-provision window on first open).
+
+**Friendship grants (#4/#5) need no row.** They carry a computed pair id the
+rules can construct, so `callerHasFriendGrant` / `callerHasEmergencyGrant` will
+authorize reads DIRECTLY — which SUPERSEDES Option 1's separate `emergencyAccess`
+mirror (dropped). The both-way emergency create invariant is untouched: those
+checks are about item CREATE, not read.
+
+**Rules changes.** `callerHasPlannerAccess` now does exists+groupId+live-grant;
+`plannerAccess` create/update allows the planner (with a live grant, carrying
+groupId) as well as the target; `list` is scoped to the two parties (the
+planner-side reconciler needs the `plannerUid == me` query — it was `if false`
+before, which had also been silently breaking the old target-side reconciler's
+diff query); delete allowed for either party (planner cleanup). `scheduleItems`
+and `scheduleSlots` read rules are unchanged in wording — they call the upgraded
+helper.
+
+**Tests.** Planner-side `desiredAccess` rule covered pure
+(`planner_access_reconciler_test.dart`); the old target-side `desiredPlanners`
+block removed from `slot_availability_test.dart`. Emulator: `slots.test.mjs`
+rewritten for the new behavior — planner self-provision (with/without grant,
+wrong group), read authorized only with hint+live grant, revoke-grant and
+delete-row both cut off, legacy groupId-less row reads nothing, scoped
+list, either-party delete. All 145 emulator + Dart unit tests green.
+
+**Deploy order — RULES FIRST, then the new app build.** Unusually, an OLD client
+is NOT fully fine against these rules: its target-written groupId-less rows stop
+authorizing reads, and it has no planner-side provisioner — so its schedule
+preview breaks until the new build (which self-provisions) is installed. On a
+single device with the preview not in active cross-device use this is moot; the
+new build is installed as part of this change. **Two-device proof deferred** to a
+two-device pass like the rest.
+
+## Friendship-scoped planning grants — #4 (2026-08-26)
+
+**Doctrine addition:** planning permission may now originate from a FRIENDSHIP,
+not only a group. **The friendship still grants nothing by itself** — permission
+is a separate, per-direction, target-controlled grant, exactly like the group
+grant, just anchored to the friendship. Groups are NOT retired; the friendship
+grant is additive (they share the `plannerGrants` collection id, so the planner's
+collection-group target picker and the grants-over-me query pick up both with no
+change).
+
+**The grant.** `friendships/{sortedPair}/plannerGrants/{plannerUid}_{targetUid}`,
+same shape as the group grant, `groupId` pinned to `''`. Consent is the target's:
+only they write `granted: true`; a planner may only relinquish their own to
+`false`. Reads/creates authorize DIRECTLY via `callerHasFriendGrant` — a computed
+pair id — so **no `plannerAccess` hint row is needed for the friend path** (the
+planner-side reconciler skips empty-group grants). `callerHasFriendGrant` also
+requires `areFriends`, so **a grant is void the instant the friendship ends**
+(unfriend/block) — no stale-power hole. The item-create friend branch is
+**pending only** (no `tier` yet; that is #5); the group `callerHasActiveGrant`
+branch is untouched.
+
+**Two opt-in paths, consent always from the target.**
+- *Proactive toggle* — "Let [name] plan for me" on the friend's profile, default
+  OFF; writing/removing the friendship grant.
+- *Requested* — `planningRequests/{fromUid}_{toUid}_{kind}` (kind `normal`/
+  `emergency`, in the id so both can be pending). A distinct collection: not a
+  friendRequest (that is the friendship), not the per-item pending queue (that is
+  approving one plan). Friends-only create; recipient decides once; either party
+  deletes. **Approval never mints a grant from the request row** — the target
+  authors the grant doc separately (grant first, then delete the ask), so consent
+  still originates from the target. Settled requests are deleted, so only pending
+  rows persist and the inbox query is a single-field `toUid == me` (no composite
+  index).
+
+**Client.** `PlanningPermissionRepository` (grant + request flow);
+`planning_request.dart` domain; providers derive the per-friend state from LIVE
+caller-scoped collection-group queries (`grantsOverMeProvider`,
+`myPlanningTargetsProvider`, outgoing `fromUid == me`) — NOT per-doc listeners,
+which terminate on the absence-denial (same trap the friend-graph providers
+avoid). Toggle + ask control on `user_profile_screen` (friends only); a
+"Permission to plan" section on the renamed **Requests** screen; the requests
+badge now counts both kinds. The builder/preview already worked for friend
+targets (the grant flows through the collection-group picker; items carry
+`groupId ''`).
+
+**Push is the fast-follow** (inbox now): the two `FriendNotifier` events
+`planningRequest`/`planningApprove` + their Worker branches are not wired yet.
+
+**Rules DEPLOYED + byte-for-byte verified — ruleset
+`53eaf388-3fad-4ed5-bd2e-644863f17d57`** (supersedes the access-fix
+`889accb5-…`). 163/163 emulator tests (new `friend_grants.test.mjs`) +
+analyzer/lint/debug build green. **NOT device-verified — two-device deferred**
+like the rest (the grant's effect needs A and B on two accounts).
+
+## Emergency item tier — #5 (2026-08-26)
+
+**A new item tier.** Every pre-#5 item is a NORMAL item (requires the target's
+per-item approval before it fires). An EMERGENCY item is created **already
+`approved`** by a planner holding a SEPARATE emergency grant, so it skips the
+queue and fires directly. `tier` (`normal`/`emergency`) on the item; **absent
+defaults to `normal`**, so old clients and every normal item are unchanged and
+the field is only stamped when emergency.
+
+**The reminder engine did not change.** Emergency = born `approved`, and
+`desiredReminders` already arms every approved future item off the item stream.
+So the emergency item arms itself through the existing reconciler with zero new
+code — the whole point of "skip the queue by being born approved".
+
+**The separate grant + the both-way invariant (rules-enforced, proven by
+tests).** `friendships/{pair}/emergencyGrants/{planner}_{target}`, a DISTINCT
+document from the normal `plannerGrants`. `callerHasEmergencyGrant` checks it
+(and `areFriends`, so it is void on unfriend). Item-create has three branches:
+self (any tier), normal planner (group OR friend grant → **tier normal +
+pending only**), emergency planner (**emergency grant → tier emergency +
+approved only**). Therefore:
+- a NORMAL grant can never create an emergency item (only the emergency branch
+  admits tier=='emergency' or non-self 'approved', and it needs the emergency
+  grant); and
+- an EMERGENCY grant can never create or queue a NORMAL item (the normal branch
+  needs a group/friend grant it lacks, and forces tier normal + pending).
+Neither implies the other — two distinct documents. Emulator tests assert both
+directions, plus: emergency can't be born pending, unfriend voids it,
+creator-only recall, a normal approved item can't be recalled.
+
+**Read access (Option 1, direct).** An emergency grant authorizes reading the
+target's schedule directly via `callerHasEmergencyGrant` on the item/slot read
+rules — NO mirror (superseding the earlier `emergencyAccess` mirror idea; a
+friendship-scoped grant is a computable pair id, so it needs none). Seeing the
+schedule is strictly less invasive than setting an auto-firing alarm on it.
+
+**Recall.** The planner-withdraw update branch now also allows
+`approved→withdrawn` for an emergency item the CALLER created — "recall the
+emergency I placed" (directed).
+
+**Two opt-in paths, its OWN grant.** Same shape as #4 but the emergency
+subtree/kind: a separate "Let [name] set emergency alarms for me" toggle
+(default OFF, independent of the normal toggle) and a `kind: 'emergency'`
+planning request. Approval writes the emergencyGrants doc (the target authors
+it). New `emergencyGrants` collection-group indexes (granted+plannerUid,
+targetUid). New builder control: an **Emergency** switch, shown only when I hold
+the emergency grant over the selected target, re-checked against the live grant
+at save.
+
+**Client.** `ScheduleItem.tier`; `createItem(tier:)`; `PlanningPermissionRepository`
+extended (grant kind, emergency collection-group queries, approve-by-kind);
+emergency providers; profile emergency toggle + ask; inbox differentiates the
+emergency request; builder Emergency switch. New `AppIcons.emergency`.
+
+**Push is still the fast-follow** for BOTH #4 and #5 (the `planningRequest`/
+`planningApprove` Worker events); inbox works now.
+
+**Rules + indexes DEPLOYED + byte-for-byte verified — ruleset
+`a10d6b4f-c1ae-4b39-b69f-89eff91866da`** (supersedes `53eaf388-…`). 176/176
+emulator tests, analyzer/lint/debug build green. **NOT device-verified —
+two-device deferred.** (One unrelated pre-existing calendar test flakes on
+today's date: it taps a day-number that August 2026's grid also shows as a July
+outside-day; not a #5 regression.)

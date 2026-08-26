@@ -30,9 +30,22 @@ final grantsProvider =
   return ref.watch(groupRepositoryProvider).watchGrants(groupId);
 });
 
-/// Targets the signed-in user may plan for (across all groups).
+/// Targets the signed-in user may plan for (across all groups AND friendships).
+/// A friendship grant lives under the same `plannerGrants` collection id, so the
+/// collection-group query picks it up with no change.
 final myPlanningTargetsProvider = StreamProvider<List<PlannerGrant>>((ref) {
   final uid = ref.watch(authStateProvider).value?.uid;
   if (uid == null) return Stream.value(const []);
   return ref.watch(groupRepositoryProvider).watchTargetsFor(uid);
+});
+
+/// Grants OTHER people hold over the signed-in user — every planner who may plan
+/// for me, across groups and friendships. A live, caller-scoped collection-group
+/// query (`targetUid == me`), so it never hits the per-doc absence-denial that
+/// terminates a single-doc listener. Deliberately NOT filtered to `granted`:
+/// callers decide (a toggle needs to see the `false` state too).
+final grantsOverMeProvider = StreamProvider<List<PlannerGrant>>((ref) {
+  final uid = ref.watch(authStateProvider).value?.uid;
+  if (uid == null) return Stream.value(const []);
+  return ref.watch(groupRepositoryProvider).watchGrantsOverTarget(uid);
 });

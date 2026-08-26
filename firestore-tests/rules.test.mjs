@@ -662,3 +662,4 @@ describe('issue 2 — every legitimate write still works', () => {
     await assertFails(getDocs(collectionGroup(as(MALLORY), 'items')));
   });
 });
+

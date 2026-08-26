@@ -8,67 +8,72 @@ import '../data/planner_access_repository.dart';
 import '../domain/planner_grant.dart';
 import 'group_providers.dart';
 
-/// Keeps `plannerAccess` in step with `plannerGrants`, **off the grant stream**.
+/// Keeps the caller's own `plannerAccess` hint rows in step with the grants THEY
+/// hold, **off the grant stream** — never off grant transitions.
+///
+/// ## Why planner-side now
+///
+/// The hint row tells the schedule-read rule which group to re-verify the
+/// caller's grant in (`callerHasPlannerAccess` in `firestore.rules`). The rule
+/// checks the LIVE grant, so the row is not the permission — which is exactly
+/// what lets the PLANNER write their own row. Running this off the grants the
+/// caller holds removes the old dependency on the *target* being online to
+/// provision access: the planner provisions it themselves, and can only ever
+/// name a group a real grant backs (the rule rejects anything else).
 ///
 /// ## The one design rule, and do not undo it
 ///
 /// There is no hook in `setPlannerGrant()` or `revokeMyPlannerGrant()`. One rule
-/// — *the mirror should hold exactly the planners who currently have an active
-/// grant over me* — is applied to whatever the stream currently says. Grant,
-/// revoke, a grant in a second group, being ejected from a group: none of them
-/// is a special case, because each simply changes what the stream emits.
+/// — *I should hold exactly one hint row per target I currently have a group
+/// grant over, naming a live group* — is applied to whatever the stream says.
+/// Grant, revoke, a grant in a second group, losing a group: none is a special
+/// case. **Adding a hint write inside a grant transition is a regression.**
 ///
-/// **Adding a mirror write inside a grant transition is a regression**, not
-/// belt-and-braces. It creates a second place that decides, and the two will
-/// disagree. Here the argument is sharper than it is for reminders or stats: a
-/// transition-driven mirror that half-fails on revoke leaves the planner able to
-/// read the target's schedule *after* the target revoked. That is a security
-/// staleness, not a missed notification.
+/// Idempotent, so it is safe to run on every emission and every app start; it
+/// also backfills pre-existing grants on next open with no migration.
 ///
-/// It also solves backfill for nothing: grants that predate this feature get
-/// their mirror the first time the target opens the app, with no migration.
-///
-/// ## What it cannot do
-///
-/// The mirror is client-maintained, so a revoke while the target is offline does
-/// not reach it until they are next online. In practice the target revokes *in
-/// the app*, so the write and this reconcile happen together — but the window is
-/// real, and closing it needs a Cloud Function this project does not have.
+/// A stale row (grant revoked while the planner was offline) grants nothing —
+/// the read re-checks the grant — so the delete below is cleanup, not the
+/// security boundary.
 class PlannerAccessReconciler {
   PlannerAccessReconciler(this._repository);
 
   final PlannerAccessRepository _repository;
 
   /// Guards against two reconciles interleaving — the stream can emit again
-  /// while the first pass is still awaiting its writes, and the two would race
-  /// on the same documents.
+  /// while the first pass is still awaiting its writes.
   bool _running = false;
 
-  /// Make the mirror match [grants] for [targetUid].
+  /// Make the caller's hint rows match [grants] for planner [plannerUid].
   ///
-  /// Idempotent, which is what makes it safe to run on every emission. Returns
-  /// the ids it touched, so a test can assert the diff rather than the calls.
+  /// Returns the target ids it added and removed, so a test can assert the diff.
   Future<({Set<String> added, Set<String> removed})> reconcile({
-    required String targetUid,
+    required String plannerUid,
     required List<PlannerGrant> grants,
   }) async {
     if (_running) return (added: <String>{}, removed: <String>{});
     _running = true;
     try {
-      final desired = desiredPlanners(targetUid: targetUid, grants: grants);
-      final current = await _repository.plannersFor(targetUid);
+      final desired = desiredAccess(plannerUid: plannerUid, grants: grants);
+      final current = await _repository.targetsFor(plannerUid);
 
-      final added = desired.difference(current);
-      final removed = current.difference(desired);
+      final added = desired.keys.toSet().difference(current);
+      final removed = current.difference(desired.keys.toSet());
 
-      // Removals first. If the pass dies half-way, the failure mode is "access
-      // the target meant to give has not arrived yet" rather than "access the
-      // target revoked is still live".
-      for (final planner in removed) {
-        await _repository.revoke(plannerUid: planner, targetUid: targetUid);
+      // Removals first, symmetry with the old pass: a half-failed run leaves
+      // "a hint I meant to add hasn't arrived" rather than a dangling row (which
+      // is inert anyway).
+      for (final target in removed) {
+        await _repository.revoke(plannerUid: plannerUid, targetUid: target);
       }
-      for (final planner in added) {
-        await _repository.grant(plannerUid: planner, targetUid: targetUid);
+      // Write every desired row (idempotent), so a row whose group was revoked
+      // but who still has another live grant is refreshed to the live group.
+      for (final entry in desired.entries) {
+        await _repository.grant(
+          plannerUid: plannerUid,
+          targetUid: entry.key,
+          groupId: entry.value,
+        );
       }
       return (added: added, removed: removed);
     } finally {
@@ -76,25 +81,28 @@ class PlannerAccessReconciler {
     }
   }
 
-  /// The rule, isolated so it can be tested without a repository.
+  /// The rule, isolated so it can be tested without a repository: for each
+  /// target the caller has a LIVE GROUP grant over, one live groupId.
   ///
-  /// Deduped across groups on purpose: two grants in two groups are one access
-  /// row, and revoking one of them must not remove it.
-  static Set<String> desiredPlanners({
-    required String targetUid,
+  /// Skips self-grants (a target reads their own schedule already) and grants
+  /// with an EMPTY group — those are friendship-scoped grants, which authorize
+  /// reads directly via a computed pair id and need no hint row.
+  static Map<String, String> desiredAccess({
+    required String plannerUid,
     required List<PlannerGrant> grants,
   }) {
-    return {
-      for (final grant in grants)
-        if (grant.granted &&
-            grant.targetUid == targetUid &&
-            grant.plannerUid.isNotEmpty &&
-            // A self-grant would mirror the target to themselves. The rules
-            // already let a target read their own schedule, so the row would be
-            // dead weight that also reads as though it meant something.
-            grant.plannerUid != targetUid)
-          grant.plannerUid,
-    };
+    final byTarget = <String, String>{};
+    for (final grant in grants) {
+      if (grant.granted &&
+          grant.plannerUid == plannerUid &&
+          grant.targetUid.isNotEmpty &&
+          grant.targetUid != plannerUid &&
+          grant.groupId.isNotEmpty) {
+        // First live group wins; any live grant proves access equally.
+        byTarget.putIfAbsent(grant.targetUid, () => grant.groupId);
+      }
+    }
+    return byTarget;
   }
 }
 
@@ -108,34 +116,26 @@ final plannerAccessReconcilerProvider =
   return PlannerAccessReconciler(ref.watch(plannerAccessRepositoryProvider));
 });
 
-/// Grants OTHER people hold over the signed-in user — the stream the mirror is
-/// derived from. The rules already permit this read
-/// (`resource.data.targetUid == request.auth.uid`).
-final grantsOverMeProvider = StreamProvider<List<PlannerGrant>>((ref) {
-  final uid = ref.watch(currentUidProvider);
-  if (uid == null) return Stream.value(const []);
-  return ref.watch(groupRepositoryProvider).watchGrantsOverTarget(uid);
-});
-
-/// Runs the reconcile on every emission of [grantsOverMeProvider].
+/// Runs the reconcile on every emission of [myPlanningTargetsProvider] — the
+/// grants the signed-in user HOLDS (the same stream the builder's target picker
+/// reads), so the hint rows track exactly what the planner can currently plan.
 ///
-/// A `listen`, not a widget: the mirror must be maintained whether or not any
-/// screen showing grants is mounted.
+/// A `listen`, not a widget: the rows must be maintained whether or not any
+/// planning screen is mounted.
 final plannerAccessSyncProvider = Provider<void>((ref) {
   final uid = ref.watch(currentUidProvider);
   if (uid == null) return;
   final reconciler = ref.watch(plannerAccessReconcilerProvider);
 
   ref.listen<AsyncValue<List<PlannerGrant>>>(
-    grantsOverMeProvider,
+    myPlanningTargetsProvider,
     (_, next) {
       final grants = next.value;
       if (grants == null) return;
-      // Best-effort: a failed reconcile leaves the previous mirror in place and
-      // the next emission tries again. It must never surface as a UI error —
-      // nobody asked for this to happen.
+      // Best-effort: a failed reconcile leaves the previous rows in place and
+      // the next emission retries. Never surfaced as a UI error.
       unawaited(reconciler
-          .reconcile(targetUid: uid, grants: grants)
+          .reconcile(plannerUid: uid, grants: grants)
           .catchError((_) => (added: <String>{}, removed: <String>{})));
     },
     fireImmediately: true,

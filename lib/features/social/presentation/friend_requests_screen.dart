@@ -9,6 +9,7 @@ import '../../../core/widgets/section_header.dart';
 import '../../notifications/application/friend_notifier.dart';
 import '../application/social_providers.dart';
 import '../domain/friend_request.dart';
+import '../domain/planning_request.dart';
 import 'user_row.dart';
 
 /// Incoming requests to decide, and outgoing ones to withdraw.
@@ -24,16 +25,21 @@ class FriendRequestsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final incoming = ref.watch(incomingRequestsProvider);
     final outgoing = ref.watch(outgoingRequestsProvider);
+    final planning = ref.watch(incomingPlanningRequestsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Friend requests')),
+      appBar: AppBar(title: const Text('Requests')),
       body: AsyncView<List<FriendRequest>>(
         value: incoming,
         onRetry: () => ref.invalidate(incomingRequestsProvider),
         builder: (context, incomingRequests) {
           final outgoingRequests = outgoing.value ?? const <FriendRequest>[];
+          final planningRequests =
+              planning.value ?? const <PlanningRequest>[];
 
-          if (incomingRequests.isEmpty && outgoingRequests.isEmpty) {
+          if (incomingRequests.isEmpty &&
+              outgoingRequests.isEmpty &&
+              planningRequests.isEmpty) {
             return const _NoRequests();
           }
 
@@ -47,6 +53,13 @@ class FriendRequestsScreen extends ConsumerWidget {
                 const SectionHeader('Waiting on you', attention: true),
                 for (final request in incomingRequests)
                   _IncomingRow(request: request),
+              ],
+              if (planningRequests.isNotEmpty) ...[
+                // Distinct from a friend request: this asks for permission to
+                // PLAN for you, not to be friends (you already are).
+                const SectionHeader('Permission to plan', attention: true),
+                for (final request in planningRequests)
+                  _PlanningRow(request: request),
               ],
               if (outgoingRequests.isNotEmpty) ...[
                 const SectionHeader('Sent'),
@@ -133,6 +146,72 @@ class _IncomingRowState extends ConsumerState<_IncomingRow> {
                       toUid: widget.request.toUid,
                     );
                   }),
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+/// An incoming request for permission to PLAN for the signed-in user (#4).
+/// Approving writes the friendship grant (the target authors it) and clears the
+/// ask; declining just removes it. Kept distinct from a friend request and from
+/// approving a single plan.
+class _PlanningRow extends ConsumerStatefulWidget {
+  const _PlanningRow({required this.request});
+  final PlanningRequest request;
+
+  @override
+  ConsumerState<_PlanningRow> createState() => _PlanningRowState();
+}
+
+class _PlanningRowState extends ConsumerState<_PlanningRow> {
+  bool _busy = false;
+
+  Future<void> _decide(Future<void> Function() action) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await action();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text('That did not work. $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final repo = ref.read(planningPermissionRepositoryProvider);
+    final emergency = widget.request.kind == PlanningKind.emergency;
+    return UserRow(
+      uid: widget.request.fromUid,
+      subtitle: emergency
+          ? 'Wants to set emergency alarms for you'
+          : 'Wants to plan for you',
+      trailing: _busy
+          ? const SizedBox(
+              height: Sizes.buttonSpinner,
+              width: Sizes.buttonSpinner,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: 'Decline',
+                  icon: const Icon(AppIcons.declineFriend),
+                  onPressed: () =>
+                      _decide(() => repo.deleteRequest(widget.request)),
+                ),
+                IconButton.filled(
+                  tooltip: 'Allow',
+                  icon: const Icon(AppIcons.acceptFriend),
+                  onPressed: () => _decide(() => repo.approve(widget.request)),
                 ),
               ],
             ),

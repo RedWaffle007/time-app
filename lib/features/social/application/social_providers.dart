@@ -2,14 +2,18 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/application/auth_providers.dart';
+import '../../groups/application/group_providers.dart';
+import '../../groups/domain/planner_grant.dart';
 import '../data/avatar_uploader.dart';
 import '../data/block_repository.dart';
 import '../data/friend_repository.dart';
+import '../data/planning_permission_repository.dart';
 import '../data/profile_stats_repository.dart';
 import '../data/username_repository.dart';
 import '../data/worker_avatar_uploader.dart';
 import '../domain/friend_request.dart';
 import '../domain/friendship.dart';
+import '../domain/planning_request.dart';
 import '../domain/profile_visibility.dart';
 import '../domain/user_block.dart';
 
@@ -100,12 +104,18 @@ final outgoingRequestsProvider = StreamProvider<List<FriendRequest>>((ref) {
 /// How many requests are waiting on the user. Drives the badge on the Friends
 /// entry, in the same shape as the pending-items badge on the nav bar: it reads
 /// zero on loading or error, because a badge is an invitation to act and must
-/// never invent one.
+/// never invent one. Counts BOTH friend requests and planning-permission
+/// requests — both live on the Requests screen and both wait on the user.
 final incomingRequestCountProvider = Provider<int>((ref) {
-  return ref.watch(incomingRequestsProvider).maybeWhen(
+  final friends = ref.watch(incomingRequestsProvider).maybeWhen(
         data: (requests) => requests.length,
         orElse: () => 0,
       );
+  final planning = ref.watch(incomingPlanningRequestsProvider).maybeWhen(
+        data: (requests) => requests.length,
+        orElse: () => 0,
+      );
+  return friends + planning;
 });
 
 /// Everyone the signed-in user has blocked.
@@ -259,4 +269,117 @@ final friendCountForProvider = Provider.family<int?, String>((ref, uid) {
   final me = ref.watch(currentUidProvider);
   if (me != null && me == uid) return ref.watch(myFriendCountProvider).value;
   return null;
+});
+
+// ---------------------------------------------------------------------------
+// Friendship-scoped planning permission (#4). The grant is target-controlled;
+// the request flow lets a friend ask. See PlanningPermissionRepository.
+// ---------------------------------------------------------------------------
+
+final planningPermissionRepositoryProvider =
+    Provider<PlanningPermissionRepository>((ref) {
+  return PlanningPermissionRepository(FirebaseFirestore.instance);
+});
+
+/// Whether [friendUid] may currently plan for the signed-in user — the state of
+/// the "Let them plan for me" toggle. Derived from the live `grantsOverMe`
+/// collection-group query (not a per-doc listener, which would terminate on the
+/// absence-denial), and scoped to the FRIENDSHIP grant (`groupId == ''`) so the
+/// toggle reflects exactly what it writes — a coexisting group grant does not
+/// make it read "on".
+final canFriendPlanForMeProvider =
+    Provider.family<AsyncValue<bool>, String>((ref, friendUid) {
+  return ref.watch(grantsOverMeProvider).whenData((grants) => grants.any((g) =>
+      g.plannerUid == friendUid && g.granted && g.groupId.isEmpty));
+});
+
+/// Whether the signed-in user may currently plan for [friendUid] via a
+/// FRIENDSHIP grant — drives the "Ask to plan for them" control's resolved
+/// state. From the live, granted-filtered `myPlanningTargets` query.
+final iCanPlanForProvider =
+    Provider.family<AsyncValue<bool>, String>((ref, friendUid) {
+  return ref.watch(myPlanningTargetsProvider).whenData((grants) => grants.any(
+      (g) => g.targetUid == friendUid && g.granted && g.groupId.isEmpty));
+});
+
+/// My pending outgoing planning requests, live (caller-scoped `fromUid == me`).
+final myOutgoingPlanningRequestsProvider =
+    StreamProvider<List<PlanningRequest>>((ref) {
+  final uid = ref.watch(currentUidProvider);
+  if (uid == null) return Stream.value(const []);
+  return ref
+      .watch(planningPermissionRepositoryProvider)
+      .watchOutgoingRequests(uid);
+});
+
+/// The normal-kind planning request the signed-in user has sent to [friendUid],
+/// if one is pending — derived from the live outgoing query so a just-sent
+/// request shows immediately.
+final outgoingPlanningRequestProvider =
+    Provider.family<AsyncValue<PlanningRequest?>, String>((ref, friendUid) {
+  return ref.watch(myOutgoingPlanningRequestsProvider).whenData((requests) {
+    for (final r in requests) {
+      if (r.toUid == friendUid && r.kind == PlanningKind.normal) return r;
+    }
+    return null;
+  });
+});
+
+/// Planning-permission requests waiting on the signed-in user to decide.
+final incomingPlanningRequestsProvider =
+    StreamProvider<List<PlanningRequest>>((ref) {
+  final uid = ref.watch(currentUidProvider);
+  if (uid == null) return Stream.value(const []);
+  return ref.watch(planningPermissionRepositoryProvider).watchIncoming(uid);
+});
+
+// ---------------------------------------------------------------------------
+// Emergency planning permission (#5). A SEPARATE grant (emergencyGrants) and a
+// separate request kind — independent of the normal grant in every direction.
+// ---------------------------------------------------------------------------
+
+/// Emergency grants OTHER people hold over me — who may emergency-plan for me.
+final emergencyGrantsOverMeProvider =
+    StreamProvider<List<PlannerGrant>>((ref) {
+  final uid = ref.watch(currentUidProvider);
+  if (uid == null) return Stream.value(const []);
+  return ref
+      .watch(planningPermissionRepositoryProvider)
+      .watchEmergencyGrantsOverTarget(uid);
+});
+
+/// Targets I may EMERGENCY-plan for (granted). Drives the builder's emergency
+/// tier availability and the profile "I can emergency-plan for them" state.
+final myEmergencyTargetsProvider = StreamProvider<List<PlannerGrant>>((ref) {
+  final uid = ref.watch(currentUidProvider);
+  if (uid == null) return Stream.value(const []);
+  return ref
+      .watch(planningPermissionRepositoryProvider)
+      .watchEmergencyTargetsFor(uid);
+});
+
+/// Whether [friendUid] may currently EMERGENCY-plan for me — the "Let them set
+/// emergency alarms for me" toggle state.
+final canFriendEmergencyPlanForMeProvider =
+    Provider.family<AsyncValue<bool>, String>((ref, friendUid) {
+  return ref.watch(emergencyGrantsOverMeProvider).whenData((grants) =>
+      grants.any((g) => g.plannerUid == friendUid && g.granted));
+});
+
+/// Whether I may currently EMERGENCY-plan for [friendUid].
+final iCanEmergencyPlanForProvider =
+    Provider.family<AsyncValue<bool>, String>((ref, friendUid) {
+  return ref.watch(myEmergencyTargetsProvider).whenData(
+      (grants) => grants.any((g) => g.targetUid == friendUid && g.granted));
+});
+
+/// My pending outgoing EMERGENCY request to [friendUid], if any.
+final outgoingEmergencyRequestProvider =
+    Provider.family<AsyncValue<PlanningRequest?>, String>((ref, friendUid) {
+  return ref.watch(myOutgoingPlanningRequestsProvider).whenData((requests) {
+    for (final r in requests) {
+      if (r.toUid == friendUid && r.kind == PlanningKind.emergency) return r;
+    }
+    return null;
+  });
 });

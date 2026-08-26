@@ -29,6 +29,20 @@
       ]
     },
     {
+      "collectionGroup": "emergencyGrants",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "granted",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "plannerUid",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "friendRequests",
       "queryScope": "COLLECTION",
       "fields": [
@@ -70,6 +84,16 @@
     },
     {
       "collectionGroup": "plannerGrants",
+      "fieldPath": "targetUid",
+      "indexes": [
+        {
+          "queryScope": "COLLECTION_GROUP",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "emergencyGrants",
       "fieldPath": "targetUid",
       "indexes": [
         {

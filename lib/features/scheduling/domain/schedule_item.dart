@@ -3,6 +3,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 /// Lifecycle status of a schedule item (see data-model.md state machine).
 enum ScheduleItemStatus { pending, approved, rejected, cancelled, withdrawn }
 
+/// The item tier (#5). [normal] items require the target's per-item approval
+/// before they fire (the default, and every pre-#5 item). [emergency] items are
+/// created already-`approved` by a planner holding the SEPARATE emergency grant,
+/// so they skip the queue and fire directly. See DECISIONS.md "Emergency item
+/// tier". `tier` defaults to [normal] everywhere it is absent.
+enum ItemTier { normal, emergency }
+
 enum OutcomeResult { done, skipped }
 
 /// The outcome layered on top of an approved item. Kept separate from status so
@@ -45,6 +52,7 @@ class ScheduleItem {
     required this.timezone,
     required this.scheduledInstantUtc,
     required this.status,
+    this.tier = ItemTier.normal,
     this.note,
     this.outcome,
     this.rejectionReason,
@@ -69,6 +77,10 @@ class ScheduleItem {
   final DateTime scheduledInstantUtc;
 
   final ScheduleItemStatus status;
+
+  /// Normal (queued) or emergency (auto-approved). See [ItemTier].
+  final ItemTier tier;
+
   final ScheduleOutcome? outcome;
   final String? rejectionReason;
   final DateTime? createdAt;
@@ -145,6 +157,7 @@ class ScheduleItem {
         (s) => s.name == d['status'],
         orElse: () => ScheduleItemStatus.pending,
       ),
+      tier: d['tier'] == 'emergency' ? ItemTier.emergency : ItemTier.normal,
       outcome: ScheduleOutcome.fromMap(d['outcome'] as Map<String, dynamic>?),
       rejectionReason: d['rejectionReason'] as String?,
       createdAt: (d['createdAt'] as Timestamp?)?.toDate(),

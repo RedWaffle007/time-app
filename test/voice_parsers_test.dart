@@ -178,6 +178,18 @@ void main() {
       expect(d.date, DateTime(2026, 8, 26));
     });
 
+    test('spoken "a.m." is a meridian, not title text', () {
+      final d = parsePlanUtterance('Wednesday 8 a.m. gym', now: wed);
+      expect(d.time, const TimeOfDay(hour: 8, minute: 0));
+      expect(d.title, 'gym');
+    });
+
+    test('spoken "p.m." variant', () {
+      final d = parsePlanUtterance('meeting 7 p.m.', now: wed);
+      expect(d.time, const TimeOfDay(hour: 19, minute: 0));
+      expect(d.title, 'meeting');
+    });
+
     test('empty utterance', () {
       final d = parsePlanUtterance('', now: wed);
       expect(d.title, '');

@@ -124,8 +124,17 @@ void main() {
   testWidgets('an item on another day is NOT shown until that day is selected',
       (tester) async {
     final today = viewerToday();
-    // Two days out, so it is in the same month grid but not the opening cell.
-    final other = today.add(const Duration(days: 2));
+    // A MID-MONTH day (never today), in the same grid but not the opening cell.
+    // Mid-month is deliberate: a grid's outside days are the boundary days of
+    // the ADJACENT months (late 20s/30s of the previous, 1–~7 of the next), so
+    // only a day number near a month edge can appear twice — the 15th/16th of
+    // THIS month is always a single, unambiguous cell. (Picking today+2 broke
+    // when the run date made the target day collide with an outside-day number,
+    // e.g. Jul 28 in the Aug 2026 grid.)
+    final mid = DateTime(today.year, today.month, 15);
+    final other = mid.day == today.day
+        ? DateTime(today.year, today.month, 16)
+        : mid;
 
     await tester.pumpWidget(harness(entriesFor([
       item(id: 'a', instantUtc: nineAmOn(other), title: 'Gym session'),
@@ -135,9 +144,7 @@ void main() {
     expect(find.text('Gym session'), findsNothing);
     expect(find.text('Nothing planned for this day.'), findsOneWidget);
 
-    // Tap that date in the grid. The day number is unique enough here because
-    // outside days are the only other cells that could repeat it, and they are
-    // in a different month.
+    // Tap that date in the grid — the mid-month number is a single cell.
     final dayNumber = DateFormat.d('en').format(other);
     await tester.tap(find.text(dayNumber).first);
     await tester.pumpAndSettle();

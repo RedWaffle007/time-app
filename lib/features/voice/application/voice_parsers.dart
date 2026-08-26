@@ -155,7 +155,9 @@ PlanDraft parsePlanUtterance(String utterance, {required DateTime now}) {
   if (original.isEmpty) return const PlanDraft(title: '');
 
   final tokens = original.split(' ');
-  final lower = tokens.map((t) => _stripPunct(t.toLowerCase())).toList();
+  final lower = tokens
+      .map((t) => _normalizeMeridian(_stripPunct(t.toLowerCase())))
+      .toList();
 
   // Track which token indices are consumed by day/time so the remainder is the
   // title.
@@ -212,7 +214,12 @@ PlanDraft parsePlanUtterance(String utterance, {required DateTime now}) {
   // ── Title ── everything not consumed, minus edge filler words.
   final titleTokens = <String>[];
   for (var i = 0; i < tokens.length; i++) {
-    if (!consumed[i]) titleTokens.add(tokens[i]);
+    if (consumed[i]) continue;
+    // Drop a stray meridian token the time scan didn't consume ("am"/"pm", or
+    // an "a.m." the recognizer split off) — it is speech residue, never a title
+    // word (observed on-device: "8 a.m. gym" left "a.m." in the title).
+    if (lower[i] == 'am' || lower[i] == 'pm') continue;
+    titleTokens.add(tokens[i]);
   }
   final title = _trimFiller(titleTokens);
 
@@ -520,6 +527,16 @@ double? _phraseToNumber(List<String> words) {
 // ── String helpers ───────────────────────────────────────────────────────────
 
 DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+/// Normalize spoken meridian variants — "a.m.", "a.m", "am." → "am";
+/// "p.m." etc. → "pm" — so the time scan sees a clean token. Android STT
+/// commonly returns "8 a.m."; without this the "a.m." is neither read as a
+/// meridian nor kept out of the title.
+String _normalizeMeridian(String w) {
+  if (RegExp(r'^a\.?m\.?$').hasMatch(w)) return 'am';
+  if (RegExp(r'^p\.?m\.?$').hasMatch(w)) return 'pm';
+  return w;
+}
 
 String _collapseSpaces(String s) => s.trim().replaceAll(RegExp(r'\s+'), ' ');
 

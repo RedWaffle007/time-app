@@ -40,12 +40,24 @@ before(async () => {
 
 after(async () => { await testEnv.cleanup(); });
 
-/** The mirror row that grants PLANNER read access over TARGET. */
+const as = (uid) => testEnv.authenticatedContext(uid).firestore();
+
+/** The planner's groupId HINT row. It only names a group — the read rule
+ * re-checks the LIVE grant through it, so a row alone reads nothing (pair it
+ * with seedGrant). */
 async function seedAccess() {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), `plannerAccess/${PLANNER}_${TARGET}`), {
-      plannerUid: PLANNER, targetUid: TARGET, updatedAt: new Date(),
+      plannerUid: PLANNER, targetUid: TARGET, groupId: 'g1', updatedAt: new Date(),
     });
+  });
+}
+
+/** Flip the PLANNER->TARGET grant's `granted` flag, bypassing rules. */
+async function setGranted(granted) {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), `groups/g1/plannerGrants/${PLANNER}_${TARGET}`),
+      { granted }, { merge: true });
   });
 }
 
@@ -76,90 +88,128 @@ async function seedItem() {
 beforeEach(async () => { await testEnv.clearFirestore(); });
 
 describe('reading the target schedule', () => {
+  const itemPath = `scheduleItems/${TARGET}/items/i1`;
+
   it('the target reads their own, with or without a mirror', async () => {
     await seedItem();
-    const db = testEnv.authenticatedContext(TARGET).firestore();
-    await assertSucceeds(getDoc(doc(db, `scheduleItems/${TARGET}/items/i1`)));
+    await assertSucceeds(getDoc(doc(as(TARGET), itemPath)));
   });
 
-  it('a planner with NO mirror row is denied — this is the pre-feature state', async () => {
+  it('a planner with NO hint row is denied — even holding a grant', async () => {
+    // The read carries no groupId, so the grant alone cannot authorize it; the
+    // planner must have left a hint row. (Their reconciler writes one.)
     await seedItem();
-    const db = testEnv.authenticatedContext(PLANNER).firestore();
-    await assertFails(getDoc(doc(db, `scheduleItems/${TARGET}/items/i1`)));
+    await seedGrant();
+    await assertFails(getDoc(doc(as(PLANNER), itemPath)));
   });
 
-  it('a planner WITH a mirror row reads full detail', async () => {
+  it('a planner WITH a hint row AND a live grant reads full detail', async () => {
     await seedItem();
+    await seedGrant();
     await seedAccess();
-    const db = testEnv.authenticatedContext(PLANNER).firestore();
-    const snap = await assertSucceeds(
-      getDoc(doc(db, `scheduleItems/${TARGET}/items/i1`)));
+    const snap = await assertSucceeds(getDoc(doc(as(PLANNER), itemPath)));
     // Full detail, not free/busy — the access model, not an oversight.
     if (snap.data().title !== 'Gym') throw new Error('title should be readable');
   });
 
-  it('a stranger is denied even while the planner is allowed', async () => {
+  it('a hint row with NO backing grant reads nothing', async () => {
+    // The row is only a hint; authorization is the live grant. A planner who
+    // wrote a row but holds no grant is denied — the whole safety story.
     await seedItem();
     await seedAccess();
-    const db = testEnv.authenticatedContext(STRANGER).firestore();
-    await assertFails(getDoc(doc(db, `scheduleItems/${TARGET}/items/i1`)));
+    await assertFails(getDoc(doc(as(PLANNER), itemPath)));
   });
 
-  it('revoking the mirror cuts the planner off again', async () => {
+  it('revoking the GRANT cuts the planner off, though the row remains', async () => {
     await seedItem();
+    await seedGrant();
+    await seedAccess();
+    await assertSucceeds(getDoc(doc(as(PLANNER), itemPath)));
+    await setGranted(false); // revoke — row is now a stale hint
+    await assertFails(getDoc(doc(as(PLANNER), itemPath)));
+  });
+
+  it('a legacy row carrying no group reads nothing', async () => {
+    await seedItem();
+    await seedGrant();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `plannerAccess/${PLANNER}_${TARGET}`), {
+        plannerUid: PLANNER, targetUid: TARGET, updatedAt: new Date(),
+      });
+    });
+    await assertFails(getDoc(doc(as(PLANNER), itemPath)));
+  });
+
+  it('deleting the hint row also cuts the planner off', async () => {
+    await seedItem();
+    await seedGrant();
     await seedAccess();
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await deleteDoc(doc(ctx.firestore(), `plannerAccess/${PLANNER}_${TARGET}`));
     });
-    const db = testEnv.authenticatedContext(PLANNER).firestore();
-    await assertFails(getDoc(doc(db, `scheduleItems/${TARGET}/items/i1`)));
+    await assertFails(getDoc(doc(as(PLANNER), itemPath)));
+  });
+
+  it('a stranger is denied even while the planner is allowed', async () => {
+    await seedItem();
+    await seedGrant();
+    await seedAccess();
+    await assertFails(getDoc(doc(as(STRANGER), itemPath)));
   });
 
   it('read access does NOT confer write access to the target\'s items', async () => {
     await seedItem();
+    await seedGrant();
     await seedAccess();
-    const db = testEnv.authenticatedContext(PLANNER).firestore();
     // The planner did not create this item, so no write branch covers them.
-    await assertFails(setDoc(doc(db, `scheduleItems/${TARGET}/items/i1`),
+    await assertFails(setDoc(doc(as(PLANNER), itemPath),
       { status: 'rejected' }, { merge: true }));
   });
 });
 
-describe('who may write the mirror', () => {
-  it('the target may create their own row', async () => {
-    const db = testEnv.authenticatedContext(TARGET).firestore();
-    await assertSucceeds(setDoc(doc(db, `plannerAccess/${PLANNER}_${TARGET}`), {
-      plannerUid: PLANNER, targetUid: TARGET, updatedAt: new Date(),
-    }));
+describe('who may write the mirror hint', () => {
+  const rowPath = `plannerAccess/${PLANNER}_${TARGET}`;
+  const row = (overrides = {}) => ({
+    plannerUid: PLANNER, targetUid: TARGET, groupId: 'g1',
+    updatedAt: new Date(), ...overrides,
   });
 
-  it('a PLANNER cannot mint their own access — the model inverted', async () => {
-    const db = testEnv.authenticatedContext(PLANNER).firestore();
-    await assertFails(setDoc(doc(db, `plannerAccess/${PLANNER}_${TARGET}`), {
-      plannerUid: PLANNER, targetUid: TARGET, updatedAt: new Date(),
-    }));
+  it('a PLANNER may self-provision, backed by a live grant', async () => {
+    await seedGrant();
+    await assertSucceeds(setDoc(doc(as(PLANNER), rowPath), row()));
+  });
+
+  it('a PLANNER cannot self-provision with NO grant', async () => {
+    // No grant seeded: the row would be inert, and the rule refuses it outright.
+    await assertFails(setDoc(doc(as(PLANNER), rowPath), row()));
+  });
+
+  it('a PLANNER cannot name a group they hold no grant in', async () => {
+    await seedGrant(); // grant is in g1
+    await assertFails(setDoc(doc(as(PLANNER), rowPath), row({ groupId: 'g2' })));
+  });
+
+  it('the target may still write their own row (back-compat)', async () => {
+    await assertSucceeds(setDoc(doc(as(TARGET), rowPath), row()));
   });
 
   it('the id must match the contents, so a row cannot name someone else', async () => {
-    const db = testEnv.authenticatedContext(TARGET).firestore();
-    await assertFails(setDoc(doc(db, `${'plannerAccess'}/${PLANNER}_${TARGET}`), {
-      plannerUid: STRANGER, targetUid: TARGET, updatedAt: new Date(),
-    }));
+    await assertFails(setDoc(doc(as(TARGET), rowPath), row({ plannerUid: STRANGER })));
   });
 
   it('a target cannot forge a row over somebody else', async () => {
-    const db = testEnv.authenticatedContext(TARGET).firestore();
-    await assertFails(setDoc(doc(db, `plannerAccess/${PLANNER}_${STRANGER}`), {
-      plannerUid: PLANNER, targetUid: STRANGER, updatedAt: new Date(),
-    }));
+    await assertFails(setDoc(doc(as(TARGET), `plannerAccess/${PLANNER}_${STRANGER}`),
+      row({ targetUid: STRANGER })));
   });
 
-  it('only the target may delete the row', async () => {
+  it('the PLANNER may delete their own hint row (cleanup)', async () => {
     await seedAccess();
-    const planner = testEnv.authenticatedContext(PLANNER).firestore();
-    await assertFails(deleteDoc(doc(planner, `plannerAccess/${PLANNER}_${TARGET}`)));
-    const target = testEnv.authenticatedContext(TARGET).firestore();
-    await assertSucceeds(deleteDoc(doc(target, `plannerAccess/${PLANNER}_${TARGET}`)));
+    await assertSucceeds(deleteDoc(doc(as(PLANNER), rowPath)));
+  });
+
+  it('the target may also delete the row', async () => {
+    await seedAccess();
+    await assertSucceeds(deleteDoc(doc(as(TARGET), rowPath)));
   });
 });
 

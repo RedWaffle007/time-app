@@ -9,6 +9,8 @@ import '../../auth/application/auth_providers.dart';
 import '../../auth/domain/user_profile.dart';
 import '../../notifications/application/friend_notifier.dart';
 import '../application/social_providers.dart';
+import '../data/planning_permission_repository.dart';
+import '../domain/planning_request.dart';
 import '../domain/profile_visibility.dart';
 import 'avatar_image.dart';
 import 'stats_section.dart';
@@ -68,6 +70,8 @@ class UserProfileScreen extends ConsumerWidget {
               _Header(profile: data!, visibility: v),
               const SizedBox(height: Space.lg),
               _RelationshipActions(uid: uid, visibility: v),
+              if (v.relation == ProfileRelation.friend)
+                _PlanningPermissionSection(uid: uid, name: data.name),
               StatsSection(uid: uid),
             ],
           );
@@ -291,6 +295,171 @@ class _RelationshipActionsState extends ConsumerState<_RelationshipActions> {
       case ProfileRelation.blockedBy:
         return const SizedBox.shrink();
     }
+  }
+}
+
+/// Friendship-scoped planning permission, shown only between friends (#4).
+///
+/// Two independent, per-direction controls — consent always originates from the
+/// person being planned for:
+///   * a TARGET-controlled switch: "Let [name] plan for me" (default off);
+///   * a way to ASK the friend for permission to plan for THEM, when they have
+///     not already granted it.
+///
+/// Neither grants anything the other way: friendship still carries no planning
+/// power on its own (DECISIONS.md "Friendship-scoped planning grants").
+class _PlanningPermissionSection extends ConsumerStatefulWidget {
+  const _PlanningPermissionSection({required this.uid, required this.name});
+
+  final String uid;
+  final String name;
+
+  @override
+  ConsumerState<_PlanningPermissionSection> createState() =>
+      _PlanningPermissionSectionState();
+}
+
+class _PlanningPermissionSectionState
+    extends ConsumerState<_PlanningPermissionSection> {
+  bool _busy = false;
+
+  Future<void> _run(Future<void> Function() action) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await action();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text('That did not work. $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final me = ref.watch(currentUidProvider);
+    if (me == null) return const SizedBox.shrink();
+    final repo = ref.read(planningPermissionRepositoryProvider);
+    final canPlanForMe =
+        ref.watch(canFriendPlanForMeProvider(widget.uid)).value ?? false;
+    final canEmergencyForMe =
+        ref.watch(canFriendEmergencyPlanForMeProvider(widget.uid)).value ??
+            false;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: Space.md, bottom: Space.sm),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Divider(),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: Space.sm),
+            child: Text('Planning', style: context.text.titleSmall),
+          ),
+          // Target-controlled: I decide whether this friend may plan for me.
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text('Let ${widget.name} plan for me'),
+            subtitle: const Text(
+                'They can propose items — you still approve each one.'),
+            value: canPlanForMe,
+            onChanged: _busy
+                ? null
+                : (v) => _run(() => repo.setGrant(
+                      plannerUid: widget.uid,
+                      targetUid: me,
+                      granted: v,
+                    )),
+          ),
+          const SizedBox(height: Space.sm),
+          _askControl(context, me, repo, PlanningKind.normal),
+          const SizedBox(height: Space.md),
+          // A SEPARATE, higher-stakes grant: emergency items fire WITHOUT your
+          // per-item approval. Independent of the normal toggle — granting it
+          // never implies normal permission and vice versa.
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text('Let ${widget.name} set emergency alarms for me'),
+            subtitle: const Text(
+                'Emergency items fire immediately, without your approval.'),
+            value: canEmergencyForMe,
+            onChanged: _busy
+                ? null
+                : (v) => _run(() => repo.setGrant(
+                      plannerUid: widget.uid,
+                      targetUid: me,
+                      granted: v,
+                      kind: PlanningKind.emergency,
+                    )),
+          ),
+          const SizedBox(height: Space.sm),
+          _askControl(context, me, repo, PlanningKind.emergency),
+        ],
+      ),
+    );
+  }
+
+  /// The reverse direction for a [kind]: do I have permission to plan for them,
+  /// and if not, the ask. Three resolved states — already allowed, request
+  /// pending, or ask.
+  Widget _askControl(BuildContext context, String me,
+      PlanningPermissionRepository repo, PlanningKind kind) {
+    final emergency = kind == PlanningKind.emergency;
+    final iCan = (emergency
+            ? ref.watch(iCanEmergencyPlanForProvider(widget.uid))
+            : ref.watch(iCanPlanForProvider(widget.uid)))
+        .value ??
+        false;
+    if (iCan) {
+      return Row(
+        children: [
+          Icon(AppIcons.approved,
+              size: Sizes.inlineIcon, color: context.colors.primary),
+          const SizedBox(width: Space.sm),
+          Expanded(
+            child: Text(
+                emergency
+                    ? 'You can set emergency alarms for ${widget.name}.'
+                    : 'You can plan for ${widget.name}.',
+                style: context.text.bodyMedium),
+          ),
+        ],
+      );
+    }
+
+    final pending = (emergency
+            ? ref.watch(outgoingEmergencyRequestProvider(widget.uid))
+            : ref.watch(outgoingPlanningRequestProvider(widget.uid)))
+        .value;
+    // `busy: false`, deliberately: the live stream flips this control to its new
+    // state (Ask → Requested) on its own, so the stream is the feedback. Swapping
+    // to a spinner on the section-wide `_busy` made BOTH asks blank out whenever
+    // ANY of the four controls was tapped — the reported flicker. `_run` still
+    // guards against a double-tap.
+    if (pending != null) {
+      return _Action(
+        icon: AppIcons.declineFriend,
+        label: 'Requested — tap to withdraw',
+        filled: false,
+        busy: false,
+        onPressed: () => _run(() => repo.deleteRequest(pending)),
+      );
+    }
+
+    return _Action(
+      icon: emergency ? AppIcons.emergency : AppIcons.navPlan,
+      label: emergency
+          ? 'Ask to set emergency alarms for ${widget.name}'
+          : 'Ask to plan for ${widget.name}',
+      filled: false,
+      busy: false,
+      onPressed: () => _run(() =>
+          repo.sendRequest(fromUid: me, toUid: widget.uid, kind: kind)),
+    );
   }
 }
 

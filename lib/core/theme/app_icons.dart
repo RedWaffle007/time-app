@@ -226,6 +226,11 @@ abstract final class AppIcons {
   /// tell which is which. The spike measured that gap at 0.6s versus 110s.
   static const IconData exactTiming = Icons.alarm_on_outlined;
 
+  /// The EMERGENCY item tier (#5) and its separate grant — a plan a friend can
+  /// set that fires WITHOUT the target's per-item approval. Line work; the §2.7
+  /// orange-fill firewall governs status colour, not this glyph.
+  static const IconData emergency = Icons.notification_important_outlined;
+
   /// Discard a diagnostic log. A bin is honest here, unlike on [archive]: this
   /// really does destroy the data and nothing references it.
   static const IconData clearLog = Icons.delete_sweep_outlined;
