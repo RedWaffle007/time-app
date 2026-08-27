@@ -180,6 +180,12 @@ abstract final class AppIcons {
   /// Drill into a row.
   static const IconData openRow = Icons.chevron_right;
 
+  /// The chevron on a collapsible day-section header — points DOWN when the
+  /// section is collapsed, rotated UP (180°) when expanded. A distinct concept
+  /// from [openRow] (drill sideways into a row): this is vertical expand/collapse
+  /// in place. See CollapsibleDayGroups.
+  static const IconData expandGroup = Icons.keyboard_arrow_down;
+
   /// This row is the current choice. Filled, per rule 2 — and deliberately not
   /// [approved], which means "the target agreed", a different fact entirely.
   static const IconData selected = Icons.check_circle;

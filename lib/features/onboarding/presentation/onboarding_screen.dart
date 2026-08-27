@@ -178,9 +178,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             padding: Space.screenForm,
             children: [
               Text(
-                'For a reminder to actually reach you, this phone needs a few '
-                'permissions. Grant what you can — each one is explained below, '
-                'and you can change any of them later.',
+                'For reminders to reach you, this phone needs a few '
+                'permissions. Grant what you can — you can change these later.',
                 style: context.text.bodyMedium
                     ?.copyWith(color: context.colors.onSurfaceVariant),
               ),
@@ -234,8 +233,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         return _StepView(
           icon: AppIcons.reminders,
           title: 'Show reminders',
-          why: 'When an item you approved comes due, this phone shows you a '
-              'notification. Nothing about it leaves your device.',
+          why: 'Lets the app show a notification when an item comes due. '
+              'It never leaves your device.',
           action: 'Allow notifications',
           granted: state.notificationsEnabled,
         );
@@ -243,10 +242,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         return _StepView(
           icon: AppIcons.exactTiming,
           title: 'Remind me on time',
-          why: 'Android only lets an app set a precise alarm with your '
-              'permission. Without it, a reminder can wait for the next time '
-              'your phone wakes up — which can be a long time overnight. '
-              'Opens Android settings.',
+          why: 'Without this, reminders can arrive late — sometimes hours late '
+              'overnight. Opens Android settings.',
           action: 'Fix timing',
           granted: state.exactAlarmsAllowed,
         );
@@ -254,10 +251,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         return _StepView(
           icon: AppIcons.ringOverApps,
           title: 'Ring over other apps',
-          why: 'To ring like a real alarm — over whatever you are doing, and on '
-              'the lock screen — Android needs one more permission. Without it '
-              'the reminder still appears, but the sound can be held back while '
-              'you are in another app. Opens Android settings.',
+          why: 'Lets a reminder ring over other apps and on the lock screen, '
+              'like a real alarm. Opens Android settings.',
           action: 'Allow',
           granted: state.fullScreenIntentAllowed,
         );
@@ -265,9 +260,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         return _StepView(
           icon: AppIcons.battery,
           title: 'Keep working in the background',
-          why: 'Battery optimisation can stop the app from running while your '
-              'phone is idle, so a reminder never fires. Exempting time-app lets '
-              'it wake at the right moment.',
+          why: 'Battery optimisation can stop reminders from firing while your '
+              'phone is idle. Exempting time-app prevents that.',
           action: 'Allow',
           granted: state.batteryUnrestricted,
         );
@@ -275,10 +269,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         return _StepView(
           icon: AppIcons.autostart,
           title: 'Let ${oem.displayName} keep time-app running',
-          why: '${oem.displayName} phones can close apps in the background and '
-              'stop their reminders — sometimes when you clear recent apps or '
-              'run a cleaner. Turning on autostart keeps reminders reliable. '
-              "This one can't be checked automatically, so it always shows here.",
+          why: '${oem.displayName} phones can close background apps and stop '
+              'their reminders. Autostart keeps them reliable. This one '
+              "can't be checked automatically, so it always shows here.",
           action: 'Open settings',
           // Autostart can never be read back, so it is never "done".
           granted: false,

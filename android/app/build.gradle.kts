@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.android.application")
     // START: FlutterFire Configuration
@@ -6,6 +9,18 @@ plugins {
     // END: FlutterFire Configuration
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+// Release signing. The real keystore + passwords live in android/key.properties,
+// which is gitignored (never committed) — see android/key.properties.example for
+// the shape. When the file is ABSENT (fresh clone, CI without secrets) we fall
+// back to debug signing so `flutter run --release` still works locally; a store
+// build MUST have the file. `hasReleaseKeystore` gates the buildType below.
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+val hasReleaseKeystore = keystorePropertiesFile.exists()
+if (hasReleaseKeystore) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
 android {
@@ -38,11 +53,28 @@ android {
         multiDexEnabled = true
     }
 
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            create("release") {
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                storeFile = keystoreProperties["storeFile"]?.let { file(it) }
+                storePassword = keystoreProperties["storePassword"] as String
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Sign with the real release keystore when key.properties is present;
+            // otherwise fall back to debug so a local `flutter run --release` still
+            // installs. A Play Store build REQUIRES key.properties — a debug-signed
+            // release is not shippable and its SHA-1 differs from the release cert.
+            signingConfig = if (hasReleaseKeystore) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }
@@ -66,7 +98,16 @@ dependencies {
     // EMPTY version and fails `:app:mergeDebugAssets`. A BoM does nothing for it.
     // 16.0.0-beta20 is the latest published on Google's Maven (dl.google.com).
     // See DECISIONS.md "Firebase App Distribution (2026-08-24)".
-    debugImplementation("com.google.firebase:firebase-appdistribution:16.0.0-beta20")
+    //
+    // DISABLED 2026-08-27: even with our own `updateIfNewReleaseAvailable()` call
+    // gated off, merely COMPILING this SDK into the debug build makes it
+    // auto-initialize (via its own ContentProvider) and post the "enable
+    // tester/in-app features" prompt on its own — the never-ending popup. Removed
+    // from the build so the SDK isn't present at all; the debug
+    // `AppDistributionUpdate` is a no-op like release. Re-add this line (and
+    // restore the SDK call in src/debug/AppDistributionUpdate.kt) for a
+    // deliberate tester-distribution session.
+    // debugImplementation("com.google.firebase:firebase-appdistribution:16.0.0-beta20")
 }
 
 kotlin {

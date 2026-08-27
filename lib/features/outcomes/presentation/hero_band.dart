@@ -141,13 +141,11 @@ class _HeroBandState extends State<HeroBand> {
                           overflow: TextOverflow.ellipsis,
                         )
                       else ...[
+                        // "Next task" names WHICH task is coming, not just the
+                        // clock — one of possibly many future items, made explicit.
                         Text(
-                          formatInstantTime(
-                            context,
-                            item.scheduledInstantUtc,
-                            item.timezone,
-                          ),
-                          style: text.displaySmall
+                          'Next task',
+                          style: text.labelSmall
                               ?.copyWith(color: colors.onSurface),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -155,6 +153,20 @@ class _HeroBandState extends State<HeroBand> {
                         const SizedBox(height: Space.xs),
                         Text(
                           item.title,
+                          style: text.titleLarge
+                              ?.copyWith(color: colors.onSurface),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: Space.xs),
+                        Text(
+                          // Date AND time together (in the item's own zone), so
+                          // the next task is unambiguous when it isn't today.
+                          formatInstant(
+                            context,
+                            item.scheduledInstantUtc,
+                            item.timezone,
+                          ),
                           style:
                               text.bodySmall?.copyWith(color: colors.onSurface),
                           maxLines: 1,

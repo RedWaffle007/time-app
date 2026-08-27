@@ -17,6 +17,7 @@ import 'features/reminders/application/reminder_providers.dart';
 import 'features/scheduling/application/schedule_providers.dart';
 import 'features/scheduling/application/slot_lock_reconciler.dart';
 import 'features/social/application/stats_providers.dart';
+import 'features/splash/presentation/splash_overlay.dart';
 import 'routing/app_router.dart';
 import 'routing/notification_routing.dart';
 
@@ -362,8 +363,15 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
       // every route is under `child` here — so neither can paint over the lock.
       // `LockScreen` deliberately uses `Material` rather than `Scaffold`, so
       // nothing can be posted onto it either.
-      builder: (context, child) =>
-          AppLockGate(child: child ?? const SizedBox.shrink()),
+      // THE COLD-START REVEAL wraps the app lock, not the reverse: on a fresh
+      // process launch the black Supercell-style reveal covers EVERYTHING —
+      // including the lock screen — then fades to reveal whatever gate resolves
+      // beneath. A warm resume never re-runs `main()`, so the reveal is
+      // cold-start-only by construction (see SplashOverlay). It holds until the
+      // app is ready, so no boot flicker shows through.
+      builder: (context, child) => SplashOverlay(
+        child: AppLockGate(child: child ?? const SizedBox.shrink()),
+      ),
       // All visual tokens live in core/theme — see UI-RULES.md. Dark is designed
       // alongside light, not derived from it, and follows the device setting.
       theme: AppTheme.light,

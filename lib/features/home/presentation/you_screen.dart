@@ -13,7 +13,6 @@ import '../../auth/application/auth_providers.dart';
 import '../../notifications/application/messaging_service.dart';
 import '../../social/application/social_providers.dart';
 import '../../social/presentation/avatar_image.dart';
-import '../../walkthrough/application/walkthrough_providers.dart';
 
 /// **The You hub** (migration slice S3) — the account popup promoted to a real
 /// screen, which resolves the audit's most overloaded surface: the junk-drawer
@@ -77,13 +76,10 @@ class YouScreen extends ConsumerWidget {
           _YouTile(
             icon: AppIcons.walkthrough,
             label: 'How this app works',
-            // Replay the first-run orientation tour. It lives on `HomeShell`
-            // (the bar it points at), so this bumps the trigger and returns to
-            // the tabs; the shell raises the coach marks over Plan.
-            onTap: () {
-              replayWalkthrough(ref);
-              context.go(Routes.plan);
-            },
+            // The complete guide — one blurb per page/feature. It carries a
+            // "Replay the guided tour" button for the first-run coach marks, so
+            // the tour is still reachable without this tile owning it.
+            onTap: () => context.push(Routes.howItWorks),
           ),
           _YouTile(
             icon: AppIcons.permissions,

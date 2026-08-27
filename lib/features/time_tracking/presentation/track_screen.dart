@@ -6,7 +6,7 @@ import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/widgets/async_view.dart';
-import '../../../core/widgets/section_header.dart';
+import '../../../core/widgets/collapsible_day_groups.dart';
 import '../../auth/application/auth_providers.dart';
 import '../application/time_tracking_providers.dart';
 import '../domain/tracked_entry.dart';
@@ -46,33 +46,37 @@ class TrackScreen extends ConsumerWidget {
         emptyIcon: AppIcons.emptyTrack,
         emptyMessage: "You haven't logged any time yet.\n"
             'Tap + to log time you spent on anything — it need not be a plan.',
-        builder: (context, entries) => ListView(
+        builder: (context, entries) => CollapsibleDayGroups(
           padding: Space.screenList,
-          children: _grouped(context, ref, entries),
+          initiallyExpandedKeys: {_todayKey()},
+          groups: _grouped(context, entries),
         ),
       ),
     );
   }
 
-  /// Flatten the (already logDate-desc) entries into day sections. The repo
-  /// sorts by `logDate` descending, so a header is emitted whenever the day
-  /// changes while walking the list.
-  List<Widget> _grouped(
-    BuildContext context,
-    WidgetRef ref,
-    List<TrackedEntry> entries,
-  ) {
-    final widgets = <Widget>[];
-    String? currentDay;
+  /// Fold the (already logDate-desc) entries into collapsible day groups. The
+  /// repo sorts by `logDate` descending, so a new group starts whenever the day
+  /// changes while walking the list — most-recent day first.
+  List<DayGroupData> _grouped(BuildContext context, List<TrackedEntry> entries) {
+    final groups = <DayGroupData>[];
     for (final entry in entries) {
-      if (entry.logDate != currentDay) {
-        currentDay = entry.logDate;
-        widgets.add(SectionHeader(_dayLabel(context, entry.logDate)));
+      if (groups.isEmpty || groups.last.key != entry.logDate) {
+        groups.add(DayGroupData(
+          key: entry.logDate,
+          label: _dayLabel(context, entry.logDate),
+          children: [_EntryCard(entry: entry)],
+        ));
+      } else {
+        groups.last.children.add(_EntryCard(entry: entry));
       }
-      widgets.add(_EntryCard(entry: entry));
     }
-    return widgets;
+    return groups;
   }
+
+  /// Device-local today as a `YYYY-MM-DD` key, to match `TrackedEntry.logDate`
+  /// (the day expanded by default).
+  static String _todayKey() => dayKeyOf(DateTime.now());
 
   /// A `YYYY-MM-DD` log date as a localized wall date. Relative labels
   /// ("Today"/"Yesterday") wait on the relative-time helper that does not exist

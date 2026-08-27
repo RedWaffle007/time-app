@@ -1,0 +1,12 @@
+# Release signing config — COPY this to `key.properties` and fill in real values.
+# `key.properties` is gitignored (android/.gitignore) and must NEVER be committed,
+# nor the .jks it points at. Losing either the keystore or these passwords means
+# you can never ship an update to the same app again — back them up somewhere safe.
+#
+# storeFile is resolved relative to the android/app/ module dir. Keeping the .jks
+# OUTSIDE the repo (e.g. ~/keystores/) is safest; use an absolute path if so.
+
+storePassword=CHANGE_ME
+keyPassword=CHANGE_ME
+keyAlias=upload
+storeFile=/absolute/path/to/time-app-release.jks

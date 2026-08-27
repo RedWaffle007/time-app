@@ -151,7 +151,7 @@ TrackDraft parseTrackUtterance(String utterance) {
 /// [now] is injected (not read from a clock) so weekday resolution is pure and
 /// testable. A bare weekday resolves to its nearest occurrence including today.
 PlanDraft parsePlanUtterance(String utterance, {required DateTime now}) {
-  final original = _collapseSpaces(utterance);
+  final original = _collapseMeridians(_collapseSpaces(utterance));
   if (original.isEmpty) return const PlanDraft(title: '');
 
   final tokens = original.split(' ');
@@ -539,6 +539,17 @@ String _normalizeMeridian(String w) {
 }
 
 String _collapseSpaces(String s) => s.trim().replaceAll(RegExp(r'\s+'), ' ');
+
+/// Fuse a meridian that the recognizer split across tokens or dots into ONE
+/// clean "am"/"pm" token BEFORE tokenizing — "a. m.", "a.m .", "8 a. m." all
+/// become "am". [_normalizeMeridian] already handles the single-token "a.m."
+/// case; this catches the split-token variant that left "a." "m." in the title
+/// (observed on-device: "a. m. cycling"). Word-boundary anchored so an interior
+/// "a m" ("a machine") is never touched.
+String _collapseMeridians(String s) => s.replaceAllMapped(
+      RegExp(r'\b([ap])\.?\s*m\.?(?=\s|$)', caseSensitive: false),
+      (m) => '${m.group(1)!.toLowerCase()}m',
+    );
 
 /// Strip leading/trailing punctuation from a token for MATCHING, keeping
 /// apostrophes ("o'clock") and internal separators of times ("7:30", "7am").

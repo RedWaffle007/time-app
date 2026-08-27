@@ -8,7 +8,9 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/theme/status_style.dart';
 import '../../../core/widgets/async_view.dart';
+import '../../../core/widgets/collapsible_day_groups.dart';
 import '../../../routing/app_router.dart';
+import '../../calendar/application/calendar_grouping.dart';
 import '../../archive/presentation/archive_menu_button.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../notifications/application/outcome_notifier.dart';
@@ -62,12 +64,38 @@ class PlannerActivityScreen extends ConsumerWidget {
               .where((i) => i.createdByUid != i.targetUid)
               .toList()
             ..sort((a, b) => b.scheduledInstantUtc.compareTo(a.scheduledInstantUtc));
-          return ListView(
-            children: [for (final item in sorted) _ActivityCard(item: item)],
+          return CollapsibleDayGroups(
+            initiallyExpandedKeys: {dayKeyOf(DateTime.now())},
+            groups: _grouped(context, sorted),
           );
         },
       ),
     );
+  }
+
+  /// Bucket the already-sorted (instant-desc) items into collapsible day groups
+  /// by each item's OWN-timezone day (`calendarDayFor` — never the viewer's, so
+  /// a "Tue 9:00" card can't file under Monday). Days ordered most-recent-first;
+  /// within a day, items keep the instant-desc order they arrived in.
+  List<DayGroupData> _grouped(BuildContext context, List<ScheduleItem> sorted) {
+    final byDay = <String, List<ScheduleItem>>{};
+    final dateFor = <String, DateTime>{};
+    for (final item in sorted) {
+      final day = calendarDayFor(item);
+      final key = dayKeyOf(day);
+      dateFor[key] = day;
+      byDay.putIfAbsent(key, () => []).add(item);
+    }
+    final keys = byDay.keys.toList()
+      ..sort((a, b) => dateFor[b]!.compareTo(dateFor[a]!)); // most-recent day first
+    return [
+      for (final key in keys)
+        DayGroupData(
+          key: key,
+          label: formatWallDate(context, dateFor[key]!),
+          children: [for (final item in byDay[key]!) _ActivityCard(item: item)],
+        ),
+    ];
   }
 }
 

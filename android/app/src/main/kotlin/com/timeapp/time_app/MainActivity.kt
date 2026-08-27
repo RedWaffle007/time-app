@@ -58,6 +58,10 @@ import com.timeapp.time_app.reminders.ReminderAuditChannel
  */
 class MainActivity : FlutterFragmentActivity() {
 
+    // Preloaded once so tick #1 has no file-open latency. Created lazily on first
+    // use (channel call), which is the cold-start reveal mounting.
+    private var splashSound: SplashSound? = null
+
     private companion object {
         const val CHANNEL = "time_app/secure_window"
         const val METHOD = "setSecure"
@@ -73,6 +77,10 @@ class MainActivity : FlutterFragmentActivity() {
         // mount and stops it on dismiss; the sound itself lives in
         // [AlarmSoundService] so it survives the screen going dark.
         const val ALARM_CHANNEL = "time_app/alarm_sound"
+
+        // The cold-start reveal's three tocks. Fired once from Dart as the black
+        // splash mounts; cadence + the mute-switch check live in [SplashSound].
+        const val SPLASH_SOUND_CHANNEL = "time_app/splash_sound"
 
         // Battery / Doze exemption. `isIgnoring` reports the current state;
         // `request` fires the DIRECT system yes/no dialog (needs the
@@ -198,6 +206,19 @@ class MainActivity : FlutterFragmentActivity() {
                 when (call.method) {
                     "canOpen" -> result.success(resolveAutostartIntent() != null)
                     "open" -> result.success(openAutostartSettings())
+                    else -> result.notImplemented()
+                }
+            }
+
+        // The cold-start reveal's three tocks. Constructed HERE (engine config,
+        // which runs before the Dart entrypoint) so the sample is preloaded well
+        // before the splash mounts — otherwise the async SoundPool load would
+        // race tick #1 and drop it.
+        val splash = SplashSound(applicationContext).also { splashSound = it }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SPLASH_SOUND_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "play" -> { splash.play(); result.success(null) }
                     else -> result.notImplemented()
                 }
             }

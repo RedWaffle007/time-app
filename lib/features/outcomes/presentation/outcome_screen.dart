@@ -11,9 +11,10 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/theme/status_style.dart';
 import '../../../core/widgets/async_view.dart';
-import '../../../core/widgets/section_header.dart';
+import '../../../core/widgets/collapsible_day_groups.dart';
 import '../../../routing/app_router.dart';
 import '../../archive/presentation/archive_menu_button.dart';
+import '../../calendar/application/calendar_grouping.dart';
 import '../../notifications/application/outcome_notifier.dart';
 import '../../reminders/presentation/reminder_primer.dart';
 import '../../scheduling/application/schedule_providers.dart';
@@ -229,62 +230,98 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
               .where((i) => i.status == ScheduleItemStatus.approved)
               .toList();
 
-          // What's coming up rises to the top; what's done or gone SINKS below.
-          // (Chosen 2026-08-26 — the old ascending order buried the next thing
-          // under old cards.) An item is "past" once it has an outcome OR its
-          // instant has passed. UPCOMING is soonest-first (the very next thing
-          // is at the very top); PAST is most-recent-first (recent history above
-          // older).
-          final now = DateTime.now().toUtc();
-          final upcoming = approved
-              .where((i) =>
-                  i.outcome == null && i.scheduledInstantUtc.isAfter(now))
-              .toList()
-            ..sort((a, b) =>
+          // Group by each item's OWN-timezone day (`calendarDayFor`, never the
+          // viewer's — a "Tue 9:00" card must not file under Monday). UPCOMING
+          // days rise to the top (soonest first); PAST days sink below
+          // (most-recent first). Within a day, items read chronologically.
+          // (Upcoming-first chosen 2026-08-26; day grouping added 2026-08-27.)
+          final byDay = <String, List<ScheduleItem>>{};
+          final dateFor = <String, DateTime>{};
+          for (final item in approved) {
+            final day = calendarDayFor(item);
+            final key = dayKeyOf(day);
+            dateFor[key] = day;
+            byDay.putIfAbsent(key, () => []).add(item);
+          }
+          for (final list in byDay.values) {
+            list.sort((a, b) =>
                 a.scheduledInstantUtc.compareTo(b.scheduledInstantUtc));
-          final past = approved
-              .where((i) =>
-                  i.outcome != null || !i.scheduledInstantUtc.isAfter(now))
+          }
+          // yyyy-MM-dd keys sort lexicographically = chronologically, so the
+          // today-split and the per-side ordering can work on the keys directly.
+          final todayKey = dayKeyOf(DateTime.now());
+          final upcomingKeys = byDay.keys
+              .where((k) => k.compareTo(todayKey) >= 0)
               .toList()
-            ..sort((a, b) =>
-                b.scheduledInstantUtc.compareTo(a.scheduledInstantUtc));
-          final ordered = [...upcoming, ...past];
-          final hasUpcoming = upcoming.isNotEmpty;
-          // Only label the sections when BOTH exist — a lone header over an
-          // all-future (or all-past) list is noise.
-          final showHeaders = upcoming.isNotEmpty && past.isNotEmpty;
+            ..sort();
+          final pastKeys = byDay.keys
+              .where((k) => k.compareTo(todayKey) < 0)
+              .toList()
+            ..sort((a, b) => b.compareTo(a));
+          final orderedKeys = [...upcomingKeys, ...pastKeys];
 
-          // Record where the highlighted card sits in the RENDERED order, for
-          // the first-frame approximate scroll (ensureVisible refines it).
-          _approvedCount = ordered.length;
-          final idx = _highlighted == null
-              ? -1
-              : ordered.indexWhere((i) => i.id == _highlighted);
-          _highlightIndex = idx < 0 ? null : idx;
+          _approvedCount = approved.length;
+          // The highlighted card is force-built by expanding its day (below), so
+          // the old flat-index jump is unnecessary — ensureVisible alone lands it.
+          _highlightIndex = null;
 
-          return ListView(
+          // The NEXT upcoming item (earliest future, no outcome) drives the hero
+          // band and the primer — the same facts the old `upcoming` list carried.
+          final now = DateTime.now().toUtc();
+          ScheduleItem? nextItem;
+          for (final item in approved) {
+            if (item.outcome == null && item.scheduledInstantUtc.isAfter(now)) {
+              if (nextItem == null ||
+                  item.scheduledInstantUtc
+                      .isBefore(nextItem.scheduledInstantUtc)) {
+                nextItem = item;
+              }
+            }
+          }
+          final hasUpcoming = nextItem != null;
+
+          // Force the highlighted item's day open so its card mounts and the
+          // scroll can land, even if that day would default to collapsed.
+          String? forceKey;
+          if (_highlighted != null) {
+            for (final item in approved) {
+              if (item.id == _highlighted) {
+                forceKey = dayKeyOf(calendarDayFor(item));
+                break;
+              }
+            }
+          }
+
+          return CollapsibleDayGroups(
             controller: _scrollController,
-            children: [
-              // The band names the NEXT upcoming item — `upcoming` is
-              // soonest-first, so its first element is that item. It reads the
-              // same list the cards do, so it cannot disagree.
-              HeroBand(nextItem: upcoming.isEmpty ? null : upcoming.first),
+            initiallyExpandedKeys: {todayKey},
+            forceExpandKey: forceKey,
+            leading: [
+              HeroBand(nextItem: nextItem),
               ReminderPrimerCard(hasUpcomingItems: hasUpcoming),
-              if (showHeaders) const SectionHeader('Upcoming'),
-              for (final item in upcoming)
-                _OutcomeCard(
-                  item: item,
-                  highlighted: item.id == _highlighted,
-                  cardKey: item.id == _highlighted ? _highlightKey : null,
-                ),
-              if (past.isNotEmpty) const SectionHeader('Past'),
-              for (final item in past)
-                _OutcomeCard(
-                  item: item,
-                  highlighted: item.id == _highlighted,
-                  // The key rides on the highlighted card only; that is all
-                  // `ensureVisible` needs to find it.
-                  cardKey: item.id == _highlighted ? _highlightKey : null,
+            ],
+            groups: [
+              for (final key in orderedKeys)
+                DayGroupData(
+                  key: key,
+                  label: formatWallDate(context, dateFor[key]!),
+                  // Today / Future plans / Past plans buckets. yyyy-MM-dd keys
+                  // compare chronologically, so today is ==, future is >, past <.
+                  section: key == todayKey
+                      ? 'Today'
+                      : (key.compareTo(todayKey) > 0
+                          ? 'Future plans'
+                          : 'Past plans'),
+                  children: [
+                    for (final item in byDay[key]!)
+                      _OutcomeCard(
+                        item: item,
+                        highlighted: item.id == _highlighted,
+                        // The key rides on the highlighted card only; that is all
+                        // `ensureVisible` needs to find it.
+                        cardKey: item.id == _highlighted ? _highlightKey : null,
+                      ),
+                  ],
                 ),
             ],
           );

@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Modify this file to customize your launch splash screen -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="?android:colorBackground" />
+    <!-- Black, to match the SplashOverlay cold-start reveal: the native launch
+         window must be #000000 so nothing flashes before Flutter's first frame. -->
+    <item android:drawable="@android:color/black" />
 
     <!-- You can insert your own image assets here -->
     <!-- <item>

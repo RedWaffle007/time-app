@@ -124,8 +124,8 @@ class ReminderPrimerCard extends ConsumerWidget {
       return const _PrimerCopy(
         icon: AppIcons.reminders,
         title: 'Reminders are off',
-        body: "You've approved items with a time on them, but this phone "
-            "won't notify you when they're due.",
+        body: "You've approved items with a time, but this phone won't notify "
+            "you when they're due.",
         action: 'Turn on',
       );
     }
@@ -133,9 +133,8 @@ class ReminderPrimerCard extends ConsumerWidget {
       return const _PrimerCopy(
         icon: AppIcons.exactTiming,
         title: 'Reminders may arrive late',
-        body: 'Android needs one more permission before it will wake your phone '
-            'at the exact time. Without it a reminder can be a couple of minutes '
-            'late, or much later while the phone is asleep.',
+        body: 'One more permission lets the app wake your phone at the exact '
+            'time. Without it, reminders can be late — much later while asleep.',
         action: 'Fix timing',
       );
     }
@@ -143,8 +142,7 @@ class ReminderPrimerCard extends ConsumerWidget {
       icon: AppIcons.reminders,
       title: 'Reminders won’t ring over other apps',
       body: 'One more permission lets a reminder ring like an alarm even while '
-          "you're using another app. Without it, the sound can be held back "
-          'until you put the other app down.',
+          "you're using another app.",
       action: 'Allow',
     );
   }
@@ -179,9 +177,8 @@ Future<void> runReminderPrimer(BuildContext context, WidgetRef ref) async {
     final agreed = await _explain(
       context,
       title: 'Get reminded when it’s time',
-      body: 'When an item you approved comes due, this phone will show you a '
-          'notification. That is the only thing this permission is used for, '
-          'and nothing about it leaves your device.',
+      body: 'Shows a notification when an approved item comes due. That’s all '
+          'it’s used for, and it never leaves your device.',
       confirm: 'Continue',
     );
     if (agreed != true || !context.mounted) return;
@@ -206,9 +203,9 @@ Future<void> runReminderPrimer(BuildContext context, WidgetRef ref) async {
     final agreed = await _explain(
       context,
       title: 'Remind me on time',
-      body: 'Android only lets an app set a precise alarm with your permission. '
-          'Without it, a reminder waits for the next time your phone wakes up — '
-          'which can be a long time overnight. This opens Android’s settings.',
+      body: 'Lets the app wake your phone at the exact time. Without it, '
+          'reminders can be late — sometimes hours overnight. Opens Android’s '
+          'settings.',
       confirm: 'Open settings',
     );
     if (agreed != true) return;
@@ -217,10 +214,8 @@ Future<void> runReminderPrimer(BuildContext context, WidgetRef ref) async {
     final agreed = await _explain(
       context,
       title: 'Ring over other apps',
-      body: 'To ring like a real alarm — over the top of whatever you’re doing, '
-          'and on the lock screen — Android needs one more permission. Without '
-          'it the reminder still appears, but the sound can be muted while you '
-          'are in another app. This opens Android’s settings.',
+      body: 'Lets a reminder ring like an alarm, over other apps and on the '
+          'lock screen. Opens Android’s settings.',
       confirm: 'Open settings',
     );
     if (agreed != true) return;

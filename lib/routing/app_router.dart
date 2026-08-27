@@ -18,6 +18,7 @@ import '../features/chatbot/presentation/model_setup_screen.dart';
 import '../features/calendar/presentation/calendar_screen.dart';
 import '../features/home/presentation/home_gate.dart';
 import '../features/onboarding/presentation/onboarding_screen.dart';
+import '../features/walkthrough/presentation/how_it_works_screen.dart';
 import '../features/social/presentation/blocked_users_screen.dart';
 import '../features/social/presentation/friend_requests_screen.dart';
 import '../features/social/presentation/friends_screen.dart';
@@ -54,6 +55,12 @@ class Routes {
   /// first-run flow reaches the same screen inline through `OnboardingGate`;
   /// this route is the "review / fix my permissions" door after that.
   static const permissions = '/permissions';
+
+  /// **The "How this app works" guide** — a complete, scrollable reference with
+  /// one blurb per page and feature. Top-level and pushed, reached from the
+  /// account menu; it belongs to no tab. Distinct from the first-run coach tour,
+  /// which it can replay.
+  static const howItWorks = '/how-it-works';
 
   /// **The calendar** — a month/week/day view over the items that already
   /// exist. Top-level and pushed, reached from the account menu, for exactly
@@ -467,6 +474,12 @@ final routerProvider = Provider<GoRouter>((ref) {
             if (context.canPop()) context.pop();
           },
         ),
+      ),
+      // The complete "How this app works" guide. Account-level and pushed,
+      // alongside the other lens screens; see the doc on `Routes.howItWorks`.
+      GoRoute(
+        path: Routes.howItWorks,
+        builder: (context, state) => const HowItWorksScreen(),
       ),
       // The full-screen alarm surface. Top-level and outside the shell so it
       // covers the nav bar the way a clock alarm covers everything; its Dismiss
