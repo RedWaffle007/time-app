@@ -1,5 +1,38 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+/// Strips clock/meridian residue that speech-to-text sometimes leaves in a
+/// title ("a.m. cycling", "cycling p.m.").
+///
+/// Applied on every READ (`ScheduleItem.fromDoc`) and every WRITE
+/// (`ScheduleRepository.createItem`), so legacy items written before the voice
+/// parser learned to drop meridians render clean with no migration, and new
+/// items — voice OR manual — are stored clean.
+///
+/// Conservative on purpose, so it never eats a real word:
+///  - a DOTTED meridian ("a.m.", "p.m.", "a.m") is residue wherever it sits and
+///    is dropped anywhere — no English word looks like that;
+///  - a BARE "am"/"pm" is dropped ONLY at the very start or end of the title,
+///    never interior, so "I am tired" and "spam folder" keep their letters.
+///
+/// If stripping would empty the title (e.g. the title was literally "a.m."), the
+/// trimmed original is kept — a blank title helps no one.
+String sanitizeScheduleTitle(String raw) {
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) return '';
+  final dotted = RegExp(r'^[ap]\.m\.?[.,;:!?]*$', caseSensitive: false);
+  final bare = RegExp(r'^[ap]m[.,;:!?]*$', caseSensitive: false);
+  final tokens = trimmed.split(RegExp(r'\s+'))
+    ..removeWhere((t) => dotted.hasMatch(t));
+  while (tokens.isNotEmpty && bare.hasMatch(tokens.first)) {
+    tokens.removeAt(0);
+  }
+  while (tokens.isNotEmpty && bare.hasMatch(tokens.last)) {
+    tokens.removeLast();
+  }
+  final result = tokens.join(' ').trim();
+  return result.isEmpty ? trimmed : result;
+}
+
 /// Lifecycle status of a schedule item (see data-model.md state machine).
 enum ScheduleItemStatus { pending, approved, rejected, cancelled, withdrawn }
 
@@ -140,6 +173,27 @@ class ScheduleItem {
   /// Nothing further will happen to this item.
   bool get isSettled => isAutoArchived || isManuallyArchivable;
 
+  /// How late completion was, relative to the scheduled instant. Null unless the
+  /// item was marked **done** and completion landed AFTER the scheduled time (an
+  /// on-time or early completion has no delay to show).
+  ///
+  /// **Derived, never stored.** The delay is `completedAt - scheduledInstantUtc`
+  /// and both are already persisted — a stored `delayMinutes` would only be a
+  /// second copy to drift. A done item with no `completedAt` (legacy data) has
+  /// no measurable delay and returns null rather than a guessed one.
+  Duration? get completionDelay {
+    final o = outcome;
+    if (o == null || o.result != OutcomeResult.done) return null;
+    final done = o.completedAt;
+    if (done == null) return null;
+    final d = done.difference(scheduledInstantUtc);
+    return d > Duration.zero ? d : null;
+  }
+
+  /// Completed, but after its scheduled time — honest data surfaced in the UI
+  /// and in stats, never dropped. See [completionDelay].
+  bool get wasCompletedLate => completionDelay != null;
+
   factory ScheduleItem.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final d = doc.data() ?? const {};
     return ScheduleItem(
@@ -147,7 +201,7 @@ class ScheduleItem {
       targetUid: (d['targetUid'] ?? '') as String,
       createdByUid: (d['createdByUid'] ?? '') as String,
       groupId: (d['groupId'] ?? '') as String,
-      title: (d['title'] ?? '') as String,
+      title: sanitizeScheduleTitle((d['title'] ?? '') as String),
       note: d['note'] as String?,
       localWallTime: (d['localWallTime'] ?? '') as String,
       timezone: (d['timezone'] ?? '') as String,

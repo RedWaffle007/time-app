@@ -92,7 +92,7 @@ class _ReminderDiagnosticsScreenState
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-              padding: Space.screenList,
+              padding: Space.screenListSafe(context),
               children: [
                 const SectionHeader('Permissions'),
                 if (permissions == null)

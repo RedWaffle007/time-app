@@ -54,7 +54,7 @@ Future<VoiceCaptureOutcome?> showVoiceCaptureSheet(
 /// lock flag) — deliberately not on the Firestore profile.
 const _kRationaleAcceptedKey = 'voice_mic_rationale_accepted';
 
-enum _Phase { intro, ready, preparing, listening, denied, empty }
+enum _Phase { intro, ready, preparing, listening, review, denied, empty }
 
 class _VoiceCaptureSheet extends ConsumerStatefulWidget {
   const _VoiceCaptureSheet({required this.promptText, this.hintText});
@@ -72,6 +72,11 @@ class _VoiceCaptureSheet extends ConsumerStatefulWidget {
 class _VoiceCaptureSheetState extends ConsumerState<_VoiceCaptureSheet> {
   _Phase _phase = _Phase.intro;
   String _partial = '';
+
+  /// The finalised transcript held in [_Phase.review], so the user can confirm
+  /// it or record again before it fills the form. Only committed when they tap
+  /// "Use this".
+  String _captured = '';
   bool _checkedFlag = false;
 
   /// Within [_Phase.ready]: whether the prompt has finished being spoken. The
@@ -159,7 +164,12 @@ class _VoiceCaptureSheetState extends ConsumerState<_VoiceCaptureSheet> {
       setState(() => _phase = _Phase.empty);
       return;
     }
-    Navigator.pop(context, VoiceCaptureOutcome.transcript(text));
+    // Don't commit straight away — show what was heard so the user can confirm
+    // or record again. "Use this" (in the review phase) is what pops the sheet.
+    setState(() {
+      _captured = text;
+      _phase = _Phase.review;
+    });
   }
 
   Future<void> _stop() async {
@@ -291,6 +301,38 @@ class _VoiceCaptureSheetState extends ConsumerState<_VoiceCaptureSheet> {
             onPressed: _stop,
             icon: const Icon(AppIcons.voiceStop),
             label: const Text('Done'),
+          ),
+          const SizedBox(height: Space.sm),
+          _typeInsteadButton(),
+        ];
+
+      case _Phase.review:
+        // What was heard, held for confirmation. "Use this" commits it to the
+        // form; "Record again" throws it away and listens afresh. Nothing is
+        // saved to the schedule here — the form still confirms afterwards.
+        return [
+          Text(
+            'Heard:',
+            style: context.text.labelSmall
+                ?.copyWith(color: context.colors.onSurfaceVariant),
+          ),
+          const SizedBox(height: Space.xs),
+          Text(_captured, style: context.text.bodyLarge),
+          const SizedBox(height: Space.xl),
+          FilledButton.icon(
+            autofocus: true,
+            onPressed: () => Navigator.pop(
+              context,
+              VoiceCaptureOutcome.transcript(_captured),
+            ),
+            icon: const Icon(AppIcons.selected),
+            label: const Text('Use this'),
+          ),
+          const SizedBox(height: Space.sm),
+          OutlinedButton.icon(
+            onPressed: _listen,
+            icon: const Icon(AppIcons.voiceListening),
+            label: const Text('Record again'),
           ),
           const SizedBox(height: Space.sm),
           _typeInsteadButton(),

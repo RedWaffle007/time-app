@@ -137,7 +137,7 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
         ],
       ),
       body: Padding(
-        padding: Space.screenForm,
+        padding: Space.screenFormSafe(context),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

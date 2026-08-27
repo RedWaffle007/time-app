@@ -435,7 +435,11 @@ class _Agenda extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.only(bottom: Space.xxxl),
+      // Clear the phone's system nav bar (this is a full-screen route with no
+      // in-app bottom bar), so the last entry never sits under it.
+      padding: EdgeInsets.only(
+        bottom: Space.xxxl + Space.systemBottomInset(context),
+      ),
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: Space.lg),

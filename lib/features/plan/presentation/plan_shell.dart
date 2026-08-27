@@ -57,7 +57,6 @@ class _PlanShellState extends ConsumerState<PlanShell>
   late final TabController _tabController;
 
   static const _mySchedule = 0;
-  static const _activity = 1;
   static const _groups = 2;
 
   /// The item currently forwarded to the embedded My Schedule sub-tab for
@@ -157,6 +156,19 @@ class _PlanShellState extends ConsumerState<PlanShell>
           ],
         ),
       ),
+      // The one always-present create affordance for Plan — a bottom-right FAB,
+      // shown on ALL three sub-tabs (My Schedule / Activity / Groups) so
+      // "make a new item" is never hidden behind knowing to switch tabs. It
+      // sits above the system nav bar (inner Scaffold, so it clears the shell's
+      // bottom bar) and is distinct from the centre voice ⊕ (speak-to-create):
+      // this is the manual, WhatsApp-style "＋" create. Its own heroTag so it
+      // never collides with the shell's voice FAB during a route transition.
+      floatingActionButton: FloatingActionButton(
+        heroTag: 'planCreateFab',
+        tooltip: 'Plan an item',
+        onPressed: () => context.push('${Routes.plan}/schedule-builder'),
+        child: const Icon(AppIcons.add),
+      ),
       body: TabBarView(
         controller: _tabController,
         // Order matches the tabs above. Each wrapped so its state survives a
@@ -190,11 +202,8 @@ class _PlanShellState extends ConsumerState<PlanShell>
             icon: const Icon(AppIcons.approvals),
             onPressed: () => context.push('${Routes.plan}/approvals'),
           ),
-        _activity => IconButton(
-            tooltip: 'Plan an item',
-            icon: const Icon(AppIcons.add),
-            onPressed: () => context.push('${Routes.plan}/schedule-builder'),
-          ),
+        // "Plan an item" now lives on the always-present bottom-right FAB, so it
+        // is no longer duplicated as an Activity app-bar action.
         _groups => IconButton(
             tooltip: 'New group',
             icon: const Icon(AppIcons.add),

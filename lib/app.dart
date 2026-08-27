@@ -14,6 +14,7 @@ import 'features/groups/application/group_providers.dart';
 import 'features/groups/application/group_stats_providers.dart';
 import 'features/groups/application/planner_access_reconciler.dart';
 import 'features/reminders/application/reminder_providers.dart';
+import 'features/scheduling/application/item_lapse_reconciler.dart';
 import 'features/scheduling/application/schedule_providers.dart';
 import 'features/scheduling/application/slot_lock_reconciler.dart';
 import 'features/social/application/stats_providers.dart';
@@ -312,6 +313,14 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     //
     // There is deliberately NO `releaseSlot()` inside `markDone()`/`markSkipped()`.
     ref.watch(slotLockSyncProvider);
+
+    // THE END-OF-DAY LAPSE WIRE — the same shape a fifth time. An item nobody
+    // approves or acts on cannot sit in "next" forever: at the end of its own
+    // local day a pending plan is rejected ("Not approved in time") and an
+    // approved-but-untouched item is skipped ("Did not respond"), off the item
+    // stream, never off a transition. Late completions before that boundary are
+    // ordinary Done writes and keep their delay (ScheduleItem.completionDelay).
+    ref.watch(itemLapseSyncProvider);
 
     // THE STATS LAYER'S ONE WIRE, and it is the same shape as the reminder
     // wire above on purpose: **driven off the item stream, never off

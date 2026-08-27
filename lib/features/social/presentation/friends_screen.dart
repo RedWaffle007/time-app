@@ -55,7 +55,7 @@ class FriendsScreen extends ConsumerWidget {
         // friends, and AsyncView's empty state would replace the whole body
         // with a message and hide it.
         builder: (context, friends) => ListView(
-          padding: Space.screenList,
+          padding: Space.screenListSafe(context),
           children: [
             ListTile(
               contentPadding: const EdgeInsets.symmetric(vertical: Space.xs),

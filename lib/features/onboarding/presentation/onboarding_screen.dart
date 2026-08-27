@@ -175,7 +175,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         builder: (context, state) {
           final steps = _applicableSteps(state, oem);
           return ListView(
-            padding: Space.screenForm,
+            padding: Space.screenFormSafe(context),
             children: [
               Text(
                 'For reminders to reach you, this phone needs a few '

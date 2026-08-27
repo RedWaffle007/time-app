@@ -176,6 +176,7 @@ class StatItem {
     required this.isApproved,
     required this.isDone,
     required this.isSkipped,
+    this.completedAt,
   });
 
   final DateTime instantUtc;
@@ -183,7 +184,21 @@ class StatItem {
   final bool isDone;
   final bool isSkipped;
 
+  /// When a DONE item was actually completed. Null on non-done items and on
+  /// legacy done items that predate the field. Combined with [instantUtc] it is
+  /// the whole delay story — see [wasLate] / [latenessMinutes].
+  final DateTime? completedAt;
+
   bool get hasOutcome => isDone || isSkipped;
+
+  /// Completed after its scheduled time. A done item with no [completedAt]
+  /// (legacy) is treated as on-time, not guessed late.
+  bool get wasLate =>
+      isDone && completedAt != null && completedAt!.isAfter(instantUtc);
+
+  /// How many whole minutes late, or 0 when on time / not applicable.
+  int get latenessMinutes =>
+      wasLate ? completedAt!.difference(instantUtc).inMinutes : 0;
 }
 
 /// The published stats document, `users/{uid}/profileStats/summary`.

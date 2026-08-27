@@ -417,6 +417,16 @@ class _OutcomeCard extends ConsumerWidget {
     return Row(
       children: [
         StatusBadge.outcome(outcome.result, context),
+        // Completed, but after its scheduled time — surfaced, never hidden. Line
+        // work / muted text, not a doctrine fill: a late Done is still a Done.
+        if (item.completionDelay case final delay?) ...[
+          const SizedBox(width: Space.sm),
+          Text(
+            '${formatDurationMinutes(context, delay.inMinutes)} late',
+            style: context.text.bodySmall
+                ?.copyWith(color: context.colors.onSurfaceVariant),
+          ),
+        ],
         if (outcome.skipReason case final reason?) ...[
           const SizedBox(width: Space.sm),
           Expanded(

@@ -31,7 +31,7 @@ class BlockedUsersScreen extends ConsumerWidget {
         emptyIcon: AppIcons.block,
         emptyMessage: "You haven't blocked anyone.",
         builder: (context, list) => ListView(
-          padding: Space.screenList,
+          padding: Space.screenListSafe(context),
           children: [
             Padding(
               padding: const EdgeInsets.only(bottom: Space.md),

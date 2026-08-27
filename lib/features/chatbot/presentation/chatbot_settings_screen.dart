@@ -83,7 +83,7 @@ class _AddressFormState extends ConsumerState<_AddressForm> {
     return Form(
       key: _formKey,
       child: ListView(
-        padding: Space.screenForm,
+        padding: Space.screenFormSafe(context),
         children: [
           TextFormField(
             controller: _controller,

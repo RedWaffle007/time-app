@@ -361,7 +361,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     final isEmergency = canEmergency && _emergency;
 
     return ListView(
-      padding: Space.screenList,
+      padding: Space.screenListSafe(context),
       children: [
         // Target picker. "Myself" is always first, then anyone who granted you.
         const SectionHeader('Plan for'),

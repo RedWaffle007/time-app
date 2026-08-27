@@ -39,7 +39,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     return Scaffold(
       body: Center(
         child: Padding(
-          padding: Space.screenForm,
+          padding: Space.screenFormSafe(context),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [

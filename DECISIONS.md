@@ -5478,3 +5478,82 @@ streak + follow-through + leaderboard, own row), and the group-plan fan-out
 sends cleanly for a future time (self item appears approved). Two-device proof
 (seeing another member on the board / another member receiving a pending item)
 stays deferred.
+
+---
+
+## Title sanitizing, end-of-day lapse + late-delay stats, record-again, create FABs, bottom safe-area (2026-08-27)
+
+Six changes, all directed this session. Analyzer + UI-RULES lint green, 369 tests
+pass (new `test/item_lapse_test.dart`). Installed debug on the Redmi — **not yet
+device-verified**; the earlier on-device build was *release-signed*, so every
+debug reinstall was silently rejected (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`) until
+the old package was uninstalled. Lesson: do not mix release- and debug-signed
+builds on the test phone; uninstall to switch.
+
+**1. Title residue sanitizer.** "a.m. cycling" in the hero was legacy title data
+(the voice parser already strips meridians). `sanitizeScheduleTitle()` (in
+`schedule_item.dart`) is applied on every READ (`fromDoc` — fixes existing data
+with no migration, on every screen) AND every WRITE (`createItem` — clean bytes
+for voice + manual). Conservative: drops dotted `a.m./p.m.` anywhere, bare
+`am/pm` only at the title's edges, so "I am tired" / "spam folder" survive; never
+empties a title.
+
+**2. End-of-day auto-lapse — the FIFTH stream-driven reconciler.** An unaddressed
+item cannot sit in "next" forever. At MIDNIGHT IN THE ITEM'S OWN LOCAL DAY (tz-
+aware, `endOfScheduledLocalDayUtc` via `TZDateTime` so DST is exact) a still-
+`pending` item is `reject`ed ("Not approved in time") and an `approved` item with
+no outcome is `markSkipped` ("Did not respond"). Pure classifier `lapsedItems()`
+in `item_lapse_policy.dart`; `ItemLapseReconciler` + `itemLapseSyncProvider` wired
+one line in `app.dart`, off `allItemsAsTargetProvider`, runs on the target's own
+device. Same doctrine as the other four reconcilers: off the stream, never off a
+transition; idempotent (settled items untouched); client-driven (lapses on next
+emission/app-open past local midnight — no Cloud Functions here). Nothing is
+deleted; the settled item stays visible to the partner, and its reason feeds
+stats. **Grace = the whole local day** (chosen over 1–2h/immediate), so the user
+has until midnight to act — and to complete LATE.
+
+**3. Late-completion delay — derived, not stored.** `markDone` already writes
+`outcome.completedAt`; delay = `completedAt − scheduledInstantUtc`. New
+`ScheduleItem.completionDelay` / `wasCompletedLate` getters (null/​false unless
+done AND after the scheduled instant; a done item lacking `completedAt` counts
+on-time, never a guessed late). No new field, no migration — a stored
+`delayMinutes` would only be a copy to drift. Surfaced: per-item `· Xh Ym late` on
+the outcome card and planner activity; two new `kProfileStatDefinitions` tiles —
+**On-time rate** (percent of completions at/before their time) and **Avg late by**
+(mean lateness over the late ones only). `StatItem` gained `completedAt`.
+
+**4. Record-again.** The voice sheet no longer auto-commits the transcript: a new
+`review` phase shows "Heard: …" with **Use this / Record again / Type instead**.
+Nothing saves until "Use this"; "Record again" re-listens. The form still confirms
+afterwards.
+
+**5. Per-page create FABs — "one FAB" retired.** A single centre mic left MANUAL
+create hidden behind an app-bar `＋`, confusing users who stayed on My Schedule.
+Now two FABs, each with a distinct job (UI-RULES §6.12 rewritten): the centre
+**voice** mic (`HomeShell`, all pillars) and a bottom-right **`＋` manual-create**
+FAB owned by the creating pillar's own inner scaffold — **Plan** ("Plan an item",
+shown on all three sub-tabs → schedule builder) and **Track** ("Log item" → log
+sheet). Distinct `heroTag`s; the pillar FAB sits above the system nav bar and
+clears the shell bar. The now-redundant Activity/Track app-bar `＋` actions were
+removed. This is a deliberate doctrine change, recorded here and in UI-RULES.md
+before the code, per the standing rule.
+
+**6. Bottom system-nav overlap — swept.** Full-screen PUSHED routes were padding
+content with bare `Space.screenList/screenForm`, so the last row / footer button
+slid under the phone's back/home/recents bar (reported on How-it-works "Replay"
+and profile "This device"). Added `Space.screenListSafe/screenFormSafe(context)`
++ `systemBottomInset(context)` (bottom inset from `MediaQuery.viewPaddingOf`, so
+it survives the keyboard) and applied to every top-level pushed screen (How-it-
+works, Profile edit, Complete profile, Auth, Calendar agenda, Friends, Friend
+requests, User search, User profile, Blocked users, Chatbot settings, Reminder
+diagnostics, Onboarding/permissions, Archived, Schedule builder). In-shell tab
+bodies were deliberately left alone (the `BottomAppBar` reserves that space);
+centered content (lock screen) and already-`SafeArea` bodies (chat, model setup,
+alarm) needed nothing.
+
+**Discoverability.** Friends "buried" and the plan-button confusion are answered
+by (5) plus expanded orientation: the first-run walkthrough copy now names where
+each feature lives and points at the `＋` FABs, and "How this app works" is
+restructured around the real bar (Plan/Track/⊕/Stats/You) with "in the You tab"
+tags on Friends, Calendar, Language practice and permissions. Walkthrough test's
+single-line-body contract kept.

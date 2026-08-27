@@ -718,13 +718,30 @@ A". Recipes so it stays Hearth:
   icon in `onSurfaceVariant`. The pending-attention **count** rides the **Plan**
   icon (aggregate) and the **My Schedule** sub-tab — the one orange the bar may
   carry (§2.7), rendering nothing at zero.
-- **One FAB on screen, always.** The docked centre **voice FAB** is a standard
-  (56) circular `primary` (sage) FAB with a mic glyph and a *gentle* floating
-  shadow (`Elevations.floating`) — inviting, not shouting (Hearth). Manual create
-  for planning and tracking are **app-bar `＋` actions**, never a second FAB, so
-  nothing competes with it. Tapping it opens a bottom sheet (§ below) offering
-  **Track time** / **Plan time**; both are also reachable manually, so the FAB is
-  additive, never the only door.
+- **Two FABs, and only these two, each with a distinct job** (revised 2026-08-27,
+  DECISIONS.md "Per-page create FABs"). The old "one FAB, always" rule is retired:
+  a single centre-docked mic left *manual* create hidden behind knowing to open an
+  app-bar overflow, which confused users who stayed on My Schedule.
+  1. The docked centre **voice FAB** — a standard (56) circular `primary` (sage)
+     FAB, mic glyph, *gentle* floating shadow (`Elevations.floating`). Speak-to-
+     create. Owned by `HomeShell` (the outer scaffold), present on every pillar.
+  2. A **manual-create FAB**, bottom-right (`endFloat`), circular `primary` with
+     the **`AppIcons.add` (`＋`)** glyph — the WhatsApp-style "new item" affordance.
+     Exactly one per creating pillar: **Plan** ("Plan an item", all three sub-tabs)
+     and **Track** ("Log item"). Owned by the pillar's own (inner) scaffold, so it
+     sits above the system nav bar and clears the bottom bar. Each carries its own
+     `heroTag` so it never collides with the voice FAB in a route transition.
+  The two never merge and never appear a third time: mic = voice, `＋` = manual.
+  Manual create is **no longer** an app-bar `＋`. Detail/leaf pushed screens carry
+  no FAB.
+- **Bottom edge respects the system nav bar.** Any full-screen **pushed** route
+  (no in-app bottom bar of its own) that scrolls or docks a control to the bottom
+  pads its content by the system navigation-bar inset, via
+  `Space.screenListSafe(context)` / `screenFormSafe(context)` /
+  `systemBottomInset(context)` — never a bare `Space.screenList`/`screenForm` on
+  such a screen, or the last row / footer button slides under the phone's
+  back/home/recents bar. **In-shell tab bodies must NOT add it** — the shell's
+  `BottomAppBar` already reserves that space, and adding it leaves a gap.
 - **Plan inner TabBar:** the three sub-tabs (My Schedule / Activity / Groups) use
   a soft `primary` underline indicator on a scaffold-background bar, swipeable,
   all kept alive. It is nav between sub-screens, not a filter — so a TabBar, not

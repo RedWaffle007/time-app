@@ -39,6 +39,18 @@ const List<ProfileStatDefinition> kProfileStatDefinitions = [
     compute: _followThrough,
   ),
   ProfileStatDefinition(
+    key: 'onTimeRate',
+    label: 'On-time rate',
+    unit: ProfileStatUnit.percent,
+    compute: _onTimeRate,
+  ),
+  ProfileStatDefinition(
+    key: 'avgLateMinutes',
+    label: 'Avg late by',
+    unit: ProfileStatUnit.minutes,
+    compute: _avgLateMinutes,
+  ),
+  ProfileStatDefinition(
     key: 'plansCreated',
     label: 'Plans made for others',
     unit: ProfileStatUnit.count,
@@ -151,6 +163,33 @@ num _followThrough(StatInputs i) {
   if (settled == 0) return 0;
   final done = i.itemsAsTarget.where((it) => it.isDone).length;
   return ((done / settled) * 100).round();
+}
+
+/// Of the tasks the user COMPLETED, the share finished at or before their
+/// scheduled time. A late completion is honest data, counted here as not-on-time
+/// rather than dropped. Denominator is done items only — a skip is a different
+/// failure that [_followThrough] already captures, and an approved item whose
+/// time has not arrived is neither on-time nor late yet.
+///
+/// A done item with no `completedAt` (legacy) counts as on-time — [StatItem]
+/// declines to guess lateness it cannot measure. Returns 0 with nothing done.
+num _onTimeRate(StatInputs i) {
+  final done = i.itemsAsTarget.where((it) => it.isDone).toList();
+  if (done.isEmpty) return 0;
+  final onTime = done.where((it) => !it.wasLate).length;
+  return ((onTime / done.length) * 100).round();
+}
+
+/// The average lateness (whole minutes) across the completions that WERE late.
+/// The denominator is late items only, so it reads "when late, typically by
+/// this much" rather than being diluted by every on-time task. 0 when nothing
+/// was ever late — a meaningful "never late", and the section stays suppressed
+/// until there is history anyway.
+num _avgLateMinutes(StatInputs i) {
+  final late = i.itemsAsTarget.where((it) => it.wasLate).toList();
+  if (late.isEmpty) return 0;
+  final total = late.fold<int>(0, (sum, it) => sum + it.latenessMinutes);
+  return (total / late.length).round();
 }
 
 /// Consecutive days, ending today or yesterday, on which at least one item was

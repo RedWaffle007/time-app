@@ -29,15 +29,16 @@ class TrackScreen extends ConsumerWidget {
     final entriesAsync = ref.watch(myTrackedEntriesProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Track'),
-        actions: [
-          IconButton(
-            icon: const Icon(AppIcons.logTime),
-            tooltip: 'Log time',
-            onPressed: () => showLogTimeSheet(context, ref),
-          ),
-        ],
+      appBar: AppBar(title: const Text('Track')),
+      // The always-present create affordance for Track — a bottom-right FAB,
+      // above the system nav bar (inner Scaffold clears the shell's bottom bar).
+      // The manual, WhatsApp-style "＋" counterpart to the centre voice ⊕. Its
+      // own heroTag so it never collides with the shell's voice FAB.
+      floatingActionButton: FloatingActionButton(
+        heroTag: 'trackLogFab',
+        tooltip: 'Log item',
+        onPressed: () => showLogTimeSheet(context, ref),
+        child: const Icon(AppIcons.add),
       ),
       body: AsyncView<List<TrackedEntry>>(
         value: entriesAsync,

@@ -19,6 +19,29 @@ abstract final class Space {
   /// Screen padding for lists.
   static const EdgeInsets screenList = EdgeInsets.all(lg);
 
+  /// [screenList] / [screenForm] with the device's system navigation-bar inset
+  /// added below the content, so the last row or a bottom-docked button on a
+  /// FULL-SCREEN pushed route clears the phone's back/home/recents bar instead
+  /// of sliding under it.
+  ///
+  /// Use these on top-level pushed screens (no in-app bottom bar of their own).
+  /// In-shell tab bodies do NOT need them — the shell's `BottomAppBar` already
+  /// reserves that space — and adding them there would leave a visible gap above
+  /// the bar. `viewPadding` (not `padding`) is used so the inset is the nav bar's
+  /// true height and does not collapse to 0 when the keyboard is up.
+  static EdgeInsets screenListSafe(BuildContext context) => screenList.copyWith(
+        bottom: lg + MediaQuery.viewPaddingOf(context).bottom,
+      );
+
+  static EdgeInsets screenFormSafe(BuildContext context) => screenForm.copyWith(
+        bottom: xl + MediaQuery.viewPaddingOf(context).bottom,
+      );
+
+  /// The bare system navigation-bar inset, for wrapping a non-scrolling
+  /// bottom-docked control (a fixed footer button) on a full-screen route.
+  static double systemBottomInset(BuildContext context) =>
+      MediaQuery.viewPaddingOf(context).bottom;
+
   /// The canonical card margin (UI-RULES.md §6.1).
   static const EdgeInsets cardMargin =
       EdgeInsets.symmetric(horizontal: md, vertical: sm);

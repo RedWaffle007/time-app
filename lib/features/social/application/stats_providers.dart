@@ -22,6 +22,7 @@ StatItem _toStatItem(ScheduleItem item) => StatItem(
       isApproved: item.status == ScheduleItemStatus.approved,
       isDone: item.outcome?.result == OutcomeResult.done,
       isSkipped: item.outcome?.result == OutcomeResult.skipped,
+      completedAt: item.outcome?.completedAt,
     );
 
 /// The signed-in user's freshly computed stat values.

@@ -45,6 +45,8 @@ class ArchivedScreen extends ConsumerWidget {
             'Archiving hides a finished item from your own views — it never '
             'changes the record or what anyone else sees.',
         builder: (context, items) => ListView(
+          // Full-screen route (no in-app bottom bar): clear the system nav bar.
+          padding: EdgeInsets.only(bottom: Space.systemBottomInset(context)),
           children: [for (final item in items) _ArchivedCard(item: item)],
         ),
       ),

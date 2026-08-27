@@ -192,7 +192,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
         // two time buttons + Save + the lock tile overflow a short screen, and
         // an overflowing Column would clip the new section rather than reveal it.
         body: SingleChildScrollView(
-          padding: Space.screenForm,
+          padding: Space.screenFormSafe(context),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

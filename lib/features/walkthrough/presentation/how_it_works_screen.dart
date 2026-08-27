@@ -27,7 +27,7 @@ class HowItWorksScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('How this app works')),
       body: ListView(
-        padding: Space.screenForm,
+        padding: Space.screenFormSafe(context),
         children: [
           Text(
             'time-app lets people you trust build your schedule and set your '
@@ -37,28 +37,37 @@ class HowItWorksScreen extends ConsumerWidget {
           ),
           const SizedBox(height: Space.lg),
 
-          const SectionHeader('The three tabs'),
+          const SectionHeader('The bottom bar'),
           const _Feature(
             icon: AppIcons.navSchedule,
-            title: 'Plan · My Schedule',
-            body: 'Your day, next task first. Build items for yourself or for '
-                'people who let you plan for them, and set the reminders.',
+            title: 'Plan',
+            body: 'Your schedule across three tabs — My Schedule (your day, next '
+                'task first), Activity (what you planned for others) and Groups. '
+                'Tap the ＋ button, bottom-right, to plan an item on any of them.',
           ),
           const _Feature(
             icon: AppIcons.navTrack,
-            title: 'Track · Activity',
-            body: 'Log time you have already spent and see where your hours go.',
+            title: 'Track',
+            body: 'Log time you have already spent and see where your hours go. '
+                'Tap the ＋ button, bottom-right, to add an entry.',
+          ),
+          const _Feature(
+            icon: AppIcons.voice,
+            title: 'Speak to create (centre mic)',
+            body: 'Tap the centre mic to log time or plan a reminder by voice, '
+                'hands-free. You review it before anything is saved.',
           ),
           const _Feature(
             icon: AppIcons.stats,
             title: 'Stats',
-            body: 'Your totals, trends and streaks at a glance.',
+            body: 'Your totals, streaks, follow-through and on-time rate at a '
+                'glance.',
           ),
           const _Feature(
-            icon: AppIcons.voice,
-            title: 'Speak to create',
-            body: 'The centre mic: tap and talk to log time or plan a reminder, '
-                'hands-free. You review it before anything is saved.',
+            icon: AppIcons.navYou,
+            title: 'You',
+            body: 'Your profile plus everything below — Friends, Calendar, '
+                'Language practice, this guide, and reminder permissions.',
           ),
 
           const SizedBox(height: Space.md),
@@ -119,25 +128,25 @@ class HowItWorksScreen extends ConsumerWidget {
           ),
           const _Feature(
             icon: AppIcons.friends,
-            title: 'Friends',
+            title: 'Friends  ·  in the You tab',
             body: 'Add people, manage requests, and control who can see your '
-                'profile.',
+                'profile. Open the You tab → Friends.',
           ),
           const _Feature(
             icon: AppIcons.calendar,
-            title: 'Calendar',
+            title: 'Calendar  ·  You tab, or Plan',
             body: 'A month, week and day view over everything scheduled, in each '
-                "item's own timezone.",
+                "item's own timezone. In the You tab, or the calendar icon on Plan.",
           ),
           const _Feature(
             icon: AppIcons.languagePractice,
-            title: 'Language practice',
+            title: 'Language practice  ·  in the You tab',
             body: 'An optional offline German chatbot — a separate extra, not '
                 'part of the planning loop.',
           ),
           const _Feature(
             icon: AppIcons.permissions,
-            title: 'Reminders & permissions',
+            title: 'Reminders & permissions  ·  in the You tab',
             body: 'Review and fix the permissions reliable reminders need, any '
                 'time.',
           ),

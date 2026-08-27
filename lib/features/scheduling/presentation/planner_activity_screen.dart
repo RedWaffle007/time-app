@@ -153,6 +153,16 @@ class _ActivityCard extends ConsumerWidget {
                   ?.copyWith(color: context.colors.onSurfaceVariant),
             ),
             ..._reasonLine(context),
+            // Late completion — the delay is honest accountability data, so the
+            // planner sees it here too (muted line, not a red flag: it was done).
+            if (item.completionDelay case final delay?) ...[
+              const SizedBox(height: Space.xs),
+              Text(
+                'Completed ${formatDurationMinutes(context, delay.inMinutes)} late',
+                style: context.text.bodySmall
+                    ?.copyWith(color: context.colors.onSurfaceVariant),
+              ),
+            ],
             // A plan can be withdrawn only while it's still pending — once the
             // target has decided, it's theirs to keep or reject.
             if (item.status == ScheduleItemStatus.pending) ...[

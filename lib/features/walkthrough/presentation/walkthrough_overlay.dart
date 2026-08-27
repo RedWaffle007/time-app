@@ -21,23 +21,27 @@ class WalkthroughStepCopy {
 const kWalkthroughStepCopy = <WalkthroughStepCopy>[
   WalkthroughStepCopy(
     'Plan',
-    'Build schedules and set reminders — for you, or people you support.',
+    'Your schedule, in three tabs — My Schedule, Activity, Groups. Tap the ＋ '
+        'button (bottom-right) to plan an item, on any of them.',
   ),
   WalkthroughStepCopy(
     'Track',
-    "Log time you've spent and see where it goes.",
+    "Log time you've already spent. Tap the ＋ button (bottom-right) to add an "
+        'entry, and see where your hours go.',
   ),
   WalkthroughStepCopy(
     'Speak to create',
-    'Tap and talk to log time or plan a reminder — hands-free.',
+    'The centre mic: tap and talk to log time or plan a reminder, hands-free — '
+        'you review it before anything saves.',
   ),
   WalkthroughStepCopy(
     'Stats',
-    'Your totals and trends, at a glance.',
+    'Your totals, streaks, follow-through and on-time rate at a glance.',
   ),
   WalkthroughStepCopy(
     'You',
-    'Profile, friends, calendar and permissions — all in one place.',
+    'Everything else lives here: Profile, Friends, Calendar, Language practice, '
+        '“How this app works”, and reminder permissions.',
   ),
 ];
 

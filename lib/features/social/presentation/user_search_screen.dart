@@ -93,7 +93,7 @@ class _UserSearchScreenState extends ConsumerState<UserSearchScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Find people')),
       body: ListView(
-        padding: Space.screenForm,
+        padding: Space.screenFormSafe(context),
         children: [
           TextField(
             controller: _controller,

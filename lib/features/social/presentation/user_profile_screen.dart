@@ -67,7 +67,7 @@ class UserProfileScreen extends ConsumerWidget {
           if (v.isUnreachable) return const _Unavailable();
 
           return ListView(
-            padding: Space.screenList,
+            padding: Space.screenListSafe(context),
             children: [
               _Header(profile: data!, visibility: v),
               const SizedBox(height: Space.lg),
@@ -95,7 +95,7 @@ class _Unavailable extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: Space.screenForm,
+        padding: Space.screenFormSafe(context),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

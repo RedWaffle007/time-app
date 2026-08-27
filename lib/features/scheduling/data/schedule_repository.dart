@@ -79,7 +79,7 @@ class ScheduleRepository {
       'targetUid': targetUid,
       'createdByUid': createdByUid,
       'groupId': groupId ?? '',
-      'title': title.trim(),
+      'title': sanitizeScheduleTitle(title),
       if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
       'localWallTime': formatWallTime(wall),
       'timezone': timezone,

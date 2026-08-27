@@ -46,7 +46,7 @@ class FriendRequestsScreen extends ConsumerWidget {
           }
 
           return ListView(
-            padding: Space.screenList,
+            padding: Space.screenListSafe(context),
             children: [
               if (incomingRequests.isNotEmpty) ...[
                 // `attention: true` is a CLAIM that this section holds
@@ -262,7 +262,7 @@ class _NoRequests extends StatelessWidget {
     final muted = context.colors.onSurfaceVariant;
     return Center(
       child: Padding(
-        padding: Space.screenForm,
+        padding: Space.screenFormSafe(context),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
