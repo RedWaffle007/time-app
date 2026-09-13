@@ -77,4 +77,15 @@ extension AppDataVizColors on ColorScheme {
       dark ? AppColors.darkPink : AppColors.lightPink,
     ];
   }
+
+  /// A stable categorical accent for a named structural element such as a
+  /// section heading or KPI tile. The label hash avoids positional colours
+  /// changing when neighbouring content is inserted.
+  Color categoricalAccentFor(String label) {
+    var hash = 0;
+    for (final codeUnit in label.codeUnits) {
+      hash = (hash * 31 + codeUnit) & 0x7fffffff;
+    }
+    return categorical[hash % categorical.length];
+  }
 }

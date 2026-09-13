@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
+import '../../../core/theme/dataviz_tokens.dart';
+import '../../../core/widgets/accent_card.dart';
 import '../../../core/widgets/section_header.dart';
 
 /// **The Stats pillar — a placeholder shell (redesign slice S5).**
@@ -42,8 +44,9 @@ class StatsScreen extends StatelessWidget {
           Text(
             'A personal dashboard is coming here — follow-through, time tracked '
             'and more. Nothing to show yet.',
-            style: context.text.bodySmall
-                ?.copyWith(color: context.colors.onSurfaceVariant),
+            style: context.text.bodySmall?.copyWith(
+              color: context.colors.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: Space.md),
           LayoutBuilder(
@@ -51,10 +54,10 @@ class StatsScreen extends StatelessWidget {
               // Reflow like the §6.9 grid — computed columns, never a hardcoded
               // count, so it fits a narrow phone and a tablet without a
               // breakpoint.
-              final columns = (constraints.maxWidth /
-                      (Sizes.statTileMinWidth + Space.sm))
-                  .floor()
-                  .clamp(1, 4);
+              final columns =
+                  (constraints.maxWidth / (Sizes.statTileMinWidth + Space.sm))
+                      .floor()
+                      .clamp(1, 4);
               final width =
                   (constraints.maxWidth - (Space.sm * (columns - 1))) / columns;
               return Wrap(
@@ -89,40 +92,40 @@ class _PlaceholderStatTile extends StatelessWidget {
     final cs = context.colors;
     final muted = cs.onSurfaceVariant;
 
-    return Container(
-      padding: const EdgeInsets.all(Space.md),
-      decoration: BoxDecoration(
-        borderRadius: Radii.md,
-        border: Border.all(color: cs.outlineVariant, width: Sizes.hairline),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text('—', style: context.text.titleLarge?.copyWith(color: muted)),
-          const SizedBox(height: Space.xs),
-          Text(
-            label,
-            style: context.text.labelSmall?.copyWith(color: muted),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: Space.xs),
-          Row(
-            children: [
-              Icon(AppIcons.stats, size: Sizes.badgeIcon, color: muted),
-              const SizedBox(width: Space.xs),
-              Expanded(
-                child: Text(
-                  'Coming soon',
-                  style: context.text.labelSmall?.copyWith(color: muted),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+    final accent = cs.categoricalAccentFor(label);
+    return AccentCard(
+      accent: accent,
+      child: Padding(
+        padding: const EdgeInsets.all(Space.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('—', style: context.text.titleLarge?.copyWith(color: muted)),
+            const SizedBox(height: Space.xs),
+            Text(
+              label,
+              style: context.text.labelSmall?.copyWith(color: muted),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: Space.xs),
+            Row(
+              children: [
+                Icon(AppIcons.stats, size: Sizes.badgeIcon, color: muted),
+                const SizedBox(width: Space.xs),
+                Expanded(
+                  child: Text(
+                    'Coming soon',
+                    style: context.text.labelSmall?.copyWith(color: muted),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
+import '../../../core/theme/dataviz_tokens.dart';
 import '../../../core/theme/status_style.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../routing/app_router.dart';
@@ -13,6 +14,7 @@ import '../../auth/application/auth_providers.dart';
 import '../../notifications/application/messaging_service.dart';
 import '../../social/application/social_providers.dart';
 import '../../social/presentation/avatar_image.dart';
+import '../../theme/application/theme_mode_controller.dart';
 
 /// **The You hub** (migration slice S3) — the account popup promoted to a real
 /// screen, which resolves the audit's most overloaded surface: the junk-drawer
@@ -86,6 +88,7 @@ class YouScreen extends ConsumerWidget {
             label: 'Reminders & permissions',
             onTap: () => context.push(Routes.permissions),
           ),
+          const _ThemeModeTile(),
           if (kDebugMode)
             _YouTile(
               icon: AppIcons.devMenu,
@@ -99,6 +102,60 @@ class YouScreen extends ConsumerWidget {
             onTap: () => signOutWithTokenCleanup(ref),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The device-local appearance preference. System remains the default, while
+/// light and dark let a person deliberately override it from the You hub.
+class _ThemeModeTile extends ConsumerWidget {
+  const _ThemeModeTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mode = ref.watch(themeModeProvider);
+
+    return Card(
+      child: ListTile(
+        leading: Icon(
+          AppIcons.themeSystem,
+          color: context.colors.onSurfaceVariant,
+        ),
+        title: Text('Theme', style: context.text.titleMedium),
+        subtitle: Text(
+          switch (mode) {
+            ThemeMode.light => 'Light',
+            ThemeMode.dark => 'Dark',
+            ThemeMode.system => 'System default',
+          },
+          style: context.text.bodySmall?.copyWith(
+            color: context.colors.onSurfaceVariant,
+          ),
+        ),
+        trailing: SegmentedButton<ThemeMode>(
+          segments: const [
+            ButtonSegment(
+              value: ThemeMode.light,
+              icon: Icon(AppIcons.themeLight),
+              tooltip: 'Light theme',
+            ),
+            ButtonSegment(
+              value: ThemeMode.dark,
+              icon: Icon(AppIcons.themeDark),
+              tooltip: 'Dark theme',
+            ),
+            ButtonSegment(
+              value: ThemeMode.system,
+              icon: Icon(AppIcons.themeSystem),
+              tooltip: 'Use system theme',
+            ),
+          ],
+          selected: {mode},
+          onSelectionChanged: (selection) {
+            ref.read(themeModeProvider.notifier).setMode(selection.first);
+          },
+        ),
       ),
     );
   }
@@ -129,7 +186,12 @@ class _YouTile extends StatelessWidget {
         leading: badgeCount > 0
             ? PendingCountBadge(count: badgeCount, child: leading)
             : leading,
-        title: Text(label, style: context.text.titleMedium),
+        title: Text(
+          label,
+          style: context.text.titleMedium?.copyWith(
+            color: context.colors.categoricalAccentFor(label),
+          ),
+        ),
         trailing: showChevron ? const Icon(AppIcons.openRow) : null,
         onTap: onTap,
       ),

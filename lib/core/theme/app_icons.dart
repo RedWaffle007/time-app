@@ -492,6 +492,13 @@ abstract final class AppIcons {
   /// re-touring the UI is its own concept (rule 1).
   static const IconData walkthrough = Icons.explore_outlined;
 
+  /// Appearance follows the device, or is explicitly light/dark. These are
+  /// distinct concepts because the three-way picker states a source as well as
+  /// a result.
+  static const IconData themeSystem = Icons.brightness_auto_outlined;
+  static const IconData themeLight = Icons.light_mode_outlined;
+  static const IconData themeDark = Icons.dark_mode_outlined;
+
   /// Step backward / forward through the orientation tour's coach marks.
   ///
   /// Distinct from [previousPeriod]/[nextPeriod] (calendar paging) and [openRow]

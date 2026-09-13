@@ -20,6 +20,7 @@ import 'features/scheduling/application/schedule_providers.dart';
 import 'features/scheduling/application/slot_lock_reconciler.dart';
 import 'features/social/application/stats_providers.dart';
 import 'features/splash/presentation/splash_overlay.dart';
+import 'features/theme/application/theme_mode_controller.dart';
 import 'routing/app_router.dart';
 import 'routing/notification_routing.dart';
 
@@ -62,13 +63,19 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     // Surface a token-registration FAILURE instead of it being silent. A silent
     // no-token state is exactly what cost a whole debugging session
     // (DECISIONS.md 2026-07-24) — this shows a dismissible banner with Retry.
-    ref.read(messagingServiceProvider).status.addListener(_onRegistrationStatus);
+    ref
+        .read(messagingServiceProvider)
+        .status
+        .addListener(_onRegistrationStatus);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    ref.read(messagingServiceProvider).status.removeListener(_onRegistrationStatus);
+    ref
+        .read(messagingServiceProvider)
+        .status
+        .removeListener(_onRegistrationStatus);
     super.dispose();
   }
 
@@ -90,11 +97,9 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     // plan and touches no plugin.
     final items = ref.read(allItemsAsTargetProvider).value;
     if (items != null) {
-      ref.read(reminderServiceProvider).sync(
-            items: items,
-            uid: uid,
-            reason: 'resume',
-          );
+      ref
+          .read(reminderServiceProvider)
+          .sync(items: items, uid: uid, reason: 'resume');
     }
 
     // Permissions can be changed from Settings behind the app's back, and on
@@ -210,8 +215,7 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (title != null)
-              Text(title, style: AppText.labelLarge),
+            if (title != null) Text(title, style: AppText.labelLarge),
             if (body != null) Text(body),
           ],
         ),
@@ -356,6 +360,7 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     });
 
     final router = ref.watch(routerProvider);
+    final themeMode = ref.watch(themeModeProvider);
     return MaterialApp.router(
       scaffoldMessengerKey: _scaffoldMessengerKey,
       title: 'Checkmate',
@@ -388,7 +393,7 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
       // alongside light, not derived from it, and follows the device setting.
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
-      themeMode: ThemeMode.system,
+      themeMode: themeMode,
       // Follow the device locale: these delegates localize Material chrome and
       // the date/time pickers, and make Localizations.localeOf(context) reflect
       // the user's locale (which every display in datetime_format.dart reads).

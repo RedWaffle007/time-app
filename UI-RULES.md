@@ -71,26 +71,26 @@ Light:
 
 | Role | Hex |
 |---|---|
-| `background` | `#F3F7F3` |
-| `surface` (cards, sheets) | `#FFFFFF` |
-| `surfaceContainer` | `#EAF1EB` |
-| `surfaceContainerHigh` | `#DFE9E0` |
+| `background` | `#EAF8EF` |
+| `surface` (cards, sheets) | `#F9FFFB` |
+| `surfaceContainer` | `#D8F3DF` |
+| `surfaceContainerHigh` | `#C8E9D0` |
 | `onSurface` | `#141A15` |
 | `onSurfaceVariant` | `#4B574D` |
 | `outline` | `#6E7A70` |
 | `outlineVariant` | `#D1DCD2` |
 | `primary` | `#1B7A3D` |
 | `onPrimary` | `#FFFFFF` |
-| `primaryContainer` | `#C5EBD1` |
+| `primaryContainer` | `#9FE5B4` |
 | `onPrimaryContainer` | `#04250F` |
 | `attention` | `#B4400C` |
 | `onAttention` | `#FFFFFF` |
-| `attentionContainer` | `#F3C29A` |
-| `attentionContainerStrong` | `#E9863F` |
+| `attentionContainer` | `#FFD2B2` |
+| `attentionContainerStrong` | `#FF9A58` |
 | `onAttentionContainer` | `#441C06` |
 | `error` | `#B3261E` |
 | `onError` | `#FFFFFF` |
-| `errorContainer` | `#F9DEDC` |
+| `errorContainer` | `#FFD3D0` |
 | `onErrorContainer` | `#410E0B` |
 
 Dark — re-picked, not inverted. Chroma drops and lightness rises, because
@@ -114,13 +114,13 @@ saturated hues vibrate on dark surfaces.
 | `onAttention` | `#491E05` |
 | `attentionContainer` | `#A5551E` |
 | `attentionContainerStrong` | `#A5551E` *(same — see §2.4)* |
-| `onAttentionContainer` | `#FCE7D6` |
+| `onAttentionContainer` | `#FDE9D8` |
 | `error` | `#F2B8B5` |
 | `onError` | `#601410` |
 | `errorContainer` | `#8C1D18` |
 | `onErrorContainer` | `#F9DEDC` |
 
-**Note on `surface`.** In light, cards are `#FFFFFF` on a `#F3F7F3` scaffold;
+**Note on `surface`.** In light, cards are `#F9FFFB` on a `#EAF8EF` scaffold;
 in dark, cards are `#18201A` on a `#0F1511` scaffold. Both are deliberate:
 separation comes from the border and the quiet green tinted neutral ramp.
 
@@ -161,21 +161,14 @@ tint. Both mean "look at this," so they share a hue honestly.
 
 **Amber is banned.** It sits ~10° from our orange and reads as a muddy near-miss.
 
-**`attentionContainerStrong` is the panel's fill — never a badge's.** Same hue
-(26°) and saturation (69%) as `attentionContainer`; only lightness is pitched
-up. It exists because the panel is the largest attention fill in the app and
-needs the same separation from its background in both modes, while a badge at
-that strength would out-shout Approved. Measured pull over `primaryContainer`:
+**`attentionContainerStrong` is the panel's fill — never a badge's.** In light,
+the vivid `#FF9A58` panel sits above the softer `#FFD2B2` pending tint; dark
+uses `#A5551E` for both because it already separates clearly from its surface.
+Text, rule and icon on either fill use `onAttentionContainer`; there is no
+separate `on*Strong`.
 
-| vs card | `primaryContainer` | `attentionContainer` | `attentionContainerStrong` |
-|---|---|---|---|
-| light | 1.27 | 2.05 | **2.71** |
-| dark | 1.64 | 2.66 | **2.66** *(same value)* |
-
-In **dark the two roles hold the same value** — dark already had the separation,
-so only light diverges. That is the seam where the modes legitimately differ
-(§8), not a redundant token. Text, rule and icon on either fill use
-`onAttentionContainer`; there is no separate `on*Strong`.
+In **dark the two roles hold the same value** — that is the seam where the modes
+legitimately differ (§8), not a redundant token.
 
 ### 2.5 Red is rationed
 
@@ -189,10 +182,10 @@ so only light diverges. That is the seam where the modes legitimately differ
 
 ### 2.6 Hard colour constraints
 
-1. **`outline` is never a text colour.** It measures 3.65 (light) / 3.89 (dark)
+1. **`outline` is never a text colour.** It measures 3.42 (light) / 4.59 (dark)
    against the darkest containers — fine for a border, a fail for text. Use
    `onSurfaceVariant` for muted text.
-2. **`outlineVariant` is decorative only** (1.51 light / 1.60 dark). Hairline
+2. **`outlineVariant` is decorative only** (1.39 light / 1.66 dark). Hairline
    dividers and card edges. Any border that carries meaning on its own — a
    neutral badge's outline, a focus ring, a selected state — uses `outline`.
    A neutral badge bordered in `outlineVariant` measures **1.42** in dark: its
@@ -223,8 +216,10 @@ is never a fill.
 `warning_panel.dart`. If you need a new orange fill, it is a new *state* — add it
 to `status_style.dart`, don't inline it.
 
-**Which colour for structure.** Green by default: the app bar title and icons,
-list-tile icons, ordinary section rules, empty-state icons. Orange **only** where
+**Which colour for structure.** The app bar and list icons remain green. Ordinary
+section headers and stat-card rails use a stable label hash into the categorical
+palette (green, turquoise, golden, violet, pink); their label text and rule share
+that accent. Orange **only** where
 the structure labels genuinely attention-bearing content — a "Waiting on you"
 section rule, a pending count badge. Structure never invents a new meaning for
 orange; it only ever points at attention that is really there.
@@ -276,28 +271,14 @@ light/dark twins:
 |---|---|---|
 | brand green | `#1B7A3D` | `#56CE7E` |
 | turquoise | `#0E7C86` | `#5AD0D8` |
-| golden | `#B8860B` | `#E8C15A` |
+| golden | `#8A6200` | `#E8C15A` |
 | violet | `#6D48C4` | `#B9A0F0` |
 | pink | `#C03271` | `#F08AB4` |
 
-These colours are for chart meaning and multi-series marks only; they are never
-used as general chrome.
-
-`AppDataVizColors.categorical` is the five-colour categorical list for
-multi-series charts and marks. It is ordered brand green → turquoise → golden →
-violet → pink. The first entry is the scheme's `primary`; the remaining entries
-are the light/dark twins below:
-
-| Series | Light | Dark |
-|---|---|---|
-| brand green | `#1B7A3D` | `#56CE7E` |
-| turquoise | `#0E7C86` | `#5AD0D8` |
-| golden | `#B8860B` | `#E8C15A` |
-| violet | `#6D48C4` | `#B9A0F0` |
-| pink | `#C03271` | `#F08AB4` |
-
-These colours are for chart meaning and multi-series marks only; they are never
-used as general chrome.
+These colours are for chart meaning and for stable structural accents: section
+header rules and labels, stat-card rails, and selected prominent metric text.
+They are never used as general chrome or state fills. `categoricalAccentFor()`
+hashes a label so an element keeps its accent when neighbouring content changes.
 
 ## Ambient backdrop
 
@@ -842,62 +823,53 @@ Measured minimums:
 
 | Pairing | Light | Dark |
 |---|---|---|
-| Pairing | Light | Dark |
 |---|---:|---:|
-| `onSurface` on `surface` | 17.67:1 | 14.08:1 |
-| `onSurface` on `background` | 16.33:1 | 15.63:1 |
-| `onSurfaceVariant` on `surface` | 7.58:1 | 8.38:1 |
-| `onSurfaceVariant` on `background` | 7.01:1 | 9.30:1 |
-| `primary` on `background` | 4.98:1 | 9.27:1 |
-| `attention` on `background` | 5.28:1 | 9.08:1 |
-| `error` on `background` | 6.04:1 | 10.83:1 |
+| `onSurface` on `surface` | 17.44:1 | 14.08:1 |
+| `onSurface` on `background` | 16.13:1 | 15.63:1 |
+| `onSurfaceVariant` on `surface` | 7.48:1 | 8.38:1 |
+| `onSurfaceVariant` on `background` | 6.92:1 | 9.30:1 |
+| `primary` on `background` | 4.92:1 | 9.27:1 |
+| `attention` on `background` | 5.21:1 | 9.08:1 |
+| `error` on `background` | 5.97:1 | 10.83:1 |
 | `onPrimary` on `primary` | 5.39:1 | 6.57:1 |
 | `onAttention` on `attention` | 5.71:1 | 7.01:1 |
 | `onError` on `error` | 6.54:1 | 7.66:1 |
-| `onPrimaryContainer` on `primaryContainer` | 12.67:1 | 7.15:1 |
-| `onAttentionContainer` on `attentionContainer` | 9.19:1 | 4.48:1 |
-| `onAttentionContainer` on `attentionContainerStrong` | 5.62:1 | 4.48:1 |
-| `onErrorContainer` on `errorContainer` | 12.77:1 | 7.17:1 |
-| `primary` on `primaryContainer` | 4.15:1 | 4.56:1 |
+| `onPrimaryContainer` on `primaryContainer` | 11.23:1 | 7.15:1 |
+| `onAttentionContainer` on `attentionContainer` | 10.68:1 | 4.55:1 |
+| `onAttentionContainer` on `attentionContainerStrong` | 7.08:1 | 4.55:1 |
+| `onErrorContainer` on `errorContainer` | 11.98:1 | 7.17:1 |
+| `primary` on `primaryContainer` | 3.68:1 (non-text only) | 4.56:1 |
 | `attention` on `attentionContainer` | 3.53:1 | 2.63:1 (do not use) |
 | `outline` on `surfaceContainerHigh` | 3.60:1 | 4.59:1 (border only) |
 | `outlineVariant` on `surface` | 1.41:1 | 1.66:1 (decorative only) |
-| `attentionContainer` on `surface` | 1.62:1 | 3.11:1 (fill contrast only) |
-| `primaryContainer` on `surface` | 1.30:1 | 1.83:1 (fill contrast only) |
+| `attentionContainer` on `surface` | 1.37:1 | 3.11:1 (fill contrast only) |
+| `primaryContainer` on `surface` | 1.45:1 | 1.83:1 (fill contrast only) |
+| categorical accents on `background` (turquoise / golden / violet / pink) | 4.52 / 5.01 / 5.68 / 4.87:1 | 10.08 / 10.75 / 8.23 / 7.92:1 |
 
-Verified against the rendered panel, not just computed: the light and dark values
-above were sampled pixel-by-pixel off a Redmi (HyperOS, Android 16) on
-2026-07-24 and matched spec exactly. Re-render before trusting a changed value —
-that render is what caught the Pending chip reading brown in dark, and rendering
-the panel *at size* is what caught light's warning panel being the weak mode.
-
-**Confirmed on-device 2026-07-25, both modes, zero drift.** Every role below was
-read off the Redmi's own framebuffer (HyperOS, Android 16) across both screens of
-the presence preview. HyperOS applies no colour transform of its own — each value
-appears as its exact spec hex.
+The role values used for the computation are:
 
 | Role | light | dark |
 |---|---|---|
-| `background` | `#F3F7F3` | `#0F1511` |
-| `surface` | `#FFFFFF` | `#18201A` |
-| `surfaceContainer` | `#EAF1EB` | `#18201A` |
-| `surfaceContainerHigh` | `#DFE9E0` | `#232D25` |
+| `background` | `#EAF8EF` | `#0F1511` |
+| `surface` | `#F9FFFB` | `#18201A` |
+| `surfaceContainer` | `#D8F3DF` | `#18201A` |
+| `surfaceContainerHigh` | `#C8E9D0` | `#232D25` |
 | `outlineVariant` | `#D1DCD2` | `#39453B` |
 | `outline` | `#6E7A70` | `#8A958C` |
 | `onSurface` | `#141A15` | `#E6EEE7` |
 | `onSurfaceVariant` | `#4B574D` | `#AFBBB1` |
 | `primary` | `#1B7A3D` | `#56CE7E` |
 | `onPrimary` | `#FFFFFF` | `#00391B` |
-| `primaryContainer` | `#C5EBD1` | `#1E5233` |
+| `primaryContainer` | `#9FE5B4` | `#1E5233` |
 | `onPrimaryContainer` | `#04250F` | `#B6F2C6` |
 | `attention` | `#B4400C` | `#F0A56E` |
 | `onAttention` | `#FFFFFF` | `#491E05` |
-| `attentionContainer` | `#F3C29A` | `#A5551E` |
-| `attentionContainerStrong` | `#E9863F` | `#A5551E` |
-| `onAttentionContainer` | `#441C06` | `#FCE7D6` |
+| `attentionContainer` | `#FFD2B2` | `#A5551E` |
+| `attentionContainerStrong` | `#FF9A58` | `#A5551E` |
+| `onAttentionContainer` | `#441C06` | `#FDE9D8` |
 | `error` | `#B3261E` | `#F2B8B5` |
 | `onError` | `#FFFFFF` | `#601410` |
-| `errorContainer` | `#F9DEDC` | `#8C1D18` |
+| `errorContainer` | `#FFD3D0` | `#8C1D18` |
 | `onErrorContainer` | `#410E0B` | `#F9DEDC` |
 
 The panel fill is not load-bearing and is not held to the 3:1 non-text floor:
@@ -911,11 +883,11 @@ table.** A green-tinted neutral palette still needs measured verification.
 
 Known-failing combinations, documented so they are never used:
 
-- `outline` as text on `surfaceContainerHigh` — 3.60 / 4.59. Banned by §2.6(1)
+- `outline` as text on `surfaceContainerHigh` — 3.42 / 4.59. Banned by §2.6(1)
   even where it happens to clear AA in dark mode.
-- `outlineVariant` as a meaningful border — 1.41 / 1.66. Banned by §2.6(2).
+- `outlineVariant` as a meaningful border — 1.39 / 1.66. Banned by §2.6(2).
 - Dimmed neutral badge text — 4.43 in dark. Rejected in §2.3.
-- **`attention` on `attentionContainer` — 3.53 light / 2.63 dark.** Fails the
+- **`attention` on `attentionContainer` — 4.11 light / 2.63 dark.** Fails the
   non-text floor in dark. Use `onAttentionContainer` for anything drawn on that
   fill, including icons and rules (§6.3).
 
@@ -926,6 +898,14 @@ Known-failing combinations, documented so they are never used:
 Nothing ships light-only. Every new surface is checked in dark before review.
 Dark is not an inversion of light — the values are independently chosen, and a
 value that works in one mode proves nothing about the other.
+
+### Theme mode
+
+The You hub exposes **Light**, **Dark**, and **System default**. The preference
+is stored on this device through `ThemeModeStore`; `ThemeMode.system` is the
+default and follows the OS. `MaterialApp.router` reads the Riverpod
+`themeModeProvider`, so a selection applies immediately and persists across
+launches.
 
 ---
 

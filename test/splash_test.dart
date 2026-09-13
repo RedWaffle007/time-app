@@ -21,12 +21,12 @@ Widget _host() => ProviderScope(
 void main() {
   setUp(SplashOverlay.resetForTest);
 
-  testWidgets('cold start: single-line MJQ SOFTWARE reveal, then fades to app',
+  testWidgets('cold start: single-line CHECKMATE reveal, then fades to app',
       (tester) async {
     await tester.pumpWidget(_host());
 
     // The wordmark is present during the reveal, on one line, exactly as typed.
-    final wordmark = find.text('MJQ SOFTWARE');
+    final wordmark = find.text('CHECKMATE');
     expect(wordmark, findsOneWidget);
     expect(tester.widget<Text>(wordmark).maxLines, 1);
 
@@ -36,7 +36,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Reveal gone, app shown.
-    expect(find.text('MJQ SOFTWARE'), findsNothing);
+    expect(find.text('CHECKMATE'), findsNothing);
     expect(find.text('APP'), findsOneWidget);
   });
 
@@ -47,12 +47,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 3000));
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pumpAndSettle();
-    expect(find.text('MJQ SOFTWARE'), findsNothing);
+    expect(find.text('CHECKMATE'), findsNothing);
 
     // A brand-new overlay (simulating a rebuild in the same live process) must
     // pass straight through to the child with no reveal on the very first frame.
     await tester.pumpWidget(_host());
-    expect(find.text('MJQ SOFTWARE'), findsNothing);
+    expect(find.text('CHECKMATE'), findsNothing);
     expect(find.text('APP'), findsOneWidget);
   });
 }

@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
+import '../../../core/theme/dataviz_tokens.dart';
+import '../../../core/widgets/accent_card.dart';
 import '../../../core/widgets/section_header.dart';
 import '../application/stats_providers.dart';
 import '../domain/profile_stat.dart';
@@ -53,8 +55,9 @@ class StatsSection extends ConsumerWidget {
               Text(
                 'This profile is private. Send a friend request to see their '
                 'stats.',
-                style: context.text.bodySmall
-                    ?.copyWith(color: context.colors.onSurfaceVariant),
+                style: context.text.bodySmall?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
               ),
               const SizedBox(height: Space.md),
             ],
@@ -62,19 +65,22 @@ class StatsSection extends ConsumerWidget {
               builder: (context, constraints) {
                 // How many tiles fit, at least one. Computed rather than
                 // hardcoded so the grid reflows instead of clipping a label.
-                final columns = (constraints.maxWidth /
-                        (Sizes.statTileMinWidth + Space.sm))
-                    .floor()
-                    .clamp(1, 4);
-                final width = (constraints.maxWidth -
-                        (Space.sm * (columns - 1))) /
+                final columns =
+                    (constraints.maxWidth / (Sizes.statTileMinWidth + Space.sm))
+                        .floor()
+                        .clamp(1, 4);
+                final width =
+                    (constraints.maxWidth - (Space.sm * (columns - 1))) /
                     columns;
                 return Wrap(
                   spacing: Space.sm,
                   runSpacing: Space.sm,
                   children: [
                     for (final stat in list)
-                      SizedBox(width: width, child: _StatTile(stat: stat)),
+                      SizedBox(
+                        width: width,
+                        child: _StatTile(stat: stat),
+                      ),
                   ],
                 );
               },
@@ -100,52 +106,52 @@ class _StatTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = context.colors;
     final muted = cs.onSurfaceVariant;
+    final accent = cs.categoricalAccentFor(stat.label);
 
-    return Container(
-      padding: const EdgeInsets.all(Space.md),
-      decoration: BoxDecoration(
-        borderRadius: Radii.md,
-        border: Border.all(color: cs.outlineVariant, width: Sizes.hairline),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            _value(context),
-            style: context.text.titleLarge?.copyWith(
-              // A real number reads at full strength; an em dash is absence and
-              // must not compete with the numbers beside it.
-              color: stat.state == ProfileStatState.ready ? cs.onSurface : muted,
+    return AccentCard(
+      accent: accent,
+      child: Padding(
+        padding: const EdgeInsets.all(Space.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              _value(context),
+              style: context.text.titleLarge?.copyWith(
+                // A real number reads at full strength; an em dash is absence and
+                // must not compete with the numbers beside it.
+                color: stat.state == ProfileStatState.ready ? accent : muted,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: Space.xs),
-          Text(
-            stat.label,
-            style: context.text.labelSmall?.copyWith(color: muted),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-          if (stat.state == ProfileStatState.placeholder) ...[
             const SizedBox(height: Space.xs),
-            Row(
-              children: [
-                Icon(AppIcons.stats, size: Sizes.badgeIcon, color: muted),
-                const SizedBox(width: Space.xs),
-                Expanded(
-                  child: Text(
-                    'Coming soon',
-                    style: context.text.labelSmall?.copyWith(color: muted),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
+            Text(
+              stat.label,
+              style: context.text.labelSmall?.copyWith(color: muted),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
+            if (stat.state == ProfileStatState.placeholder) ...[
+              const SizedBox(height: Space.xs),
+              Row(
+                children: [
+                  Icon(AppIcons.stats, size: Sizes.badgeIcon, color: muted),
+                  const SizedBox(width: Space.xs),
+                  Expanded(
+                    child: Text(
+                      'Coming soon',
+                      style: context.text.labelSmall?.copyWith(color: muted),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

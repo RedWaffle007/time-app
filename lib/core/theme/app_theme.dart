@@ -10,16 +10,16 @@ import 'app_tokens.dart';
 /// sets a colour, a font size, or an elevation is a screen that has drifted.
 abstract final class AppTheme {
   static ThemeData get light => _build(
-        colorScheme: _lightScheme,
-        scaffoldBackground: AppColors.lightBackground,
-        semantic: AppSemanticColors.light,
-      );
+    colorScheme: _lightScheme,
+    scaffoldBackground: AppColors.lightBackground,
+    semantic: AppSemanticColors.light,
+  );
 
   static ThemeData get dark => _build(
-        colorScheme: _darkScheme,
-        scaffoldBackground: AppColors.darkBackground,
-        semantic: AppSemanticColors.dark,
-      );
+    colorScheme: _darkScheme,
+    scaffoldBackground: AppColors.darkBackground,
+    semantic: AppSemanticColors.dark,
+  );
 
   // --------------------------------------------------------------- schemes ---
 
@@ -226,8 +226,9 @@ abstract final class AppTheme {
         selectedColor: cs.primaryContainer,
         showCheckmark: false,
         labelStyle: AppText.labelSmall.copyWith(color: cs.onSurfaceVariant),
-        secondaryLabelStyle:
-            AppText.labelSmall.copyWith(color: cs.onPrimaryContainer),
+        secondaryLabelStyle: AppText.labelSmall.copyWith(
+          color: cs.onPrimaryContainer,
+        ),
         side: BorderSide(color: cs.outlineVariant, width: Sizes.hairline),
         shape: const RoundedRectangleBorder(borderRadius: Radii.pill),
       ),
@@ -240,7 +241,9 @@ abstract final class AppTheme {
 
       listTileTheme: ListTileThemeData(
         titleTextStyle: AppText.bodyLarge.copyWith(color: cs.onSurface),
-        subtitleTextStyle: AppText.bodySmall.copyWith(color: cs.onSurfaceVariant),
+        subtitleTextStyle: AppText.bodySmall.copyWith(
+          color: cs.onSurfaceVariant,
+        ),
         // A list icon marks a navigable affordance, and green owns action
         // (UI-RULES.md §2.1/§2.7). Line work, so the firewall holds.
         iconColor: cs.primary,

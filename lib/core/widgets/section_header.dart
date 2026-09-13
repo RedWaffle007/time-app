@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 import '../theme/app_tokens.dart';
+import '../theme/dataviz_tokens.dart';
 
 /// **The one** section header (UI-RULES.md §2.7, §3).
 ///
@@ -9,7 +10,8 @@ import '../theme/app_tokens.dart';
 /// line work, never a fill, which is what lets it carry colour without
 /// competing with a status badge.
 ///
-/// Green by default. [attention] switches the rule to orange and is **only**
+/// A stable label hash picks a categorical accent by default. [attention] switches
+/// the rule and label to orange and is **only**
 /// legitimate when the section's content is genuinely attention-bearing — a
 /// pending queue, a "waiting on you" group. Structure never invents a new
 /// meaning for orange; it points at attention that is really there. If you
@@ -25,6 +27,9 @@ class SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = attention
+        ? context.attention
+        : context.colors.categoricalAccentFor(label);
     return Padding(
       // Vertical only — the parent owns horizontal inset, so this sits flush
       // with the list or form it heads.
@@ -35,10 +40,10 @@ class SectionHeader extends StatelessWidget {
           Container(
             width: Sizes.sectionRuleWidth,
             height: Sizes.ruleWidth,
-            color: attention ? context.attention : context.colors.primary,
+            color: accent,
           ),
           const SizedBox(height: Space.sm),
-          Text(label, style: context.text.titleLarge),
+          Text(label, style: context.text.titleLarge?.copyWith(color: accent)),
         ],
       ),
     );

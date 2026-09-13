@@ -25,13 +25,13 @@ abstract final class AppColors {
 
   /// Scaffold background. A faint green tint (DESIGN-NOTES §2) — "branded but
   /// quiet", not pure white and no longer terracotta-warm.
-  static const lightBackground = Color(0xFFF3F7F3);
+  static const lightBackground = Color(0xFFEAF8EF);
 
   /// Card and sheet fill — crisp near-white so cards lift cleanly off the
   /// tinted scaffold; the hairline border still carries the edge.
-  static const lightSurface = Color(0xFFFFFFFF);
-  static const lightSurfaceContainer = Color(0xFFEAF1EB);
-  static const lightSurfaceContainerHigh = Color(0xFFDFE9E0);
+  static const lightSurface = Color(0xFFF9FFFB);
+  static const lightSurfaceContainer = Color(0xFFD8F3DF);
+  static const lightSurfaceContainerHigh = Color(0xFFC8E9D0);
 
   static const lightOnSurface = Color(0xFF141A15);
   static const lightOnSurfaceVariant = Color(0xFF4B574D);
@@ -46,7 +46,7 @@ abstract final class AppColors {
   // vivid than the old sage so light mode reads with colour.
   static const lightPrimary = Color(0xFF1B7A3D);
   static const lightOnPrimary = Color(0xFFFFFFFF);
-  static const lightPrimaryContainer = Color(0xFFC5EBD1);
+  static const lightPrimaryContainer = Color(0xFF9FE5B4);
   static const lightOnPrimaryContainer = Color(0xFF04250F);
 
   // `secondary` deliberately reuses the green family rather than introducing a
@@ -55,18 +55,19 @@ abstract final class AppColors {
   // Burnt orange — attention and pending state. Also carries warning (no amber).
   static const lightAttention = Color(0xFFB4400C);
   static const lightOnAttention = Color(0xFFFFFFFF);
+
   /// Pending's badge tint — a warm orange that out-pulls Approved.
-  static const lightAttentionContainer = Color(0xFFF3C29A);
+  static const lightAttentionContainer = Color(0xFFFFD2B2);
 
   /// The warning panel's fill — attention pitched up (UI-RULES.md §2.4).
-  static const lightAttentionContainerStrong = Color(0xFFE9863F);
+  static const lightAttentionContainerStrong = Color(0xFFFF9A58);
 
   static const lightOnAttentionContainer = Color(0xFF441C06);
 
   // Red — rationed to destructive actions and system errors (UI-RULES.md §2.5).
   static const lightError = Color(0xFFB3261E);
   static const lightOnError = Color(0xFFFFFFFF);
-  static const lightErrorContainer = Color(0xFFF9DEDC);
+  static const lightErrorContainer = Color(0xFFFFD3D0);
   static const lightOnErrorContainer = Color(0xFF410E0B);
 
   // ----------------------------------------------------------------- dark ---
@@ -105,7 +106,7 @@ abstract final class AppColors {
   /// needs, so this holds the same value as the badge tint (UI-RULES.md §2.4).
   static const darkAttentionContainerStrong = Color(0xFFA5551E);
 
-  static const darkOnAttentionContainer = Color(0xFFFCE7D6);
+  static const darkOnAttentionContainer = Color(0xFFFDE9D8);
 
   static const darkError = Color(0xFFF2B8B5);
   static const darkOnError = Color(0xFF601410);
@@ -117,7 +118,7 @@ abstract final class AppColors {
   // (DESIGN-NOTES §2). Never used for chrome. Light/dark twins.
   static const lightTurquoise = Color(0xFF0E7C86);
   static const darkTurquoise = Color(0xFF5AD0D8);
-  static const lightGolden = Color(0xFFB8860B);
+  static const lightGolden = Color(0xFF8A6200);
   static const darkGolden = Color(0xFFE8C15A);
   static const lightViolet = Color(0xFF6D48C4);
   static const darkViolet = Color(0xFFB9A0F0);
@@ -191,12 +192,21 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
     return AppSemanticColors(
       attention: Color.lerp(attention, other.attention, t)!,
       onAttention: Color.lerp(onAttention, other.onAttention, t)!,
-      attentionContainer:
-          Color.lerp(attentionContainer, other.attentionContainer, t)!,
+      attentionContainer: Color.lerp(
+        attentionContainer,
+        other.attentionContainer,
+        t,
+      )!,
       attentionContainerStrong: Color.lerp(
-          attentionContainerStrong, other.attentionContainerStrong, t)!,
-      onAttentionContainer:
-          Color.lerp(onAttentionContainer, other.onAttentionContainer, t)!,
+        attentionContainerStrong,
+        other.attentionContainerStrong,
+        t,
+      )!,
+      onAttentionContainer: Color.lerp(
+        onAttentionContainer,
+        other.onAttentionContainer,
+        t,
+      )!,
     );
   }
 }
