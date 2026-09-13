@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme/app_icons.dart';
 import 'core/theme/app_text.dart';
 import 'core/theme/app_theme.dart';
+import 'core/widgets/time_backdrop.dart';
 import 'features/applock/presentation/app_lock_gate.dart';
 import 'features/auth/application/auth_providers.dart';
 import 'features/notifications/application/messaging_service.dart';
@@ -357,7 +358,7 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     final router = ref.watch(routerProvider);
     return MaterialApp.router(
       scaffoldMessengerKey: _scaffoldMessengerKey,
-      title: 'time-app',
+      title: 'Checkmate',
       // THE APP LOCK GOES HERE — `builder`, not HomeGate, not a route.
       //
       // `builder` wraps the Router and the root Navigator itself, so the gate
@@ -379,7 +380,9 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
       // cold-start-only by construction (see SplashOverlay). It holds until the
       // app is ready, so no boot flicker shows through.
       builder: (context, child) => SplashOverlay(
-        child: AppLockGate(child: child ?? const SizedBox.shrink()),
+        child: AppLockGate(
+          child: TimeBackdrop(child: child ?? const SizedBox.shrink()),
+        ),
       ),
       // All visual tokens live in core/theme — see UI-RULES.md. Dark is designed
       // alongside light, not derived from it, and follows the device setting.

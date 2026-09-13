@@ -44,7 +44,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               // The only use of displaySmall in the app.
-              Text('time-app', style: context.text.displaySmall),
+              Text('Checkmate', style: context.text.displaySmall),
               const SizedBox(height: Space.sm),
               const Text(
                 'Let a trusted friend help plan your time.',

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'app_colors.dart';
+
 /// **Chart & dashboard colour roles — the ONE source every data-viz surface
 /// pulls from** (the Stats dashboard, progress meters, sparklines, any future
 /// chart). See UI-RULES.md §2.8 and §6.14.
@@ -60,4 +62,19 @@ extension AppDataVizColors on ColorScheme {
   /// The unfilled portion of a progress meter or ring. Matches the progress
   /// track already used by §6.7's linear bar.
   Color get progressTrack => surfaceContainerHigh;
+
+  /// The categorical chart palette (DESIGN-NOTES §2): brand-green → turquoise →
+  /// golden → violet → pink, chosen to stay distinct while series 1 follows the
+  /// brand. Real chroma, reserved for meaning — multi-series charts and marks
+  /// only, never chrome. Light/dark twins keep each series legible in both modes.
+  List<Color> get categorical {
+    final dark = brightness == Brightness.dark;
+    return [
+      primary,
+      dark ? AppColors.darkTurquoise : AppColors.lightTurquoise,
+      dark ? AppColors.darkGolden : AppColors.lightGolden,
+      dark ? AppColors.darkViolet : AppColors.lightViolet,
+      dark ? AppColors.darkPink : AppColors.lightPink,
+    ];
+  }
 }

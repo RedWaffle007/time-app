@@ -97,7 +97,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         title: const Text('Notifications are blocked'),
         content: const Text(
           "Android won't ask again from inside the app. You can turn "
-          'notifications on for time-app in system settings.',
+          'notifications on for Checkmate in system settings.',
         ),
         actions: [
           TextButton(
@@ -124,7 +124,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Allow ${oem.displayName} to keep time-app running'),
+        title: Text('Allow ${oem.displayName} to keep Checkmate running'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -261,14 +261,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           icon: AppIcons.battery,
           title: 'Keep working in the background',
           why: 'Battery optimisation can stop reminders from firing while your '
-              'phone is idle. Exempting time-app prevents that.',
+              'phone is idle. Exempting Checkmate prevents that.',
           action: 'Allow',
           granted: state.batteryUnrestricted,
         );
       case OnboardingStep.autostart:
         return _StepView(
           icon: AppIcons.autostart,
-          title: 'Let ${oem.displayName} keep time-app running',
+          title: 'Let ${oem.displayName} keep Checkmate running',
           why: '${oem.displayName} phones can close background apps and stop '
               'their reminders. Autostart keeps them reliable. This one '
               "can't be checked automatically, so it always shows here.",
@@ -286,42 +286,42 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     switch (oem.family) {
       case OemFamily.xiaomi:
         return const [
-          'Open Settings → Apps → Manage apps → time-app.',
+          'Open Settings → Apps → Manage apps → Checkmate.',
           'Turn on "Autostart".',
           'Then Battery saver → set to "No restrictions".',
         ];
       case OemFamily.oppo:
         return const [
-          'Open Settings → Apps → time-app → Battery usage.',
+          'Open Settings → Apps → Checkmate → Battery usage.',
           'Enable "Allow background activity" and "Allow auto-launch".',
         ];
       case OemFamily.vivo:
         return const [
           'Open Settings → Battery → Background power consumption.',
-          'Allow time-app to run in the background.',
-          'Then i Manager → Autostart manager → enable time-app.',
+          'Allow Checkmate to run in the background.',
+          'Then i Manager → Autostart manager → enable Checkmate.',
         ];
       case OemFamily.oneplus:
         return const [
-          'Open Settings → Apps → time-app → Battery.',
+          'Open Settings → Apps → Checkmate → Battery.',
           'Set to "Don\'t optimise" and allow background activity.',
         ];
       case OemFamily.huawei:
         return const [
-          'Open Settings → Apps → time-app → App launch.',
+          'Open Settings → Apps → Checkmate → App launch.',
           'Turn off "Manage automatically", then allow Auto-launch and '
               'Run in background.',
         ];
       case OemFamily.samsung:
         return const [
-          'Open Settings → Apps → time-app → Battery.',
+          'Open Settings → Apps → Checkmate → Battery.',
           'Set to "Unrestricted".',
           'Then Settings → Battery → Background usage limits — make sure '
-              'time-app is not in "Sleeping apps".',
+              'Checkmate is not in "Sleeping apps".',
         ];
       case OemFamily.other:
         return const [
-          'Open Settings → Apps → time-app → Battery.',
+          'Open Settings → Apps → Checkmate → Battery.',
           'Allow background activity / set to unrestricted.',
         ];
     }

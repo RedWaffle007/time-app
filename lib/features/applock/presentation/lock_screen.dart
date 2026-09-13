@@ -52,7 +52,7 @@ class _LockScreenState extends ConsumerState<LockScreen> {
                   Icon(AppIcons.appLock,
                       size: Sizes.emptyStateIcon, color: context.colors.primary),
                   const SizedBox(height: Space.md),
-                  Text('time-app is locked',
+                  Text('Checkmate is locked',
                       style: context.text.titleMedium,
                       textAlign: TextAlign.center),
                   const SizedBox(height: Space.sm),

@@ -30,7 +30,7 @@ class HowItWorksScreen extends ConsumerWidget {
         padding: Space.screenFormSafe(context),
         children: [
           Text(
-            'time-app lets people you trust build your schedule and set your '
+            'Checkmate lets people you trust build your schedule and set your '
             'reminders — always with your approval. Here is every part of it.',
             style: context.text.bodyMedium
                 ?.copyWith(color: context.colors.onSurfaceVariant),

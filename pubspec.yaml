@@ -158,9 +158,22 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  # The cold-start reveal wordmark (SplashOverlay). Anton — OFL, bundled offline
-  # because a splash cannot wait on a network font. See lib/features/splash/.
+  # Brand + UI typefaces, all OFL, bundled offline (a splash cannot wait on a
+  # network font; the body font must render before first paint). See UI-RULES.md
+  # §3 and lib/features/splash/.
+  #   - Space Grotesk: headings, big numbers, and the CHECKMATE wordmark — the
+  #     "characterful geometric" heading face (DESIGN-NOTES §3). Variable font;
+  #     Flutter maps fontWeight onto its wght axis.
+  #   - Manrope: body / UI text — a clean, highly legible neutral sans. Non-Latin
+  #     glyphs fall back to the system font automatically.
+  #   - Anton: retained only as a fallback display face; no longer the wordmark.
   fonts:
+    - family: SpaceGrotesk
+      fonts:
+        - asset: assets/fonts/SpaceGrotesk.ttf
+    - family: Manrope
+      fonts:
+        - asset: assets/fonts/Manrope.ttf
     - family: Anton
       fonts:
         - asset: assets/fonts/Anton-Regular.ttf

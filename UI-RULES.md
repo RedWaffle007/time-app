@@ -5,8 +5,7 @@
 `DECISIONS.md` records *why*. This file states *what you must do*. If a screen
 disagrees with this file, the screen is wrong.
 
-Approved 2026-07-24. Changing anything here requires a `DECISIONS.md` entry first
-(see §8).
+Approved 2026-09-13. This document records the implemented CHECKMATE UI system.
 
 ---
 
@@ -71,54 +70,54 @@ Light:
 
 | Role | Hex |
 |---|---|
-| `background` | `#FAF5EE` |
-| `surface` (cards, sheets) | `#FFFCF8` |
-| `surfaceContainer` | `#F4EDE3` |
-| `surfaceContainerHigh` | `#EDE3D6` |
-| `onSurface` | `#1C1A16` |
-| `onSurfaceVariant` | `#57534B` |
-| `outline` | `#7A7266` |
-| `outlineVariant` | `#DED3C3` |
-| `primary` | `#356150` |
+| `background` | `#F3F7F3` |
+| `surface` (cards, sheets) | `#FFFFFF` |
+| `surfaceContainer` | `#EAF1EB` |
+| `surfaceContainerHigh` | `#DFE9E0` |
+| `onSurface` | `#141A15` |
+| `onSurfaceVariant` | `#4B574D` |
+| `outline` | `#6E7A70` |
+| `outlineVariant` | `#D1DCD2` |
+| `primary` | `#1B7A3D` |
 | `onPrimary` | `#FFFFFF` |
-| `primaryContainer` | `#D5E6DB` |
-| `onPrimaryContainer` | `#14352A` |
-| `attention` | `#8A4A25` |
+| `primaryContainer` | `#C5EBD1` |
+| `onPrimaryContainer` | `#04250F` |
+| `attention` | `#B4400C` |
 | `onAttention` | `#FFFFFF` |
-| `attentionContainer` | `#E6A574` |
-| `attentionContainerStrong` | `#DD8643` |
-| `onAttentionContainer` | `#43220F` |
-| `error` | `#9C332C` |
+| `attentionContainer` | `#F3C29A` |
+| `attentionContainerStrong` | `#E9863F` |
+| `onAttentionContainer` | `#441C06` |
+| `error` | `#B3261E` |
 | `onError` | `#FFFFFF` |
-| `errorContainer` | `#F8DEDA` |
-| `onErrorContainer` | `#4A100D` |
+| `errorContainer` | `#F9DEDC` |
+| `onErrorContainer` | `#410E0B` |
 
 Dark — re-picked, not inverted. Chroma drops and lightness rises, because
 saturated hues vibrate on dark surfaces.
 
 | Role | Hex |
 |---|---|
-| `background` | `#1F1916` |
-| `surface` (cards, sheets) | `#2B2421` |
-| `surfaceContainer` | `#2B2421` |
-| `surfaceContainerHigh` | `#392F2A` |
-| `onSurface` | `#F0E8DC` |
-| `onSurfaceVariant` | `#C0B4A4` |
-| `outline` | `#9C9083` |
-| `outlineVariant` | `#4C4139` |
-| `primary` | `#8CC6AB` |
-| `onPrimary` | `#0A2419` |
-| `primaryContainer` | `#2A4E3F` |
-| `onPrimaryContainer` | `#B9E3CF` |
-| `attention` | `#E3A47C` |
-| `onAttention` | `#3D1E0C` |
-| `attentionContainer` | `#9C531C` |
+| `background` | `#0F1511` |
+| `surface` (cards, sheets) | `#18201A` |
+| `surfaceContainer` | `#18201A` |
+| `surfaceContainerHigh` | `#232D25` |
+| `onSurface` | `#E6EEE7` |
+| `onSurfaceVariant` | `#AFBBB1` |
+| `outline` | `#8A958C` |
+| `outlineVariant` | `#39453B` |
+| `primary` | `#56CE7E` |
+| `onPrimary` | `#00391B` |
+| `primaryContainer` | `#1E5233` |
+| `onPrimaryContainer` | `#B6F2C6` |
+| `attention` | `#F0A56E` |
+| `onAttention` | `#491E05` |
+| `attentionContainer` | `#A5551E` |
 | `attentionContainerStrong` | `#9C531C` *(same — see §2.4)* |
-| `onAttentionContainer` | `#FBEDE2` |
-| `error` | `#EBA49E` |
-| `onError` | `#57120F` |
-| `errorContainer` | `#5C2320` |
-| `onErrorContainer` | `#F8D6D2` |
+| `onAttentionContainer` | `#FCE7D6` |
+| `error` | `#F2B8B5` |
+| `onError` | `#601410` |
+| `errorContainer` | `#8C1D18` |
+| `onErrorContainer` | `#F9DEDC` |
 
 **Note on `surface`.** In light, cards are `#FFFCF8` on a `#FAF5EE` scaffold — a
 1.06 tonal step, so the border carries the edge. In dark, cards are `#2B2421` on

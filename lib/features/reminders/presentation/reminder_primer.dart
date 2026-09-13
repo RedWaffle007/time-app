@@ -194,7 +194,7 @@ Future<void> runReminderPrimer(BuildContext context, WidgetRef ref) async {
         context,
         title: 'Notifications are blocked',
         body: 'Android won’t ask again from inside the app. You can turn '
-            'notifications on for time-app in system settings.',
+            'notifications on for Checkmate in system settings.',
         confirm: 'Open settings',
       );
       if (toSettings == true) await permissions.openSystemSettings();

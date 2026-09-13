@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
 
-/// The type scale. See UI-RULES.md §3.
+/// The type scale (DESIGN-NOTES.md §3 two-typeface split).
 ///
-/// System font — no custom family. `supportedLocales` covers ~80 locales and the
-/// system font is the only thing guaranteed to have the glyphs.
+/// **Headings, big numbers and code use Space Grotesk** ([_heading]) — the
+/// "crisp modern-SaaS character" face. **Body and UI text use Manrope**
+/// ([_body]) — a clean, highly legible neutral sans. Both are bundled variable
+/// fonts (`assets/fonts/`); Flutter maps `fontWeight` onto their `wght` axis.
+/// Non-Latin glyphs neither face covers fall back to the system font, so the
+/// ~80-locale coverage is preserved.
 ///
 /// **Never write `fontSize` in a screen.** Never write `fontWeight` on a themed
 /// style either — the token carries it. To colour text, use
 /// `.copyWith(color: <role>)`.
 abstract final class AppText {
+  static const _heading = 'SpaceGrotesk';
+  static const _body = 'Manrope';
   /// Heroes only — the auth screen's, and My Schedule's time-reactive band.
   ///
   /// Widened from "auth hero only" on 2026-08-20. The hero band needed a size
@@ -25,6 +31,7 @@ abstract final class AppText {
   /// slot — three heroes now, each earning it, and no more without the same
   /// justification.
   static const displaySmall = TextStyle(
+    fontFamily: _heading,
     fontSize: 32,
     height: 40 / 32,
     fontWeight: FontWeight.w700,
@@ -32,6 +39,7 @@ abstract final class AppText {
 
   /// Screen section headers.
   static const titleLarge = TextStyle(
+    fontFamily: _heading,
     fontSize: 20,
     height: 28 / 20,
     fontWeight: FontWeight.w600,
@@ -40,6 +48,7 @@ abstract final class AppText {
   /// Card titles. **All of them** — the old UI had 18 on two screens and 17 on
   /// a third for the same element. That is the drift this token prevents.
   static const titleMedium = TextStyle(
+    fontFamily: _heading,
     fontSize: 17,
     height: 24 / 17,
     fontWeight: FontWeight.w600,
@@ -47,6 +56,7 @@ abstract final class AppText {
 
   /// Default body.
   static const bodyLarge = TextStyle(
+    fontFamily: _body,
     fontSize: 16,
     height: 24 / 16,
     fontWeight: FontWeight.w400,
@@ -54,6 +64,7 @@ abstract final class AppText {
 
   /// Dense body.
   static const bodyMedium = TextStyle(
+    fontFamily: _body,
     fontSize: 14,
     height: 20 / 14,
     fontWeight: FontWeight.w400,
@@ -61,6 +72,7 @@ abstract final class AppText {
 
   /// Buttons.
   static const labelLarge = TextStyle(
+    fontFamily: _body,
     fontSize: 14,
     height: 20 / 14,
     fontWeight: FontWeight.w600,
@@ -68,6 +80,7 @@ abstract final class AppText {
 
   /// Hints and secondary prose — anything the user reads as a sentence.
   static const bodySmall = TextStyle(
+    fontFamily: _body,
     fontSize: 13,
     height: 18 / 13,
     fontWeight: FontWeight.w400,
@@ -75,6 +88,7 @@ abstract final class AppText {
 
   /// Metadata: timestamps, timezone labels, counts. Not for prose.
   static const labelSmall = TextStyle(
+    fontFamily: _body,
     fontSize: 12,
     height: 16 / 12,
     fontWeight: FontWeight.w500,
@@ -82,6 +96,7 @@ abstract final class AppText {
 
   /// Invite codes and any code-like string. Reached via `context.codeDisplay`.
   static const codeDisplay = TextStyle(
+    fontFamily: _heading,
     fontSize: 22,
     height: 28 / 22,
     fontWeight: FontWeight.w700,
@@ -106,6 +121,7 @@ abstract final class AppText {
   /// It lives here rather than in the widget because raw type values belong in
   /// this file — that is the whole of UI-RULES.md §1, and the lint enforces it.
   static TextStyle avatarInitial(double diameter) => TextStyle(
+        fontFamily: _heading,
         fontSize: diameter * 0.42,
         height: 1,
         fontWeight: FontWeight.w600,

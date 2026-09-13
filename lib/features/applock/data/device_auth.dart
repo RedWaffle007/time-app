@@ -40,7 +40,7 @@ class LocalDeviceAuth implements DeviceAuth {
   Future<bool> authenticate() async {
     try {
       return await _auth.authenticate(
-        localizedReason: 'Unlock time-app to see your schedule',
+        localizedReason: 'Unlock Checkmate to see your schedule',
         options: const AuthenticationOptions(
           // FALSE on purpose: this permits the device PIN/pattern/password as a
           // fallback. `biometricOnly: true` would lock out anyone whose

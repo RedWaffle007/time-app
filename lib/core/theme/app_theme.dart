@@ -94,7 +94,11 @@ abstract final class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: cs,
-      scaffoldBackgroundColor: scaffoldBackground,
+      // Transparent so the app-wide `TimeBackdrop` (wired in app.dart's builder)
+      // shows through the gutters of every route. The opaque ground is painted by
+      // the backdrop itself; cards, app bars, sheets and dialogs keep their own
+      // opaque fills, so content contrast is never lowered.
+      scaffoldBackgroundColor: Colors.transparent,
       textTheme: AppText.textTheme,
       extensions: [semantic, AppTypeExtension.standard],
 

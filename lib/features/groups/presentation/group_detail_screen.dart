@@ -409,7 +409,7 @@ class GroupDetailScreen extends ConsumerWidget {
   Future<void> _shareCode(String code, String groupName) async {
     await SharePlus.instance.share(
       ShareParams(
-        text: 'Join my group "$groupName" on time-app with code: $code',
+        text: 'Join my group "$groupName" on Checkmate with code: $code',
       ),
     );
   }

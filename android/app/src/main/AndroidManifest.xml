@@ -85,7 +85,7 @@
     <uses-permission
         android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <application
-        android:label="time_app"
+        android:label="Checkmate"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <!-- Default FCM notification channel for background/terminated

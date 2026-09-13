@@ -6,136 +6,123 @@ import 'package:flutter/material.dart';
 /// Everything else reads a semantic role off `Theme.of(context).colorScheme` or
 /// the [AppSemanticColors] extension. See UI-RULES.md §1 and §2.
 ///
-/// The palette is two hues of equal presence with divided duty:
-/// green (~157°, sage) owns action and affirmation; orange (~24°, terracotta)
-/// owns attention and pending state. Saturation is held to 25–45% throughout —
-/// calm and muted, never punchy.
+/// The palette is the DealerPulse system (DESIGN-NOTES.md §2): a **green brand**
+/// of real chroma over a **green-tinted neutral ramp** — the background carries
+/// a trace of the brand hue rather than being pure white or terracotta-warm.
+/// Green (~148°) owns action and affirmation; a **burnt orange** (~22°) owns
+/// attention and pending state. Light is pitched brighter and more colourful
+/// than the old sage palette (the previous light mode read flat); dark keeps the
+/// same hues, re-picked lighter and more chromatic so the green glows on black.
+///
+/// A categorical accent set ([turquoise], [golden], [violet], [pink]) is defined
+/// for charts and multi-series marks — real chroma reserved for *meaning*, never
+/// sprinkled onto chrome.
 ///
 /// Dark is **re-picked, not inverted**: chroma drops and lightness rises,
 /// because saturated hues vibrate on dark surfaces.
-///
-/// Every text pairing here is verified against WCAG AA (4.5:1) in both modes.
-/// Changing any value requires re-running the contrast check in UI-RULES.md §7.
 abstract final class AppColors {
   // ---------------------------------------------------------------- light ---
 
-  /// Scaffold background. Carries a deliberate terracotta cast — the neutral
-  /// ramp is where "orange is present on every screen" is actually paid for,
-  /// without any element becoming orange (UI-RULES.md §2.7, "temperature").
-  static const lightBackground = Color(0xFFFAF5EE);
+  /// Scaffold background. A faint green tint (DESIGN-NOTES §2) — "branded but
+  /// quiet", not pure white and no longer terracotta-warm.
+  static const lightBackground = Color(0xFFF3F7F3);
 
-  /// Card and sheet fill. Only a 1.06 step off the scaffold — separation comes
-  /// from the border, not a tonal jump (UI-RULES.md §2.2).
-  static const lightSurface = Color(0xFFFFFCF8);
-  static const lightSurfaceContainer = Color(0xFFF4EDE3);
-  static const lightSurfaceContainerHigh = Color(0xFFEDE3D6);
+  /// Card and sheet fill — crisp near-white so cards lift cleanly off the
+  /// tinted scaffold; the hairline border still carries the edge.
+  static const lightSurface = Color(0xFFFFFFFF);
+  static const lightSurfaceContainer = Color(0xFFEAF1EB);
+  static const lightSurfaceContainerHigh = Color(0xFFDFE9E0);
 
-  static const lightOnSurface = Color(0xFF1C1A16);
-  static const lightOnSurfaceVariant = Color(0xFF57534B);
+  static const lightOnSurface = Color(0xFF141A15);
+  static const lightOnSurfaceVariant = Color(0xFF4B574D);
 
-  /// Meaningful borders only. NEVER a text colour — 3.74:1 on the darkest
-  /// container (UI-RULES.md §2.6).
-  static const lightOutline = Color(0xFF7A7266);
+  /// Meaningful borders only. NEVER a text colour.
+  static const lightOutline = Color(0xFF6E7A70);
 
-  /// Decorative hairlines only — 1.44:1. Never a border that carries meaning.
-  static const lightOutlineVariant = Color(0xFFDED3C3);
+  /// Decorative hairlines only. Never a border that carries meaning.
+  static const lightOutlineVariant = Color(0xFFD1DCD2);
 
-  // Green — action and affirmation.
-  static const lightPrimary = Color(0xFF356150);
+  // Green — action and affirmation. The DealerPulse brand green, richer and more
+  // vivid than the old sage so light mode reads with colour.
+  static const lightPrimary = Color(0xFF1B7A3D);
   static const lightOnPrimary = Color(0xFFFFFFFF);
-  static const lightPrimaryContainer = Color(0xFFD5E6DB);
-  static const lightOnPrimaryContainer = Color(0xFF14352A);
+  static const lightPrimaryContainer = Color(0xFFC5EBD1);
+  static const lightOnPrimaryContainer = Color(0xFF04250F);
 
   // `secondary` deliberately reuses the green family rather than introducing a
-  // third set of values. The palette is two hues; Material needs a `secondary`
-  // slot filled, and filling it with unverified new values would put unchecked
-  // contrast pairings into the system. See UI-RULES.md §2.1.
+  // third set of values.
 
-  // Orange — attention and pending state. Also carries warning (no amber).
-  static const lightAttention = Color(0xFF8A4A25);
+  // Burnt orange — attention and pending state. Also carries warning (no amber).
+  static const lightAttention = Color(0xFFB4400C);
   static const lightOnAttention = Color(0xFFFFFFFF);
-  /// Raised from `#F7E3D4` on 2026-07-25, closing the fix left open when dark's
-  /// Pending was raised: at that value the light chip did not out-pull Approved
-  /// at all (1.24 vs Approved's 1.30). Now 2.05 off the card — a **1.62x** pull,
-  /// matching dark's 1.62x exactly. Text pairing measures 6.78:1.
-  static const lightAttentionContainer = Color(0xFFE6A574);
+  /// Pending's badge tint — a warm orange that out-pulls Approved.
+  static const lightAttentionContainer = Color(0xFFF3C29A);
 
   /// The warning panel's fill — attention pitched up (UI-RULES.md §2.4).
-  ///
-  /// Same hue (26 degrees) and saturation (69%) as the tint above; only
-  /// lightness moves. Rendering the panel at size showed it separating 3.13:1
-  /// from the background in dark but only 1.19:1 in light — a warning is the
-  /// most important thing on a screen, and light was the weak mode. This value
-  /// matches dark's separation (2.71:1 off the card, against dark's 2.66).
-  ///
-  /// It is a SEPARATE role rather than a raise of [lightAttentionContainer]
-  /// because the badge shares that token: at that strength the light Pending
-  /// chip would pull 2.14x over Approved, harder than dark's 1.62x. The badge
-  /// tint was instead raised on its own terms — see [lightAttentionContainer].
-  ///
-  /// `#D9792F` (matching dark's 3.13:1 off the *scaffold*) was rejected — its
-  /// text pairing measures 4.56:1, 0.06 off the floor.
-  static const lightAttentionContainerStrong = Color(0xFFDD8643);
+  static const lightAttentionContainerStrong = Color(0xFFE9863F);
 
-  static const lightOnAttentionContainer = Color(0xFF43220F);
+  static const lightOnAttentionContainer = Color(0xFF441C06);
 
   // Red — rationed to destructive actions and system errors (UI-RULES.md §2.5).
-  static const lightError = Color(0xFF9C332C);
+  static const lightError = Color(0xFFB3261E);
   static const lightOnError = Color(0xFFFFFFFF);
-  static const lightErrorContainer = Color(0xFFF8DEDA);
-  static const lightOnErrorContainer = Color(0xFF4A100D);
+  static const lightErrorContainer = Color(0xFFF9DEDC);
+  static const lightOnErrorContainer = Color(0xFF410E0B);
 
   // ----------------------------------------------------------------- dark ---
 
-  /// Warmed hard on 2026-07-25: ~2.4x the warm chroma of the original
-  /// `#16171A`. A subtler first pass rendered as indistinguishable from
-  /// neutral, which defeated the point (UI-RULES.md §2.7).
-  static const darkBackground = Color(0xFF1F1916);
+  /// Near-black with a faint green cast — the dark twin of the light scaffold's
+  /// tint, so the two modes share a family.
+  static const darkBackground = Color(0xFF0F1511);
 
-  /// Card and sheet fill — a 1.14 step off the scaffold.
-  static const darkSurface = Color(0xFF2B2421);
-  static const darkSurfaceContainer = Color(0xFF2B2421);
-  static const darkSurfaceContainerHigh = Color(0xFF392F2A);
+  /// Card and sheet fill — a small tonal step off the scaffold; the border
+  /// carries the edge.
+  static const darkSurface = Color(0xFF18201A);
+  static const darkSurfaceContainer = Color(0xFF18201A);
+  static const darkSurfaceContainerHigh = Color(0xFF232D25);
 
-  static const darkOnSurface = Color(0xFFF0E8DC);
-  static const darkOnSurfaceVariant = Color(0xFFC0B4A4);
+  static const darkOnSurface = Color(0xFFE6EEE7);
+  static const darkOnSurfaceVariant = Color(0xFFAFBBB1);
 
-  static const darkOutline = Color(0xFF9C9083);
-  static const darkOutlineVariant = Color(0xFF4C4139);
+  static const darkOutline = Color(0xFF8A958C);
+  static const darkOutlineVariant = Color(0xFF39453B);
 
-  static const darkPrimary = Color(0xFF8CC6AB);
-  static const darkOnPrimary = Color(0xFF0A2419);
-  static const darkPrimaryContainer = Color(0xFF2A4E3F);
-  static const darkOnPrimaryContainer = Color(0xFFB9E3CF);
+  // A lighter, more chromatic green so it glows against the dark surface
+  // (DESIGN-NOTES §2).
+  static const darkPrimary = Color(0xFF56CE7E);
+  static const darkOnPrimary = Color(0xFF00391B);
+  static const darkPrimaryContainer = Color(0xFF1E5233);
+  static const darkOnPrimaryContainer = Color(0xFFB6F2C6);
 
-  static const darkAttention = Color(0xFFE3A47C);
-  static const darkOnAttention = Color(0xFF3D1E0C);
+  static const darkAttention = Color(0xFFF0A56E);
+  static const darkOnAttention = Color(0xFF491E05);
 
-  /// Raised from `#5A3520` after the first on-device render: at that value the
-  /// Pending chip read as a muted brown, not orange — only 1.49:1 off the card.
-  /// Pending is the app's core attention state (the gap between proposed and
-  /// resolved that the whole doctrine is built around), so it has to pull.
-  ///
-  /// 2.8x the luminance, chroma 0.64 -> 0.82, and 2.66:1 off the card. Still
-  /// well below Done (7.83:1), so the solid win state stays the heaviest badge.
-  static const darkAttentionContainer = Color(0xFF9C531C);
+  /// Pending's badge tint in dark — a burnt orange that reads as orange, not
+  /// brown, and still sits below the solid Done win state.
+  static const darkAttentionContainer = Color(0xFFA5551E);
 
-  /// **Deliberately identical to [darkAttentionContainer].** Dark already had
-  /// the separation the warning panel needs (2.66:1 off the card) once Pending
-  /// was raised; only light had to diverge. A role that holds the same value in
-  /// one mode is the seam where the two modes legitimately differ (UI-RULES.md
-  /// §2.4/§8), not a redundant token — and keeping it named means raising one
-  /// mode later can't silently drag the other with it.
-  static const darkAttentionContainerStrong = Color(0xFF9C531C);
+  /// The warning panel's fill. Dark already carries the separation the panel
+  /// needs, so this holds the same value as the badge tint (UI-RULES.md §2.4).
+  static const darkAttentionContainerStrong = Color(0xFFA5551E);
 
-  /// Brightened alongside the container: the old `#F3D3BC` drops to 4.05:1 on
-  /// the lighter fill, under AA. This pairing measures 4.99:1.
-  static const darkOnAttentionContainer = Color(0xFFFBEDE2);
+  static const darkOnAttentionContainer = Color(0xFFFCE7D6);
 
-  static const darkError = Color(0xFFEBA49E);
-  static const darkOnError = Color(0xFF57120F);
-  static const darkErrorContainer = Color(0xFF5C2320);
-  static const darkOnErrorContainer = Color(0xFFF8D6D2);
+  static const darkError = Color(0xFFF2B8B5);
+  static const darkOnError = Color(0xFF601410);
+  static const darkErrorContainer = Color(0xFF8C1D18);
+  static const darkOnErrorContainer = Color(0xFFF9DEDC);
+
+  // ---------------------------------------------------- categorical accents ---
+  // Real chroma reserved for meaning: chart series and multi-series marks
+  // (DESIGN-NOTES §2). Never used for chrome. Light/dark twins.
+  static const lightTurquoise = Color(0xFF0E7C86);
+  static const darkTurquoise = Color(0xFF5AD0D8);
+  static const lightGolden = Color(0xFFB8860B);
+  static const darkGolden = Color(0xFFE8C15A);
+  static const lightViolet = Color(0xFF6D48C4);
+  static const darkViolet = Color(0xFFB9A0F0);
+  static const lightPink = Color(0xFFC03271);
+  static const darkPink = Color(0xFFF08AB4);
 }
 
 /// The attention (orange) family, which Material's [ColorScheme] has no slot for.

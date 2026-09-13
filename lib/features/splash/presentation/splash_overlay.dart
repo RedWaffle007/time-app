@@ -273,14 +273,15 @@ class _RevealPainter extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: const [
-                            // Wordmark and both bars share the ONE outer Opacity
-                            // above, so they emerge together (the logo no longer
-                            // arrives before the lines).
+                            // Wordmark, both bars and the tagline share the ONE
+                            // outer Opacity above, so they emerge together.
                             _Wordmark(color: SplashTokens.wordmark),
                             SizedBox(height: Space.sm),
                             _Bar(color: SplashTokens.lineTop),
                             SizedBox(height: Space.xs),
                             _Bar(color: SplashTokens.lineBottom),
+                            SizedBox(height: Space.md),
+                            _Tagline(),
                           ],
                         ),
                       ),
@@ -338,10 +339,26 @@ class _Wordmark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Text(
-      'MJQ SOFTWARE',
+      'CHECKMATE',
       maxLines: 1,
       textAlign: TextAlign.center,
       style: SplashTokens.wordmarkStyle.copyWith(color: color),
+    );
+  }
+}
+
+/// The tagline under the two brand bars. Centred so it reads as a caption to the
+/// wordmark, not a stretched banner.
+class _Tagline extends StatelessWidget {
+  const _Tagline();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Text(
+      'Mates Always Remember',
+      maxLines: 1,
+      textAlign: TextAlign.center,
+      style: SplashTokens.taglineStyle,
     );
   }
 }
