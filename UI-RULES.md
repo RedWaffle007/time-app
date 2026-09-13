@@ -47,11 +47,12 @@ This mirrors the existing hard rule that all date/time rendering goes through
 
 ### 2.1 The two-job doctrine
 
-The app has two colours of **equal presence** and **divided duty**.
+The app has two colours of **equal presence** and **divided duty**: DealerPulse
+brand green and a burnt-orange attention family, over green-tinted neutrals.
 
 > **Green owns action and affirmation. Orange owns attention and pending state.**
 
-| | Green (`primary`) | Orange (`attention`) |
+| | DealerPulse green (`primary`) | Burnt orange (`attention`) |
 |---|---|---|
 | **Job** | what you press; what went well | what is waiting on you; what to look at |
 | **Owns** | filled buttons, FAB, selected nav, Approve, Mark done, Approved + Done badges, success — **plus structural chrome: app bar, list icons, section rules, empty states (§2.7)** | Pending badges, needs-decision counts, DST + quiet-hours warnings, unread markers — **and structure only where it labels real attention (§2.7)** |
@@ -112,22 +113,20 @@ saturated hues vibrate on dark surfaces.
 | `attention` | `#F0A56E` |
 | `onAttention` | `#491E05` |
 | `attentionContainer` | `#A5551E` |
-| `attentionContainerStrong` | `#9C531C` *(same — see §2.4)* |
+| `attentionContainerStrong` | `#A5551E` *(same — see §2.4)* |
 | `onAttentionContainer` | `#FCE7D6` |
 | `error` | `#F2B8B5` |
 | `onError` | `#601410` |
 | `errorContainer` | `#8C1D18` |
 | `onErrorContainer` | `#F9DEDC` |
 
-**Note on `surface`.** In light, cards are `#FFFCF8` on a `#FAF5EE` scaffold — a
-1.06 tonal step, so the border carries the edge. In dark, cards are `#2B2421` on
-a `#1F1916` scaffold — a 1.14 step. Both are deliberate: separation comes from
-the border, not from a large tonal jump.
+**Note on `surface`.** In light, cards are `#FFFFFF` on a `#F3F7F3` scaffold;
+in dark, cards are `#18201A` on a `#0F1511` scaffold. Both are deliberate:
+separation comes from the border and the quiet green tinted neutral ramp.
 
-**Both neutral ramps carry a terracotta cast — this is deliberate (§2.7).** They
-are not grey. Dark's is roughly 2.4x the warm chroma of the original ramp; a
-subtler first pass rendered as indistinguishable from neutral, which defeated
-the point. Never "correct" these toward grey.
+**Both neutral ramps are green-tinted — this is deliberate (§2.7).** They are
+not grey: the scaffold carries a quiet trace of the brand hue and cards remain
+opaque. Never remove that tint by replacing these roles with generic neutrals.
 
 **`attention` is not a Material role.** M3 has no such slot. It is mapped onto
 `tertiary`/`tertiaryContainer` so Material widgets can reach it, and exposed as
@@ -210,7 +209,7 @@ reaching for before you type a colour.
 |---|---|---|
 | **State** | Pending, Approved, Done, warning | **filled shapes only** — pills, panels |
 | **Structure** | app bar, section rules, list icons, empty-state icons, focus | **line work and text only** — never a fill |
-| **Temperature** | the neutral ramp's own terracotta cast (§2.2) | not an element at all |
+| **Temperature** | the neutral ramp's own green tint (§2.2) | not an element at all |
 
 > **The firewall: a filled shape is state. Line work and text are structure.**
 
@@ -230,9 +229,8 @@ the structure labels genuinely attention-bearing content — a "Waiting on you"
 section rule, a pending count badge. Structure never invents a new meaning for
 orange; it only ever points at attention that is really there.
 
-**Temperature is the honest always-on orange.** Both neutral ramps are cast warm
-(§2.2). Nothing *becomes* orange, so nothing can be misread as state. This is
-where "orange is present on every screen" is actually paid for.
+The neutral ramp is the always-present green-tinted ground (§2.2). Nothing in
+the ramp becomes orange, so orange remains reserved for attention state.
 
 **Accepted limitation.** A screen with no pending state and no warning shows
 orange only as temperature. That is correct, not a gap — orange means attention,
@@ -250,8 +248,8 @@ to check.
 
 | Role | Maps to | Use |
 |---|---|---|
-| `seriesPrimary` | `primary` (sage) | The main series; every progress fill; "completed / good". |
-| `seriesAttention` | `tertiary` (terracotta) | The pending / attention series — **line or marker only**. |
+| `seriesPrimary` | `primary` (brand green) | The main series; every progress fill; "completed / good". |
+| `seriesAttention` | `tertiary` (burnt orange) | The pending / attention series — **line or marker only**. |
 | `seriesMuted` | `primaryContainer` | A comparison series, when one is not enough. Not a third hue. |
 | `chartGrid` | `outlineVariant` | Gridlines, ticks — decorative structure. |
 | `chartAxisLabel` | `onSurfaceVariant` | Axis labels, legends. |
@@ -260,7 +258,7 @@ to check.
 **The §2.7 firewall extends onto charts.** A filled area is state; a filled
 *orange* area is the "waiting on you" signal. So the attention series is drawn as
 a **line, dot or label**, never a filled region — a filled region uses
-`seriesPrimary` (sage), which §2.7 does not restrict. There is deliberately no
+`seriesPrimary` (brand green), which §2.7 does not restrict. There is deliberately no
 orange-fill getter in `dataviz_tokens.dart`: adding one would both spend the
 signal on decoration and launder the banned `tertiaryContainer` past the §2.7
 lint. If a chart needs a filled "pending" area, that is a new state — it belongs
@@ -269,24 +267,69 @@ in `status_style.dart` (§2.3), not inlined into a chart.
 More than two series: add neutral *shape* (dashed vs solid, marker glyph), never a
 new hue. The palette stays two.
 
+`AppDataVizColors.categorical` is the five-colour categorical list for
+multi-series charts and marks. It is ordered brand green → turquoise → golden →
+violet → pink. The first entry is `primary`; the remaining entries use these
+light/dark twins:
+
+| Series | Light | Dark |
+|---|---|---|
+| brand green | `#1B7A3D` | `#56CE7E` |
+| turquoise | `#0E7C86` | `#5AD0D8` |
+| golden | `#B8860B` | `#E8C15A` |
+| violet | `#6D48C4` | `#B9A0F0` |
+| pink | `#C03271` | `#F08AB4` |
+
+These colours are for chart meaning and multi-series marks only; they are never
+used as general chrome.
+
+`AppDataVizColors.categorical` is the five-colour categorical list for
+multi-series charts and marks. It is ordered brand green → turquoise → golden →
+violet → pink. The first entry is the scheme's `primary`; the remaining entries
+are the light/dark twins below:
+
+| Series | Light | Dark |
+|---|---|---|
+| brand green | `#1B7A3D` | `#56CE7E` |
+| turquoise | `#0E7C86` | `#5AD0D8` |
+| golden | `#B8860B` | `#E8C15A` |
+| violet | `#6D48C4` | `#B9A0F0` |
+| pink | `#C03271` | `#F08AB4` |
+
+These colours are for chart meaning and multi-series marks only; they are never
+used as general chrome.
+
+## Ambient backdrop
+
+`TimeBackdrop` is the app-wide, low-opacity tiled pattern beneath every route.
+It uses hand-drawn time and study marks: clocks, alarm clocks, books, pencils,
+hourglasses, calendars and paperclips. It is CHECKMATE's replacement for
+DealerPulse's `AutomotiveBackdrop`.
+
+The scaffold is transparent so the pattern shows through gutters. Cards, app
+bars, sheets and dialogs keep opaque fills, so the backdrop never lowers the
+contrast of content. The backdrop is decorative and input-transparent.
+
 ---
 
 ## 3. Type
 
-System font. No custom family: `supportedLocales` covers ~80 locales, and the
-system font is the only thing guaranteed to have the glyphs.
+Two bundled variable fonts define the type system. Space Grotesk is used for
+headings, titles, big numbers, code-like strings, and avatar initials. Manrope
+is used for body and UI text. Non-Latin glyphs not covered by either face fall
+back to the system font, preserving the app's locale coverage.
 
-| Token | Size / line | Weight | Use |
+| Token | Size / line | Weight | Family | Use |
 |---|---|---|---|
-| `displaySmall` | 32 / 40 | 700 | heroes only — the auth screen, and the schedule hero band |
-| `titleLarge` | 20 / 28 | 600 | screen section headers |
-| `titleMedium` | 17 / 24 | 600 | card titles |
-| `bodyLarge` | 16 / 24 | 400 | default body |
-| `bodyMedium` | 14 / 20 | 400 | dense body |
-| `labelLarge` | 14 / 20 | 600 | buttons |
-| `bodySmall` | 13 / 18 | 400 | hints, secondary prose |
-| `labelSmall` | 12 / 16 | 500 | timestamps, timezone labels, metadata |
-| `codeDisplay` | 22 / 28 | 700, ls 3 | invite codes and any code-like string |
+| `displaySmall` | 32 / 40 | 700 | Space Grotesk | heroes and big numbers |
+| `titleLarge` | 20 / 28 | 600 | Space Grotesk | screen section headers |
+| `titleMedium` | 17 / 24 | 600 | Space Grotesk | card titles |
+| `bodyLarge` | 16 / 24 | 400 | Manrope | default body |
+| `bodyMedium` | 14 / 20 | 400 | Manrope | dense body |
+| `labelLarge` | 14 / 20 | 600 | Manrope | buttons |
+| `bodySmall` | 13 / 18 | 400 | Manrope | hints, secondary prose |
+| `labelSmall` | 12 / 16 | 500 | Manrope | timestamps, timezone labels, metadata |
+| `codeDisplay` | 22 / 28 | 700, ls 3 | Space Grotesk | invite codes and any code-like string |
 
 `codeDisplay` lives on the `AppTypeExtension`, reached via `context.codeDisplay`.
 
@@ -294,7 +337,7 @@ system font is the only thing guaranteed to have the glyphs.
 
 - Never write `fontSize`. Never write `fontWeight` on a themed style — the token
   carries it.
-- **`displaySmall` is for heroes, and there are exactly two.** Its remit was
+- **`displaySmall` is for heroes and sanctioned big-number leads.** Its remit is
   widened from "auth hero only" on 2026-08-20 when the schedule hero band needed
   a size above `titleLarge` — at `titleLarge` the band was the same size as the
   "Today" section header directly beneath it, so it did not out-rank the list it
@@ -418,10 +461,11 @@ tint), a 3px solid left rule and an icon — **both in `onAttentionContainer`, n
 margin-top `Space.md`.
 
 The rule and icon match the text because they sit on the container fill, and
-`attention` on `attentionContainer` measures only 2.69:1 in dark since that
+`attention` on `attentionContainer` measures only 3.53:1 light / 2.63:1 dark;
+since that
 container was raised — below even the 3:1 non-text floor. `onAttentionContainer`
-clears it on both fills and in both modes (4.99 dark / 5.13 light strong /
-11.46 light tint).
+clears it on both fills and in both modes (9.19 light / 4.48 dark on the badge
+fill; 5.62 light / 4.48 dark on the strong fill).
 
 ### 6.4 Buttons
 
@@ -438,9 +482,8 @@ Icon at 40px in **`primary`** (structure — §2.7), `Space.md` gap, `titleMediu
 headline, `Space.sm` gap, `bodySmall` in `onSurfaceVariant`, `Space.lg` gap, then
 an optional action.
 
-The icon was `onSurfaceVariant` until 2026-07-25. That rule existed to keep
-`outline` out of a text-adjacent role (§2.6); `primary` does not reintroduce that
-problem — it measures 6.50 (light) / 8.92 (dark) on the scaffold against a 3:1
+The icon uses `primary`, which measures 4.98 (light) / 9.27 (dark) on the
+scaffold against a 3:1
 non-text floor. An empty state is a resting state, not a failure, so green is
 honest there.
 
@@ -713,7 +756,7 @@ from the earlier "three delegation stances" (those three are now sub-navigation
 A". Recipes so it stays Hearth:
 
 - **The bar is flat chrome** (`Elevations.nav`), scaffold-background fill, active
-  pillar = filled sage icon + label (§6.6 filled-selected), inactive = outline
+  pillar = filled brand-green icon + label (§6.6 filled-selected), inactive = outline
   icon in `onSurfaceVariant`. The pending-attention **count** rides the **Plan**
   icon (aggregate) and the **My Schedule** sub-tab — the one orange the bar may
   carry (§2.7), rendering nothing at zero.
@@ -721,7 +764,7 @@ A". Recipes so it stays Hearth:
   DECISIONS.md "Per-page create FABs"). The old "one FAB, always" rule is retired:
   a single centre-docked mic left *manual* create hidden behind knowing to open an
   app-bar overflow, which confused users who stayed on My Schedule.
-  1. The docked centre **voice FAB** — a standard (56) circular `primary` (sage)
+  1. The docked centre **voice FAB** — a standard (56) circular `primary` (brand green)
      FAB, mic glyph, *gentle* floating shadow (`Elevations.floating`). Speak-to-
      create. Owned by `HomeShell` (the outer scaffold), present on every pillar.
   2. A **manual-create FAB**, bottom-right (`endFloat`), circular `primary` with
@@ -753,11 +796,11 @@ Logging time is a bottom sheet, not a screen (`Radii.lg`, `Elevations.floating`)
 - **The minutes field is the primary control** — a numeric input, digits-only,
   validated 1..1440 (`kMaxEntryMinutes`, §data model). Store minutes; display
   rolls to `Xh Ym` only past 59 (the unit rule).
-- **Quick-add chips are sage, not orange.** Optional `15 / 30 / 45 / 60` chips
+- **Quick-add chips are brand green, not orange.** Optional `15 / 30 / 45 / 60` chips
   are `ChoiceChip`s on a `primaryContainer` tint with `Radii.pill` — a convenience
-  fill, and a sage one, so it stays clear of the §2.7 firewall. They *set* the
+  fill, and a brand-green one, so it stays clear of the §2.7 firewall. They *set* the
   minutes field; they never submit on their own.
-- **Actions:** `Not now` (text) / `Log` (filled sage, §6.4). The Done→track prompt
+- **Actions:** `Not now` (text) / `Log` (filled brand green, §6.4). The Done→track prompt
   (`log_from_done_prompt.dart`) is the same recipe with the task name pre-filled;
   the voice flow is the same recipe with the minutes pre-filled — one sheet, three
   entry points.
@@ -774,39 +817,53 @@ Composes primitives that already exist — it invents nothing:
   total) — reuses `AppText.displaySmall`. This is a **sanctioned third use** of
   that token (alongside the auth hero and the My Schedule band); it is still not a
   general-purpose big-text slot. Hearth allows the figure to feel celebratory
-  through *size and warmth*, never through a new hue.
+  through *size and spacing*, never through a new hue.
 - **Charts** pull every colour from §2.8 (`AppDataVizColors`) and every meter from
   §6.7. Personal-dashboard numbers are distinct from the social-profile stats on
   `/u/:uid`: same tile recipe, different surface and framing ("my dashboard", not
   "someone's profile").
 
+### 6.15 Splash
+
+The cold-start reveal uses the CHECKMATE wordmark `CHECKMATE` in Space Grotesk,
+with the tagline **“Mates Always Remember”**. It is a theme-independent pure
+black reveal with white wordmark and glow. The two fixed brand bars are green
+`#2FA35A` over burnt orange `#EA6A2E`, from `SplashTokens`.
+
 ---
 
 ## 7. Accessibility floor
 
-**Every text pairing hits WCAG AA (4.5:1) in both modes. Verified by computation,
-not by eye.**
+**Every text pairing hits WCAG AA (4.5:1) in both modes. Ratios below were
+computed from the role hex values with a WCAG relative-luminance script, not
+estimated by eye.**
 
 Measured minimums:
 
 | Pairing | Light | Dark |
 |---|---|---|
-| `onSurface` on any surface | 13.70 | 10.71 |
-| `onSurfaceVariant` on any surface | 6.03 | 6.39 |
-| `primary` / `attention` / `error` on any surface | 5.36 | 6.11 |
-| Text on solid button fills | 7.05 | 8.43 |
-| `on*Container` on its container | 6.78 | 6.62 |
-| `primary` on `primaryContainer` | 5.43 | 4.77 |
-| `onAttentionContainer` on `attentionContainer` | 6.78 | **4.99** |
-| `onAttentionContainer` on `attentionContainerStrong` | 5.13 | **4.99** |
-| warning panel fill vs the card it sits on † | 2.71 | 2.66 |
-| Neutral badge text on card | 7.48 | 7.48 |
-| Neutral badge border on card (needs 3:1) | 4.64 | 4.89 |
-| Pending tint vs card | 2.05 | 2.66 |
-| Approved tint vs card | 1.27 | 1.64 |
-| **Pending's pull over Approved** | **1.62x** | **1.62x** |
-| Structure: app bar title / section rule / empty icon in `primary` on scaffold (needs 3:1) | 6.50 | 8.92 |
-| Structure: attention section rule in `attention` on scaffold (needs 3:1) | 6.27 | 8.16 |
+| Pairing | Light | Dark |
+|---|---:|---:|
+| `onSurface` on `surface` | 17.67:1 | 14.08:1 |
+| `onSurface` on `background` | 16.33:1 | 15.63:1 |
+| `onSurfaceVariant` on `surface` | 7.58:1 | 8.38:1 |
+| `onSurfaceVariant` on `background` | 7.01:1 | 9.30:1 |
+| `primary` on `background` | 4.98:1 | 9.27:1 |
+| `attention` on `background` | 5.28:1 | 9.08:1 |
+| `error` on `background` | 6.04:1 | 10.83:1 |
+| `onPrimary` on `primary` | 5.39:1 | 6.57:1 |
+| `onAttention` on `attention` | 5.71:1 | 7.01:1 |
+| `onError` on `error` | 6.54:1 | 7.66:1 |
+| `onPrimaryContainer` on `primaryContainer` | 12.67:1 | 7.15:1 |
+| `onAttentionContainer` on `attentionContainer` | 9.19:1 | 4.48:1 |
+| `onAttentionContainer` on `attentionContainerStrong` | 5.62:1 | 4.48:1 |
+| `onErrorContainer` on `errorContainer` | 12.77:1 | 7.17:1 |
+| `primary` on `primaryContainer` | 4.15:1 | 4.56:1 |
+| `attention` on `attentionContainer` | 3.53:1 | 2.63:1 (do not use) |
+| `outline` on `surfaceContainerHigh` | 3.60:1 | 4.59:1 (border only) |
+| `outlineVariant` on `surface` | 1.41:1 | 1.66:1 (decorative only) |
+| `attentionContainer` on `surface` | 1.62:1 | 3.11:1 (fill contrast only) |
+| `primaryContainer` on `surface` | 1.30:1 | 1.83:1 (fill contrast only) |
 
 Verified against the rendered panel, not just computed: the light and dark values
 above were sampled pixel-by-pixel off a Redmi (HyperOS, Android 16) on
@@ -821,47 +878,46 @@ appears as its exact spec hex.
 
 | Role | light | dark |
 |---|---|---|
-| `background` | `#FAF5EE` | `#1F1916` |
-| `surface` | `#FFFCF8` | `#2B2421` |
-| `surfaceContainer` | `#F4EDE3` | `#2B2421` |
-| `outlineVariant` | `#DED3C3` | `#4C4139` |
-| `outline` | `#7A7266` | `#9C9083` |
-| `onSurface` | `#1C1A16` | `#F0E8DC` |
-| `onSurfaceVariant` | `#57534B` | `#C0B4A4` |
-| `primary` — app bar, section rule, list icons, empty icon | `#356150` | `#8CC6AB` |
-| `primaryContainer` | `#D5E6DB` | `#2A4E3F` |
-| `attention` — attention section rule | `#8A4A25` | `#E3A47C` |
-| `attentionContainer` — Pending badge | `#E6A574` | `#9C531C` |
-| `attentionContainerStrong` — panel, count badge | `#DD8643` | `#9C531C` |
-| `onAttentionContainer` | `#43220F` | `#FBEDE2` |
+| `background` | `#F3F7F3` | `#0F1511` |
+| `surface` | `#FFFFFF` | `#18201A` |
+| `surfaceContainer` | `#EAF1EB` | `#18201A` |
+| `surfaceContainerHigh` | `#DFE9E0` | `#232D25` |
+| `outlineVariant` | `#D1DCD2` | `#39453B` |
+| `outline` | `#6E7A70` | `#8A958C` |
+| `onSurface` | `#141A15` | `#E6EEE7` |
+| `onSurfaceVariant` | `#4B574D` | `#AFBBB1` |
+| `primary` | `#1B7A3D` | `#56CE7E` |
+| `onPrimary` | `#FFFFFF` | `#00391B` |
+| `primaryContainer` | `#C5EBD1` | `#1E5233` |
+| `onPrimaryContainer` | `#04250F` | `#B6F2C6` |
+| `attention` | `#B4400C` | `#F0A56E` |
+| `onAttention` | `#FFFFFF` | `#491E05` |
+| `attentionContainer` | `#F3C29A` | `#A5551E` |
+| `attentionContainerStrong` | `#E9863F` | `#A5551E` |
+| `onAttentionContainer` | `#441C06` | `#FCE7D6` |
+| `error` | `#B3261E` | `#F2B8B5` |
+| `onError` | `#FFFFFF` | `#601410` |
+| `errorContainer` | `#F9DEDC` | `#8C1D18` |
+| `onErrorContainer` | `#410E0B` | `#F9DEDC` |
 
-This supersedes the 2026-07-24 run, which validated the pre-§2.7 ramp.
-
-† The panel fill is **not** load-bearing and is not held to the 3:1 non-text
-floor: the panel's structure is its 3px left rule, which measures 5.13 (light) /
-4.99 (dark) against that fill. The fill's job is presence, and 2.78 is the value
-that makes it read the same in both modes. If the rule is ever dropped, the fill
-becomes the only structure and the 3:1 floor applies.
+The panel fill is not load-bearing and is not held to the 3:1 non-text floor:
+the panel's structure is its 3px left rule. If the rule is ever dropped, the
+fill becomes the only structure and the 3:1 floor applies.
 
 Floors: **4.5:1** all text · **3:1** meaningful non-text · **48dp** touch targets.
 
 **Changing any colour value requires re-running the contrast check against this
-table.** A muted palette is exactly where this slips silently.
+table.** A green-tinted neutral palette still needs measured verification.
 
 Known-failing combinations, documented so they are never used:
 
-- `outline` as text on `surfaceContainerHigh` — 3.65 / 3.89. Banned by §2.6(1).
-- `outlineVariant` as a meaningful border — 1.51 / 1.60. Banned by §2.6(2).
+- `outline` as text on `surfaceContainerHigh` — 3.60 / 4.59. Banned by §2.6(1)
+  even where it happens to clear AA in dark mode.
+- `outlineVariant` as a meaningful border — 1.41 / 1.66. Banned by §2.6(2).
 - Dimmed neutral badge text — 4.43 in dark. Rejected in §2.3.
-- **`attention` on `attentionContainer` — 2.69 in dark.** Fails even the non-text
-  floor. Use `onAttentionContainer` for anything drawn on that fill, including
-  icons and rules (§6.3). Valid in light (5.47), but the rule is uniform across
-  modes so one recipe serves both.
-- Old dark `onAttentionContainer` `#F3D3BC` on the raised container — 4.05.
-  Replaced by `#FBEDE2`.
-- **`#D9792F` as the light `attentionContainerStrong`** — matches dark's 3.13:1
-  vs *scaffold* but its text pairing lands at **4.56**, 0.06 off the floor.
-  Rejected for `#DD8643` (2.78 vs card, text 5.13). See DECISIONS.md.
+- **`attention` on `attentionContainer` — 3.53 light / 2.63 dark.** Fails the
+  non-text floor in dark. Use `onAttentionContainer` for anything drawn on that
+  fill, including icons and rules (§6.3).
 
 ---
 
