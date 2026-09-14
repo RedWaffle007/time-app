@@ -24,6 +24,21 @@ class TimeBackdrop extends StatelessWidget {
 
   final Widget child;
 
+  static const _lightAccents = <Color>[
+    AppColors.lightPrimary,
+    AppColors.lightTurquoise,
+    AppColors.lightGolden,
+    AppColors.lightViolet,
+    AppColors.lightPink,
+  ];
+  static const _darkAccents = <Color>[
+    AppColors.darkPrimary,
+    AppColors.darkTurquoise,
+    AppColors.darkGolden,
+    AppColors.darkViolet,
+    AppColors.darkPink,
+  ];
+
   @override
   Widget build(BuildContext context) {
     final cs = context.colors;
@@ -32,13 +47,7 @@ class TimeBackdrop extends StatelessWidget {
     // Real chroma, held to a whisper of opacity. Marks are a touch stronger in
     // dark (they need to register against near-black) and quieter in light.
     final double markOpacity = dark ? 0.10 : 0.055;
-    final accents = <Color>[
-      cs.primary,
-      dark ? AppColors.darkTurquoise : AppColors.lightTurquoise,
-      dark ? AppColors.darkGolden : AppColors.lightGolden,
-      dark ? AppColors.darkViolet : AppColors.lightViolet,
-      dark ? AppColors.darkPink : AppColors.lightPink,
-    ];
+    final accents = dark ? _darkAccents : _lightAccents;
 
     return DecoratedBox(
       // The opaque ground beneath the transparent scaffolds. Read from the raw
@@ -51,10 +60,14 @@ class TimeBackdrop extends StatelessWidget {
         children: [
           Positioned.fill(
             child: IgnorePointer(
-              child: CustomPaint(
-                painter: _TimeMarksPainter(
-                  colors: accents,
-                  opacity: markOpacity,
+              child: RepaintBoundary(
+                child: CustomPaint(
+                  isComplex: true,
+                  willChange: false,
+                  painter: _TimeMarksPainter(
+                    colors: accents,
+                    opacity: markOpacity,
+                  ),
                 ),
               ),
             ),
