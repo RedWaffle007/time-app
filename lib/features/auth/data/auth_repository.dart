@@ -25,12 +25,18 @@ class AuthRepository {
   }
 
   /// Interactive Google sign-in → exchange the Google ID token for a Firebase
-  /// session. Throws on failure (e.g. user cancels); callers handle the error.
+  /// session. Cancellation is a normal return; genuine failures are rethrown.
   Future<void> signInWithGoogle() async {
     await _ensureGoogleInitialized();
 
     // authenticate() shows the account picker and returns the chosen account.
-    final account = await GoogleSignIn.instance.authenticate();
+    final GoogleSignInAccount account;
+    try {
+      account = await GoogleSignIn.instance.authenticate();
+    } on GoogleSignInException catch (e) {
+      if (e.code == GoogleSignInExceptionCode.canceled) return;
+      rethrow;
+    }
     final idToken = account.authentication.idToken;
 
     if (idToken == null) {

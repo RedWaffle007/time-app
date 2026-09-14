@@ -27,8 +27,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       await ref.read(authRepositoryProvider).signInWithGoogle();
       // On success, auth state changes and the router redirects us away —
       // nothing else to do here.
-    } catch (e) {
-      if (mounted) setState(() => _error = 'Sign-in failed: $e');
+    } catch (_) {
+      if (mounted) setState(() => _error = 'Sign-in failed. Please try again.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
