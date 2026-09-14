@@ -401,6 +401,7 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: themeMode,
+      themeAnimationDuration: Duration.zero,
       // Follow the device locale: these delegates localize Material chrome and
       // the date/time pickers, and make Localizations.localeOf(context) reflect
       // the user's locale (which every display in datetime_format.dart reads).
