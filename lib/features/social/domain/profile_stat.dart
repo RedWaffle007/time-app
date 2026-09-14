@@ -96,18 +96,18 @@ class ProfileStat {
   final num? value;
 
   ProfileStat asPlaceholder() => ProfileStat(
-        key: key,
-        label: label,
-        unit: unit,
-        state: ProfileStatState.placeholder,
-      );
+    key: key,
+    label: label,
+    unit: unit,
+    state: ProfileStatState.placeholder,
+  );
 
   ProfileStat asHidden() => ProfileStat(
-        key: key,
-        label: label,
-        unit: unit,
-        state: ProfileStatState.hidden,
-      );
+    key: key,
+    label: label,
+    unit: unit,
+    state: ProfileStatState.hidden,
+  );
 }
 
 /// The definition of a statistic: everything true about it that does not depend
@@ -149,6 +149,7 @@ class StatInputs {
   const StatInputs({
     required this.itemsAsTarget,
     required this.itemsAsPlanner,
+    required this.trackedEntries,
     required this.now,
     required this.timezone,
   });
@@ -156,6 +157,10 @@ class StatInputs {
   /// The RECORD, not a filtered view. See the library doc.
   final List<StatItem> itemsAsTarget;
   final List<StatItem> itemsAsPlanner;
+
+  /// The user's tracked-time record, narrowed to its authoritative whole-minute
+  /// duration. Stats never need a task name, timestamps, or storage identity.
+  final List<StatTrackedEntry> trackedEntries;
 
   final DateTime now;
 
@@ -199,6 +204,14 @@ class StatItem {
   /// How many whole minutes late, or 0 when on time / not applicable.
   int get latenessMinutes =>
       wasLate ? completedAt!.difference(instantUtc).inMinutes : 0;
+}
+
+/// The minimum a stat needs from a tracked-time entry.
+class StatTrackedEntry {
+  const StatTrackedEntry({required this.durationMinutes});
+
+  /// Authoritative whole minutes from [TrackedEntry.durationMinutes].
+  final int durationMinutes;
 }
 
 /// The published stats document, `users/{uid}/profileStats/summary`.

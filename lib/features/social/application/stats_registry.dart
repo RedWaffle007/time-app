@@ -17,7 +17,7 @@ import '../domain/profile_stat.dart';
 ///
 /// **Order is display order.** The first four are live off the delegation loop
 /// that already ships; the rest are the tracker stats named for future
-/// sessions, drawn as tiles and waiting for a source.
+/// goals tile stays a placeholder because it has no source.
 const List<ProfileStatDefinition> kProfileStatDefinitions = [
   // ---- live today, computed from the schedule record ----
   ProfileStatDefinition(
@@ -57,22 +57,21 @@ const List<ProfileStatDefinition> kProfileStatDefinitions = [
     compute: _plansCreated,
   ),
 
-  // ---- placeholders: defined, drawn, not yet fed ----
+  // ---- tracked-time record ----
   //
   // These have no `compute`, which is what marks them placeholder. They are
-  // NOT parked-feature scaffolding: no tracker logic, no config flag and no
-  // dormant code path is introduced by naming a tile. They are the schema and
-  // the layout, settled now so that plugging a tracker in later is one function
-  // rather than a redesign.
+  // The first two derive from tracked-time's authoritative whole-minute record.
   ProfileStatDefinition(
     key: 'hoursTracked',
     label: 'Time tracked',
     unit: ProfileStatUnit.minutes,
+    compute: _hoursTracked,
   ),
   ProfileStatDefinition(
     key: 'focusSessions',
     label: 'Focus sessions',
     unit: ProfileStatUnit.count,
+    compute: _focusSessions,
   ),
   ProfileStatDefinition(
     key: 'goalsAchieved',
@@ -127,14 +126,14 @@ List<ProfileStat> statsFromSnapshot(ProfileStatsSnapshot snapshot) {
 /// the section entirely would be indistinguishable from a profile with no
 /// activity at all.
 List<ProfileStat> hiddenStats() => [
-      for (final def in kProfileStatDefinitions)
-        ProfileStat(
-          key: def.key,
-          label: def.label,
-          unit: def.unit,
-          state: ProfileStatState.hidden,
-        ),
-    ];
+  for (final def in kProfileStatDefinitions)
+    ProfileStat(
+      key: def.key,
+      label: def.label,
+      unit: def.unit,
+      state: ProfileStatState.hidden,
+    ),
+];
 
 // ---------------------------------------------------------------------------
 // The computations. Pure functions over [StatInputs] — no clock of their own,
@@ -146,6 +145,14 @@ num _tasksCompleted(StatInputs i) =>
     i.itemsAsTarget.where((it) => it.isDone).length;
 
 num _plansCreated(StatInputs i) => i.itemsAsPlanner.length;
+
+/// All logged whole minutes, including an honest measured zero when no entry
+/// exists yet.
+num _hoursTracked(StatInputs i) =>
+    i.trackedEntries.fold<int>(0, (sum, entry) => sum + entry.durationMinutes);
+
+/// One tracked record is one focus session.
+num _focusSessions(StatInputs i) => i.trackedEntries.length;
 
 /// Done as a share of everything that reached an outcome.
 ///
@@ -222,9 +229,11 @@ num _currentStreak(StatInputs i) {
     // the standard trick for a calendar-day ordinal that is immune to the
     // zone's own offset — including across a DST shift, where a local day is
     // 23 or 25 hours long but still exactly one day.
-    return DateTime.utc(local.year, local.month, local.day)
-            .difference(DateTime.utc(1970, 1, 1))
-            .inDays;
+    return DateTime.utc(
+      local.year,
+      local.month,
+      local.day,
+    ).difference(DateTime.utc(1970, 1, 1)).inDays;
   }
 
   final completedDays = <int>{

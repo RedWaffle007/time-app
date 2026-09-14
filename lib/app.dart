@@ -21,6 +21,7 @@ import 'features/scheduling/application/slot_lock_reconciler.dart';
 import 'features/social/application/stats_providers.dart';
 import 'features/splash/presentation/splash_overlay.dart';
 import 'features/theme/application/theme_mode_controller.dart';
+import 'features/time_tracking/application/time_tracking_providers.dart';
 import 'routing/app_router.dart';
 import 'routing/notification_routing.dart';
 
@@ -355,6 +356,12 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     // seed my summary into it without waiting for the next stats recomputation.
     ref.listen(myGroupsProvider, (previous, next) {
       if (next.hasValue) {
+        ref.read(groupStatsPublisherProvider).publishIfChanged();
+      }
+    });
+    ref.listen(myTrackedEntriesProvider, (_, next) {
+      if (next.hasValue) {
+        ref.read(profileStatsPublisherProvider).publishIfChanged();
         ref.read(groupStatsPublisherProvider).publishIfChanged();
       }
     });

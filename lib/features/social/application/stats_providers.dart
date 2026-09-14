@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
+import '../../time_tracking/application/time_tracking_providers.dart';
+import '../../time_tracking/domain/tracked_entry.dart';
 import '../domain/profile_stat.dart';
 import '../domain/profile_visibility.dart';
 import 'social_providers.dart';
@@ -18,12 +20,16 @@ import 'stats_registry.dart';
 /// on the whole scheduling domain, and it is the seam a future tracker feeds
 /// through without becoming a schedule item.
 StatItem _toStatItem(ScheduleItem item) => StatItem(
-      instantUtc: item.scheduledInstantUtc,
-      isApproved: item.status == ScheduleItemStatus.approved,
-      isDone: item.outcome?.result == OutcomeResult.done,
-      isSkipped: item.outcome?.result == OutcomeResult.skipped,
-      completedAt: item.outcome?.completedAt,
-    );
+  instantUtc: item.scheduledInstantUtc,
+  isApproved: item.status == ScheduleItemStatus.approved,
+  isDone: item.outcome?.result == OutcomeResult.done,
+  isSkipped: item.outcome?.result == OutcomeResult.skipped,
+  completedAt: item.outcome?.completedAt,
+);
+
+/// Map tracked-time's authoritative whole-minute record into the stats shape.
+StatTrackedEntry _toStatTrackedEntry(TrackedEntry entry) =>
+    StatTrackedEntry(durationMinutes: entry.durationMinutes);
 
 /// The signed-in user's freshly computed stat values.
 ///
@@ -36,6 +42,7 @@ StatItem _toStatItem(ScheduleItem item) => StatItem(
 final myComputedStatsProvider = Provider<AsyncValue<Map<String, num>>>((ref) {
   final asTarget = ref.watch(allItemsAsTargetProvider);
   final asPlanner = ref.watch(allItemsAsPlannerProvider);
+  final trackedEntries = ref.watch(myTrackedEntriesProvider);
   final profile = ref.watch(profileProvider);
 
   if (asTarget.hasError) {
@@ -43,13 +50,22 @@ final myComputedStatsProvider = Provider<AsyncValue<Map<String, num>>>((ref) {
   }
   if (asPlanner.hasError) {
     return AsyncError(
-        asPlanner.error!, asPlanner.stackTrace ?? StackTrace.empty);
+      asPlanner.error!,
+      asPlanner.stackTrace ?? StackTrace.empty,
+    );
+  }
+  if (trackedEntries.hasError) {
+    return AsyncError(
+      trackedEntries.error!,
+      trackedEntries.stackTrace ?? StackTrace.empty,
+    );
   }
 
   final target = asTarget.value;
   final planner = asPlanner.value;
+  final tracked = trackedEntries.value;
   final home = profile.value?.homeTimezone;
-  if (target == null || planner == null || home == null) {
+  if (target == null || planner == null || tracked == null || home == null) {
     return const AsyncLoading();
   }
 
@@ -58,6 +74,7 @@ final myComputedStatsProvider = Provider<AsyncValue<Map<String, num>>>((ref) {
       StatInputs(
         itemsAsTarget: target.map(_toStatItem).toList(),
         itemsAsPlanner: planner.map(_toStatItem).toList(),
+        trackedEntries: tracked.map(_toStatTrackedEntry).toList(),
         // A real clock, on purpose: the streak has to know what "today" is, and
         // the pure function it feeds takes `now` as an argument precisely so
         // the impurity stops here and the computation stays testable.
@@ -153,30 +170,33 @@ final profileStatsPublisherProvider = Provider<ProfileStatsPublisher>((ref) {
 /// instant they complete something — no publish round-trip to wait through.
 final profileStatsProvider =
     Provider.family<AsyncValue<List<ProfileStat>>, String>((ref, uid) {
-  final visibility = ref.watch(profileVisibilityProvider(uid));
+      final visibility = ref.watch(profileVisibilityProvider(uid));
 
-  return visibility.when(
-    loading: () => const AsyncLoading(),
-    error: (e, st) => AsyncError(e, st),
-    data: (v) {
-      if (!v.canSeeStats) return AsyncData(hiddenStats());
+      return visibility.when(
+        loading: () => const AsyncLoading(),
+        error: (e, st) => AsyncError(e, st),
+        data: (v) {
+          if (!v.canSeeStats) return AsyncData(hiddenStats());
 
-      if (v.relation == ProfileRelation.self) {
-        return ref.watch(myComputedStatsProvider).whenData(
-              (values) => statsFromSnapshot(ProfileStatsSnapshot(values: values)),
-            );
-      }
+          if (v.relation == ProfileRelation.self) {
+            return ref
+                .watch(myComputedStatsProvider)
+                .whenData(
+                  (values) =>
+                      statsFromSnapshot(ProfileStatsSnapshot(values: values)),
+                );
+          }
 
-      return ref
-          .watch(publishedStatsProvider(uid))
-          .whenData(statsFromSnapshot);
-    },
-  );
-});
+          return ref
+              .watch(publishedStatsProvider(uid))
+              .whenData(statsFromSnapshot);
+        },
+      );
+    });
 
 /// The raw published document for [uid]. Prefer [profileStatsProvider], which
 /// applies the privacy gate; this is the unguarded read beneath it.
 final publishedStatsProvider =
     StreamProvider.family<ProfileStatsSnapshot, String>((ref, uid) {
-  return ref.watch(profileStatsRepositoryProvider).watch(uid);
-});
+      return ref.watch(profileStatsRepositoryProvider).watch(uid);
+    });

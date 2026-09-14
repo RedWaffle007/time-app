@@ -39,12 +39,14 @@ void main() {
   StatInputs inputs({
     List<StatItem> target = const [],
     List<StatItem> planner = const [],
+    List<StatTrackedEntry> tracked = const [],
     DateTime? now,
     String timezone = zone,
   }) {
     return StatInputs(
       itemsAsTarget: target,
       itemsAsPlanner: planner,
+      trackedEntries: tracked,
       now: now ?? DateTime.utc(2026, 8, 21, 7), // 12:00 in Karachi
       timezone: timezone,
     );
@@ -105,24 +107,32 @@ void main() {
 
   group('tasksCompleted', () {
     test('counts done items only', () {
-      final values = computeStatValues(inputs(target: [
-        at(2026, 8, 20, done: true),
-        at(2026, 8, 19, done: true),
-        at(2026, 8, 18, skipped: true),
-        at(2026, 8, 17),
-      ]));
+      final values = computeStatValues(
+        inputs(
+          target: [
+            at(2026, 8, 20, done: true),
+            at(2026, 8, 19, done: true),
+            at(2026, 8, 18, skipped: true),
+            at(2026, 8, 17),
+          ],
+        ),
+      );
       expect(values['tasksCompleted'], 2);
     });
   });
 
   group('followThrough', () {
     test('is done over everything that reached an outcome', () {
-      final values = computeStatValues(inputs(target: [
-        at(2026, 8, 20, done: true),
-        at(2026, 8, 19, done: true),
-        at(2026, 8, 18, done: true),
-        at(2026, 8, 17, skipped: true),
-      ]));
+      final values = computeStatValues(
+        inputs(
+          target: [
+            at(2026, 8, 20, done: true),
+            at(2026, 8, 19, done: true),
+            at(2026, 8, 18, done: true),
+            at(2026, 8, 17, skipped: true),
+          ],
+        ),
+      );
       expect(values['followThrough'], 75);
     });
 
@@ -130,11 +140,15 @@ void main() {
       // The denominator is settled items, not everything approved — otherwise
       // the number would fall every time someone planned ahead, punishing the
       // exact behaviour the app exists to encourage.
-      final withPlans = computeStatValues(inputs(target: [
-        at(2026, 8, 20, done: true),
-        at(2026, 12, 25), // approved, not yet due
-        at(2026, 12, 26),
-      ]));
+      final withPlans = computeStatValues(
+        inputs(
+          target: [
+            at(2026, 8, 20, done: true),
+            at(2026, 12, 25), // approved, not yet due
+            at(2026, 12, 26),
+          ],
+        ),
+      );
       expect(withPlans['followThrough'], 100);
     });
 
@@ -145,59 +159,77 @@ void main() {
 
   group('currentStreak', () {
     test('counts consecutive days ending today', () {
-      final values = computeStatValues(inputs(target: [
-        at(2026, 8, 21, done: true),
-        at(2026, 8, 20, done: true),
-        at(2026, 8, 19, done: true),
-      ]));
+      final values = computeStatValues(
+        inputs(
+          target: [
+            at(2026, 8, 21, done: true),
+            at(2026, 8, 20, done: true),
+            at(2026, 8, 19, done: true),
+          ],
+        ),
+      );
       expect(values['currentStreak'], 3);
     });
 
     test('survives a today with nothing done yet', () {
       // The streak must not break at midnight while the user is asleep and
       // reappear when they complete something the next morning.
-      final values = computeStatValues(inputs(target: [
-        at(2026, 8, 20, done: true),
-        at(2026, 8, 19, done: true),
-      ]));
+      final values = computeStatValues(
+        inputs(
+          target: [at(2026, 8, 20, done: true), at(2026, 8, 19, done: true)],
+        ),
+      );
       expect(values['currentStreak'], 2);
     });
 
     test('breaks once the run ended before yesterday', () {
-      final values = computeStatValues(inputs(target: [
-        at(2026, 8, 18, done: true),
-        at(2026, 8, 17, done: true),
-      ]));
+      final values = computeStatValues(
+        inputs(
+          target: [at(2026, 8, 18, done: true), at(2026, 8, 17, done: true)],
+        ),
+      );
       expect(values['currentStreak'], 0);
     });
 
     test('a gap ends the run — only the CURRENT streak counts', () {
-      final values = computeStatValues(inputs(target: [
-        at(2026, 8, 21, done: true),
-        at(2026, 8, 20, done: true),
-        // 19th missing.
-        at(2026, 8, 18, done: true),
-        at(2026, 8, 17, done: true),
-        at(2026, 8, 16, done: true),
-      ]));
+      final values = computeStatValues(
+        inputs(
+          target: [
+            at(2026, 8, 21, done: true),
+            at(2026, 8, 20, done: true),
+            // 19th missing.
+            at(2026, 8, 18, done: true),
+            at(2026, 8, 17, done: true),
+            at(2026, 8, 16, done: true),
+          ],
+        ),
+      );
       expect(values['currentStreak'], 2);
     });
 
     test('several completions on one day count once', () {
-      final values = computeStatValues(inputs(target: [
-        at(2026, 8, 21, hour: 9, done: true),
-        at(2026, 8, 21, hour: 14, done: true),
-        at(2026, 8, 21, hour: 20, done: true),
-      ]));
+      final values = computeStatValues(
+        inputs(
+          target: [
+            at(2026, 8, 21, hour: 9, done: true),
+            at(2026, 8, 21, hour: 14, done: true),
+            at(2026, 8, 21, hour: 20, done: true),
+          ],
+        ),
+      );
       expect(values['currentStreak'], 1);
     });
 
     test('skipped items do not extend a streak', () {
-      final values = computeStatValues(inputs(target: [
-        at(2026, 8, 21, done: true),
-        at(2026, 8, 20, skipped: true),
-        at(2026, 8, 19, done: true),
-      ]));
+      final values = computeStatValues(
+        inputs(
+          target: [
+            at(2026, 8, 21, done: true),
+            at(2026, 8, 20, skipped: true),
+            at(2026, 8, 19, done: true),
+          ],
+        ),
+      );
       expect(values['currentStreak'], 1);
     });
 
@@ -221,10 +253,9 @@ void main() {
 
     test('an unknown timezone yields no streak rather than throwing', () {
       // A bad zone must not take down a whole profile's stats pass.
-      final values = computeStatValues(inputs(
-        target: [at(2026, 8, 21, done: true)],
-        timezone: 'Not/AZone',
-      ));
+      final values = computeStatValues(
+        inputs(target: [at(2026, 8, 21, done: true)], timezone: 'Not/AZone'),
+      );
       expect(values['currentStreak'], 0);
     });
 
@@ -235,10 +266,47 @@ void main() {
 
   group('plansCreated', () {
     test('counts what the user planned for other people', () {
-      final values = computeStatValues(inputs(
-        planner: [at(2026, 8, 20), at(2026, 8, 19), at(2026, 8, 18)],
-      ));
+      final values = computeStatValues(
+        inputs(planner: [at(2026, 8, 20), at(2026, 8, 19), at(2026, 8, 18)]),
+      );
       expect(values['plansCreated'], 3);
+    });
+  });
+
+  group('tracked time', () {
+    test(
+      'hoursTracked sums authoritative whole minutes and is zero when empty',
+      () {
+        expect(
+          computeStatValues(
+            inputs(
+              tracked: const [
+                StatTrackedEntry(durationMinutes: 45),
+                StatTrackedEntry(durationMinutes: 75),
+                StatTrackedEntry(durationMinutes: 30),
+              ],
+            ),
+          )['hoursTracked'],
+          150,
+        );
+        expect(computeStatValues(inputs())['hoursTracked'], 0);
+      },
+    );
+
+    test('focusSessions counts entries and is zero when empty', () {
+      expect(
+        computeStatValues(
+          inputs(
+            tracked: const [
+              StatTrackedEntry(durationMinutes: 15),
+              StatTrackedEntry(durationMinutes: 20),
+              StatTrackedEntry(durationMinutes: 25),
+            ],
+          ),
+        )['focusSessions'],
+        3,
+      );
+      expect(computeStatValues(inputs())['focusSessions'], 0);
     });
   });
 }
