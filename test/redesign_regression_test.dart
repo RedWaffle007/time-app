@@ -65,12 +65,26 @@ void main() {
   testWidgets('StatsScreen shows its content, not an empty/broken screen', (
     tester,
   ) async {
-    await tester.pumpWidget(host(const StatsScreen()));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          myComputedStatsProvider.overrideWithValue(
+            const AsyncData({
+              'tasksCompleted': 3,
+              'followThrough': 75,
+            }),
+          ),
+        ],
+        child: host(const StatsScreen()),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     // The screen must actually render its tiles and copy.
     expect(find.text('Stats'), findsOneWidget);
-    expect(find.text('Time tracked'), findsOneWidget);
+    expect(find.text('Tasks completed'), findsOneWidget);
+    expect(find.text('3'), findsOneWidget);
+    expect(find.text('75%'), findsOneWidget);
     expect(find.text('Coming soon'), findsWidgets);
     // Em-dash placeholder values present.
     expect(find.text('—'), findsWidgets);
@@ -82,7 +96,16 @@ void main() {
     tester.view.physicalSize = const Size(360 * 3, 640 * 3);
     tester.view.devicePixelRatio = 3.0;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(host(const StatsScreen()));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          myComputedStatsProvider.overrideWithValue(
+            const AsyncData({'tasksCompleted': 3}),
+          ),
+        ],
+        child: host(const StatsScreen()),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
