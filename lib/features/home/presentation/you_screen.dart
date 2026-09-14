@@ -117,44 +117,57 @@ class _ThemeModeTile extends ConsumerWidget {
     final mode = ref.watch(themeModeProvider);
 
     return Card(
-      child: ListTile(
-        leading: Icon(
-          AppIcons.themeSystem,
-          color: context.colors.onSurfaceVariant,
-        ),
-        title: Text('Theme', style: context.text.titleMedium),
-        subtitle: Text(
-          switch (mode) {
-            ThemeMode.light => 'Light',
-            ThemeMode.dark => 'Dark',
-            ThemeMode.system => 'System default',
-          },
-          style: context.text.bodySmall?.copyWith(
-            color: context.colors.onSurfaceVariant,
-          ),
-        ),
-        trailing: SegmentedButton<ThemeMode>(
-          segments: const [
-            ButtonSegment(
-              value: ThemeMode.light,
-              icon: Icon(AppIcons.themeLight),
-              tooltip: 'Light theme',
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: Space.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ListTile(
+              leading: Icon(
+                AppIcons.themeSystem,
+                color: context.colors.onSurfaceVariant,
+              ),
+              title: Text('Theme', style: context.text.titleMedium),
+              subtitle: Text(
+                switch (mode) {
+                  ThemeMode.light => 'Light',
+                  ThemeMode.dark => 'Dark',
+                  ThemeMode.system => 'System default',
+                },
+                style: context.text.bodySmall?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
+              ),
             ),
-            ButtonSegment(
-              value: ThemeMode.dark,
-              icon: Icon(AppIcons.themeDark),
-              tooltip: 'Dark theme',
-            ),
-            ButtonSegment(
-              value: ThemeMode.system,
-              icon: Icon(AppIcons.themeSystem),
-              tooltip: 'Use system theme',
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: Space.lg),
+              child: SegmentedButton<ThemeMode>(
+                expandedInsets: EdgeInsets.zero,
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(
+                    value: ThemeMode.light,
+                    label: Text('Light'),
+                    tooltip: 'Light theme',
+                  ),
+                  ButtonSegment(
+                    value: ThemeMode.dark,
+                    label: Text('Dark'),
+                    tooltip: 'Dark theme',
+                  ),
+                  ButtonSegment(
+                    value: ThemeMode.system,
+                    label: Text('System'),
+                    tooltip: 'Use system theme',
+                  ),
+                ],
+                selected: {mode},
+                onSelectionChanged: (selection) {
+                  ref.read(themeModeProvider.notifier).setMode(selection.first);
+                },
+              ),
             ),
           ],
-          selected: {mode},
-          onSelectionChanged: (selection) {
-            ref.read(themeModeProvider.notifier).setMode(selection.first);
-          },
         ),
       ),
     );
