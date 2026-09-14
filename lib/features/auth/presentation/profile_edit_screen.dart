@@ -237,23 +237,21 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
               ),
               if (_quietEnabled) ...[
                 const SizedBox(height: Space.sm),
-                Row(
+                Wrap(
+                  spacing: Space.md,
+                  runSpacing: Space.sm,
                   children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _pickQuietStart,
-                        icon: const Icon(AppIcons.quietHoursStart),
-                        label:
-                            Text('From ${formatTimeOfDay(context, _quietStart)}'),
+                    OutlinedButton.icon(
+                      onPressed: _pickQuietStart,
+                      icon: const Icon(AppIcons.quietHoursStart),
+                      label: Text(
+                        'From ${formatTimeOfDay(context, _quietStart)}',
                       ),
                     ),
-                    const SizedBox(width: Space.md),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _pickQuietEnd,
-                        icon: const Icon(AppIcons.quietHoursEnd),
-                        label: Text('To ${formatTimeOfDay(context, _quietEnd)}'),
-                      ),
+                    OutlinedButton.icon(
+                      onPressed: _pickQuietEnd,
+                      icon: const Icon(AppIcons.quietHoursEnd),
+                      label: Text('To ${formatTimeOfDay(context, _quietEnd)}'),
                     ),
                   ],
                 ),

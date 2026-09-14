@@ -191,10 +191,11 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
     return Padding(
       padding: EdgeInsets.fromLTRB(
           Space.xl, Space.sm, Space.xl, Space.xl + bottomInset),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           Text('Plan for ${widget.groupName}', style: context.text.titleLarge),
           const SizedBox(height: Space.xs),
           Text(
@@ -216,26 +217,23 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
             onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: Space.lg),
-          Row(
+          Wrap(
+            spacing: Space.md,
+            runSpacing: Space.sm,
             children: [
-              Expanded(
-                child: OutlinedButton.icon(
+              OutlinedButton.icon(
                   onPressed: _pickDate,
                   icon: const Icon(AppIcons.date),
                   label: Text(_date == null
                       ? 'Pick date'
                       : formatWallDate(context, _date!)),
-                ),
               ),
-              const SizedBox(width: Space.md),
-              Expanded(
-                child: OutlinedButton.icon(
+              OutlinedButton.icon(
                   onPressed: _pickTime,
                   icon: const Icon(AppIcons.time),
                   label: Text(_time == null
                       ? 'Pick time'
                       : formatTimeOfDay(context, _time!)),
-                ),
               ),
             ],
           ),
@@ -261,7 +259,8 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
                   )
                 : const Text('Plan for the group'),
           ),
-        ],
+          ],
+        ),
       ),
     );
   }

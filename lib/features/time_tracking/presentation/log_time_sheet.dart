@@ -201,10 +201,11 @@ class _LogTimeSheetState extends ConsumerState<_LogTimeSheet> {
     return Padding(
       padding: EdgeInsets.fromLTRB(
           Space.xl, Space.sm, Space.xl, Space.xl + bottomInset),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           Text(_isEditing ? 'Edit entry' : 'Log time',
               style: context.text.titleLarge),
           const SizedBox(height: Space.lg),
@@ -292,7 +293,8 @@ class _LogTimeSheetState extends ConsumerState<_LogTimeSheet> {
               ),
             ],
           ),
-        ],
+          ],
+        ),
       ),
     );
   }

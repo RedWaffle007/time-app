@@ -475,6 +475,7 @@ class _OutcomeCard extends ConsumerWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         title: const Text('Skip this?'),
         content: TextField(
           controller: controller,
