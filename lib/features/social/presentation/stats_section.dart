@@ -61,30 +61,36 @@ class StatsSection extends ConsumerWidget {
               ),
               const SizedBox(height: Space.md),
             ],
-            LayoutBuilder(
-              builder: (context, constraints) {
-                // How many tiles fit, at least one. Computed rather than
-                // hardcoded so the grid reflows instead of clipping a label.
-                final columns =
-                    (constraints.maxWidth / (Sizes.statTileMinWidth + Space.sm))
-                        .floor()
-                        .clamp(1, 4);
-                final width =
-                    (constraints.maxWidth - (Space.sm * (columns - 1))) /
-                    columns;
-                return Wrap(
-                  spacing: Space.sm,
-                  runSpacing: Space.sm,
-                  children: [
-                    for (final stat in list)
-                      SizedBox(
-                        width: width,
-                        child: _StatTile(stat: stat),
-                      ),
-                  ],
-                );
-              },
-            ),
+            StatsGrid(stats: list),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// The shared reflowing stat-tile grid used by profiles and the Stats pillar.
+class StatsGrid extends StatelessWidget {
+  const StatsGrid({super.key, required this.stats});
+
+  final List<ProfileStat> stats;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns =
+            (constraints.maxWidth / (Sizes.statTileMinWidth + Space.sm))
+                .floor()
+                .clamp(1, 4);
+        final width =
+            (constraints.maxWidth - (Space.sm * (columns - 1))) / columns;
+        return Wrap(
+          spacing: Space.sm,
+          runSpacing: Space.sm,
+          children: [
+            for (final stat in stats)
+              SizedBox(width: width, child: _StatTile(stat: stat)),
           ],
         );
       },
