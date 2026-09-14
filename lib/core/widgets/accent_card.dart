@@ -20,17 +20,23 @@ class AccentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // IntrinsicHeight bounds the Row's cross axis to the content height, so the
+    // stretched rail has a finite height to fill. Without it, in an
+    // unbounded-height parent (a Wrap tile, a ListView) `stretch` forces the rail
+    // to infinite height and the whole card throws — the empty-Stats bug.
     return Card(
       margin: margin,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SizedBox(
-            width: Sizes.ruleWidth,
-            child: ColoredBox(color: accent),
-          ),
-          Expanded(child: child),
-        ],
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              width: Sizes.ruleWidth,
+              child: ColoredBox(color: accent),
+            ),
+            Expanded(child: child),
+          ],
+        ),
       ),
     );
   }
