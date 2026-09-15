@@ -9,20 +9,21 @@ import 'package:time_app/features/splash/presentation/splash_overlay.dart';
 /// Signed-out auth so `_appReady()` short-circuits to ready immediately (no
 /// profile stream to await) — the reveal plays its full timeline then fades.
 Widget _host() => ProviderScope(
-      overrides: [
-        authStateProvider.overrideWith((ref) => Stream<User?>.value(null)),
-      ],
-      child: const Directionality(
-        textDirection: TextDirection.ltr,
-        child: SplashOverlay(child: Text('APP')),
-      ),
-    );
+  overrides: [
+    authStateProvider.overrideWith((ref) => Stream<User?>.value(null)),
+  ],
+  child: const Directionality(
+    textDirection: TextDirection.ltr,
+    child: SplashOverlay(child: Text('APP')),
+  ),
+);
 
 void main() {
   setUp(SplashOverlay.resetForTest);
 
-  testWidgets('cold start: single-line CHECKMATE reveal, then fades to app',
-      (tester) async {
+  testWidgets('cold start: single-line CHECKMATE reveal, then fades to app', (
+    tester,
+  ) async {
     await tester.pumpWidget(_host());
 
     // The wordmark is present during the reveal, on one line, exactly as typed.
@@ -30,8 +31,21 @@ void main() {
     expect(wordmark, findsOneWidget);
     expect(tester.widget<Text>(wordmark).maxLines, 1);
 
+    // The glow-heavy text is retained behind compositor-driven fade/scale
+    // layers instead of being rebuilt by AnimatedBuilder on every tick.
+    final lockupBoundary = find.byKey(SplashOverlay.lockupBoundaryKey);
+    expect(lockupBoundary, findsOneWidget);
+    final retainedLayer = tester.renderObject(lockupBoundary);
+    expect(find.byType(AnimatedBuilder), findsNothing);
+    expect(find.byType(FadeTransition), findsWidgets);
+    expect(find.byType(ScaleTransition), findsNWidgets(2));
+    for (var frame = 0; frame < 20; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(tester.renderObject(lockupBoundary), same(retainedLayer));
+    }
+
     // Let the intro + hold + outro run to completion.
-    await tester.pump(const Duration(milliseconds: 3000)); // intro
+    await tester.pump(const Duration(milliseconds: 2680)); // rest of intro
     await tester.pump(const Duration(milliseconds: 600)); // outro
     await tester.pumpAndSettle();
 
@@ -40,8 +54,9 @@ void main() {
     expect(find.text('APP'), findsOneWidget);
   });
 
-  testWidgets('warm path: once played in-process, a new overlay never reveals',
-      (tester) async {
+  testWidgets('warm path: once played in-process, a new overlay never reveals', (
+    tester,
+  ) async {
     // First overlay plays and completes → sets the process-scoped flag.
     await tester.pumpWidget(_host());
     await tester.pump(const Duration(milliseconds: 3000));

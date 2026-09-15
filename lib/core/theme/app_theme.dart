@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'app_colors.dart';
@@ -99,6 +100,31 @@ abstract final class AppTheme {
       // the backdrop itself; cards, app bars, sheets and dialogs keep their own
       // opaque fills, so content contrast is never lowered.
       scaffoldBackgroundColor: Colors.transparent,
+      // Every route is intentionally transparent so the single TimeBackdrop
+      // behind the Navigator can remain visible. Flutter's Android page
+      // transition normally paints `colorScheme.surface` behind the animated
+      // routes; on a transparent app that becomes a blank sheet for the whole
+      // transition, then disappears when the animation completes. Keep the
+      // native transition shapes, but make their temporary backing transparent
+      // so push, pop and predictive Back all reveal the live backdrop instead.
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: PredictiveBackPageTransitionsBuilder(
+            fallbackColor: Colors.transparent,
+          ),
+          TargetPlatform.fuchsia: ZoomPageTransitionsBuilder(
+            backgroundColor: Colors.transparent,
+          ),
+          TargetPlatform.windows: ZoomPageTransitionsBuilder(
+            backgroundColor: Colors.transparent,
+          ),
+          TargetPlatform.linux: ZoomPageTransitionsBuilder(
+            backgroundColor: Colors.transparent,
+          ),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+        },
+      ),
       textTheme: AppText.textTheme,
       extensions: [semantic, AppTypeExtension.standard],
 

@@ -47,6 +47,12 @@ class SplashOverlay extends ConsumerStatefulWidget {
   @visibleForTesting
   static void resetForTest() => _revealPlayed = false;
 
+  /// The glow-heavy wordmark is a retained raster layer. Tests use this key to
+  /// guard the performance property: animation may transform or reveal this
+  /// layer, but must not rebuild and repaint its text shadows every frame.
+  @visibleForTesting
+  static const lockupBoundaryKey = ValueKey<String>('splash-lockup-boundary');
+
   @override
   ConsumerState<SplashOverlay> createState() => _SplashOverlayState();
 }
@@ -77,7 +83,7 @@ class _SplashOverlayState extends ConsumerState<SplashOverlay>
   /// land at 0.00 / 1.00 / 2.00s (fired natively); the wordmark blooms up AFTER
   /// hit #1 (around hit #2) and holds through hits #2 and #3 to 3.00s, matching
   /// how the logo does not pop on the first beat. Phased by the `Interval`s in
-  /// `_RevealPainter`.
+  /// `_RevealLayer`.
   static const _introDuration = Duration(milliseconds: 3000);
   static const _outroDuration = Duration(milliseconds: 550);
 
@@ -154,11 +160,16 @@ class _SplashOverlayState extends ConsumerState<SplashOverlay>
   bool _readyNow() => _computeReady(watch: false);
 
   bool _computeReady({required bool watch}) {
-    final auth = watch ? ref.watch(authStateProvider) : ref.read(authStateProvider);
+    final auth = watch
+        ? ref.watch(authStateProvider)
+        : ref.read(authStateProvider);
     if (auth.isLoading) return false;
-    if (auth.value == null) return true; // headed to /auth: nothing async to await
-    final profile =
-        watch ? ref.watch(profileProvider) : ref.read(profileProvider);
+    if (auth.value == null) {
+      return true; // headed to /auth: nothing async to await
+    }
+    final profile = watch
+        ? ref.watch(profileProvider)
+        : ref.read(profileProvider);
     return !profile.isLoading;
   }
 
@@ -192,13 +203,10 @@ class _SplashOverlayState extends ConsumerState<SplashOverlay>
         widget.child,
         Positioned.fill(
           child: IgnorePointer(
-            child: AnimatedBuilder(
-              animation: Listenable.merge([_intro, _outro]),
-              builder: (context, _) => _RevealPainter(
-                intro: _intro.value,
-                outro: _outro.value,
-                showWaiting: showWaiting,
-              ),
+            child: _RevealLayer(
+              intro: _intro,
+              outro: _outro,
+              showWaiting: showWaiting,
             ),
           ),
         ),
@@ -207,20 +215,23 @@ class _SplashOverlayState extends ConsumerState<SplashOverlay>
   }
 }
 
-/// The visual, given the two normalized progresses. Kept separate so all the
-/// curve/interval maths lives in one place.
-class _RevealPainter extends StatelessWidget {
-  const _RevealPainter({
+/// The visual driven directly by the two controllers.
+///
+/// AnimatedBuilder used to rebuild the FittedBox, IntrinsicWidth, wordmark and
+/// its large blurred shadows on every tick. The lockup is now painted once into
+/// a RepaintBoundary; FadeTransition and ScaleTransition update compositor
+/// properties around that retained layer. A black veil reveals it during the
+/// intro, which also lets the expensive glyph layer warm up while fully hidden.
+class _RevealLayer extends StatelessWidget {
+  const _RevealLayer({
     required this.intro,
     required this.outro,
     required this.showWaiting,
   });
 
-  /// 0→1 across [_SplashOverlayState._introDuration].
-  final double intro;
+  final Animation<double> intro;
 
-  /// 0→1 across [_SplashOverlayState._outroDuration]; 0 until the outro starts.
-  final double outro;
+  final Animation<double> outro;
 
   /// Whether to show the quiet "Preparing your app…" note near the bottom.
   final bool showWaiting;
@@ -235,59 +246,42 @@ class _RevealPainter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Wordmark opacity: eases up out of black, held at full through the hold
-    // phase; the whole layer's fade to the app is applied by `layerOpacity`.
-    final wordOpacity = _fadeIn.transform(intro);
+    final wordReveal = CurvedAnimation(parent: intro, curve: _fadeIn);
+    final introScale = Tween<double>(
+      begin: 0.94,
+      end: 1,
+    ).animate(CurvedAnimation(parent: intro, curve: _scaleUp));
+    final outroScale = Tween<double>(begin: 1, end: 1.012).animate(outro);
+    final layerOpacity = Tween<double>(
+      begin: 1,
+      end: 0,
+    ).animate(CurvedAnimation(parent: outro, curve: Curves.easeInOut));
 
-    // Subtle scale-up as it resolves (0.94 → 1.0), then a whisper of forward
-    // drift during the outro so it recedes INTO the app — the Supercell
-    // "settles forward" feel. Kept small so it never reads as a zoom.
-    final scale = 0.94 + 0.06 * _scaleUp.transform(intro) + 0.012 * outro;
-
-    // The entire reveal fades out into the app during the outro.
-    final layerOpacity = 1.0 - Curves.easeInOut.transform(outro);
-
-    return Opacity(
-      opacity: layerOpacity.clamp(0.0, 1.0),
+    return FadeTransition(
+      opacity: layerOpacity,
       child: ColoredBox(
         color: SplashTokens.background,
         child: Stack(
           children: [
             Center(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Padding(
-                  // Keeps the wordmark off the very edges when scaled to fit a
-                  // narrow screen.
-                  padding: const EdgeInsets.symmetric(horizontal: Space.xl),
-                  child: Transform.scale(
-                    scale: scale,
-                    // IntrinsicWidth + stretch makes the two bars span exactly
-                    // the wordmark's width.
-                    child: IntrinsicWidth(
-                      child: Opacity(
-                        // One opacity on the whole lockup = one cheap compositor
-                        // op per frame. The glow rides along as baked shadows.
-                        opacity: wordOpacity.clamp(0.0, 1.0),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: const [
-                            // Wordmark, both bars and the tagline share the ONE
-                            // outer Opacity above, so they emerge together.
-                            _Wordmark(color: SplashTokens.wordmark),
-                            SizedBox(height: Space.sm),
-                            _Bar(color: SplashTokens.lineTop),
-                            SizedBox(height: Space.xs),
-                            _Bar(color: SplashTokens.lineBottom),
-                            SizedBox(height: Space.md),
-                            _Tagline(),
-                          ],
-                        ),
-                      ),
-                    ),
+              child: ScaleTransition(
+                scale: outroScale,
+                child: ScaleTransition(
+                  scale: introScale,
+                  child: const RepaintBoundary(
+                    key: SplashOverlay.lockupBoundaryKey,
+                    child: _SplashLockup(),
                   ),
                 ),
+              ),
+            ),
+            // The static lockup is already painted underneath. Fading this
+            // cheap black veil from opaque to clear produces the same bloom as
+            // fading the glyphs in, without repainting their blurred shadows.
+            Positioned.fill(
+              child: FadeTransition(
+                opacity: ReverseAnimation(wordReveal),
+                child: const ColoredBox(color: SplashTokens.background),
               ),
             ),
             // The quiet holding note, only while the readiness gate holds past
@@ -315,6 +309,37 @@ class _RevealPainter extends StatelessWidget {
   }
 }
 
+class _SplashLockup extends StatelessWidget {
+  const _SplashLockup();
+
+  @override
+  Widget build(BuildContext context) {
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Padding(
+        // Keeps the wordmark off the very edges when scaled to fit a narrow
+        // screen. IntrinsicWidth makes both bars match the wordmark width.
+        padding: const EdgeInsets.symmetric(horizontal: Space.xl),
+        child: IntrinsicWidth(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: const [
+              _Wordmark(color: SplashTokens.wordmark),
+              SizedBox(height: Space.sm),
+              _Bar(color: SplashTokens.lineTop),
+              SizedBox(height: Space.xs),
+              _Bar(color: SplashTokens.lineBottom),
+              SizedBox(height: Space.md),
+              _Tagline(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// One underline bar. Opacity/scale come from the shared reveal lockup above, so
 /// it emerges together with the wordmark.
 class _Bar extends StatelessWidget {
@@ -324,10 +349,7 @@ class _Bar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: SplashTokens.lineThickness,
-      color: color,
-    );
+    return Container(height: SplashTokens.lineThickness, color: color);
   }
 }
 
