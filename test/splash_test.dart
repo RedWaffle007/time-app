@@ -1,9 +1,11 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:time_app/features/auth/application/auth_providers.dart';
+import 'package:time_app/features/splash/data/splash_sound.dart';
 import 'package:time_app/features/splash/presentation/splash_overlay.dart';
 
 /// Signed-out auth so `_appReady()` short-circuits to ready immediately (no
@@ -53,6 +55,59 @@ void main() {
     expect(find.text('CHECKMATE'), findsNothing);
     expect(find.text('APP'), findsOneWidget);
   });
+
+  testWidgets(
+    'reveal blooms with the strike: ting fires at mount and the name is '
+    'revealed within revealBudget, not a beat later',
+    (tester) async {
+      // Capture the native pendulum strike. It is fire-and-forget from
+      // initState, so a mock handler is enough to prove it rang as the reveal
+      // mounted (t=0), the instant the name must be glowing in.
+      final strikes = <String>[];
+      final channel = const MethodChannel(SplashSound.channelName);
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+        call,
+      ) async {
+        strikes.add(call.method);
+        return null;
+      });
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          channel,
+          null,
+        ),
+      );
+
+      await tester.pumpWidget(_host());
+
+      // The wordmark is mounted from the first frame; the black veil over it is
+      // still opaque this instant — the reveal has only just begun.
+      final veilFinder = find.byKey(SplashOverlay.revealVeilKey);
+      expect(veilFinder, findsOneWidget);
+      expect(find.text('CHECKMATE'), findsOneWidget);
+      expect(
+        tester.widget<FadeTransition>(veilFinder).opacity.value,
+        greaterThan(0.5),
+        reason: 'the reveal should start at t=0 fully veiled, then bloom open',
+      );
+
+      // By the budget after the ting, the veil must be essentially gone — the
+      // name has glowed in WITH the strike. Under the old Interval(0.18, 0.52)
+      // timing the veil is still fully opaque here, which is the regression this
+      // guards against.
+      await tester.pump(SplashOverlay.revealBudget);
+      expect(
+        tester.widget<FadeTransition>(veilFinder).opacity.value,
+        lessThan(0.02),
+        reason: 'the name must be revealed within revealBudget of the ting',
+      );
+      expect(
+        strikes,
+        contains('play'),
+        reason: 'the pendulum strike must ring as the reveal mounts',
+      );
+    },
+  );
 
   testWidgets('warm path: once played in-process, a new overlay never reveals', (
     tester,

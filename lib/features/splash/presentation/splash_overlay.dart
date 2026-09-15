@@ -53,6 +53,18 @@ class SplashOverlay extends ConsumerStatefulWidget {
   @visibleForTesting
   static const lockupBoundaryKey = ValueKey<String>('splash-lockup-boundary');
 
+  /// The black veil whose fade-out reveals the wordmark. Tests read its opacity
+  /// to guard the timing contract: the name must be revealed WITH the ting, not
+  /// a beat later. See [revealBudget].
+  @visibleForTesting
+  static const revealVeilKey = ValueKey<String>('splash-reveal-veil');
+
+  /// The wordmark must be essentially revealed (the veil near-transparent) within
+  /// this long of the ting — which fires as the overlay mounts (t=0). This
+  /// encodes "the name glows in with the strike, not a second after it."
+  @visibleForTesting
+  static const revealBudget = Duration(milliseconds: 400);
+
   @override
   ConsumerState<SplashOverlay> createState() => _SplashOverlayState();
 }
@@ -79,10 +91,10 @@ class _SplashOverlayState extends ConsumerState<SplashOverlay>
 
   Timer? _holdTimer;
 
-  /// Total intro duration — a true 3-second, 3-beat sequence. The hammer hits
-  /// land at 0.00 / 1.00 / 2.00s (fired natively); the wordmark blooms up AFTER
-  /// hit #1 (around hit #2) and holds through hits #2 and #3 to 3.00s, matching
-  /// how the logo does not pop on the first beat. Phased by the `Interval`s in
+  /// Total intro duration. The pendulum strike rings at 0.00s (fired natively as
+  /// the black reveal mounts) and the wordmark blooms in WITH it — glowing up
+  /// over the first ~360ms, synchronised to the ting rather than lagging a beat
+  /// behind it — then holds at full to 3.00s. Phased by the `Interval`s in
   /// `_RevealLayer`.
   static const _introDuration = Duration(milliseconds: 3000);
   static const _outroDuration = Duration(milliseconds: 550);
@@ -237,12 +249,14 @@ class _RevealLayer extends StatelessWidget {
   final bool showWaiting;
 
   // --- intro phases (fractions of the 3.00s intro timeline) ---
-  // The pendulum strike rings at 0.00 (black); the wordmark begins to emerge at
-  // ~0.55s and resolves by ~1.55s, then holds to 3.00s. One smooth easeOut fade
-  // + a subtle scale — no per-frame blur (the glow is baked into the text
-  // shadows), which is what keeps it buttery like the Supercell reveal.
-  static const _fadeIn = Interval(0.18, 0.52, curve: Curves.easeOutCubic);
-  static const _scaleUp = Interval(0.18, 0.60, curve: Curves.easeOutCubic);
+  // The pendulum strike rings at 0.00 (black) and the wordmark glows in WITH it:
+  // the reveal starts at 0.00 and resolves by ~0.36s, then holds to 3.00s. It
+  // must NOT be pushed later — the name is meant to appear as the ting lands, not
+  // a beat after. One smooth easeOut fade + a subtle scale, no per-frame blur
+  // (the glow is baked into the text shadows), which keeps it buttery. The timing
+  // contract is guarded by test/splash_test.dart 'reveal blooms with the strike'.
+  static const _fadeIn = Interval(0.0, 0.12, curve: Curves.easeOutCubic);
+  static const _scaleUp = Interval(0.0, 0.18, curve: Curves.easeOutCubic);
 
   @override
   Widget build(BuildContext context) {
@@ -280,6 +294,7 @@ class _RevealLayer extends StatelessWidget {
             // fading the glyphs in, without repainting their blurred shadows.
             Positioned.fill(
               child: FadeTransition(
+                key: SplashOverlay.revealVeilKey,
                 opacity: ReverseAnimation(wordReveal),
                 child: const ColoredBox(color: SplashTokens.background),
               ),
