@@ -7,13 +7,27 @@ import '../../../core/theme/app_tokens.dart';
 import '../../../core/format/datetime_format.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../applock/presentation/app_lock_tile.dart';
+import '../../social/application/social_providers.dart';
+import '../../social/data/username_repository.dart';
+import '../../social/domain/username.dart';
 import '../../social/presentation/profile_avatar_editor.dart';
 import '../../social/presentation/social_profile_editor.dart';
 import '../application/auth_providers.dart';
 import 'timezone_picker.dart';
 
-/// Edit an existing profile — name and home timezone. Reachable once a profile
-/// exists (unlike CompleteProfileScreen, which is the first-time create flow).
+/// Edit an existing profile. Reachable once a profile exists (unlike
+/// CompleteProfileScreen, which is the first-time create flow).
+///
+/// **One draft, one Save.** Name, home timezone, username, bio and the quiet-
+/// hours window are all edited as a single draft committed by the one
+/// "Save changes" button. This replaced two separate Save buttons (identity vs.
+/// username/bio) that read as clutter on device. The three controls that are
+/// deliberately NOT part of the draft stay instant, because a control that looks
+/// like it needs saving but is really live is a safety trap: the profile
+/// **picture** (an upload with its own progress), the **privacy** toggle (a
+/// flip-and-walk-away safety switch — see [SocialProfileEditor]) and the
+/// **app lock** (see AppLockTile). Section order is identity → public profile →
+/// quiet hours → this device.
 class ProfileEditScreen extends ConsumerStatefulWidget {
   const ProfileEditScreen({super.key});
 
@@ -23,6 +37,8 @@ class ProfileEditScreen extends ConsumerStatefulWidget {
 
 class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
   final _nameController = TextEditingController();
+  final _usernameController = TextEditingController();
+  final _bioController = TextEditingController();
   String? _timezone;
   bool _initialised = false;
   bool _saving = false;
@@ -39,57 +55,80 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
   // prefill that seeds the fields above.
   String _savedName = '';
   String? _savedTimezone;
+  String? _savedUsername;
+  String _savedBio = '';
   bool _savedQuietEnabled = false;
   TimeOfDay _savedQuietStart = const TimeOfDay(hour: 22, minute: 0);
   TimeOfDay _savedQuietEnd = const TimeOfDay(hour: 7, minute: 0);
 
+  /// Bio length cap, mirrored in `firestore.rules`. 300 characters is a
+  /// paragraph — enough to say who you are, short enough that a header stays a
+  /// header. The rule enforces it; this keeps the counter honest.
+  static const _maxBioLength = 300;
+
   /// Whether leaving now would lose something.
   ///
-  /// The name is compared **trimmed**, because that is what a save would write
-  /// (`profile_repository.dart` trims): typing a trailing space changes nothing,
-  /// so prompting about it would be a lie. The quiet-hours times only count when
-  /// the window is enabled — the pickers keep their defaults while the switch is
-  /// off, and those defaults are not an edit.
+  /// The name and bio are compared **trimmed** (that is what a save writes), and
+  /// the username is compared **canonicalised** (a claim lowercases it), so
+  /// cosmetic-only typing is not treated as an edit. The quiet-hours times only
+  /// count when the window is enabled — the pickers keep their defaults while
+  /// the switch is off, and those defaults are not an edit.
   bool get _isDirty {
     if (_nameController.text.trim() != _savedName.trim()) return true;
     if (_timezone != _savedTimezone) return true;
+    if (canonicalUsername(_usernameController.text) != (_savedUsername ?? '')) {
+      return true;
+    }
+    if (_bioController.text.trim() != _savedBio.trim()) return true;
     if (_quietEnabled != _savedQuietEnabled) return true;
     if (!_quietEnabled) return false;
     return _quietStart != _savedQuietStart || _quietEnd != _savedQuietEnd;
   }
 
-  /// The name is required, so an empty box needs to SAY so.
-  ///
-  /// Clearing it used to just grey out Save with no stated reason — a dead
-  /// button and no explanation (found on device 2026-08-15). Null while the
-  /// field is untouched-and-empty would be friendlier still, but this screen
-  /// always opens on an existing profile, so empty here always means the user
-  /// cleared it themselves.
+  /// The name is required, so an empty box needs to SAY so (a greyed Save with
+  /// no stated reason was a dead end found on device 2026-08-15).
   String? get _nameError =>
       _nameController.text.trim().isEmpty ? 'Your name is required' : null;
+
+  /// Username is required and must be well-formed — same validation as
+  /// onboarding, so create and edit enforce identically.
+  String? get _usernameError {
+    final raw = _usernameController.text.trim();
+    if (raw.isEmpty) return 'Username is required.';
+    final problem = validateUsername(canonicalUsername(raw));
+    return problem == UsernameProblem.none
+        ? null
+        : describeUsernameProblem(problem);
+  }
 
   @override
   void dispose() {
     _nameController.dispose();
+    _usernameController.dispose();
+    _bioController.dispose();
     super.dispose();
   }
 
   Future<void> _pickTimezone() async {
-    final chosen = await Navigator.of(context).push<String>(
-      MaterialPageRoute(builder: (_) => const TimezonePicker()),
-    );
+    final chosen = await Navigator.of(
+      context,
+    ).push<String>(MaterialPageRoute(builder: (_) => const TimezonePicker()));
     if (chosen != null) setState(() => _timezone = chosen);
   }
 
   Future<void> _pickQuietStart() async {
-    final picked =
-        await showTimePicker(context: context, initialTime: _quietStart);
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _quietStart,
+    );
     if (picked != null) setState(() => _quietStart = picked);
   }
 
   Future<void> _pickQuietEnd() async {
-    final picked =
-        await showTimePicker(context: context, initialTime: _quietEnd);
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _quietEnd,
+    );
     if (picked != null) setState(() => _quietEnd = picked);
   }
 
@@ -97,11 +136,10 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
 
   /// Back with unsaved edits asks before throwing them away.
   ///
-  /// Previously Back discarded silently — no confirmation, no trace, and the
-  /// old values back on reopen. Deliberately a confirm, NOT a block: the user
-  /// must always be able to leave, including out of an invalid state such as an
-  /// empty name. Saving is unaffected — [_save] calls `Navigator.pop` directly,
-  /// and a direct `pop()` does not consult [PopScope].
+  /// Deliberately a confirm, NOT a block: the user must always be able to leave,
+  /// including out of an invalid state such as an empty name. Saving is
+  /// unaffected — [_save] calls `Navigator.pop` directly, and a direct `pop()`
+  /// does not consult [PopScope].
   Future<void> _confirmDiscard() async {
     final discard = await showDialog<bool>(
       context: context,
@@ -124,28 +162,72 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
   }
 
   bool get _canSave =>
-      _nameController.text.trim().isNotEmpty &&
+      _nameError == null &&
       (_timezone?.isNotEmpty ?? false) &&
+      _usernameError == null &&
+      _bioController.text.length <= _maxBioLength &&
       !_saving;
 
+  /// Commits the whole draft in one press.
+  ///
+  /// The username claim goes FIRST because it is the only write that can be
+  /// refused (someone else took the handle). Doing it first means a rejected
+  /// claim leaves nothing half-saved; the single Save button is where that error
+  /// hangs. The identity and social writes are separate documents/fields, so
+  /// merging the UX did not merge the writes.
   Future<void> _save() async {
     final user = ref.read(authRepositoryProvider).currentUser;
-    if (user == null) return;
+    final profile = ref.read(profileProvider).value;
+    if (user == null || profile == null) return;
+
+    final wanted = canonicalUsername(_usernameController.text);
+    final problem = validateUsername(wanted);
+    if (problem != UsernameProblem.none) {
+      setState(
+        () => _error = wanted.isEmpty
+            ? 'Username is required.'
+            : describeUsernameProblem(problem),
+      );
+      return;
+    }
 
     setState(() {
       _saving = true;
       _error = null;
     });
     try {
-      await ref.read(profileRepositoryProvider).updateProfile(
+      if (wanted != (_savedUsername ?? '')) {
+        await ref
+            .read(usernameRepositoryProvider)
+            .claim(
+              uid: user.uid,
+              rawHandle: wanted,
+              previousHandle: _savedUsername,
+            );
+      }
+      await ref
+          .read(profileRepositoryProvider)
+          .updateProfile(
             uid: user.uid,
             name: _nameController.text,
             homeTimezone: _timezone!,
-            quietHoursStartMinutes:
-                _quietEnabled ? _minutes(_quietStart) : null,
+            quietHoursStartMinutes: _quietEnabled
+                ? _minutes(_quietStart)
+                : null,
             quietHoursEndMinutes: _quietEnabled ? _minutes(_quietEnd) : null,
           );
+      // Privacy is committed live by its own toggle; carry the current value
+      // through so this write only touches the bio.
+      await ref
+          .read(profileRepositoryProvider)
+          .updateSocialProfile(
+            uid: user.uid,
+            isPublic: profile.isPublic,
+            bio: _bioController.text,
+          );
       if (mounted) Navigator.of(context).pop();
+    } on UsernameUnavailable catch (e) {
+      if (mounted) setState(() => _error = e.message);
     } catch (e) {
       if (mounted) setState(() => _error = 'Could not save: $e');
     } finally {
@@ -159,6 +241,8 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
     final profile = ref.watch(profileProvider).value;
     if (!_initialised && profile != null) {
       _nameController.text = profile.name;
+      _usernameController.text = profile.username ?? '';
+      _bioController.text = profile.bio ?? '';
       _timezone = profile.homeTimezone;
       if (profile.hasQuietHours) {
         _quietEnabled = true;
@@ -174,6 +258,8 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
       // Snapshot what was loaded, in the same one-shot block, so the baseline
       // can never drift from the fields it is compared against.
       _savedName = _nameController.text;
+      _savedUsername = profile.username;
+      _savedBio = _bioController.text;
       _savedTimezone = _timezone;
       _savedQuietEnabled = _quietEnabled;
       _savedQuietStart = _quietStart;
@@ -188,9 +274,6 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
       },
       child: Scaffold(
         appBar: AppBar(title: const Text('Edit profile')),
-        // Scrollable now that Privacy is here: name + timezone + quiet hours +
-        // two time buttons + Save + the lock tile overflow a short screen, and
-        // an overflowing Column would clip the new section rather than reveal it.
         body: SingleChildScrollView(
           padding: Space.screenFormSafe(context),
           child: Column(
@@ -201,7 +284,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
               const ProfileAvatarEditor(),
 
               // IDENTITY — name and home timezone. The two fields the schedule
-              // and every screen depend on, and the ones the Save below commits.
+              // and every screen depend on.
               const SectionHeader('Identity'),
               TextField(
                 controller: _nameController,
@@ -221,9 +304,45 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                 label: Text(_timezone ?? 'Tap to choose'),
               ),
 
-              // QUIET HOURS — a window planners are warned about. Its switch and
-              // times are part of the same draft as Identity, so the one Save
-              // below commits both.
+              // PUBLIC PROFILE — username and bio (part of the one draft) plus
+              // the privacy toggle (instant, see SocialProfileEditor). Grouped
+              // right after identity because it is the other "about me" half.
+              const SectionHeader('Public profile'),
+              TextField(
+                controller: _usernameController,
+                autocorrect: false,
+                enableSuggestions: false,
+                maxLength: kUsernameMaxLength,
+                decoration: InputDecoration(
+                  labelText: 'Username',
+                  prefixIcon: const Icon(AppIcons.username),
+                  helperText:
+                      'How people find you — $kUsernameMinLength–'
+                      '$kUsernameMaxLength chars, lowercase letters, numbers '
+                      'and _, starting with a letter.',
+                  // The rule is long; show it in full instead of clipping it to
+                  // one ellipsised line.
+                  helperMaxLines: 3,
+                  errorText: _usernameError,
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: Space.lg),
+              TextField(
+                controller: _bioController,
+                maxLines: 3,
+                maxLength: _maxBioLength,
+                decoration: const InputDecoration(
+                  labelText: 'About you',
+                  alignLabelWithHint: true,
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: Space.sm),
+              const SocialProfileEditor(),
+
+              // QUIET HOURS — a window planners are warned about. Part of the
+              // same draft as everything above, committed by the one Save below.
               const SectionHeader('Quiet hours'),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
@@ -257,7 +376,10 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                 ),
               ],
               const SizedBox(height: Space.xl),
-              // The Save for Identity + Quiet hours, at the foot of ITS sections.
+
+              // THE ONE SAVE — commits name, timezone, username, bio and quiet
+              // hours together. Picture, privacy and app lock are instant and
+              // sit outside this button by design.
               FilledButton(
                 onPressed: _canSave ? _save : null,
                 child: _saving
@@ -272,25 +394,16 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                 const SizedBox(height: Space.lg),
                 Text(
                   _error!,
-                  style: context.text.bodyMedium
-                      ?.copyWith(color: context.colors.error),
+                  style: context.text.bodyMedium?.copyWith(
+                    color: context.colors.error,
+                  ),
                 ),
               ],
 
-              // PUBLIC PROFILE — username, bio and the public/private toggle.
-              // Its own section with its OWN Save (see SocialProfileEditor):
-              // identity above is one thing, presentation is another, and saving
-              // them together would mean a privacy change also rewrote the user's
-              // timezone. The picture that used to live here is the anchor above.
-              const SectionHeader('Public profile'),
-              const SocialProfileEditor(),
-
-              // THIS DEVICE — the app lock. No Save: it applies the instant it is
-              // flipped (a switch that looked like it needed saving would be a
-              // lock people think is on when it is not). Named for the device
-              // because the section above also holds a privacy control, and the
-              // two answer different questions: 'who can see my stats' versus
-              // 'who can open this app'.
+              // THIS DEVICE — the app lock. No Save: it applies the instant it
+              // is flipped. Named for the device because 'who can open this app'
+              // is a different question from the privacy control above ('who can
+              // see my stats').
               const SectionHeader('This device'),
               const AppLockTile(),
             ],
