@@ -26,16 +26,22 @@ class AccentCard extends StatelessWidget {
     // to infinite height and the whole card throws — the empty-Stats bug.
     return Card(
       margin: margin,
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SizedBox(
-              width: Sizes.ruleWidth,
-              child: ColoredBox(color: accent),
-            ),
-            Expanded(child: child),
-          ],
+      // `Card` paints a rounded border but does not clip its child. The accent
+      // rail reaches the full tile height, so it must share that shape instead
+      // of leaking square corners through the rounded left edge.
+      child: ClipRRect(
+        borderRadius: Radii.md,
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                width: Sizes.ruleWidth,
+                child: ColoredBox(color: accent),
+              ),
+              Expanded(child: child),
+            ],
+          ),
         ),
       ),
     );

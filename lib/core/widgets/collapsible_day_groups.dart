@@ -84,6 +84,11 @@ class CollapsibleDayGroups extends StatefulWidget {
   /// day that would otherwise be collapsed). Null = nothing forced.
   final String? forceExpandKey;
 
+  /// Test-only count of date-group controllers. Collapsed groups have no
+  /// animation/ticker allocation; open or transitioning groups have one.
+  @visibleForTesting
+  static int debugAnimationControllerCount = 0;
+
   @override
   State<CollapsibleDayGroups> createState() => _CollapsibleDayGroupsState();
 }
@@ -260,25 +265,14 @@ class _AnimatedDayGroup extends StatefulWidget {
 
 class _AnimatedDayGroupState extends State<_AnimatedDayGroup>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: Motion.fast,
-  );
-  late final Animation<double> _animation = CurvedAnimation(
-    parent: _controller,
-    curve: Motion.curve,
-  );
+  AnimationController? _controller;
+  Animation<double>? _animation;
   late bool _showRows = widget.expanded;
 
   @override
   void initState() {
     super.initState();
-    if (widget.expanded) _controller.value = 1;
-    _controller.addStatusListener((status) {
-      if (status == AnimationStatus.dismissed && mounted && _showRows) {
-        setState(() => _showRows = false);
-      }
-    });
+    if (widget.expanded) _createController(value: 1);
   }
 
   @override
@@ -290,28 +284,53 @@ class _AnimatedDayGroupState extends State<_AnimatedDayGroup>
       // makes the lazy sliver available in the same frame without scheduling a
       // second rebuild solely to start the animation.
       _showRows = true;
-      _controller.forward();
+      (_controller ?? _createController()).forward();
     } else {
-      _controller.reverse();
+      _controller?.reverse();
     }
+  }
+
+  AnimationController _createController({double? value}) {
+    final controller = AnimationController(vsync: this, duration: Motion.fast);
+    CollapsibleDayGroups.debugAnimationControllerCount++;
+    _controller = controller;
+    _animation = CurvedAnimation(parent: controller, curve: Motion.curve);
+    controller.addStatusListener((status) {
+      if (status == AnimationStatus.dismissed && mounted && _showRows) {
+        _disposeController();
+        setState(() => _showRows = false);
+      }
+    });
+    if (value != null) controller.value = value;
+    return controller;
+  }
+
+  void _disposeController() {
+    final controller = _controller;
+    if (controller == null) return;
+    _controller = null;
+    _animation = null;
+    controller.dispose();
+    CollapsibleDayGroups.debugAnimationControllerCount--;
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _disposeController();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     if (!_showRows) return const SliverToBoxAdapter(child: SizedBox.shrink());
+    final animation = _animation!;
     return SliverList(
       delegate: SliverChildBuilderDelegate(
         (context, index) => SizeTransition(
-          sizeFactor: _animation,
+          sizeFactor: animation,
           alignment: Alignment.topCenter,
           child: FadeTransition(
-            opacity: _animation,
+            opacity: animation,
             child: widget.itemBuilder(context, index),
           ),
         ),

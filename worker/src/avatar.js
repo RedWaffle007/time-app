@@ -104,11 +104,11 @@ export function keyBelongsTo(key, uid) {
 }
 
 function objectPath(env, key) {
-  return `${env.SUPABASE_URL}/storage/v1/object/${env.SUPABASE_BUCKET}/${key}`;
+  return `${env.SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/${env.SUPABASE_BUCKET}/${key}`;
 }
 
 function publicUrl(env, key) {
-  return `${env.SUPABASE_URL}/storage/v1/object/public/${env.SUPABASE_BUCKET}/${key}`;
+  return `${env.SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/public/${env.SUPABASE_BUCKET}/${key}`;
 }
 
 function storageHeaders(env, extra = {}) {
@@ -125,13 +125,32 @@ function configured(env) {
   );
 }
 
+// Supabase may return an upstream error document containing implementation
+// detail. The Worker is trusted with the service key; the app is not trusted
+// with that response. Keep the useful diagnosis to a safe status/category in
+// logs and the response, never forward provider text or headers.
+function storageFailureReason(status) {
+  if (status === 401 || status === 403) return 'storage-authorization-failed';
+  if (status === 404) return 'storage-bucket-not-found';
+  return 'storage-request-failed';
+}
+
+function logStorageFailure(operation, env, response) {
+  console.error('avatar storage request failed', {
+    operation,
+    status: response.status,
+    bucket: env.SUPABASE_BUCKET,
+  });
+}
+
 /** Best-effort delete. A failure leaves an orphaned object, never a broken user. */
 async function deleteObject(env, key) {
   try {
-    await fetch(objectPath(env, key), {
+    const response = await fetch(objectPath(env, key), {
       method: 'DELETE',
       headers: storageHeaders(env),
     });
+    if (!response.ok) logStorageFailure('delete', env, response);
   } catch {
     // Deliberately swallowed — see the note on AvatarUploader.remove. Refusing
     // to replace a picture because the old file would not delete is the wrong
@@ -202,8 +221,15 @@ export async function handleAvatarUpload(request, env, uid) {
   });
 
   if (!put.ok) {
-    const detail = await put.text().catch(() => '');
-    return json({ error: 'store-failed', detail: detail.slice(0, 200) }, 502);
+    logStorageFailure('upload', env, put);
+    return json(
+      {
+        error: 'store-failed',
+        reason: storageFailureReason(put.status),
+        storageStatus: put.status,
+      },
+      502,
+    );
   }
 
   // Replace AFTER the new object is safely stored. The other order can delete

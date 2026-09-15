@@ -77,4 +77,38 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'collapsed history does not allocate one animation controller per day',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(
+            body: CollapsibleDayGroups(
+              groups: [
+                for (var index = 0; index < 40; index++)
+                  DayGroupData(
+                    key: '2024-02-${(index + 1).toString().padLeft(2, '0')}',
+                    label: 'Day $index',
+                    itemCount: 1,
+                    itemBuilder: (_, row) => Text('Row $index:$row'),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      expect(CollapsibleDayGroups.debugAnimationControllerCount, 0);
+      await tester.tap(find.text('Day 0 · 1 item'));
+      await tester.pump(const Duration(milliseconds: 75));
+      expect(CollapsibleDayGroups.debugAnimationControllerCount, 1);
+
+      await tester.tap(find.text('Day 0 · 1 item'));
+      await tester.pumpAndSettle();
+      expect(CollapsibleDayGroups.debugAnimationControllerCount, 0);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

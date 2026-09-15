@@ -149,10 +149,12 @@ void main() {
     expect(
       find.descendant(
         of: find.byType(TimeBackdrop),
-        matching: find.byType(CustomPaint),
+        matching: find.byKey(TimeBackdrop.painterKey),
       ),
       findsOneWidget,
     );
+    expect(TimeBackdrop.lightMarkOpacity, 0.085);
+    expect(TimeBackdrop.darkMarkOpacity, 0.10);
     expect(tester.takeException(), isNull);
   });
 
@@ -250,12 +252,12 @@ Future<void> _pump(
 
 UserProfile _profile() => const UserProfile(
   uid: 'uid',
-      name: 'Profile name',
-      homeTimezone: 'UTC',
-      username: 'profile_name',
-      quietHoursStartMinutes: 22 * 60,
-      quietHoursEndMinutes: 7 * 60,
-    );
+  name: 'Profile name',
+  homeTimezone: 'UTC',
+  username: 'profile_name',
+  quietHoursStartMinutes: 22 * 60,
+  quietHoursEndMinutes: 7 * 60,
+);
 
 ScheduleItem _item() {
   final instant = DateTime.now().toUtc();

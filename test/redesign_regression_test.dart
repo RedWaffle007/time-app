@@ -52,6 +52,38 @@ void main() {
     expect(railSize.height, greaterThan(0));
   });
 
+  testWidgets('AccentCard clips its rail to the card’s rounded left corners', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      host(
+        const Scaffold(
+          body: SizedBox(
+            width: 160,
+            child: AccentCard(
+              accent: Color(0xFF1B7A3D),
+              child: Padding(
+                padding: EdgeInsets.all(Space.md),
+                child: Text('Clipped tile'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final clip = tester.widget<ClipRRect>(find.byType(ClipRRect));
+    expect(clip.borderRadius, Radii.md);
+    expect(
+      find.descendant(
+        of: find.byType(ClipRRect),
+        matching: find.byType(ColoredBox),
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('SectionHeader renders with a categorical accent', (
     tester,
   ) async {
@@ -69,10 +101,7 @@ void main() {
       ProviderScope(
         overrides: [
           myComputedStatsProvider.overrideWithValue(
-            const AsyncData({
-              'tasksCompleted': 3,
-              'followThrough': 75,
-            }),
+            const AsyncData({'tasksCompleted': 3, 'followThrough': 75}),
           ),
         ],
         child: host(const StatsScreen()),

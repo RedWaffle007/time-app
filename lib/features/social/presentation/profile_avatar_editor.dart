@@ -162,7 +162,10 @@ class _ProfileAvatarEditorState extends ConsumerState<ProfileAvatarEditor> {
     } on AvatarUploadFailure catch (e) {
       if (mounted) _toast(e.message);
     } catch (e) {
-      if (mounted) _toast('Upload failed. $e');
+      // Do not surface a transport/provider exception verbatim. Known upload
+      // failures above already have specific guidance; this is the safe final
+      // fallback for an unexpected client-side failure.
+      if (mounted) _toast('Could not upload the picture. Try again.');
     } finally {
       if (mounted) setState(() => _uploading = false);
     }

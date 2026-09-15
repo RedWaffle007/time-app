@@ -100,20 +100,26 @@ class WorkerAvatarUploader implements AvatarUploader {
     }
 
     if (response.statusCode != 200) {
-      throw AvatarUploadFailure(_describeStatus(response));
+      throw AvatarUploadFailure(
+        describeAvatarUploadFailure(response.statusCode, response.body),
+      );
     }
 
     final Map<String, dynamic> body;
     try {
       body = jsonDecode(response.body) as Map<String, dynamic>;
     } catch (_) {
-      throw const AvatarUploadFailure('The server sent back something unreadable.');
+      throw const AvatarUploadFailure(
+        'The server sent back something unreadable.',
+      );
     }
 
     final url = body['url'] as String?;
     final key = body['key'] as String?;
     if (url == null || url.isEmpty || key == null || key.isEmpty) {
-      throw const AvatarUploadFailure('The upload finished but returned no picture.');
+      throw const AvatarUploadFailure(
+        'The upload finished but returned no picture.',
+      );
     }
 
     return ProfileAvatar(
@@ -135,13 +141,15 @@ class WorkerAvatarUploader implements AvatarUploader {
 
     final idToken = await _idToken();
     try {
-      await http.delete(
-        uri,
-        headers: {
-          'Authorization': 'Bearer $idToken',
-          'X-Storage-Key': storageKey,
-        },
-      ).timeout(_timeout);
+      await http
+          .delete(
+            uri,
+            headers: {
+              'Authorization': 'Bearer $idToken',
+              'X-Storage-Key': storageKey,
+            },
+          )
+          .timeout(_timeout);
     } catch (_) {
       // Best-effort, and it must be. The profile field is cleared either way,
       // so the user's picture is gone from every view; what a failure here
@@ -158,24 +166,56 @@ class WorkerAvatarUploader implements AvatarUploader {
     }
     final token = await user.getIdToken();
     if (token == null || token.isEmpty) {
-      throw const AvatarUploadFailure('Could not confirm who you are. Try again.');
+      throw const AvatarUploadFailure(
+        'Could not confirm who you are. Try again.',
+      );
     }
     return token;
   }
+}
 
-  String _describeStatus(http.Response r) {
-    switch (r.statusCode) {
-      case 401:
-        return 'Your session expired. Sign in again and retry.';
-      case 413:
-        return 'That picture is too large.';
-      case 415:
-        return 'That file type is not supported. Use JPEG, PNG, GIF or WebP.';
-      case 429:
-        return 'Too many uploads just now. Try again in a minute.';
-      default:
-        return 'The upload failed (${r.statusCode}). Try again.';
+/// Converts the Worker's deliberately small public error vocabulary into
+/// actionable copy without trusting or displaying a provider response body.
+String describeAvatarUploadFailure(int statusCode, String responseBody) {
+  String? error;
+  String? reason;
+  try {
+    final body = jsonDecode(responseBody);
+    if (body is Map<String, dynamic>) {
+      error = body['error'] as String?;
+      reason = body['reason'] as String?;
     }
+  } catch (_) {
+    // A gateway may replace the Worker JSON with HTML. Its body is never shown.
+  }
+
+  switch (statusCode) {
+    case 401:
+      return 'Your session expired. Sign in again and retry.';
+    case 413:
+      return 'That picture is too large.';
+    case 415:
+      return 'That file type is not supported. Use JPEG, PNG, GIF or WebP.';
+    case 429:
+      return 'Too many uploads just now. Try again in a minute.';
+    case 500:
+      if (error == 'storage-not-configured') {
+        return 'Avatar storage is not configured on the server yet.';
+      }
+      return 'The avatar backend failed. Your picture was not changed.';
+    case 502:
+      if (error == 'store-failed') {
+        return switch (reason) {
+          'storage-authorization-failed' =>
+            'Avatar storage rejected the upload. Your picture was not changed.',
+          'storage-bucket-not-found' =>
+            'Avatar storage is unavailable. Your picture was not changed.',
+          _ => 'Avatar storage is temporarily unavailable. Try again.',
+        };
+      }
+      return 'The avatar storage service is unavailable. Try again.';
+    default:
+      return 'The upload failed ($statusCode). Try again.';
   }
 }
 

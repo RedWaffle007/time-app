@@ -63,8 +63,14 @@ export default {
           : await handleAvatarDelete(request, env, uid);
       } catch (e) {
         // Fail closed, same as the push path: never a partial result.
+        // Do not serialise an exception to the app: an upstream exception can
+        // include storage/provider detail that belongs only in Worker logs.
+        console.error('avatar handler failed', {
+          operation: request.method === 'POST' ? 'upload' : 'delete',
+          name: e?.name || 'Error',
+        });
         return json(
-          { error: 'avatar-failed', detail: String(e && e.message) },
+          { error: 'avatar-failed' },
           500,
         );
       }

@@ -24,6 +24,15 @@ class TimeBackdrop extends StatelessWidget {
 
   final Widget child;
 
+  /// One app-wide layer survives navigator, dialog and sheet transitions.
+  static const backdropKey = ValueKey<String>('app-time-backdrop');
+  static const painterKey = ValueKey<String>('time-backdrop-painter');
+
+  /// Light is intentionally just visible in route gutters; dark retains its
+  /// established balance.
+  static const lightMarkOpacity = 0.085;
+  static const darkMarkOpacity = 0.10;
+
   static const _lightAccents = <Color>[
     AppColors.lightPrimary,
     AppColors.lightTurquoise,
@@ -38,6 +47,14 @@ class TimeBackdrop extends StatelessWidget {
     AppColors.darkViolet,
     AppColors.darkPink,
   ];
+  static const _lightPainter = _TimeMarksPainter(
+    colors: _lightAccents,
+    opacity: lightMarkOpacity,
+  );
+  static const _darkPainter = _TimeMarksPainter(
+    colors: _darkAccents,
+    opacity: darkMarkOpacity,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -48,8 +65,7 @@ class TimeBackdrop extends StatelessWidget {
     // disappeared against the near-white scaffold on most LCDs; this remains
     // beneath opaque content but is now perceptible in the route gutters.
     // Dark deliberately keeps its established balance.
-    final double markOpacity = dark ? 0.10 : 0.075;
-    final accents = dark ? _darkAccents : _lightAccents;
+    final painter = dark ? _darkPainter : _lightPainter;
 
     return DecoratedBox(
       // The opaque ground beneath the transparent scaffolds. Read from the raw
@@ -64,12 +80,10 @@ class TimeBackdrop extends StatelessWidget {
             child: IgnorePointer(
               child: RepaintBoundary(
                 child: CustomPaint(
+                  key: painterKey,
                   isComplex: true,
                   willChange: false,
-                  painter: _TimeMarksPainter(
-                    colors: accents,
-                    opacity: markOpacity,
-                  ),
+                  painter: painter,
                 ),
               ),
             ),
@@ -85,7 +99,7 @@ class TimeBackdrop extends StatelessWidget {
 /// nudged and rotated deterministically so the field reads as hand-placed rather
 /// than a rubber-stamped lattice.
 class _TimeMarksPainter extends CustomPainter {
-  _TimeMarksPainter({required this.colors, required this.opacity});
+  const _TimeMarksPainter({required this.colors, required this.opacity});
 
   final List<Color> colors;
   final double opacity;

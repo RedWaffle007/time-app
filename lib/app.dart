@@ -423,7 +423,10 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
       // app is ready, so no boot flicker shows through.
       builder: (context, child) => SplashOverlay(
         child: AppLockGate(
-          child: TimeBackdrop(child: child ?? const SizedBox.shrink()),
+          child: TimeBackdrop(
+            key: TimeBackdrop.backdropKey,
+            child: child ?? const SizedBox.shrink(),
+          ),
         ),
       ),
       // All visual tokens live in core/theme — see UI-RULES.md. Dark is designed

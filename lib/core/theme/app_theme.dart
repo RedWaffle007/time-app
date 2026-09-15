@@ -149,8 +149,13 @@ abstract final class AppTheme {
         indicatorSize: TabBarIndicatorSize.label,
         labelColor: cs.primary,
         unselectedLabelColor: cs.onSurfaceVariant,
-        labelStyle: AppText.labelLarge,
-        unselectedLabelStyle: AppText.labelLarge,
+        // The Plan's three destinations are the active navigation vocabulary,
+        // so both selected and unselected labels carry the same strong weight;
+        // colour and the indicator still communicate selection.
+        labelStyle: AppText.labelLarge.copyWith(fontWeight: FontWeight.w700),
+        unselectedLabelStyle: AppText.labelLarge.copyWith(
+          fontWeight: FontWeight.w700,
+        ),
         dividerColor: cs.outlineVariant,
       ),
 
