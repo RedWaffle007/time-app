@@ -64,6 +64,12 @@ abstract final class AppColors {
 
   static const lightOnAttentionContainer = Color(0xFF441C06);
 
+  // Immersive media is always shown over a black scrim, irrespective of the
+  // app theme. These are deliberately independent of `onSurface`, whose light
+  // value would disappear against that scrim.
+  static const immersiveForeground = Color(0xFFFFFFFF);
+  static const immersiveControlBackground = Color(0xFF263238);
+
   // Red — rationed to destructive actions and system errors (UI-RULES.md §2.5).
   static const lightError = Color(0xFFB3261E);
   static const lightOnError = Color(0xFFFFFFFF);
@@ -139,6 +145,8 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
     required this.attentionContainer,
     required this.attentionContainerStrong,
     required this.onAttentionContainer,
+    required this.immersiveForeground,
+    required this.immersiveControlBackground,
   });
 
   final Color attention;
@@ -152,12 +160,18 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
 
   final Color onAttentionContainer;
 
+  /// Foreground and control fill for content placed over an immersive scrim.
+  final Color immersiveForeground;
+  final Color immersiveControlBackground;
+
   static const light = AppSemanticColors(
     attention: AppColors.lightAttention,
     onAttention: AppColors.lightOnAttention,
     attentionContainer: AppColors.lightAttentionContainer,
     attentionContainerStrong: AppColors.lightAttentionContainerStrong,
     onAttentionContainer: AppColors.lightOnAttentionContainer,
+    immersiveForeground: AppColors.immersiveForeground,
+    immersiveControlBackground: AppColors.immersiveControlBackground,
   );
 
   static const dark = AppSemanticColors(
@@ -166,6 +180,8 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
     attentionContainer: AppColors.darkAttentionContainer,
     attentionContainerStrong: AppColors.darkAttentionContainerStrong,
     onAttentionContainer: AppColors.darkOnAttentionContainer,
+    immersiveForeground: AppColors.immersiveForeground,
+    immersiveControlBackground: AppColors.immersiveControlBackground,
   );
 
   @override
@@ -175,6 +191,8 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
     Color? attentionContainer,
     Color? attentionContainerStrong,
     Color? onAttentionContainer,
+    Color? immersiveForeground,
+    Color? immersiveControlBackground,
   }) {
     return AppSemanticColors(
       attention: attention ?? this.attention,
@@ -183,6 +201,9 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
       attentionContainerStrong:
           attentionContainerStrong ?? this.attentionContainerStrong,
       onAttentionContainer: onAttentionContainer ?? this.onAttentionContainer,
+      immersiveForeground: immersiveForeground ?? this.immersiveForeground,
+      immersiveControlBackground:
+          immersiveControlBackground ?? this.immersiveControlBackground,
     );
   }
 
@@ -205,6 +226,16 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
       onAttentionContainer: Color.lerp(
         onAttentionContainer,
         other.onAttentionContainer,
+        t,
+      )!,
+      immersiveForeground: Color.lerp(
+        immersiveForeground,
+        other.immersiveForeground,
+        t,
+      )!,
+      immersiveControlBackground: Color.lerp(
+        immersiveControlBackground,
+        other.immersiveControlBackground,
         t,
       )!,
     );

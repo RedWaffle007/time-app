@@ -28,6 +28,8 @@ class ProfilePictureViewer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = context.colors;
+    final foreground = context.immersiveForeground;
+    final controlBackground = context.immersiveControlBackground;
     return PopScope(
       canPop: true,
       child: Material(
@@ -44,20 +46,10 @@ class ProfilePictureViewer extends StatelessWidget {
                     fit: BoxFit.contain,
                     loadingBuilder: (context, child, progress) {
                       if (progress == null) return child;
-                      return const SizedBox(
-                        width: Sizes.emptyStateIcon,
-                        height: Sizes.emptyStateIcon,
-                        child: CircularProgressIndicator(),
-                      );
+                      return const ProfilePictureViewerLoading();
                     },
-                    errorBuilder: (context, error, stackTrace) => Semantics(
-                      label: 'Profile picture could not be loaded',
-                      child: Icon(
-                        AppIcons.error,
-                        size: Sizes.emptyStateIcon,
-                        color: cs.onSurface,
-                      ),
-                    ),
+                    errorBuilder: (context, error, stackTrace) =>
+                        const ProfilePictureViewerError(),
                   ),
                 ),
               ),
@@ -65,6 +57,10 @@ class ProfilePictureViewer extends StatelessWidget {
                 top: Space.sm,
                 right: Space.sm,
                 child: IconButton.filled(
+                  style: IconButton.styleFrom(
+                    backgroundColor: controlBackground,
+                    foregroundColor: foreground,
+                  ),
                   tooltip: 'Close profile picture',
                   onPressed: () => Navigator.of(context).pop(),
                   icon: const Icon(AppIcons.close),
@@ -76,4 +72,31 @@ class ProfilePictureViewer extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Loading affordance for an image fetched into the immersive viewer.
+class ProfilePictureViewerLoading extends StatelessWidget {
+  const ProfilePictureViewerLoading({super.key});
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: Sizes.emptyStateIcon,
+    height: Sizes.emptyStateIcon,
+    child: CircularProgressIndicator(color: context.immersiveForeground),
+  );
+}
+
+/// Accessible failure affordance for an image that could not be fetched.
+class ProfilePictureViewerError extends StatelessWidget {
+  const ProfilePictureViewerError({super.key});
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: 'Profile picture could not be loaded',
+    child: Icon(
+      AppIcons.error,
+      size: Sizes.emptyStateIcon,
+      color: context.immersiveForeground,
+    ),
+  );
 }

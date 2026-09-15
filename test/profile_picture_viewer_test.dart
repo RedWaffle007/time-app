@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:time_app/core/theme/app_colors.dart';
 import 'package:time_app/core/theme/app_theme.dart';
 import 'package:time_app/features/auth/domain/user_profile.dart';
 import 'package:time_app/features/social/domain/avatar.dart';
@@ -55,17 +56,52 @@ void main() {
     expect(find.byType(InteractiveViewer), findsNothing);
   });
 
-  testWidgets('viewer exposes an accessible image error state', (tester) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: AppTheme.light,
-        home: const ProfilePictureViewer(imageUrl: 'not a network URL'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(
-      find.bySemanticsLabel('Profile picture could not be loaded'),
-      findsOneWidget,
-    );
-  });
+  for (final (name, theme) in [
+    ('light', AppTheme.light),
+    ('dark', AppTheme.dark),
+  ]) {
+    testWidgets('$name viewer controls remain visible over its scrim', (
+      tester,
+    ) async {
+      final semantic = theme.extension<AppSemanticColors>()!;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme,
+          home: const Scaffold(
+            body: Center(child: ProfilePictureViewerLoading()),
+          ),
+        ),
+      );
+
+      final loading = tester.widget<CircularProgressIndicator>(
+        find.byType(CircularProgressIndicator),
+      );
+      expect(loading.color, semantic.immersiveForeground);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme,
+          home: const ProfilePictureViewer(imageUrl: 'not a network URL'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.bySemanticsLabel('Profile picture could not be loaded'),
+        findsOneWidget,
+      );
+      expect(
+        tester.widget<Icon>(find.byIcon(Icons.error_outline)).color,
+        semantic.immersiveForeground,
+      );
+      final close = tester.widget<IconButton>(find.byType(IconButton));
+      expect(
+        close.style!.backgroundColor!.resolve({}),
+        semantic.immersiveControlBackground,
+      );
+      expect(
+        close.style!.foregroundColor!.resolve({}),
+        semantic.immersiveForeground,
+      );
+    });
+  }
 }

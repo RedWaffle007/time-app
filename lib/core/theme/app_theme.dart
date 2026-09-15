@@ -293,6 +293,8 @@ extension AppThemeContext on BuildContext {
   Color get attentionContainer => _semantic.attentionContainer;
   Color get attentionContainerStrong => _semantic.attentionContainerStrong;
   Color get onAttentionContainer => _semantic.onAttentionContainer;
+  Color get immersiveForeground => _semantic.immersiveForeground;
+  Color get immersiveControlBackground => _semantic.immersiveControlBackground;
 
   TextStyle get codeDisplay =>
       Theme.of(this).extension<AppTypeExtension>()!.codeDisplay;

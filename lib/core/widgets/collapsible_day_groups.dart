@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_icons.dart';
 import '../theme/app_theme.dart';
 import '../theme/app_tokens.dart';
+import '../theme/dataviz_tokens.dart';
 import 'section_header.dart';
 
 /// A `yyyy-MM-dd` key from a date, for [DayGroupData.key] and for the "today"
@@ -159,21 +160,20 @@ class _CollapsibleDayGroupsState extends State<CollapsibleDayGroups> {
       );
       // Collapsed groups contribute no child sliver at all. Expanded groups use
       // a builder delegate, keeping long histories lazy while retaining the
-      // same independent per-day expansion state.
-      if (expanded) {
-        slivers.add(
-          SliverPadding(
-            padding: horizontal,
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                group.itemBuilder,
-                childCount: group.count,
-                addAutomaticKeepAlives: false,
-              ),
-            ),
+      // same independent per-day expansion state. `_AnimatedDayGroup` keeps
+      // the sliver alive only until a close transition finishes; it never puts
+      // all rows in a box just to animate their height.
+      slivers.add(
+        SliverPadding(
+          padding: horizontal,
+          sliver: _AnimatedDayGroup(
+            key: ValueKey(group.key),
+            expanded: expanded,
+            itemCount: group.count,
+            itemBuilder: group.itemBuilder,
           ),
-        );
-      }
+        ),
+      );
     }
     if (padding.bottom > 0) {
       slivers.add(SliverToBoxAdapter(child: SizedBox(height: padding.bottom)));
@@ -208,12 +208,12 @@ class _DayHeader extends StatelessWidget {
         ),
         child: Row(
           children: [
-            // The green structure rule, echoing SectionHeader so a day header
-            // reads as the same kind of thing (STRUCTURE, never a fill).
-            Container(
-              width: Sizes.sectionRuleWidth,
-              height: Sizes.ruleWidth,
-              color: context.colors.primary,
+            // A compact, themed marker distinguishes adjacent dates without
+            // competing with SectionHeader's horizontal structural rule.
+            Icon(
+              AppIcons.bullet,
+              size: Sizes.bulletMarker,
+              color: context.colors.categoricalAccentFor(label),
             ),
             const SizedBox(width: Space.md),
             Expanded(
@@ -234,6 +234,89 @@ class _DayHeader extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Animates one date group's visible rows without giving up `SliverList`'s
+/// lazy child construction. The controller belongs only to this group, so
+/// opening one date never animates or repaints unrelated dates.
+class _AnimatedDayGroup extends StatefulWidget {
+  const _AnimatedDayGroup({
+    super.key,
+    required this.expanded,
+    required this.itemCount,
+    required this.itemBuilder,
+  });
+
+  final bool expanded;
+  final int itemCount;
+  final Widget Function(BuildContext context, int index) itemBuilder;
+
+  @override
+  State<_AnimatedDayGroup> createState() => _AnimatedDayGroupState();
+}
+
+class _AnimatedDayGroupState extends State<_AnimatedDayGroup>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: Motion.fast,
+  );
+  late final Animation<double> _animation = CurvedAnimation(
+    parent: _controller,
+    curve: Motion.curve,
+  );
+  late bool _showRows = widget.expanded;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.expanded) _controller.value = 1;
+    _controller.addStatusListener((status) {
+      if (status == AnimationStatus.dismissed && mounted && _showRows) {
+        setState(() => _showRows = false);
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(_AnimatedDayGroup oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.expanded == oldWidget.expanded) return;
+    if (widget.expanded) {
+      // We are already in this widget's update/build pass, so this assignment
+      // makes the lazy sliver available in the same frame without scheduling a
+      // second rebuild solely to start the animation.
+      _showRows = true;
+      _controller.forward();
+    } else {
+      _controller.reverse();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_showRows) return const SliverToBoxAdapter(child: SizedBox.shrink());
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) => SizeTransition(
+          sizeFactor: _animation,
+          alignment: Alignment.topCenter,
+          child: FadeTransition(
+            opacity: _animation,
+            child: widget.itemBuilder(context, index),
+          ),
+        ),
+        childCount: widget.itemCount,
+        addAutomaticKeepAlives: false,
       ),
     );
   }

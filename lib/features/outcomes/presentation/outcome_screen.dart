@@ -87,6 +87,10 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
   int? _highlightIndex;
   int _approvedCount = 0;
 
+  /// Increments for every deep-link intent, including a repeat of the same id.
+  /// Delayed scroll callbacks from an earlier intent become harmless no-ops.
+  int _scrollRequest = 0;
+
   static const _highlightDuration = Duration(seconds: 6);
 
   @override
@@ -116,13 +120,14 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
   void _applyHighlight(String? itemId) {
     _fade?.cancel();
     _highlighted = itemId;
+    final request = ++_scrollRequest;
     if (itemId == null) return;
     _fade = Timer(_highlightDuration, () {
       if (mounted) setState(() => _highlighted = null);
     });
     // Kick the index-driven scroll. Its post-frame runs AFTER the build that
     // sets `_highlightIndex`, so the index is available by the time it reads it.
-    _tryScroll(0);
+    _tryScroll(request, 0);
   }
 
   /// Bring the highlighted card into view, retrying across frames.
@@ -136,30 +141,39 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
   /// This also covers the WARM path where the deep link arrives mid inner-TabBar
   /// slide — we simply keep retrying (a no-op once landed) until visible or a
   /// bounded budget runs out. Cold start / a near-top card lands on frame 0.
-  void _tryScroll(int attempt) {
+  void _tryScroll(int request, int attempt) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _highlighted == null) return;
+      if (!mounted || _highlighted == null || request != _scrollRequest) {
+        return;
+      }
       final ctx = _highlightKey.currentContext;
       if (ctx != null) {
         if (_isFullyVisible(ctx)) return; // done.
-        Scrollable.ensureVisible(
-          ctx,
-          duration: Motion.fast,
-          curve: Motion.curve,
-          alignment: 0.2,
-        );
-      } else if (_scrollController.hasClients &&
-          _highlightIndex != null &&
-          _approvedCount > 0) {
-        // The card is not built — jump roughly to its position so it does, then
-        // the next frame refines with `ensureVisible` above.
-        final max = _scrollController.position.maxScrollExtent;
-        final frac = _approvedCount <= 1
-            ? 0.0
-            : _highlightIndex! / (_approvedCount - 1);
-        _scrollController.jumpTo((frac * max).clamp(0.0, max));
+        // Wait for this precise reveal to finish before looking again. Scheduling
+        // another frame immediately used to keep retrying after the target had
+        // already arrived, especially at a list boundary where reveal clamps.
+        if (attempt < 60) {
+          Scrollable.ensureVisible(
+            ctx,
+            duration: Motion.fast,
+            curve: Motion.curve,
+            alignment: 0.2,
+          ).whenComplete(() => _tryScroll(request, attempt + 1));
+        }
+      } else {
+        if (_scrollController.hasClients &&
+            _highlightIndex != null &&
+            _approvedCount > 0) {
+          // The card is not built — jump roughly to its position so it does, then
+          // the next frame refines with `ensureVisible` above.
+          final max = _scrollController.position.maxScrollExtent;
+          final frac = _approvedCount <= 1
+              ? 0.0
+              : _highlightIndex! / (_approvedCount - 1);
+          _scrollController.jumpTo((frac * max).clamp(0.0, max));
+        }
+        if (attempt < 60) _tryScroll(request, attempt + 1);
       }
-      if (attempt < 60) _tryScroll(attempt + 1);
     });
   }
 
@@ -262,9 +276,25 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
           final orderedKeys = [...upcomingKeys, ...pastKeys];
 
           _approvedCount = approved.length;
-          // The highlighted card is force-built by expanding its day (below), so
-          // the old flat-index jump is unnecessary — ensureVisible alone lands it.
+          // Keep the flattened position for the lazy-list fallback. Expanding a
+          // target day makes its rows eligible to build, but it does not mount a
+          // far-away child; this fraction jump brings that region into the
+          // viewport so the keyed card can finish with `ensureVisible`.
+          var flattenedIndex = 0;
           _highlightIndex = null;
+          if (_highlighted != null) {
+            for (final key in orderedKeys) {
+              final dayItems = byDay[key]!;
+              final index = dayItems.indexWhere(
+                (item) => item.id == _highlighted,
+              );
+              if (index >= 0) {
+                _highlightIndex = flattenedIndex + index;
+                break;
+              }
+              flattenedIndex += dayItems.length;
+            }
+          }
 
           // The NEXT upcoming item (earliest future, no outcome) drives the hero
           // band and the primer — the same facts the old `upcoming` list carried.
