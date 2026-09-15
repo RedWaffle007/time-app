@@ -154,8 +154,9 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
         // The card is not built — jump roughly to its position so it does, then
         // the next frame refines with `ensureVisible` above.
         final max = _scrollController.position.maxScrollExtent;
-        final frac =
-            _approvedCount <= 1 ? 0.0 : _highlightIndex! / (_approvedCount - 1);
+        final frac = _approvedCount <= 1
+            ? 0.0
+            : _highlightIndex! / (_approvedCount - 1);
         _scrollController.jumpTo((frac * max).clamp(0.0, max));
       }
       if (attempt < 60) _tryScroll(attempt + 1);
@@ -196,7 +197,8 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
   @override
   Widget build(BuildContext context) {
     final itemsAsync = ref.watch(myItemsAsTargetProvider);
-    final pendingCount = itemsAsync.value
+    final pendingCount =
+        itemsAsync.value
             ?.where((i) => i.status == ScheduleItemStatus.pending)
             .length ??
         0;
@@ -244,20 +246,19 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
             byDay.putIfAbsent(key, () => []).add(item);
           }
           for (final list in byDay.values) {
-            list.sort((a, b) =>
-                a.scheduledInstantUtc.compareTo(b.scheduledInstantUtc));
+            list.sort(
+              (a, b) => a.scheduledInstantUtc.compareTo(b.scheduledInstantUtc),
+            );
           }
           // yyyy-MM-dd keys sort lexicographically = chronologically, so the
           // today-split and the per-side ordering can work on the keys directly.
           final todayKey = dayKeyOf(DateTime.now());
-          final upcomingKeys = byDay.keys
-              .where((k) => k.compareTo(todayKey) >= 0)
-              .toList()
-            ..sort();
-          final pastKeys = byDay.keys
-              .where((k) => k.compareTo(todayKey) < 0)
-              .toList()
-            ..sort((a, b) => b.compareTo(a));
+          final upcomingKeys =
+              byDay.keys.where((k) => k.compareTo(todayKey) >= 0).toList()
+                ..sort();
+          final pastKeys =
+              byDay.keys.where((k) => k.compareTo(todayKey) < 0).toList()
+                ..sort((a, b) => b.compareTo(a));
           final orderedKeys = [...upcomingKeys, ...pastKeys];
 
           _approvedCount = approved.length;
@@ -272,8 +273,9 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
           for (final item in approved) {
             if (item.outcome == null && item.scheduledInstantUtc.isAfter(now)) {
               if (nextItem == null ||
-                  item.scheduledInstantUtc
-                      .isBefore(nextItem.scheduledInstantUtc)) {
+                  item.scheduledInstantUtc.isBefore(
+                    nextItem.scheduledInstantUtc,
+                  )) {
                 nextItem = item;
               }
             }
@@ -310,18 +312,19 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
                   section: key == todayKey
                       ? 'Today'
                       : (key.compareTo(todayKey) > 0
-                          ? 'Future plans'
-                          : 'Past plans'),
-                  children: [
-                    for (final item in byDay[key]!)
-                      _OutcomeCard(
-                        item: item,
-                        highlighted: item.id == _highlighted,
-                        // The key rides on the highlighted card only; that is all
-                        // `ensureVisible` needs to find it.
-                        cardKey: item.id == _highlighted ? _highlightKey : null,
-                      ),
-                  ],
+                            ? 'Future plans'
+                            : 'Past plans'),
+                  itemCount: byDay[key]!.length,
+                  itemBuilder: (context, index) {
+                    final item = byDay[key]![index];
+                    return _OutcomeCard(
+                      item: item,
+                      highlighted: item.id == _highlighted,
+                      // The key rides on the highlighted card only; that is all
+                      // `ensureVisible` needs to find it.
+                      cardKey: item.id == _highlighted ? _highlightKey : null,
+                    );
+                  },
                 ),
             ],
           );
@@ -383,7 +386,9 @@ class _OutcomeCard extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: Space.xs),
-            Text(formatInstant(context, item.scheduledInstantUtc, item.timezone)),
+            Text(
+              formatInstant(context, item.scheduledInstantUtc, item.timezone),
+            ),
             const SizedBox(height: Space.md),
             if (outcome == null)
               Row(
@@ -423,8 +428,9 @@ class _OutcomeCard extends ConsumerWidget {
           const SizedBox(width: Space.sm),
           Text(
             '${formatDurationMinutes(context, delay.inMinutes)} late',
-            style: context.text.bodySmall
-                ?.copyWith(color: context.colors.onSurfaceVariant),
+            style: context.text.bodySmall?.copyWith(
+              color: context.colors.onSurfaceVariant,
+            ),
           ),
         ],
         if (outcome.skipReason case final reason?) ...[
@@ -432,8 +438,9 @@ class _OutcomeCard extends ConsumerWidget {
           Expanded(
             child: Text(
               reason,
-              style: context.text.bodySmall
-                  ?.copyWith(color: context.colors.onSurfaceVariant),
+              style: context.text.bodySmall?.copyWith(
+                color: context.colors.onSurfaceVariant,
+              ),
             ),
           ),
         ],
@@ -448,13 +455,17 @@ class _OutcomeCard extends ConsumerWidget {
   /// undesired, the item stream re-emits, and the reconciler cancels it. That is
   /// the point of driving reminders off the stream rather than off transitions.
   Future<void> _markDone(BuildContext context, WidgetRef ref) async {
-    await ref.read(scheduleRepositoryProvider).markDone(item.targetUid, item.id);
+    await ref
+        .read(scheduleRepositoryProvider)
+        .markDone(item.targetUid, item.id);
     // The planner push is skipped for a self-planned item (no one else to tell),
     // but the time-tracking prompt is NOT — self-planned items are exactly the
     // ones a user logs their own time against. So the early-out only guards the
     // notify; the Done→track hook below runs for every completed item.
     if (!_isSelfPlanned) {
-      await ref.read(notificationEventNotifierProvider).notify(
+      await ref
+          .read(notificationEventNotifierProvider)
+          .notify(
             event: NotifyEvent.outcome,
             targetUid: item.targetUid,
             itemId: item.id,
@@ -485,19 +496,25 @@ class _OutcomeCard extends ConsumerWidget {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Skip')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Skip'),
+          ),
         ],
       ),
     );
     if (confirmed == true) {
-      await ref.read(scheduleRepositoryProvider).markSkipped(
-            item.targetUid,
-            item.id,
-            reason: controller.text,
-          );
+      await ref
+          .read(scheduleRepositoryProvider)
+          .markSkipped(item.targetUid, item.id, reason: controller.text);
       if (_isSelfPlanned) return; // no point notifying yourself
-      await ref.read(notificationEventNotifierProvider).notify(
+      await ref
+          .read(notificationEventNotifierProvider)
+          .notify(
             event: NotifyEvent.outcome,
             targetUid: item.targetUid,
             itemId: item.id,

@@ -139,23 +139,28 @@ class ProfileAvatar {
       storageKey: (m['storageKey'] ?? '') as String,
       mime: (m['mime'] ?? '') as String,
       sizeBytes: (m['sizeBytes'] as num?)?.toInt() ?? 0,
-      moderation: AvatarModeration.values.firstWhere(
-        (s) => s.name == m['moderation'],
-        // An unreadable moderation state must fail CLOSED — withhold the
-        // image. The opposite default would make a corrupt field a way to
-        // display a rejected picture.
-        orElse: () => AvatarModeration.pending,
-      ),
+      // `moderation` was introduced after the first avatar uploads shipped.
+      // Those maps were stored only after a successful upload, at a time when
+      // the only possible state was visible. Treating a *missing* field as
+      // pending hid every legacy picture while still leaving its stored map
+      // available to the editor's Remove action. An unknown, non-empty value
+      // remains fail-closed: corrupt data must never become a moderation bypass.
+      moderation: m['moderation'] == null
+          ? AvatarModeration.approved
+          : AvatarModeration.values.firstWhere(
+              (s) => s.name == m['moderation'],
+              orElse: () => AvatarModeration.pending,
+            ),
       updatedAt: (m['updatedAt'] as Timestamp?)?.toDate(),
     );
   }
 
   Map<String, dynamic> toMap() => {
-        'url': url,
-        'storageKey': storageKey,
-        'mime': mime,
-        'sizeBytes': sizeBytes,
-        'moderation': moderation.name,
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
+    'url': url,
+    'storageKey': storageKey,
+    'mime': mime,
+    'sizeBytes': sizeBytes,
+    'moderation': moderation.name,
+    'updatedAt': FieldValue.serverTimestamp(),
+  };
 }

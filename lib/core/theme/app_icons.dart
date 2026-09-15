@@ -128,6 +128,8 @@ abstract final class AppIcons {
   static const IconData copy = Icons.copy;
   static const IconData share = Icons.share;
   static const IconData retry = Icons.refresh;
+  static const IconData close = Icons.close;
+  static const IconData bullet = Icons.circle;
   static const IconData search = Icons.search;
   static const IconData signIn = Icons.login;
   static const IconData signOut = Icons.logout;

@@ -30,12 +30,12 @@ abstract final class Space {
   /// the bar. `viewPadding` (not `padding`) is used so the inset is the nav bar's
   /// true height and does not collapse to 0 when the keyboard is up.
   static EdgeInsets screenListSafe(BuildContext context) => screenList.copyWith(
-        bottom: lg + MediaQuery.viewPaddingOf(context).bottom,
-      );
+    bottom: lg + MediaQuery.viewPaddingOf(context).bottom,
+  );
 
   static EdgeInsets screenFormSafe(BuildContext context) => screenForm.copyWith(
-        bottom: xl + MediaQuery.viewPaddingOf(context).bottom,
-      );
+    bottom: xl + MediaQuery.viewPaddingOf(context).bottom,
+  );
 
   /// The bare system navigation-bar inset, for wrapping a non-scrolling
   /// bottom-docked control (a fixed footer button) on a full-screen route.
@@ -43,8 +43,10 @@ abstract final class Space {
       MediaQuery.viewPaddingOf(context).bottom;
 
   /// The canonical card margin (UI-RULES.md §6.1).
-  static const EdgeInsets cardMargin =
-      EdgeInsets.symmetric(horizontal: md, vertical: sm);
+  static const EdgeInsets cardMargin = EdgeInsets.symmetric(
+    horizontal: md,
+    vertical: sm,
+  );
 
   /// The canonical card interior padding.
   static const EdgeInsets cardPadding = EdgeInsets.all(lg);
@@ -115,6 +117,10 @@ abstract final class Sizes {
 
   /// Inline icon paired with body text, e.g. the warning panel.
   static const double inlineIcon = 20;
+
+  /// Small graphic marker used by [BulletList]. It is intentionally smaller
+  /// than an inline icon so a list reads as prose with structure, not a menu.
+  static const double bulletMarker = 8;
 
   /// Icon inside a status badge, sized to `labelSmall`.
   static const double badgeIcon = 14;

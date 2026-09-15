@@ -32,6 +32,22 @@ final onboardingCompletedProvider = FutureProvider<bool>((ref) async {
   return ref.watch(onboardingStoreProvider).isCompleted();
 });
 
+/// True only while this app has handed the user into an OS permission or
+/// settings flow. It is presentation state, not a record of permission state:
+/// the OS remains authoritative for that. The FCM failure banner observes this
+/// so it cannot cover the explanation that led into a system prompt.
+final permissionFlowInProgressProvider =
+    NotifierProvider<PermissionFlowController, bool>(
+      PermissionFlowController.new,
+    );
+
+class PermissionFlowController extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void setActive(bool active) => state = active;
+}
+
 /// Mark the flow done and refresh the flag so watchers rebuild. One helper so
 /// both the gate and the settings entry point flip the flag the same way. Takes
 /// a [WidgetRef] because both callers are widgets.

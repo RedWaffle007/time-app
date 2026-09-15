@@ -4,13 +4,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'core/theme/app_icons.dart';
 import 'core/theme/app_text.dart';
 import 'core/theme/app_theme.dart';
 import 'core/widgets/time_backdrop.dart';
 import 'features/applock/presentation/app_lock_gate.dart';
 import 'features/auth/application/auth_providers.dart';
 import 'features/notifications/application/messaging_service.dart';
+import 'features/notifications/application/fcm_failure_banner_policy.dart';
+import 'features/onboarding/application/onboarding_providers.dart';
 import 'features/groups/application/group_providers.dart';
 import 'features/groups/application/group_stats_providers.dart';
 import 'features/groups/application/planner_access_reconciler.dart';
@@ -47,6 +48,12 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
   /// against each new auth emission to spot a session ENDING — see the listener
   /// in build().
   String? _sessionUid;
+
+  /// A dismissal belongs to one unchanged failed registration state. A new
+  /// attempt (Retry or resume) may report its own result, but ordinary rebuilds
+  /// cannot re-post a banner the user just dismissed.
+  bool _registrationFailureDismissed = false;
+  bool _registrationRetryRequested = false;
 
   @override
   void initState() {
@@ -111,41 +118,55 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
   }
 
   void _onRegistrationStatus() {
+    final status = ref.read(messagingServiceProvider).status.value;
+    if (status != FcmRegistrationStatus.failed) {
+      _registrationFailureDismissed = false;
+    }
+    if (status != FcmRegistrationStatus.registering) {
+      _registrationRetryRequested = false;
+    }
+    _syncRegistrationBanner();
+  }
+
+  void _syncRegistrationBanner() {
     final messenger = _scaffoldMessengerKey.currentState;
     if (messenger == null) return;
     final status = ref.read(messagingServiceProvider).status.value;
+    // An unresolved first-run preference is treated as incomplete. If the
+    // preference itself fails, OnboardingGate deliberately lets the app through
+    // (there is no active flow to cover), so presentation may proceed rather
+    // than deferring a genuine registration failure forever.
+    final onboarding = ref.read(onboardingCompletedProvider);
+    final onboardingCompleted = onboarding.hasError || onboarding.value == true;
+    final mode = fcmFailureBannerMode(
+      registrationStatus: status,
+      onboardingCompleted: onboardingCompleted,
+      permissionFlowInProgress: ref.read(permissionFlowInProgressProvider),
+      failureDismissed: _registrationFailureDismissed,
+      retryRequested: _registrationRetryRequested,
+    );
 
-    if (status != FcmRegistrationStatus.failed) {
+    if (mode == FcmFailureBannerMode.hidden) {
       messenger.hideCurrentMaterialBanner();
       return;
     }
 
     messenger.hideCurrentMaterialBanner();
     messenger.showMaterialBanner(
-      MaterialBanner(
-        content: const Text(
-          "Couldn't set up notifications on this device — you may not be "
-          'notified when someone plans or completes an item.',
-        ),
-        leading: const Icon(AppIcons.notificationsOff),
-        actions: [
-          TextButton(
-            onPressed: () {
-              messenger.hideCurrentMaterialBanner();
-            },
-            child: const Text('Dismiss'),
-          ),
-          TextButton(
-            onPressed: () {
-              messenger.hideCurrentMaterialBanner();
-              final uid = ref.read(authStateProvider).value?.uid;
-              if (uid != null) {
-                ref.read(messagingServiceProvider).retryRegistration(uid);
-              }
-            },
-            child: const Text('Retry'),
-          ),
-        ],
+      FcmRegistrationBanner(
+        mode: mode,
+        onDismiss: () {
+          _registrationFailureDismissed = true;
+          _syncRegistrationBanner();
+        },
+        onRetry: () {
+          final uid = ref.read(authStateProvider).value?.uid;
+          if (uid == null) return;
+          _registrationRetryRequested = true;
+          // `_attempt` synchronously enters `registering`, which updates this
+          // same banner to an explicit busy state.
+          ref.read(messagingServiceProvider).retryRegistration(uid);
+        },
       ),
     );
   }
@@ -282,6 +303,15 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
       // under the wrong uid's document by a race on the way out.
       ref.read(profileStatsPublisherProvider).reset();
       ref.read(groupStatsPublisherProvider).reset();
+    });
+    // A failure may have occurred while the first-run gate was explaining
+    // permissions. Re-evaluate when that gate finishes and when an OS/settings
+    // surface opens or returns; this is state policy, never route inspection.
+    ref.listen(onboardingCompletedProvider, (previous, next) {
+      _syncRegistrationBanner();
+    });
+    ref.listen(permissionFlowInProgressProvider, (previous, next) {
+      _syncRegistrationBanner();
     });
 
     // Register / refresh the device token whenever a user is signed in. The

@@ -6,6 +6,7 @@ import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/widgets/async_view.dart';
+import '../../../core/widgets/bullet_list.dart';
 import '../../reminders/application/reminder_providers.dart';
 import '../../reminders/data/reminder_scheduler.dart';
 import '../application/onboarding_plan.dart';
@@ -58,6 +59,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   Future<void> _run(OnboardingStep step, OemProfile oem) async {
     if (_busy) return;
     setState(() => _busy = true);
+    ref.read(permissionFlowInProgressProvider.notifier).setActive(true);
     final permissions = ref.read(reminderPermissionsProvider);
     try {
       switch (step) {
@@ -84,6 +86,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     } finally {
       // The OS is the authority — re-read rather than assume the tap worked.
       ref.invalidate(reminderPermissionStateProvider);
+      ref.read(permissionFlowInProgressProvider.notifier).setActive(false);
       if (mounted) setState(() => _busy = false);
     }
   }
@@ -132,15 +135,15 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             Text(
               "We couldn't open the screen directly on this phone. Here's where "
               'to find it:',
-              style: context.text.bodySmall
-                  ?.copyWith(color: context.colors.onSurfaceVariant),
+              style: context.text.bodySmall?.copyWith(
+                color: context.colors.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: Space.md),
-            for (final s in steps)
-              Padding(
-                padding: const EdgeInsets.only(bottom: Space.sm),
-                child: Text('•  $s', style: context.text.bodyMedium),
-              ),
+            BulletList(
+              semanticLabel: 'Autostart instructions',
+              items: [for (final step in steps) Text(step)],
+            ),
           ],
         ),
         actions: [
@@ -162,13 +165,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     final stateAsync = ref.watch(reminderPermissionStateProvider);
-    final oem = ref.watch(oemProfileProvider).value ??
+    final oem =
+        ref.watch(oemProfileProvider).value ??
         oemProfileFor(''); // copy-only fallback while manufacturer loads
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Reminders & permissions'),
-      ),
+      appBar: AppBar(title: const Text('Reminders & permissions')),
       body: AsyncView<ReminderPermissionState>(
         value: stateAsync,
         onRetry: () => ref.invalidate(reminderPermissionStateProvider),
@@ -180,8 +182,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               Text(
                 'For reminders to reach you, this phone needs a few '
                 'permissions. Grant what you can — you can change these later.',
-                style: context.text.bodyMedium
-                    ?.copyWith(color: context.colors.onSurfaceVariant),
+                style: context.text.bodyMedium?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
               ),
               const SizedBox(height: Space.lg),
               for (final step in steps)
@@ -197,7 +200,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               FilledButton(
                 onPressed: _busy ? null : _finish,
                 child: Text(
-                  remainingSteps(state).isEmpty ? 'Done' : 'Continue to the app',
+                  remainingSteps(state).isEmpty
+                      ? 'Done'
+                      : 'Continue to the app',
                 ),
               ),
             ],
@@ -214,14 +219,13 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   List<OnboardingStep> _applicableSteps(
     ReminderPermissionState state,
     OemProfile oem,
-  ) =>
-      [
-        OnboardingStep.notifications,
-        OnboardingStep.exactAlarms,
-        OnboardingStep.fullScreenIntent,
-        OnboardingStep.battery,
-        if (state.autostartLikelyNeeded) OnboardingStep.autostart,
-      ];
+  ) => [
+    OnboardingStep.notifications,
+    OnboardingStep.exactAlarms,
+    OnboardingStep.fullScreenIntent,
+    OnboardingStep.battery,
+    if (state.autostartLikelyNeeded) OnboardingStep.autostart,
+  ];
 
   _StepView _viewFor(
     OnboardingStep step,
@@ -233,7 +237,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         return _StepView(
           icon: AppIcons.reminders,
           title: 'Show reminders',
-          why: 'Lets the app show a notification when an item comes due. '
+          why:
+              'Lets the app show a notification when an item comes due. '
               'It never leaves your device.',
           action: 'Allow notifications',
           granted: state.notificationsEnabled,
@@ -242,7 +247,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         return _StepView(
           icon: AppIcons.exactTiming,
           title: 'Remind me on time',
-          why: 'Without this, reminders can arrive late — sometimes hours late '
+          why:
+              'Without this, reminders can arrive late — sometimes hours late '
               'overnight. Opens Android settings.',
           action: 'Fix timing',
           granted: state.exactAlarmsAllowed,
@@ -251,7 +257,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         return _StepView(
           icon: AppIcons.ringOverApps,
           title: 'Ring over other apps',
-          why: 'Lets a reminder ring over other apps and on the lock screen, '
+          why:
+              'Lets a reminder ring over other apps and on the lock screen, '
               'like a real alarm. Opens Android settings.',
           action: 'Allow',
           granted: state.fullScreenIntentAllowed,
@@ -260,7 +267,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         return _StepView(
           icon: AppIcons.battery,
           title: 'Keep working in the background',
-          why: 'Battery optimisation can stop reminders from firing while your '
+          why:
+              'Battery optimisation can stop reminders from firing while your '
               'phone is idle. Exempting Checkmate prevents that.',
           action: 'Allow',
           granted: state.batteryUnrestricted,
@@ -269,7 +277,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         return _StepView(
           icon: AppIcons.autostart,
           title: 'Let ${oem.displayName} keep Checkmate running',
-          why: '${oem.displayName} phones can close background apps and stop '
+          why:
+              '${oem.displayName} phones can close background apps and stop '
               'their reminders. Autostart keeps them reliable. This one '
               "can't be checked automatically, so it always shows here.",
           action: 'Open settings',
@@ -365,16 +374,18 @@ class _StepCard extends StatelessWidget {
           padding: Space.cardPadding,
           child: Row(
             children: [
-              Icon(AppIcons.granted,
-                  color: context.colors.primary, size: Sizes.inlineIcon),
-              const SizedBox(width: Space.sm),
-              Expanded(
-                child: Text(view.title, style: context.text.titleSmall),
+              Icon(
+                AppIcons.granted,
+                color: context.colors.primary,
+                size: Sizes.inlineIcon,
               ),
+              const SizedBox(width: Space.sm),
+              Expanded(child: Text(view.title, style: context.text.titleSmall)),
               Text(
                 'Allowed',
-                style: context.text.labelSmall
-                    ?.copyWith(color: context.colors.onSurfaceVariant),
+                style: context.text.labelSmall?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -398,8 +409,11 @@ class _StepCard extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(view.icon,
-                    color: context.attention, size: Sizes.inlineIcon),
+                Icon(
+                  view.icon,
+                  color: context.attention,
+                  size: Sizes.inlineIcon,
+                ),
                 const SizedBox(width: Space.sm),
                 Expanded(
                   child: Text(view.title, style: context.text.titleSmall),
@@ -409,8 +423,9 @@ class _StepCard extends StatelessWidget {
             const SizedBox(height: Space.sm),
             Text(
               view.why,
-              style: context.text.bodySmall
-                  ?.copyWith(color: context.colors.onSurfaceVariant),
+              style: context.text.bodySmall?.copyWith(
+                color: context.colors.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: Space.md),
             Align(

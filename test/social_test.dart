@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:time_app/features/auth/domain/user_profile.dart';
 import 'package:time_app/features/social/domain/avatar.dart';
 import 'package:time_app/features/social/domain/profile_visibility.dart';
 import 'package:time_app/features/social/domain/social_ids.dart';
@@ -54,8 +55,10 @@ void main() {
 
     test('reserved handles are refused, case-insensitively', () {
       expect(validateUsername('admin'), UsernameProblem.reserved);
-      expect(validateUsername(canonicalUsername('Admin')),
-          UsernameProblem.reserved);
+      expect(
+        validateUsername(canonicalUsername('Admin')),
+        UsernameProblem.reserved,
+      );
       expect(validateUsername('support'), UsernameProblem.reserved);
     });
 
@@ -172,13 +175,19 @@ void main() {
       expect(v.canSendRequest, isTrue);
     });
 
-    test('a PUBLIC profile shows stats to a stranger — the leaderboard case', () {
-      final v = visibilityFor(relation: ProfileRelation.none, isPublic: true);
-      expect(v.canSeeStats, isTrue);
-    });
+    test(
+      'a PUBLIC profile shows stats to a stranger — the leaderboard case',
+      () {
+        final v = visibilityFor(relation: ProfileRelation.none, isPublic: true);
+        expect(v.canSeeStats, isTrue);
+      },
+    );
 
     test('a friend sees stats even when the profile is private', () {
-      final v = visibilityFor(relation: ProfileRelation.friend, isPublic: false);
+      final v = visibilityFor(
+        relation: ProfileRelation.friend,
+        isPublic: false,
+      );
       expect(v.canSeeStats, isTrue);
     });
 
@@ -209,13 +218,17 @@ void main() {
     test('someone who has been blocked can still block back', () {
       // Removing the control would announce the block by its absence.
       expect(
-        visibilityFor(relation: ProfileRelation.blockedBy, isPublic: false)
-            .canBlock,
+        visibilityFor(
+          relation: ProfileRelation.blockedBy,
+          isPublic: false,
+        ).canBlock,
         isTrue,
       );
       expect(
-        visibilityFor(relation: ProfileRelation.blocking, isPublic: false)
-            .canBlock,
+        visibilityFor(
+          relation: ProfileRelation.blocking,
+          isPublic: false,
+        ).canBlock,
         isFalse,
       );
     });
@@ -229,6 +242,48 @@ void main() {
   });
 
   group('avatar limits', () {
+    test('legacy uploaded avatars without moderation remain displayable', () {
+      final avatar = ProfileAvatar.fromMap({
+        'url': 'https://example.test/legacy.webp',
+        'storageKey': 'avatars/u/legacy.webp',
+        'mime': 'image/webp',
+        'sizeBytes': 10,
+      });
+      final profile = UserProfile(
+        uid: 'u',
+        name: 'Legacy',
+        homeTimezone: 'Asia/Kolkata',
+        avatar: avatar,
+      );
+
+      expect(avatar!.moderation, AvatarModeration.approved);
+      expect(profile.displayAvatarUrl, avatar.url);
+      expect(profile.hasStoredAvatar, isTrue);
+    });
+
+    test('withheld and rejected uploads stay hidden but remain removable', () {
+      for (final moderation in [
+        AvatarModeration.pending,
+        AvatarModeration.rejected,
+      ]) {
+        final profile = UserProfile(
+          uid: 'u',
+          name: 'Private',
+          homeTimezone: 'Asia/Kolkata',
+          avatarUrl: 'https://example.test/google.png',
+          avatar: ProfileAvatar(
+            url: 'https://example.test/withheld.png',
+            storageKey: 'avatars/u/withheld.png',
+            mime: 'image/png',
+            sizeBytes: 10,
+            moderation: moderation,
+          ),
+        );
+        expect(profile.displayAvatarUrl, 'https://example.test/google.png');
+        expect(profile.hasStoredAvatar, isTrue);
+      }
+    });
+
     test('animated-capable formats get the larger cap', () {
       expect(avatarMaxBytesFor('image/gif'), kAvatarMaxBytesAnimated);
       expect(avatarMaxBytesFor('image/webp'), kAvatarMaxBytesAnimated);
@@ -280,12 +335,12 @@ void main() {
 
     test('a rejected or pending picture is not displayable', () {
       ProfileAvatar withState(AvatarModeration m) => ProfileAvatar(
-            url: 'https://example.test/a.gif',
-            storageKey: 'avatars/u/a.gif',
-            mime: 'image/gif',
-            sizeBytes: 10,
-            moderation: m,
-          );
+        url: 'https://example.test/a.gif',
+        storageKey: 'avatars/u/a.gif',
+        mime: 'image/gif',
+        sizeBytes: 10,
+        moderation: m,
+      );
 
       expect(withState(AvatarModeration.approved).isDisplayable, isTrue);
       // Flagged stays visible: a report is an accusation, not a finding, and

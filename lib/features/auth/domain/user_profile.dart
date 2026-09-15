@@ -115,12 +115,18 @@ class UserProfile {
     return (google != null && google.isNotEmpty) ? google : null;
   }
 
+  /// Whether an uploaded avatar map with an image URL is actually stored.
+  ///
+  /// This intentionally differs from [displayAvatarUrl]: a withheld or
+  /// rejected upload is not displayable, but it is still the owner's stored
+  /// picture and therefore may be removed. Keeping this fact named prevents
+  /// controls from using a nullable map as a proxy for a visible image.
+  bool get hasStoredAvatar => avatar != null && avatar!.url.isNotEmpty;
+
   /// The handle rendered for display, with its `@`. Falls back to nothing.
   String? get handle => username == null ? null : '@$username';
 
-  factory UserProfile.fromDoc(
-    DocumentSnapshot<Map<String, dynamic>> doc,
-  ) {
+  factory UserProfile.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data() ?? const {};
     return UserProfile(
       uid: doc.id,

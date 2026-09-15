@@ -19,7 +19,8 @@ class DayGroupData {
   const DayGroupData({
     required this.key,
     required this.label,
-    required this.children,
+    required this.itemCount,
+    required this.itemBuilder,
     this.section,
   });
 
@@ -37,11 +38,13 @@ class DayGroupData {
   /// The localized date label shown in the header (e.g. "Mon, 12 Aug 2026").
   final String label;
 
-  /// The rows under this day, already built by the caller (the cards each screen
-  /// renders). The header's count is `children.length`.
-  final List<Widget> children;
+  /// The rows under this day. The shared scroller invokes this only for visible
+  /// rows in an expanded group; handing it prebuilt children here used to mount
+  /// an entire history on the first scroll frame.
+  final int itemCount;
+  final Widget Function(BuildContext context, int index) itemBuilder;
 
-  int get count => children.length;
+  int get count => itemCount;
 }
 
 /// **The one** collapsible date-grouped list, shared by My Schedule, Activity
@@ -112,42 +115,70 @@ class _CollapsibleDayGroupsState extends State<CollapsibleDayGroups> {
 
   @override
   Widget build(BuildContext context) {
-    final children = <Widget>[...widget.leading];
+    final padding =
+        widget.padding?.resolve(Directionality.of(context)) ?? EdgeInsets.zero;
+    final horizontal = EdgeInsets.only(
+      left: padding.left,
+      right: padding.right,
+    );
+    final slivers = <Widget>[
+      if (padding.top > 0)
+        SliverToBoxAdapter(child: SizedBox(height: padding.top)),
+      for (final leading in widget.leading)
+        SliverPadding(
+          padding: horizontal,
+          sliver: SliverToBoxAdapter(child: leading),
+        ),
+    ];
     // Tracks the section of the previous group so a header is emitted only when
     // the section changes (groups sharing a section sit under one header).
     String? lastSection;
     for (final group in widget.groups) {
       if (group.section != null && group.section != lastSection) {
-        children.add(SectionHeader(group.section!));
+        slivers.add(
+          SliverPadding(
+            padding: horizontal,
+            sliver: SliverToBoxAdapter(child: SectionHeader(group.section!)),
+          ),
+        );
         lastSection = group.section;
       }
       final expanded = _expanded.contains(group.key);
-      children.add(_DayHeader(
-        label: group.label,
-        count: group.count,
-        expanded: expanded,
-        onTap: () => _toggle(group.key),
-      ));
-      // AnimatedSize gives the smooth expand/collapse. Collapsed = the rows are
-      // removed from the tree (so a collapsed day's cards are not built); the
-      // forced-open path (didUpdateWidget) keeps a deep-linked card mountable.
-      children.add(AnimatedSize(
-        duration: Motion.normal,
-        curve: Motion.curve,
-        alignment: Alignment.topCenter,
-        child: expanded
-            ? Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: group.children,
-              )
-            : const SizedBox(width: double.infinity),
-      ));
+      slivers.add(
+        SliverPadding(
+          padding: horizontal,
+          sliver: SliverToBoxAdapter(
+            child: _DayHeader(
+              label: group.label,
+              count: group.count,
+              expanded: expanded,
+              onTap: () => _toggle(group.key),
+            ),
+          ),
+        ),
+      );
+      // Collapsed groups contribute no child sliver at all. Expanded groups use
+      // a builder delegate, keeping long histories lazy while retaining the
+      // same independent per-day expansion state.
+      if (expanded) {
+        slivers.add(
+          SliverPadding(
+            padding: horizontal,
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                group.itemBuilder,
+                childCount: group.count,
+                addAutomaticKeepAlives: false,
+              ),
+            ),
+          ),
+        );
+      }
     }
-    return ListView(
-      controller: widget.controller,
-      padding: widget.padding,
-      children: children,
-    );
+    if (padding.bottom > 0) {
+      slivers.add(SliverToBoxAdapter(child: SizedBox(height: padding.bottom)));
+    }
+    return CustomScrollView(controller: widget.controller, slivers: slivers);
   }
 }
 

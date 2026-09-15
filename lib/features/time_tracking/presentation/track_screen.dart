@@ -45,7 +45,8 @@ class TrackScreen extends ConsumerWidget {
         onRetry: () => ref.invalidate(myTrackedEntriesProvider),
         isEmpty: (entries) => entries.isEmpty,
         emptyIcon: AppIcons.emptyTrack,
-        emptyMessage: "You haven't logged any time yet.\n"
+        emptyMessage:
+            "You haven't logged any time yet.\n"
             'Tap + to log time you spent on anything — it need not be a plan.',
         builder: (context, entries) => CollapsibleDayGroups(
           padding: Space.screenList,
@@ -59,20 +60,25 @@ class TrackScreen extends ConsumerWidget {
   /// Fold the (already logDate-desc) entries into collapsible day groups. The
   /// repo sorts by `logDate` descending, so a new group starts whenever the day
   /// changes while walking the list — most-recent day first.
-  List<DayGroupData> _grouped(BuildContext context, List<TrackedEntry> entries) {
-    final groups = <DayGroupData>[];
+  List<DayGroupData> _grouped(
+    BuildContext context,
+    List<TrackedEntry> entries,
+  ) {
+    final entriesByDay = <String, List<TrackedEntry>>{};
     for (final entry in entries) {
-      if (groups.isEmpty || groups.last.key != entry.logDate) {
-        groups.add(DayGroupData(
-          key: entry.logDate,
-          label: _dayLabel(context, entry.logDate),
-          children: [_EntryCard(entry: entry)],
-        ));
-      } else {
-        groups.last.children.add(_EntryCard(entry: entry));
-      }
+      entriesByDay.putIfAbsent(entry.logDate, () => []).add(entry);
     }
-    return groups;
+    return [
+      for (final entry in entries)
+        if (entriesByDay.remove(entry.logDate) case final dayEntries?)
+          DayGroupData(
+            key: entry.logDate,
+            label: _dayLabel(context, entry.logDate),
+            itemCount: dayEntries.length,
+            itemBuilder: (context, index) =>
+                _EntryCard(entry: dayEntries[index]),
+          ),
+    ];
   }
 
   /// Device-local today as a `YYYY-MM-DD` key, to match `TrackedEntry.logDate`

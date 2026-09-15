@@ -72,9 +72,9 @@ class _ProfileAvatarEditorState extends ConsumerState<ProfileAvatarEditor> {
             OutlinedButton.icon(
               onPressed: _uploading ? null : () => _pickAndUpload(profile),
               icon: const Icon(AppIcons.editPhoto),
-              label: Text(profile.avatar == null ? 'Add photo' : 'Change'),
+              label: Text(profile.hasStoredAvatar ? 'Change' : 'Add photo'),
             ),
-            if (profile.avatar != null) ...[
+            if (profile.hasStoredAvatar) ...[
               const SizedBox(width: Space.sm),
               TextButton.icon(
                 onPressed: _uploading ? null : () => _removePicture(profile),
@@ -139,7 +139,9 @@ class _ProfileAvatarEditorState extends ConsumerState<ProfileAvatarEditor> {
         return;
       }
 
-      final avatar = await ref.read(avatarUploaderProvider).upload(
+      final avatar = await ref
+          .read(avatarUploaderProvider)
+          .upload(
             bytes: bytes,
             mime: mime,
             previousKey: profile.avatar?.storageKey,
@@ -151,6 +153,12 @@ class _ProfileAvatarEditorState extends ConsumerState<ProfileAvatarEditor> {
       await ref
           .read(profileRepositoryProvider)
           .setAvatar(uid: profile.uid, avatar: avatar);
+      // The stream normally receives Firestore's local write immediately. An
+      // explicit refresh also covers a listener that was briefly disconnected
+      // while the upload finished, so the editor and every shared avatar surface
+      // resolve the newly stored metadata rather than retaining the picker-time
+      // snapshot.
+      ref.invalidate(profileProvider);
     } on AvatarUploadFailure catch (e) {
       if (mounted) _toast(e.message);
     } catch (e) {
@@ -174,10 +182,7 @@ class _ProfileAvatarEditorState extends ConsumerState<ProfileAvatarEditor> {
       compressFormat: ImageCompressFormat.jpg,
       aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
       uiSettings: [
-        AndroidUiSettings(
-          toolbarTitle: 'Crop photo',
-          lockAspectRatio: true,
-        ),
+        AndroidUiSettings(toolbarTitle: 'Crop photo', lockAspectRatio: true),
         IOSUiSettings(title: 'Crop photo', aspectRatioLockEnabled: true),
       ],
     );
@@ -192,6 +197,7 @@ class _ProfileAvatarEditorState extends ConsumerState<ProfileAvatarEditor> {
     // from their profile, and a bucket that would not delete must not stop that
     // happening.
     await ref.read(profileRepositoryProvider).clearAvatar(profile.uid);
+    ref.invalidate(profileProvider);
     if (key != null && key.isNotEmpty) {
       await ref.read(avatarUploaderProvider).remove(storageKey: key);
     }

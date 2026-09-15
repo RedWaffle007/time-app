@@ -44,9 +44,11 @@ class TimeBackdrop extends StatelessWidget {
     final cs = context.colors;
     final dark = cs.brightness == Brightness.dark;
 
-    // Real chroma, held to a whisper of opacity. Marks are a touch stronger in
-    // dark (they need to register against near-black) and quieter in light.
-    final double markOpacity = dark ? 0.10 : 0.055;
+    // Real chroma, held to a whisper of opacity. The old light value (0.055)
+    // disappeared against the near-white scaffold on most LCDs; this remains
+    // beneath opaque content but is now perceptible in the route gutters.
+    // Dark deliberately keeps its established balance.
+    final double markOpacity = dark ? 0.10 : 0.075;
     final accents = dark ? _darkAccents : _lightAccents;
 
     return DecoratedBox(
@@ -107,7 +109,10 @@ class _TimeMarksPainter extends CustomPainter {
         final rand = math.Random(seed);
 
         // Every other row is offset half a tile — a brick layout, less grid-like.
-        final dx = c * tile + (r.isOdd ? tile / 2 : 0) + (rand.nextDouble() - 0.5) * 26;
+        final dx =
+            c * tile +
+            (r.isOdd ? tile / 2 : 0) +
+            (rand.nextDouble() - 0.5) * 26;
         final dy = r * tile + (rand.nextDouble() - 0.5) * 26;
 
         final color = colors[i % colors.length];
@@ -167,24 +172,56 @@ class _TimeMarksPainter extends CustomPainter {
     canvas.drawLine(Offset.zero, Offset(face * 0.4, face * 0.15), p);
     // two bells on top
     canvas.drawArc(
-        Rect.fromCircle(center: Offset(-face * 0.75, -face * 0.75), radius: r * 0.28),
-        math.pi, math.pi, false, p);
+      Rect.fromCircle(
+        center: Offset(-face * 0.75, -face * 0.75),
+        radius: r * 0.28,
+      ),
+      math.pi,
+      math.pi,
+      false,
+      p,
+    );
     canvas.drawArc(
-        Rect.fromCircle(center: Offset(face * 0.75, -face * 0.75), radius: r * 0.28),
-        math.pi, math.pi, false, p);
+      Rect.fromCircle(
+        center: Offset(face * 0.75, -face * 0.75),
+        radius: r * 0.28,
+      ),
+      math.pi,
+      math.pi,
+      false,
+      p,
+    );
     // legs
-    canvas.drawLine(Offset(-face * 0.6, face * 0.75), Offset(-face * 0.85, face), p);
-    canvas.drawLine(Offset(face * 0.6, face * 0.75), Offset(face * 0.85, face), p);
+    canvas.drawLine(
+      Offset(-face * 0.6, face * 0.75),
+      Offset(-face * 0.85, face),
+      p,
+    );
+    canvas.drawLine(
+      Offset(face * 0.6, face * 0.75),
+      Offset(face * 0.85, face),
+      p,
+    );
   }
 
   void _book(Canvas canvas, double r, Paint p) {
-    final rect = Rect.fromCenter(center: Offset.zero, width: r * 2, height: r * 1.5);
+    final rect = Rect.fromCenter(
+      center: Offset.zero,
+      width: r * 2,
+      height: r * 1.5,
+    );
     canvas.drawRRect(
-        RRect.fromRectAndRadius(rect, const Radius.circular(3)), p);
+      RRect.fromRectAndRadius(rect, const Radius.circular(3)),
+      p,
+    );
     // spine
     canvas.drawLine(Offset(0, -r * 0.75), Offset(0, r * 0.75), p);
     // page lines
-    canvas.drawLine(Offset(-r * 0.7, -r * 0.25), Offset(-r * 0.2, -r * 0.25), p);
+    canvas.drawLine(
+      Offset(-r * 0.7, -r * 0.25),
+      Offset(-r * 0.2, -r * 0.25),
+      p,
+    );
     canvas.drawLine(Offset(r * 0.2, -r * 0.25), Offset(r * 0.7, -r * 0.25), p);
   }
 
@@ -219,9 +256,15 @@ class _TimeMarksPainter extends CustomPainter {
   }
 
   void _calendar(Canvas canvas, double r, Paint p) {
-    final rect = Rect.fromCenter(center: Offset.zero, width: r * 1.8, height: r * 1.8);
+    final rect = Rect.fromCenter(
+      center: Offset.zero,
+      width: r * 1.8,
+      height: r * 1.8,
+    );
     canvas.drawRRect(
-        RRect.fromRectAndRadius(rect, const Radius.circular(3)), p);
+      RRect.fromRectAndRadius(rect, const Radius.circular(3)),
+      p,
+    );
     // header rule
     canvas.drawLine(Offset(-r * 0.9, -r * 0.5), Offset(r * 0.9, -r * 0.5), p);
     // binding rings
@@ -233,8 +276,10 @@ class _TimeMarksPainter extends CustomPainter {
     final path = Path()
       ..moveTo(-r * 0.35, r * 0.9)
       ..lineTo(-r * 0.35, -r * 0.55)
-      ..arcToPoint(Offset(r * 0.35, -r * 0.55),
-          radius: Radius.circular(r * 0.35))
+      ..arcToPoint(
+        Offset(r * 0.35, -r * 0.55),
+        radius: Radius.circular(r * 0.35),
+      )
       ..lineTo(r * 0.35, r * 0.55)
       ..arcToPoint(Offset(0, r * 0.9), radius: Radius.circular(r * 0.35))
       ..lineTo(0, -r * 0.2);

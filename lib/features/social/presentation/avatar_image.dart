@@ -4,6 +4,7 @@ import '../../../core/theme/app_text.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../auth/domain/user_profile.dart';
+import 'profile_picture_viewer.dart';
 
 /// **The one profile-picture widget.** Every avatar in the app draws through
 /// this — list rows, profile headers, the edit form.
@@ -49,7 +50,7 @@ class AvatarImage extends StatelessWidget {
     final url = profile?.displayAvatarUrl;
     final cs = context.colors;
 
-    return SizedBox(
+    final avatar = SizedBox(
       width: size,
       height: size,
       // A rounded SQUARE, not a circle — the app's one avatar shape, so changing
@@ -81,6 +82,18 @@ class AvatarImage extends StatelessWidget {
         ),
       ),
     );
+    // A placeholder has no image data to inspect. Only a URL that passed the
+    // same moderation-aware predicate used for drawing can open the viewer.
+    if (url == null) return avatar;
+    return Semantics(
+      button: true,
+      label: 'Open profile picture',
+      child: InkWell(
+        borderRadius: Radii.md,
+        onTap: () => showProfilePictureViewer(context, url),
+        child: avatar,
+      ),
+    );
   }
 }
 
@@ -107,8 +120,9 @@ class _Initial extends StatelessWidget {
       // the optical weight constant across all three.
       // Sized from the circle's diameter, not from the type scale — see
       // AppText.avatarInitial for why a letter-as-graphic is not a scale entry.
-      style: AppText.avatarInitial(size)
-          .copyWith(color: context.colors.onPrimaryContainer),
+      style: AppText.avatarInitial(
+        size,
+      ).copyWith(color: context.colors.onPrimaryContainer),
     );
   }
 }

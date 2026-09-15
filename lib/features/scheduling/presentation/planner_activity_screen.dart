@@ -34,9 +34,7 @@ class PlannerActivityScreen extends ConsumerWidget {
     final itemsAsync = ref.watch(myItemsAsPlannerProvider);
 
     return Scaffold(
-      appBar: embedded
-          ? null
-          : AppBar(title: const Text('Activity')),
+      appBar: embedded ? null : AppBar(title: const Text('Activity')),
       floatingActionButton: embedded
           ? null
           : FloatingActionButton.extended(
@@ -56,14 +54,14 @@ class PlannerActivityScreen extends ConsumerWidget {
         onRetry: () => ref.invalidate(allItemsAsPlannerProvider),
         // Self-planned items (creator == target) live in My Schedule, not here —
         // Activity is about people you plan FOR.
-        isEmpty: (items) =>
-            items.every((i) => i.createdByUid == i.targetUid),
+        isEmpty: (items) => items.every((i) => i.createdByUid == i.targetUid),
         emptyMessage: "You haven't planned anything for anyone yet.",
         builder: (context, items) {
-          final sorted = items
-              .where((i) => i.createdByUid != i.targetUid)
-              .toList()
-            ..sort((a, b) => b.scheduledInstantUtc.compareTo(a.scheduledInstantUtc));
+          final sorted =
+              items.where((i) => i.createdByUid != i.targetUid).toList()..sort(
+                (a, b) =>
+                    b.scheduledInstantUtc.compareTo(a.scheduledInstantUtc),
+              );
           return CollapsibleDayGroups(
             initiallyExpandedKeys: {dayKeyOf(DateTime.now())},
             groups: _grouped(context, sorted),
@@ -87,13 +85,17 @@ class PlannerActivityScreen extends ConsumerWidget {
       byDay.putIfAbsent(key, () => []).add(item);
     }
     final keys = byDay.keys.toList()
-      ..sort((a, b) => dateFor[b]!.compareTo(dateFor[a]!)); // most-recent day first
+      ..sort(
+        (a, b) => dateFor[b]!.compareTo(dateFor[a]!),
+      ); // most-recent day first
     return [
       for (final key in keys)
         DayGroupData(
           key: key,
           label: formatWallDate(context, dateFor[key]!),
-          children: [for (final item in byDay[key]!) _ActivityCard(item: item)],
+          itemCount: byDay[key]!.length,
+          itemBuilder: (context, index) =>
+              _ActivityCard(item: byDay[key]![index]),
         ),
     ];
   }
@@ -149,8 +151,9 @@ class _ActivityCard extends ConsumerWidget {
               '(${item.timezone}, their local time)',
               // bodySmall, not labelSmall: this reads as a sentence even though
               // it carries metadata (UI-RULES.md §3, prose-wins tiebreaker).
-              style: context.text.bodySmall
-                  ?.copyWith(color: context.colors.onSurfaceVariant),
+              style: context.text.bodySmall?.copyWith(
+                color: context.colors.onSurfaceVariant,
+              ),
             ),
             ..._reasonLine(context),
             // Late completion — the delay is honest accountability data, so the
@@ -159,8 +162,9 @@ class _ActivityCard extends ConsumerWidget {
               const SizedBox(height: Space.xs),
               Text(
                 'Completed ${formatDurationMinutes(context, delay.inMinutes)} late',
-                style: context.text.bodySmall
-                    ?.copyWith(color: context.colors.onSurfaceVariant),
+                style: context.text.bodySmall?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
               ),
             ],
             // A plan can be withdrawn only while it's still pending — once the
@@ -195,8 +199,9 @@ class _ActivityCard extends ConsumerWidget {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           // Destructive — one of the rationed uses of red (UI-RULES.md §2.5).
           FilledButton(
             style: FilledButton.styleFrom(
@@ -214,7 +219,9 @@ class _ActivityCard extends ConsumerWidget {
         .read(scheduleRepositoryProvider)
         // `item:` frees the slot lock this plan was holding.
         .withdraw(item.targetUid, item.id, item: item);
-    await ref.read(notificationEventNotifierProvider).notify(
+    await ref
+        .read(notificationEventNotifierProvider)
+        .notify(
           event: NotifyEvent.withdrawn,
           targetUid: item.targetUid,
           itemId: item.id,
@@ -234,7 +241,10 @@ class _ActivityCard extends ConsumerWidget {
   /// the auto-hide rule would need it back immediately.
   List<Widget> _reasonLine(BuildContext context) {
     final reason = switch (item) {
-      ScheduleItem(status: ScheduleItemStatus.rejected, :final rejectionReason?) =>
+      ScheduleItem(
+        status: ScheduleItemStatus.rejected,
+        :final rejectionReason?,
+      ) =>
         'Reason: $rejectionReason',
       ScheduleItem(outcome: ScheduleOutcome(:final skipReason?)) =>
         'Reason: $skipReason',
@@ -245,8 +255,9 @@ class _ActivityCard extends ConsumerWidget {
       const SizedBox(height: Space.xs),
       Text(
         reason,
-        style:
-            context.text.bodySmall?.copyWith(color: context.colors.onSurfaceVariant),
+        style: context.text.bodySmall?.copyWith(
+          color: context.colors.onSurfaceVariant,
+        ),
       ),
     ];
   }
