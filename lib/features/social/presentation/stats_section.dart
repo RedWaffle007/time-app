@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -77,6 +78,15 @@ class StatsGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // "Coming soon" placeholders (e.g. Goals achieved) are a build-time device
+    // for wiring stats modularly; a shipped app should not advertise features
+    // that aren't there. They stay visible in debug so the modular design is
+    // exercised, and are dropped from release only.
+    final visible = kReleaseMode
+        ? stats
+              .where((s) => s.state != ProfileStatState.placeholder)
+              .toList(growable: false)
+        : stats;
     return LayoutBuilder(
       builder: (context, constraints) {
         final columns =
@@ -89,7 +99,7 @@ class StatsGrid extends StatelessWidget {
           spacing: Space.sm,
           runSpacing: Space.sm,
           children: [
-            for (final stat in stats)
+            for (final stat in visible)
               SizedBox(width: width, child: _StatTile(stat: stat)),
           ],
         );

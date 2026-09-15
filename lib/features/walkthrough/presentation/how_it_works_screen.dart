@@ -139,12 +139,6 @@ class HowItWorksScreen extends ConsumerWidget {
                 "item's own timezone. In the You tab, or the calendar icon on Plan.",
           ),
           const _Feature(
-            icon: AppIcons.languagePractice,
-            title: 'Language practice  ·  in the You tab',
-            body: 'An optional offline German chatbot — a separate extra, not '
-                'part of the planning loop.',
-          ),
-          const _Feature(
             icon: AppIcons.permissions,
             title: 'Reminders & permissions  ·  in the You tab',
             body: 'Review and fix the permissions reliable reminders need, any '

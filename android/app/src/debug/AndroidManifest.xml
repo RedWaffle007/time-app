@@ -4,16 +4,4 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
-    <!-- DEBUG BUILDS ONLY. Android blocks cleartext HTTP by default from
-         targetSdk 28 onwards, so the language-practice chatbot — which talks
-         plain `http://` to a laptop over Tailscale — cannot connect without
-         this. Its address is user-editable, so it cannot be allow-listed by
-         host in a network-security-config.
-
-         Deliberately NOT in the main manifest: a release build stays
-         cleartext-blocked, which is the correct default for an app whose other
-         traffic is all HTTPS (Firebase, the Worker). If the chatbot ever needs
-         to run in a release build over plain HTTP, that is a decision to take
-         and record, not to inherit from a debug convenience. -->
-    <application android:usesCleartextTraffic="true"/>
 </manifest>

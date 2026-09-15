@@ -68,12 +68,6 @@ class YouScreen extends ConsumerWidget {
             label: 'Calendar',
             onTap: () => context.push(Routes.calendar),
           ),
-          _YouTile(
-            icon: AppIcons.languagePractice,
-            label: 'Language practice',
-            onTap: () => context.push(Routes.chatbot),
-          ),
-
           const SectionHeader('Account & device'),
           _YouTile(
             icon: AppIcons.walkthrough,

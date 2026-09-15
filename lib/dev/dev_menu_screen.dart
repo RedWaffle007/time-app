@@ -54,14 +54,6 @@ class DevMenuScreen extends ConsumerWidget {
       ('Plan (My Schedule / stances)', Routes.plan, true),
       ('Schedule Builder (planner)', Routes.scheduleBuilder, true),
       ('Pending Approvals (target)', Routes.approvals, true),
-      // Root-level, so it is pushed and Back returns here. The chatbot shares
-      // nothing with the delegation features but the theme and the router.
-      ('Language practice (chatbot)', Routes.chatbot, false),
-      ('Offline model setup (chatbot)', Routes.chatbotModel, false),
-      // The HTTP service address. Off the chat's own menu since the engine went
-      // on-device — nothing reads it until `chatbotServiceProvider` is pointed
-      // back at HTTP — but kept reachable here for exactly that comparison.
-      ('Chatbot service address (HTTP only)', Routes.chatbotSettings, false),
       // The reminder layer's instrument: permissions, what the app believes it
       // armed, and the natively-written fire log with real delivery delays.
       // First stop when a reminder did not arrive.

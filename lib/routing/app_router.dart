@@ -12,9 +12,6 @@ import '../features/auth/presentation/auth_screen.dart';
 import '../features/groups/presentation/group_detail_screen.dart';
 import '../features/groups/presentation/group_progress_screen.dart';
 import '../features/auth/presentation/profile_edit_screen.dart';
-import '../features/chatbot/presentation/chat_gate.dart';
-import '../features/chatbot/presentation/chatbot_settings_screen.dart';
-import '../features/chatbot/presentation/model_setup_screen.dart';
 import '../features/calendar/presentation/calendar_screen.dart';
 import '../features/home/presentation/home_gate.dart';
 import '../features/onboarding/presentation/onboarding_screen.dart';
@@ -274,18 +271,6 @@ class Routes {
   /// `/outcome/approvals` before the S5 cutover.)
   static const approvals = '$plan/approvals';
 
-  /// The language-practice chatbot — a self-contained feature that shares the
-  /// theme and this router with the delegation app and nothing else. Top-level,
-  /// because it belongs to no tab and is not part of the core loop; reached from
-  /// the account menu, alongside the other top-level routes above.
-  static const chatbot = '/chatbot';
-  static const chatbotSettings = '$chatbot/settings';
-
-  /// Getting the on-device model onto this phone. A destination, **not** a gate
-  /// in front of [chatbot] — the HTTP implementation still answers every
-  /// message (DECISIONS.md, 2026-08-19).
-  static const chatbotModel = '$chatbot/model';
-
   /// Debug-only. The route itself is registered only in debug builds — see the
   /// `if (kDebugMode)` guard below. In release this path resolves to nothing.
   static const devMenu = '/dev';
@@ -539,41 +524,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '${Routes.userProfile}/:uid',
         builder: (context, state) =>
             UserProfileScreen(uid: state.pathParameters['uid']!),
-      ),
-      // The chatbot, kept out of the tab shell on purpose: it is not one of
-      // the three roles the nav bar names, and nothing in the delegation loop
-      // links to it. Reached from the account menu (`AccountButton`), which every
-      // tab's AppBar shows — pushed, so it covers the bar and Back returns to
-      // whichever tab launched it, exactly like `/profile` and `/archived`.
-      // The dev menu still pushes it too, but is no longer the only way in
-      // (DECISIONS.md, 2026-08-18).
-      //
-      // Registered in release too, unlike `/dev` — this is a real feature that
-      // is merely unlaunched, not scaffolding. The settings screen is a
-      // sub-route of it, so Back returns to the chat.
-      GoRoute(
-        path: Routes.chatbot,
-        // The GATE, not the chat. Replies come from model files on this phone,
-        // so the chat cannot open before they are here; the gate hands over to
-        // it the moment they are (DECISIONS.md, 2026-08-19).
-        builder: (context, state) => const ChatGate(),
-        routes: [
-          GoRoute(
-            path: 'settings',
-            builder: (context, state) => const ChatbotSettingsScreen(),
-          ),
-          // Downloading and verifying the on-device model. A sub-route for the
-          // same reason `settings` is one: it belongs to the chatbot and Back
-          // returns to the chat.
-          //
-          // It outlives `settings`. That screen is scoped to the HTTP
-          // implementation and is deleted with it; this one is where the
-          // feature is going.
-          GoRoute(
-            path: 'model',
-            builder: (context, state) => const ModelSetupScreen(),
-          ),
-        ],
       ),
       // Dev scaffolding, registered ONLY in debug builds.
       //

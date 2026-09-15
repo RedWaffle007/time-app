@@ -83,16 +83,8 @@ dependencies:
   path_provider: ^2.1.6
   crypto: ^3.0.7
 
-  # The on-device chatbot engine. `flutter_onnxruntime` wraps Microsoft's
-  # ONNX Runtime (1.23.0 on Android) and is what actually runs the MiniLM
-  # graph; it takes a model FILE PATH, which is what makes a downloaded —
-  # rather than bundled — model possible at all.
-  #
-  # `characters` is the Unicode grapheme-cluster iterator. It is not a
-  # convenience here: SentencePiece's normalizer walks graphemes, not code
-  # points, and reproducing its output exactly is what keeps a query in the
-  # same embedding space as the corpus index.
-  flutter_onnxruntime: ^1.8.3
+  # `characters` — the Unicode grapheme-cluster iterator, used by locale-aware
+  # text handling.
   characters: ^1.4.1
   flutter_local_notifications: ^22.3.0
 
