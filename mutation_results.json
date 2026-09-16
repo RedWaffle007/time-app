@@ -1,0 +1,80 @@
+{
+  "mutants": 47,
+  "before": {
+    "killed": 39,
+    "valid": 47,
+    "score": 82.98
+  },
+  "after": {
+    "killed": 46,
+    "valid": 47,
+    "score": 97.87
+  },
+  "baseline": {
+    "tz-day-window-23h": "survived",
+    "tz-before-probe-direction": "killed",
+    "tz-after-probe-direction": "killed",
+    "tz-before-candidate-add": "killed",
+    "tz-after-candidate-add": "killed",
+    "tz-before-valid-invert": "killed",
+    "tz-after-valid-invert": "killed",
+    "tz-stable-offset-invert": "killed",
+    "tz-overlap-and-to-or": "killed",
+    "tz-overlap-pick-later": "killed",
+    "tz-one-valid-equal": "killed",
+    "tz-one-valid-wrong": "killed",
+    "tz-gap-pick-earlier": "killed",
+    "quiet-empty-matches": "survived",
+    "quiet-nonwrap-boundary": "survived",
+    "quiet-wrap-and": "survived",
+    "quiet-null-and-to-or": "survived",
+    "slot-size-15": "killed",
+    "slot-floor-to-ceil": "killed",
+    "slot-start-next": "killed",
+    "slot-end-same": "killed",
+    "blocks-outcome-invert": "killed",
+    "blocks-pending-remove": "killed",
+    "blocks-approved-remove": "killed",
+    "day-range-two-days": "killed",
+    "availability-include-dead": "killed",
+    "availability-last-inclusive-next": "killed",
+    "availability-drop-last": "killed",
+    "availability-past-invert": "killed",
+    "next-free-from-boundary": "survived",
+    "next-free-blocked": "killed",
+    "release-keep-dead": "killed",
+    "release-ignore-keep": "killed",
+    "bookable-now-inclusive": "survived",
+    "bookable-any-to-every": "killed",
+    "lapse-fallback-two-days": "survived",
+    "lapse-zone-two-days": "killed",
+    "lapse-boundary-strict": "killed",
+    "lapse-pending-as-approved": "killed",
+    "lapse-approved-as-rejected": "killed",
+    "calendar-signed-in-empty": "killed",
+    "calendar-target-first": "killed",
+    "calendar-planner-second": "killed",
+    "calendar-day-hour-not-dropped": "killed",
+    "calendar-day-key-hour": "killed",
+    "calendar-instant-order-reverse": "killed",
+    "calendar-title-order-reverse": "killed"
+  },
+  "enhanced_survivor_results": {
+    "tz-day-window-23h": "survived",
+    "quiet-empty-matches": "killed",
+    "quiet-nonwrap-boundary": "killed",
+    "quiet-wrap-and": "killed",
+    "quiet-null-and-to-or": "killed",
+    "next-free-from-boundary": "killed",
+    "bookable-now-inclusive": "killed",
+    "lapse-fallback-two-days": "killed"
+  },
+  "equivalent": [
+    "tz-day-window-23h"
+  ],
+  "after_excluding_equivalent": {
+    "killed": 46,
+    "valid_non_equivalent": 46,
+    "score": 100.0
+  }
+}
