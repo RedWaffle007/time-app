@@ -87,7 +87,8 @@
     <application
         android:label="Checkmate"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round">
         <!-- Default FCM notification channel for background/terminated
              `notification` messages. The Firebase SDK falls back to an
              auto-created default channel if this id doesn't exist yet. -->
