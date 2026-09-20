@@ -47,6 +47,7 @@ void main() {
     required String id,
     String targetUid = 'me',
     String createdByUid = 'planner',
+    String groupId = 'g1',
     ScheduleItemStatus status = ScheduleItemStatus.approved,
     ScheduleOutcome? outcome,
     DateTime? at,
@@ -57,7 +58,7 @@ void main() {
         id: id,
         targetUid: targetUid,
         createdByUid: createdByUid,
-        groupId: 'g1',
+        groupId: groupId,
         title: title,
         note: note,
         localWallTime: '2026-08-20T14:00',
@@ -143,6 +144,22 @@ void main() {
       expect(d.map((r) => r.itemId), ['a']);
       expect(d.single.fireAtUtc, inHours(2));
       expect(d.single.title, 'Run');
+    });
+
+    test('an approved normal friendship item is reminded', () {
+      final result = desiredReminders(
+        items: [
+          item(
+            id: 'friend-normal',
+            groupId: '',
+            createdByUid: 'friend',
+            status: ScheduleItemStatus.approved,
+          ),
+        ],
+        uid: 'me',
+        now: now,
+      );
+      expect(result.map((r) => r.itemId), ['friend-normal']);
     });
 
     test('a PENDING item is not reminded — consent is the premise', () {

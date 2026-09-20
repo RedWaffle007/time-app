@@ -51,7 +51,7 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
     // synchronous build, and a platform call has no place there either.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      ref.read(alarmSoundProvider).start();
+      ref.read(alarmSoundProvider).start(widget.itemId);
       // `dismiss` here means "cancel the OS notification for this item" — it
       // stops the insistent notification tone now that the service owns the
       // sound. It does not navigate; that is `_leave`.
@@ -72,7 +72,7 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
   Future<void> _leave() async {
     if (_dismissing) return;
     _dismissing = true;
-    await ref.read(alarmSoundProvider).stop();
+    await ref.read(alarmSoundProvider).stop(widget.itemId);
     if (!mounted) return;
     if (widget.itemId.isNotEmpty) {
       // Set the highlight intent BEFORE navigating — the deterministic signal
@@ -89,10 +89,9 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
     // on a cold full-screen launch it may still be loading — the alarm is real
     // regardless, so this renders and rings with a generic title until the
     // stream resolves rather than blocking on it.
-    final item = ref.watch(allItemsAsTargetProvider).maybeWhen(
-          data: _find,
-          orElse: () => null,
-        );
+    final item = ref
+        .watch(allItemsAsTargetProvider)
+        .maybeWhen(data: _find, orElse: () => null);
 
     // Back / gesture-dismiss must also stop the tone, never leave it ringing.
     return PopScope(
@@ -108,8 +107,11 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const Spacer(),
-                Icon(AppIcons.reminders,
-                    size: Sizes.emptyStateIcon, color: context.attention),
+                Icon(
+                  AppIcons.reminders,
+                  size: Sizes.emptyStateIcon,
+                  color: context.attention,
+                ),
                 const SizedBox(height: Space.xl),
                 Text(
                   item?.title ?? 'Reminder',
@@ -120,10 +122,14 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
                   const SizedBox(height: Space.sm),
                   Text(
                     formatInstant(
-                        context, item.scheduledInstantUtc, item.timezone),
+                      context,
+                      item.scheduledInstantUtc,
+                      item.timezone,
+                    ),
                     textAlign: TextAlign.center,
-                    style: context.text.bodyMedium
-                        ?.copyWith(color: context.colors.onSurfaceVariant),
+                    style: context.text.bodyMedium?.copyWith(
+                      color: context.colors.onSurfaceVariant,
+                    ),
                   ),
                 ],
                 if (item?.note != null && item!.note!.trim().isNotEmpty) ...[

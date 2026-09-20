@@ -99,16 +99,16 @@ void main() {
     expect(repo.deletes, [slot10]);
   });
 
-  test('leaves a live FUTURE item’s lock alone — no read, no delete', () async {
+  test('releases a live future item’s obsolete lock', () async {
     final repo = FakeSlotLockRepository({slotIndexFor(future): 'a'});
     final released = await SlotLockReconciler(repo).reconcile(
       targetUid: 'B',
       now: now,
       items: [item(id: 'a', instantUtc: future)], // approved, future
     );
-    expect(released, isEmpty);
-    expect(repo.deletes, isEmpty);
-    expect(repo.reads, isEmpty, reason: 'a live future slot is never probed');
+    expect(released, {slotIndexFor(future)});
+    expect(repo.deletes, [slotIndexFor(future)]);
+    expect(repo.reads, [slotIndexFor(future)]);
   });
 
   test('is idempotent — a second pass with the lock gone deletes nothing',
@@ -126,10 +126,7 @@ void main() {
     expect(repo.deletes, [slot10], reason: 'deleted once, not twice');
   });
 
-  test('collision guard — a live FUTURE item protects a shared lock', () async {
-    // Two items in one FUTURE slot, the live one owns the lock. The dead item
-    // must not free it: the live future item keeps the slot, excluded before any
-    // read.
+  test('removes a shared future lock when its owner is known', () async {
     final repo = FakeSlotLockRepository({slotIndexFor(future): 'live'});
     final released = await SlotLockReconciler(repo).reconcile(
       targetUid: 'B',
@@ -139,8 +136,8 @@ void main() {
         item(id: 'live', instantUtc: future.add(const Duration(minutes: 15))),
       ],
     );
-    expect(released, isEmpty);
-    expect(repo.deletes, isEmpty);
+    expect(released, {slotIndexFor(future)});
+    expect(repo.deletes, [slotIndexFor(future)]);
   });
 
   test('a lock naming an id not in the stream is left untouched', () async {

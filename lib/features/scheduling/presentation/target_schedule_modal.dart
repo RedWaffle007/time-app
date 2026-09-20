@@ -25,8 +25,8 @@ class SlotChoice {
 /// **The "view B's schedule" modal** (UI-RULES.md §6.11).
 ///
 /// Opens over the schedule builder so a planner can see what the target already
-/// has booked before choosing a time, and cannot choose a half-hour that is
-/// taken.
+/// has planned before choosing a time. Existing items are context, not blockers:
+/// schedule items are point alarms and have no duration.
 ///
 /// **A function, not a route** — like every other dialog and sheet here. It is
 /// transient state inside a form, not a location: a shared link or a rotation
@@ -123,7 +123,10 @@ class _TargetScheduleModalState extends ConsumerState<_TargetScheduleModal> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 _header(context),
-                Divider(height: Sizes.hairline, color: context.colors.outlineVariant),
+                Divider(
+                  height: Sizes.hairline,
+                  color: context.colors.outlineVariant,
+                ),
                 Flexible(
                   // A `permission-denied` here is not a fault to retry — it is
                   // the expected two-device state: the target has a live grant
@@ -139,7 +142,8 @@ class _TargetScheduleModalState extends ConsumerState<_TargetScheduleModal> {
                       : AsyncView<List<ScheduleItem>>(
                           value: itemsAsync,
                           onRetry: () => ref.invalidate(
-                              targetScheduleProvider(widget.targetUid)),
+                            targetScheduleProvider(widget.targetUid),
+                          ),
                           builder: (context, items) =>
                               _slotList(context, items),
                         ),
@@ -154,7 +158,12 @@ class _TargetScheduleModalState extends ConsumerState<_TargetScheduleModal> {
 
   Widget _header(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(Space.lg, Space.md, Space.sm, Space.md),
+      padding: const EdgeInsets.fromLTRB(
+        Space.lg,
+        Space.md,
+        Space.sm,
+        Space.md,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -199,16 +208,19 @@ class _TargetScheduleModalState extends ConsumerState<_TargetScheduleModal> {
           // exact confusion this modal exists to prevent (UI-RULES.md §6.11).
           Row(
             children: [
-              Icon(AppIcons.timezone,
-                  size: Sizes.inlineIcon,
-                  color: context.colors.onSurfaceVariant),
+              Icon(
+                AppIcons.timezone,
+                size: Sizes.inlineIcon,
+                color: context.colors.onSurfaceVariant,
+              ),
               const SizedBox(width: Space.sm),
               Expanded(
                 child: Text(
                   'Times below are ${widget.targetName}\'s local time '
                   '(${widget.targetTimezone}).',
-                  style: context.text.bodySmall
-                      ?.copyWith(color: context.colors.onSurfaceVariant),
+                  style: context.text.bodySmall?.copyWith(
+                    color: context.colors.onSurfaceVariant,
+                  ),
                 ),
               ),
             ],
@@ -233,19 +245,25 @@ class _TargetScheduleModalState extends ConsumerState<_TargetScheduleModal> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(AppIcons.pending,
-                size: Sizes.emptyStateIcon,
-                color: context.colors.onSurfaceVariant),
+            Icon(
+              AppIcons.pending,
+              size: Sizes.emptyStateIcon,
+              color: context.colors.onSurfaceVariant,
+            ),
             const SizedBox(height: Space.md),
-            Text("Can't load their schedule yet",
-                style: context.text.titleMedium, textAlign: TextAlign.center),
+            Text(
+              "Can't load their schedule yet",
+              style: context.text.titleMedium,
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: Space.sm),
             Text(
               'Ask ${widget.targetName} to open the app once so their '
               'schedule can sync, then reopen this.',
               textAlign: TextAlign.center,
-              style: context.text.bodySmall
-                  ?.copyWith(color: context.colors.onSurfaceVariant),
+              style: context.text.bodySmall?.copyWith(
+                color: context.colors.onSurfaceVariant,
+              ),
             ),
           ],
         ),
@@ -269,10 +287,11 @@ class _TargetScheduleModalState extends ConsumerState<_TargetScheduleModal> {
           Padding(
             padding: const EdgeInsets.fromLTRB(Space.lg, Space.sm, Space.lg, 0),
             child: Text(
-              'Next free: '
+              'Next available: '
               '${formatInstantTime(context, hint.startUtc, widget.targetTimezone)}',
-              style: context.text.bodySmall
-                  ?.copyWith(color: context.colors.onSurfaceVariant),
+              style: context.text.bodySmall?.copyWith(
+                color: context.colors.onSurfaceVariant,
+              ),
             ),
           ),
         for (final slot in slots)
@@ -281,11 +300,8 @@ class _TargetScheduleModalState extends ConsumerState<_TargetScheduleModal> {
             timezone: widget.targetTimezone,
             onTap: slot.isSelectable
                 ? () => Navigator.of(context).pop(
-                      SlotChoice(
-                        startUtc: slot.startUtc,
-                        slotIndex: slot.index,
-                      ),
-                    )
+                    SlotChoice(startUtc: slot.startUtc, slotIndex: slot.index),
+                  )
                 : null,
           ),
       ],
@@ -295,9 +311,7 @@ class _TargetScheduleModalState extends ConsumerState<_TargetScheduleModal> {
 
 /// One half-hour.
 ///
-/// **Blocked slots are disabled, not hidden.** The planner has to see *why* a
-/// time is unavailable — a gap where a conflict lives is indistinguishable from
-/// free time, and showing the target's day is the whole point.
+/// Existing items remain visible, but only elapsed time disables a row.
 class _SlotRow extends ConsumerWidget {
   const _SlotRow({
     required this.slot,
@@ -343,8 +357,9 @@ class _SlotRow extends ConsumerWidget {
                 if (showMine)
                   Text(
                     '${formatInstantTime(context, slot.startUtc, myZone)} yours',
-                    style: context.text.labelSmall
-                        ?.copyWith(color: context.colors.onSurfaceVariant),
+                    style: context.text.labelSmall?.copyWith(
+                      color: context.colors.onSurfaceVariant,
+                    ),
                   ),
               ],
             ),
@@ -355,7 +370,9 @@ class _SlotRow extends ConsumerWidget {
                   // status mapping — the planner can see what it is, which is
                   // what the grant entitles them to.
                   ? Text(
-                      occupant.title,
+                      slot.occupants.length == 1
+                          ? occupant.title
+                          : '${occupant.title} +${slot.occupants.length - 1} more',
                       style: context.text.bodyMedium,
                       overflow: TextOverflow.ellipsis,
                     )
@@ -364,8 +381,9 @@ class _SlotRow extends ConsumerWidget {
                   // on anyone here (UI-RULES.md §6.11).
                   : Text(
                       slot.isPast ? 'Past' : 'Free',
-                      style: context.text.bodySmall
-                          ?.copyWith(color: context.colors.onSurfaceVariant),
+                      style: context.text.bodySmall?.copyWith(
+                        color: context.colors.onSurfaceVariant,
+                      ),
                     ),
             ),
             if (occupant != null) ...[

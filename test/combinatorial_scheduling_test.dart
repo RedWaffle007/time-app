@@ -131,7 +131,8 @@ void main() {
         expect(blocksSlot(item), shouldBlock);
         expect(
           isInstantBookable(instantUtc: instant, items: [item], now: now),
-          isFuture && !shouldBlock,
+          isFuture,
+          reason: 'existing point alarms never block another plan',
         );
       }
 

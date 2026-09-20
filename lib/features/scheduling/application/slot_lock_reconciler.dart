@@ -9,30 +9,11 @@ import '../domain/schedule_item.dart';
 import 'schedule_providers.dart';
 import 'slot_availability.dart';
 
-/// Keeps `scheduleSlots` in step with the item stream, **off the stream, never
-/// off transitions** — the fourth wire of the same shape as reminders, stats and
-/// planner-access.
+/// Removes legacy `scheduleSlots` locks from the item stream.
 ///
-/// ## The gap it closes
-///
-/// A slot lock is born in `createItem`'s batch and released in `withdraw()` /
-/// `reject()`. Nothing releases it when an item is marked done or skipped, and a
-/// release that fails while offline leaks one too. Each stale lock blocks a
-/// half-hour the UI already shows as free — the UI reads the item stream
-/// (`blocksSlot`), the write-race guard reads the lock, and the two drift.
-///
-/// ## The one design rule, and do not undo it
-///
-/// There is **no** `releaseSlot()` added to `markDone()` / `markSkipped()`. One
-/// rule — *a lock should exist iff a live item sits in its slot* — is applied to
-/// whatever the stream currently says. Done, skipped, an edit, a withdrawal:
-/// none is a special case, because each simply stops producing a live item at
-/// that slot. Adding a per-transition release would create a second place that
-/// decides, and the two would disagree — and it would still not clean up the
-/// locks that have already leaked. This does both.
-///
-/// It creates nothing: writing the lock stays inside `createItem`'s batch, so
-/// the lock and its item are never split. This wire only DELETES stale locks.
+/// New items do not create locks: schedule entries are point alarms with no
+/// duration, so several may share a half-hour. This reconciler remains wired
+/// temporarily so existing installations self-clean the old blocker documents.
 class SlotLockReconciler {
   SlotLockReconciler(this._repository);
 
@@ -43,13 +24,12 @@ class SlotLockReconciler {
   /// the same lock documents.
   bool _running = false;
 
-  /// Release every stale lock implied by [items] for [targetUid].
+  /// Release every legacy lock implied by [items] for [targetUid].
   ///
   /// Idempotent, which is what makes it safe on every emission and at app start:
   /// a lock already gone reads as no owner and is skipped. Returns the slot
   /// indexes it actually released, so a test asserts the effect, not the calls.
-  /// [now] defaults to the real clock; a test injects a fixed instant so the
-  /// past/future split is deterministic.
+  /// [now] is retained for call-site compatibility during the migration.
   Future<Set<int>> reconcile({
     required String targetUid,
     required List<ScheduleItem> items,
@@ -58,8 +38,6 @@ class SlotLockReconciler {
     if (_running) return const <int>{};
     _running = true;
     try {
-      // `now` decides which slots are past (and so releasable) — read once, here,
-      // so the whole pass sees one consistent clock.
       final releasable =
           releasableSlotLocks(items, (now ?? DateTime.now()).toUtc());
       final released = <int>{};
@@ -67,9 +45,8 @@ class SlotLockReconciler {
         final owner =
             await _repository.lockOwner(targetUid: targetUid, slotIndex: entry.key);
         if (owner == null) continue; // no lock present — nothing to release
-        // Collision guard: the lock must name one of the dead items we found in
-        // this slot. A lock naming anything else (a live item sharing the slot
-        // in legacy data, or an id not in the stream) is left untouched.
+        // Delete only a lock owned by one of this slot's known items. An
+        // unaccounted-for lock remains untouched.
         if (!entry.value.contains(owner)) continue;
         await _repository.release(targetUid: targetUid, slotIndex: entry.key);
         released.add(entry.key);

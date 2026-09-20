@@ -175,11 +175,17 @@ class MainActivity : FlutterFragmentActivity() {
                 when (call.method) {
                     "start" -> {
                         showOverLockAndWake(true)
-                        AlarmSoundService.start(this)
+                        AlarmSoundService.startForItem(
+                            this,
+                            call.argument<String>("itemId") ?: "",
+                        )
                         result.success(null)
                     }
                     "stop" -> {
-                        AlarmSoundService.stop(this)
+                        AlarmSoundService.stopForItem(
+                            this,
+                            call.argument<String>("itemId") ?: "",
+                        )
                         showOverLockAndWake(false)
                         result.success(null)
                     }

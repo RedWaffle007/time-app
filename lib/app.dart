@@ -216,8 +216,13 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     debugPrint('FCM foreground: ${message.data}');
     // In the foreground the `notification` block is delivered but NOT rendered
     // by the OS; render it ourselves. Data-only messages have nothing to show.
-    final title = message.notification?.title;
-    final body = message.notification?.body;
+    // Emergency-created messages are data-only so Android invokes the
+    // background alarm installer. In the foreground there is no background
+    // isolate, so use the Worker-provided display copy for the same banner.
+    final title =
+        message.notification?.title ?? (message.data['pushTitle'] as String?);
+    final body =
+        message.notification?.body ?? (message.data['pushBody'] as String?);
     if (title == null && body == null) return;
 
     final messenger = _scaffoldMessengerKey.currentState;
@@ -340,14 +345,10 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     // There is deliberately NO mirror write inside `setPlannerGrant()`.
     ref.watch(plannerAccessSyncProvider);
 
-    // THE SLOT-LOCK WIRE — the same shape a fourth time. A `scheduleSlots` lock
-    // is born in `createItem`'s batch but released only on withdraw/reject, so a
-    // done/skipped item (or a release that missed while offline) leaves a stale
-    // lock that blocks a half-hour the UI already shows as free. This reconciles
-    // the locks against the item stream — a lock survives iff a live item sits
-    // in its slot — and so it self-heals locks that already leaked.
-    //
-    // There is deliberately NO `releaseSlot()` inside `markDone()`/`markSkipped()`.
+    // LEGACY SLOT-LOCK CLEANUP. New plans no longer create 30-minute locks:
+    // schedule entries are point alarms and may share a half-hour. Keep this
+    // stream-driven cleanup wired while existing installations delete locks
+    // created by older builds.
     ref.watch(slotLockSyncProvider);
 
     // THE END-OF-DAY LAPSE WIRE — the same shape a fifth time. An item nobody

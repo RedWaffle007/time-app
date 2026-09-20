@@ -63,7 +63,9 @@ export async function sendEventNotification(ctx, { event, targetUid, itemId }) {
 
   const plannerUid = item.createdByUid;
   const groupId = item.groupId;
-  if (!plannerUid || !groupId) return result(0, 0, null, 'item-missing-fields');
+  if (!plannerUid || typeof groupId !== 'string') {
+    return result(0, 0, null, 'item-missing-fields');
+  }
 
   // A self-planned item (creator == target) has no second party — nobody to
   // notify, for ANY event.
@@ -84,8 +86,17 @@ export async function sendEventNotification(ctx, { event, targetUid, itemId }) {
   const recipientUid = NOTIFIES_TARGET.has(event) ? targetUid : plannerUid;
 
   // Active grant required in BOTH directions — a revoked grant means no push,
-  // whichever way the notification flows. The grant id is deterministic.
-  const grantPath = `groups/${groupId}/plannerGrants/${plannerUid}_${targetUid}`;
+  // whichever way the notification flows. Group plans carry a group id;
+  // friendship plans deliberately carry an empty one and use the sorted-pair
+  // friendship subtree. Emergency permission is independent from normal
+  // friendship permission, so its item tier selects emergencyGrants.
+  const grantId = `${plannerUid}_${targetUid}`;
+  const pairId = [plannerUid, targetUid].sort().join('_');
+  const grantPath = groupId
+    ? `groups/${groupId}/plannerGrants/${grantId}`
+    : `friendships/${pairId}/${item.tier === 'emergency'
+        ? 'emergencyGrants'
+        : 'plannerGrants'}/${grantId}`;
   const grant = await ctx.db.getDoc(grantPath);
   if (!grant || grant.granted !== true) {
     return result(0, 0, recipientUid, 'no-active-grant');
@@ -158,7 +169,7 @@ function deriveEvent(event, item) {
 // skip/reject reason beyond what the recipient already has. `data` drives
 // tap-routing (see app.dart _handleTap) — `type` is kept for back-compat with
 // the outcome-only payload; `event` is the discriminator going forward.
-function buildMessage(event, subtype, item, targetUid, itemId) {
+export function buildMessage(event, subtype, item, targetUid, itemId) {
   const title = (item.title || 'your scheduled item').toString();
 
   let notification;
@@ -181,16 +192,41 @@ function buildMessage(event, subtype, item, targetUid, itemId) {
       break;
   }
 
-  return {
-    notification,
-    data: {
-      type: event === 'outcome' ? 'outcome' : event,
-      event,
-      targetUid,
-      itemId,
-      ...(subtype ? { subtype } : {}),
-    },
+  const data = {
+    type: event === 'outcome' ? 'outcome' : event,
+    event,
+    targetUid,
+    itemId,
+    ...(subtype ? { subtype } : {}),
   };
+
+  // An emergency item is born approved on somebody else's device. A normal
+  // notification payload would be drawn by Android while the app is killed,
+  // but Dart would never run and therefore could not arm the due-time alarm.
+  // Send this one as HIGH-priority data so the registered background handler
+  // runs and installs the local alarm. Every data value must be a string for
+  // FCM HTTP v1.
+  const isRemoteAlarm = event === 'created'
+    && item.status === 'approved'
+    && item.tier === 'emergency';
+  if (isRemoteAlarm) {
+    return {
+      android: { priority: 'high' },
+      data: {
+        ...data,
+        command: 'scheduleReminder',
+        fireAtUtc: String(item.scheduledInstantUtc || ''),
+        title,
+        body: item.note
+          ? String(item.note)
+          : 'Tap to mark it done or skip.',
+        pushTitle: 'New emergency plan for you',
+        pushBody: title,
+      },
+    };
+  }
+
+  return { notification, data };
 }
 
 function result(sent, cleaned, recipientUid, reason) {

@@ -30,6 +30,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  alarm_delivery_bridge:
+    path: packages/alarm_delivery_bridge
   flutter_localizations:
     sdk: flutter
   # Version is constrained by flutter_localizations; `any` lets it resolve.

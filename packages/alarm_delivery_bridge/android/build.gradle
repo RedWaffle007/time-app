@@ -1,0 +1,13 @@
+plugins {
+    id "com.android.library"
+}
+
+android {
+    namespace = "com.timeapp.alarm_delivery_bridge"
+    compileSdk = 36
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}

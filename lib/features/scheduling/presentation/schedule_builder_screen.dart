@@ -19,9 +19,8 @@ import '../../groups/domain/planner_grant.dart';
 import '../../notifications/application/outcome_notifier.dart';
 import '../../social/application/social_providers.dart';
 import '../application/schedule_providers.dart';
-import '../application/slot_availability.dart';
 import '../application/target_schedule_providers.dart';
-import '../data/schedule_repository.dart';
+import '../application/planning_target_picker.dart';
 import '../domain/schedule_item.dart';
 import 'target_schedule_modal.dart';
 
@@ -203,7 +202,9 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
   Future<void> _save(String timezone) async {
     final me = ref.read(authRepositoryProvider).currentUser;
     if (me == null || _targetUid == null) return;
-    if (!_isSelf && _groupId == null) return; // planning for others needs a group
+    if (!_isSelf && _groupId == null) {
+      return; // planning for others needs a group
+    }
 
     final wall = _wall();
     final instantUtc = resolveWallTimeToUtc(wall, timezone);
@@ -224,35 +225,10 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       return;
     }
 
-    // One more check against the live stream before writing. The modal's view
-    // can be seconds stale, and the planner may also have typed a time with the
-    // plain pickers without ever opening it.
-    //
-    // This is a COURTESY, not the guarantee: it reads the same client-side
-    // stream the modal drew from, so it cannot see a write that landed
-    // milliseconds ago. The guarantee is the slot lock inside `createItem`,
-    // which fails the batch atomically. This exists so the common case gets a
-    // clear message instead of a failed write.
-    if (!_isSelf) {
-      final items = ref.read(targetScheduleProvider(_targetUid!)).value;
-      if (items != null &&
-          !isInstantBookable(
-            instantUtc: instantUtc,
-            items: items,
-            now: DateTime.now().toUtc(),
-          )) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('That half-hour is taken. Pick another slot.'),
-          ),
-        );
-        return;
-      }
-    }
-
     // Emergency is re-checked against the live grant at save time, so a grant
     // revoked while the form sat open cannot slip an auto-approved item through.
-    final isEmergency = !_isSelf &&
+    final isEmergency =
+        !_isSelf &&
         _emergency &&
         (ref.read(iCanEmergencyPlanForProvider(_targetUid!)).value ?? false);
 
@@ -260,7 +236,9 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     try {
       // Self-authored AND emergency items are born approved (skip the queue);
       // normal planner items stay pending for the target to approve.
-      final itemId = await ref.read(scheduleRepositoryProvider).createItem(
+      final itemId = await ref
+          .read(scheduleRepositoryProvider)
+          .createItem(
             targetUid: _targetUid!,
             createdByUid: me.uid,
             groupId: _isSelf ? null : _groupId,
@@ -275,24 +253,30 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
           );
       // Notify the target that a plan was created for them. Self-planned items
       // have no one else to tell (the Worker would skip them anyway).
+      NotificationDeliveryResult? delivery;
       if (!_isSelf) {
-        // Best-effort, NOT awaited: `notify()` refreshes the auth token, which
-        // has no timeout and hangs on a degraded network — the write above is
-        // already durable, so the push must never block this flow.
-        unawaited(ref.read(notificationEventNotifierProvider).notify(
+        delivery = await ref
+            .read(notificationEventNotifierProvider)
+            .notifyConfirmed(
               event: NotifyEvent.created,
               targetUid: _targetUid!,
               itemId: itemId,
-            ));
+            );
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(_isSelf
-              ? 'Added to your schedule.'
-              : isEmergency
-                  ? 'Emergency item added — it will fire without approval.'
-                  : 'Item sent for approval.'),
+          content: Text(
+            delivery != null && !delivery.delivered
+                ? 'Plan saved, but the notification was not delivered '
+                      '(${delivery.reason}). Ask your friend to open or update '
+                      'Checkmate, then try again.'
+                : _isSelf
+                ? 'Added to your schedule.'
+                : isEmergency
+                ? 'Emergency item added — it will fire without approval.'
+                : 'Item sent for approval.',
+          ),
         ),
       );
       // Reset for the next item, keep the same target.
@@ -303,19 +287,11 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
         _time = null;
         _emergency = false;
       });
-    } on SlotTakenException catch (e) {
-      // The write was rejected because the slot was claimed between this
-      // planner opening the modal and submitting — the stale-view case. Its
-      // message is already written for the user, so it is shown as-is rather
-      // than wrapped in "Failed:".
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.message)));
-      }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Failed: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed: $e')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -333,21 +309,23 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       body: AsyncView<List<PlannerGrant>>(
         value: targetsAsync,
         onRetry: () => ref.invalidate(myPlanningTargetsProvider),
-        builder: (context, grants) => _buildForm(grants),
+        builder: (context, grants) => _buildForm(uniquePlanningTargets(grants)),
       ),
     );
   }
 
   Widget _buildForm(List<PlannerGrant> grants) {
     // Resolve the selected target's profile (name + timezone).
-    final selectedProfile =
-        _targetUid == null ? null : ref.watch(profileByUidProvider(_targetUid!)).value;
+    final selectedProfile = _targetUid == null
+        ? null
+        : ref.watch(profileByUidProvider(_targetUid!)).value;
     final timezone = selectedProfile?.homeTimezone;
 
     // Planning for someone else, with a live grant and their zone resolved:
     // surface their schedule up front. Same fact the button and the modal read
     // are gated on (`plannerGrants`) — no grant, no preview and no button.
-    final canViewTarget = !_isSelf &&
+    final canViewTarget =
+        !_isSelf &&
         _targetUid != null &&
         ref.watch(canViewTargetScheduleProvider(_targetUid!));
     if (canViewTarget && timezone != null) {
@@ -355,7 +333,8 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     }
 
     // Whether I hold the SEPARATE emergency grant over this (non-self) target.
-    final canEmergency = !_isSelf &&
+    final canEmergency =
+        !_isSelf &&
         _targetUid != null &&
         (ref.watch(iCanEmergencyPlanForProvider(_targetUid!)).value ?? false);
     final isEmergency = canEmergency && _emergency;
@@ -383,9 +362,10 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
                 _isSelf
                     ? "You're building in your local time — $timezone."
                     : "You're building in ${selectedProfile?.name ?? 'their'} "
-                        "local time — $timezone.",
-                style: context.text.bodySmall
-                    ?.copyWith(color: context.colors.onSurfaceVariant),
+                          "local time — $timezone.",
+                style: context.text.bodySmall?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
               ),
             ),
           const SizedBox(height: Space.lg),
@@ -417,9 +397,11 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
                 child: OutlinedButton.icon(
                   onPressed: _pickDate,
                   icon: const Icon(AppIcons.date),
-                  label: Text(_date == null
-                      ? 'Pick date'
-                      : formatWallDate(context, _date!)),
+                  label: Text(
+                    _date == null
+                        ? 'Pick date'
+                        : formatWallDate(context, _date!),
+                  ),
                 ),
               ),
               const SizedBox(width: Space.md),
@@ -427,9 +409,11 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
                 child: OutlinedButton.icon(
                   onPressed: _pickTime,
                   icon: const Icon(AppIcons.time),
-                  label: Text(_time == null
-                      ? 'Pick time'
-                      : formatTimeOfDay(context, _time!)),
+                  label: Text(
+                    _time == null
+                        ? 'Pick time'
+                        : formatTimeOfDay(context, _time!),
+                  ),
                 ),
               ),
             ],
@@ -459,8 +443,9 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
             const SizedBox(height: Space.lg),
             Text(
               'Fires at: ${_previewLocal(context, timezone)}  ($timezone)',
-              style: context.text.bodySmall
-                  ?.copyWith(color: context.colors.onSurfaceVariant),
+              style: context.text.bodySmall?.copyWith(
+                color: context.colors.onSurfaceVariant,
+              ),
             ),
             _dstBanner(timezone),
             _warningBanner(
@@ -471,18 +456,22 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
           ],
           const SizedBox(height: Space.xl),
           FilledButton(
-            onPressed: (_canSave && timezone != null) ? () => _save(timezone) : null,
+            onPressed: (_canSave && timezone != null)
+                ? () => _save(timezone)
+                : null,
             child: _saving
                 ? const SizedBox(
                     height: Sizes.buttonSpinner,
                     width: Sizes.buttonSpinner,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : Text(_isSelf
-                    ? 'Add to my schedule'
-                    : isEmergency
+                : Text(
+                    _isSelf
+                        ? 'Add to my schedule'
+                        : isEmergency
                         ? 'Add emergency item'
-                        : 'Send for approval'),
+                        : 'Send for approval',
+                  ),
           ),
         ],
       ],
@@ -548,12 +537,12 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
   // silently normalized by the PLANNER's device zone if those fields land in a
   // DST gap there, corrupting the time before it ever reaches the resolver.
   DateTime _wall() => DateTime.utc(
-        _date!.year,
-        _date!.month,
-        _date!.day,
-        _time!.hour,
-        _time!.minute,
-      );
+    _date!.year,
+    _date!.month,
+    _date!.day,
+    _time!.hour,
+    _time!.minute,
+  );
 
   /// Non-blocking warning if the chosen time lands in the target's quiet hours
   /// or the fixed 11pm–6am band. Warning-only — the save button still works;
@@ -589,10 +578,12 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     final actual = formatInstant(context, res.utc, timezone);
     final text = switch (res.anomaly) {
       DstAnomaly.none => null,
-      DstAnomaly.skipped => "That clock time doesn't exist on this date — "
-          "clocks spring forward. It'll fire at $actual instead.",
-      DstAnomaly.ambiguous => 'That clock time happens twice on this date — '
-          'clocks fall back. It\'ll use the first: $actual.',
+      DstAnomaly.skipped =>
+        "That clock time doesn't exist on this date — "
+            "clocks spring forward. It'll fire at $actual instead.",
+      DstAnomaly.ambiguous =>
+        'That clock time happens twice on this date — '
+            'clocks fall back. It\'ll use the first: $actual.',
     };
     return text == null ? const SizedBox.shrink() : WarningPanel(text);
   }

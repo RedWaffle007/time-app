@@ -3,14 +3,12 @@ import 'schedule_item.dart';
 
 /// **The slot grid.** Pure — no plugins, no clock, no Firestore.
 ///
-/// A slot is a fixed 30-minute bucket. It is NOT a duration on the item:
-/// `ScheduleItem` carries an instant and has no duration field, and adding one
-/// is the goals-phase decision DECISIONS.md defers. The bucket is a *view and
-/// locking* device so "this time is taken" can mean something at all.
-/// (DECISIONS.md → "View B's schedule modal + slot conflicts".)
+/// A slot is a fixed 30-minute DISPLAY bucket. It is NOT a duration on the
+/// item: `ScheduleItem` carries an instant and has no duration field. Multiple
+/// items may share a bucket; these helpers only group the target's schedule for
+/// the planner preview and identify old lock documents during migration.
 
-/// Minutes per slot. One place; the lock ids in Firestore are derived from it,
-/// so changing it invalidates every existing lock.
+/// Minutes per display slot. Legacy Firestore lock ids were derived from it.
 const int kSlotMinutes = 30;
 
 const int _msPerSlot = kSlotMinutes * 60 * 1000;
@@ -47,15 +45,11 @@ DateTime slotEndUtc(int index) => slotStartUtc(index + 1);
 /// it can construct the path, and it cannot run a query.
 String slotLockId(int index) => index.toString();
 
-/// Does this item make its slot unavailable?
+/// Should this live item appear in its display slot?
 ///
-/// **Only a LIVE item blocks.** A pending plan blocks because the target may yet
-/// approve it, and double-booking a slot that is one tap from being real is the
-/// thing this feature prevents. Rejected and withdrawn plans are dead, and an
-/// item with an outcome is finished — none of them can claim a slot.
-///
-/// Same shape as `desiredReminders()`' rule, and for the same reason: one
-/// predicate over whatever the stream currently says, not a set of transitions.
+/// Pending and approved items are useful schedule context. Rejected, withdrawn,
+/// completed, and skipped items no longer belong in the live preview. Despite
+/// the legacy name, a true result does not prevent another plan at that time.
 bool blocksSlot(ScheduleItem item) =>
     item.outcome == null &&
     (item.status == ScheduleItemStatus.pending ||

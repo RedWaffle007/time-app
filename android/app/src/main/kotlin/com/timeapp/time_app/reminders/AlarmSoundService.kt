@@ -44,6 +44,11 @@ class AlarmSoundService : Service() {
     companion object {
         const val ACTION_START = "com.timeapp.time_app.ALARM_START"
         const val ACTION_STOP = "com.timeapp.time_app.ALARM_STOP"
+        private const val ACTION_STOP_NOTIFICATION =
+            "com.timeapp.time_app.ALARM_STOP_NOTIFICATION"
+        private const val ACTION_STOP_ITEM = "com.timeapp.time_app.ALARM_STOP_ITEM"
+        private const val EXTRA_NOTIFICATION_ID = "notification_id"
+        private const val EXTRA_ITEM_ID = "item_id"
 
         private const val CHANNEL_ID = "time_app_alarm_ringing"
         // Fixed id: there is only ever one alarm ringing, and re-posting under the
@@ -53,22 +58,50 @@ class AlarmSoundService : Service() {
         private const val MAX_MS = 10L * 60L * 1000L
         private const val TAG = "AlarmSound"
 
-        fun start(context: Context) {
+        fun start(context: Context, notificationId: Int, itemId: String) {
             val intent = Intent(context, AlarmSoundService::class.java)
                 .setAction(ACTION_START)
+                .putExtra(EXTRA_NOTIFICATION_ID, notificationId)
+                .putExtra(EXTRA_ITEM_ID, itemId)
             ContextCompat.startForegroundService(context, intent)
         }
 
-        fun stop(context: Context) {
+        /** UI fallback when native delivery did not run first. */
+        fun startForItem(context: Context, itemId: String) = start(context, -1, itemId)
+
+        fun stopForItem(context: Context, itemId: String) {
             // Not startForeground: a stop must never (re)promote the service.
             val intent = Intent(context, AlarmSoundService::class.java)
-                .setAction(ACTION_STOP)
+                .setAction(ACTION_STOP_ITEM)
+                .putExtra(EXTRA_ITEM_ID, itemId)
             context.startService(intent)
+        }
+
+        fun stopForNotification(context: Context, notificationId: Int) {
+            val intent = Intent(context, AlarmSoundService::class.java)
+                .setAction(ACTION_STOP_NOTIFICATION)
+                .putExtra(EXTRA_NOTIFICATION_ID, notificationId)
+            try {
+                context.startService(intent)
+            } catch (_: Throwable) {
+                // If no service exists Android may reject a background start;
+                // there is then no playback to stop.
+            }
+        }
+
+        fun stopAll(context: Context) {
+            val intent = Intent(context, AlarmSoundService::class.java).setAction(ACTION_STOP)
+            try {
+                context.startService(intent)
+            } catch (_: Throwable) {
+            }
         }
     }
 
     private var player: MediaPlayer? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private val activeNotifications = mutableMapOf<Int, String>()
+    private val activeUiItems = mutableSetOf<String>()
     private val handler = Handler(Looper.getMainLooper())
     private val autoStop = Runnable {
         Log.i(TAG, "10-minute safety cap reached — stopping")
@@ -80,10 +113,43 @@ class AlarmSoundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
+                Log.i(TAG, "stop all")
                 stopAlarm()
                 return START_NOT_STICKY
             }
-            else -> startAlarm()
+            ACTION_STOP_NOTIFICATION -> {
+                val notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, -1)
+                Log.i(TAG, "release notification owner $notificationId")
+                activeNotifications.remove(notificationId)
+                if (activeNotifications.isEmpty() && activeUiItems.isEmpty()) stopAlarm()
+                return START_NOT_STICKY
+            }
+            ACTION_STOP_ITEM -> {
+                val itemId = intent.getStringExtra(EXTRA_ITEM_ID) ?: ""
+                Log.i(TAG, "stop item $itemId")
+                activeNotifications.entries.removeAll { it.value == itemId }
+                activeUiItems.remove(itemId)
+                if (activeNotifications.isEmpty() && activeUiItems.isEmpty()) stopAlarm()
+                return START_NOT_STICKY
+            }
+            else -> {
+                val notificationId = intent?.getIntExtra(EXTRA_NOTIFICATION_ID, -1) ?: -1
+                val itemId = intent?.getStringExtra(EXTRA_ITEM_ID) ?: ""
+                if (itemId.isNotEmpty()) {
+                    if (notificationId >= 0) {
+                        Log.i(TAG, "claim notification owner $notificationId")
+                        activeNotifications[notificationId] = itemId
+                    } else {
+                        // AlarmScreen owns playback independently from the fired
+                        // notification. It immediately cancels that notification
+                        // to prevent a second tone; retaining this UI owner keeps
+                        // the service ringing until the user actually dismisses.
+                        Log.i(TAG, "claim UI owner $itemId")
+                        activeUiItems.add(itemId)
+                    }
+                }
+                startAlarm()
+            }
         }
         // NOT sticky: if the system kills us under memory pressure we do not want
         // a silent restart with no wake lock and no UI resurrecting the alarm.
@@ -150,6 +216,8 @@ class AlarmSoundService : Service() {
         player = null
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
+        activeNotifications.clear()
+        activeUiItems.clear()
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -197,17 +265,25 @@ class AlarmSoundService : Service() {
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(launchAlarmUi())
-            .setFullScreenIntent(launchAlarmUi(), true)
             .build()
 
-    /** Brings the app (and so the alarm screen it is showing) back to the front. */
+    /**
+     * Uses flutter_local_notifications' own tap contract so tapping either the
+     * scheduled reminder or this foreground-service notification reaches the
+     * same AlarmScreen. This matters when an OEM hides one of the two entries.
+     */
     private fun launchAlarmUi(): PendingIntent {
+        val alarm = activeNotifications.entries.lastOrNull()
+        val itemId = alarm?.value ?: activeUiItems.lastOrNull().orEmpty()
         val intent = Intent(this, MainActivity::class.java).apply {
+            action = "SELECT_NOTIFICATION"
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("notificationId", alarm?.key ?: NOTIF_ID)
+            putExtra("payload", itemId)
         }
         return PendingIntent.getActivity(
             this,
-            0,
+            NOTIF_ID,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )

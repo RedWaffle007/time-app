@@ -29,10 +29,12 @@ class TargetSlot {
   DateTime get startUtc => slotStartUtc(index);
   DateTime get endUtc => slotEndUtc(index);
 
-  bool get isBlocked => occupants.isNotEmpty;
+  /// Commitments are informational. Items are point alarms with no duration,
+  /// so another item in this display bucket never blocks selection.
+  bool get isBlocked => false;
 
   /// The only thing the UI should ask before enabling a row.
-  bool get isSelectable => !isBlocked && !isPast;
+  bool get isSelectable => !isPast;
 }
 
 /// The slots covering one local day in the target's zone.
@@ -56,8 +58,7 @@ List<TargetSlot> slotsForLocalDay({
         .add(item);
   }
   for (final list in byIndex.values) {
-    list.sort(
-        (a, b) => a.scheduledInstantUtc.compareTo(b.scheduledInstantUtc));
+    list.sort((a, b) => a.scheduledInstantUtc.compareTo(b.scheduledInstantUtc));
   }
 
   final first = slotIndexFor(dayStart);
@@ -90,74 +91,37 @@ TargetSlot? nextFreeSlot(List<TargetSlot> slots, {int? from}) {
   return null;
 }
 
-/// The slot locks that should be RELEASED, given the target's current items.
+/// The legacy slot locks that should be RELEASED.
 ///
-/// **The self-healing half of the lock's lifecycle.** `createItem` writes a lock
-/// in the same batch as the item, but the only release paths are `withdraw()`
-/// and `reject()` — a completed or skipped item keeps its lock forever, and any
-/// release write that missed (offline) leaks one too. Both leave a stale lock
-/// that blocks a half-hour the UI already shows as free, because the UI reads
-/// the item stream (`blocksSlot`) while the write-race guard reads the lock.
-///
-/// This closes that gap the same way `desiredReminders()` and
-/// `desiredPlanners()` close theirs: one rule over whatever the stream currently
-/// says, not a per-transition hook.
-///
-/// **The rule keys on the SLOT, not on the item's status: a lock is kept only
-/// for a live item whose slot is still in the FUTURE; every past slot's lock is
-/// released regardless of status.** A lock exists to stop double-booking a
-/// bookable half-hour — and a past half-hour is not bookable (`isInstantBookable`
-/// and `isPast` both forbid it), so its lock is pure cruft. Keying on status
-/// alone stranded the locks of items that FIRED but carry no outcome — the
-/// default ending of the full-screen alarm's Dismiss (silence, not markDone) and
-/// of any reminder simply left unmarked. Those read `blocksSlot == true` forever,
-/// so their slot never freed. The time dimension is what makes this cover EVERY
-/// termination path — done, skipped, rejected, withdrawn, alarm-dismissed, and
-/// fired-and-never-touched — because they all reduce to "the slot is no longer a
-/// bookable future half-hour". [now] must be UTC.
+/// New items no longer create locks because they have no duration and may share
+/// a half-hour. This function is retained as a migration cleanup: every lock
+/// reachable from the target's item record is now stale and may be deleted.
 ///
 /// Returns `slotIndex -> {ids of the items in that slot whose lock may go}`. The
 /// caller deletes a lock only when its stored `itemId` is in the set — the
-/// collision guard the pre-lock legacy data needs, where two items can share a
-/// slot. A slot that still holds a live FUTURE item is excluded outright, so a
-/// genuine upcoming booking is never freed out from under itself.
+/// collision guard the legacy data needs, where two items can share a slot.
 ///
 /// Items are never deleted (`allow delete: if false`), so every lock's owning
 /// item is still somewhere in [items]; iterating them therefore reaches every
 /// slot a leaked lock can occupy without listing the locks.
-Map<int, Set<String>> releasableSlotLocks(List<ScheduleItem> items, DateTime now) {
-  final nowUtc = now.toUtc();
-  // Slots whose lock must stay: a live item AND the slot has not begun yet, so
-  // it is still a bookable half-hour. `isAfter(now)` matches the `isPast` rule in
-  // `slotsForLocalDay` (a slot in progress is already the past).
-  final keep = <int>{};
-  for (final item in items) {
-    final index = slotIndexFor(item.scheduledInstantUtc);
-    if (blocksSlot(item) && slotStartUtc(index).isAfter(nowUtc)) keep.add(index);
-  }
+Map<int, Set<String>> releasableSlotLocks(
+  List<ScheduleItem> items,
+  DateTime now,
+) {
   final releasable = <int, Set<String>>{};
   for (final item in items) {
     final index = slotIndexFor(item.scheduledInstantUtc);
-    if (keep.contains(index)) continue; // a live, future item still needs it
     (releasable[index] ??= <String>{}).add(item.id);
   }
   return releasable;
 }
 
-/// Is this exact instant bookable against the target's current schedule?
-///
-/// **The same predicate the modal draws with**, applied to the instant actually
-/// about to be written. Called once more at submit time, because the modal's
-/// view can be seconds stale — and then the write is guarded again by the slot
-/// lock, which is the only check that is authoritative.
+/// Is this instant still in the future? Existing items never make it unavailable.
 bool isInstantBookable({
   required DateTime instantUtc,
   required List<ScheduleItem> items,
   required DateTime now,
 }) {
   if (!instantUtc.toUtc().isAfter(now.toUtc())) return false;
-  final index = slotIndexFor(instantUtc);
-  return !items.any(
-    (i) => blocksSlot(i) && slotIndexFor(i.scheduledInstantUtc) == index,
-  );
+  return true;
 }

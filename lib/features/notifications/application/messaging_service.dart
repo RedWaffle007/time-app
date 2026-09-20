@@ -2,21 +2,86 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:timezone/data/latest_all.dart' as tzdata;
 
 import '../../auth/application/auth_providers.dart';
+import '../../reminders/data/local_notifications_reminder_scheduler.dart';
+import '../../reminders/data/reminder_audit_log.dart';
+import '../../reminders/domain/reminder.dart';
+import '../../../firebase_options.dart';
 import '../data/fcm_token_repository.dart';
 
-/// Background/terminated message handler. Must be a top-level (or static)
-/// function annotated for the entry point. We send a `notification` payload, so
-/// Android displays it in the system tray automatically — there is no work to do
-/// here; tap handling happens on open. Kept registered per FlutterFire guidance.
+/// Convert the trusted data payload emitted by the notification Worker into a
+/// local reminder request. Kept pure so malformed or replayed pushes can be
+/// rejected without touching a platform plugin.
+ReminderRequest? reminderRequestFromPushData(Map<String, dynamic> data) {
+  if (data['command'] != 'scheduleReminder') return null;
+  final itemId = data['itemId'];
+  final fireAtRaw = data['fireAtUtc'];
+  final title = data['title'];
+  final body = data['body'];
+  if (itemId is! String ||
+      itemId.isEmpty ||
+      fireAtRaw is! String ||
+      title is! String ||
+      title.isEmpty ||
+      body is! String) {
+    return null;
+  }
+  final fireAt = DateTime.tryParse(fireAtRaw)?.toUtc();
+  if (fireAt == null || !fireAt.isAfter(DateTime.now().toUtc())) return null;
+  return ReminderRequest(
+    itemId: itemId,
+    fireAtUtc: fireAt,
+    title: title,
+    body: body,
+  );
+}
+
+/// Background/terminated message handler. Emergency plans are created already
+/// approved on the planner's device, so the target's ordinary Firestore stream
+/// cannot arm them while their app is killed. The Worker sends those events as
+/// high-priority data and this handler installs the same local alarm the live
+/// stream would install. Re-scheduling later under the same deterministic id is
+/// harmless and lets the normal reconciler remain the final authority.
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // Intentionally minimal. Do NOT do Firestore work here for v1.
+  final request = reminderRequestFromPushData(message.data);
+  if (request == null) return;
+
+  WidgetsFlutterBinding.ensureInitialized();
+  if (Firebase.apps.isEmpty) {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  }
+  tzdata.initializeTimeZones();
+
+  final scheduler = LocalNotificationsReminderScheduler(
+    plugin: FlutterLocalNotificationsPlugin(),
+    audit: const ReminderAuditLog(),
+    onTapItem: (_) {},
+  );
+  await scheduler.initialize();
+  final armed = await scheduler.schedule(
+    request,
+    reminderNotificationId(request.itemId),
+  );
+  if (armed) {
+    await scheduler.showReceivedPlan(
+      itemId: request.itemId,
+      title: message.data['pushTitle'] as String? ??
+          'New emergency plan for you',
+      body: message.data['pushBody'] as String? ?? request.title,
+    );
+  }
 }
 
 /// Where token registration currently stands, so the UI can surface a FAILURE
@@ -64,8 +129,9 @@ class MessagingService {
   /// A timeout converts that into a visible `failed` we can retry.
   static const _opTimeout = Duration(seconds: 15);
 
-  final ValueNotifier<FcmRegistrationStatus> _status =
-      ValueNotifier(FcmRegistrationStatus.idle);
+  final ValueNotifier<FcmRegistrationStatus> _status = ValueNotifier(
+    FcmRegistrationStatus.idle,
+  );
 
   /// Observable registration state for the UI (drives the failure banner).
   ValueListenable<FcmRegistrationStatus> get status => _status;
@@ -145,7 +211,8 @@ class MessagingService {
           FirebaseCrashlytics.instance.recordError(
             e,
             st,
-            reason: 'FCM token refresh save failed — pushes may stop after rotation',
+            reason:
+                'FCM token refresh save failed — pushes may stop after rotation',
             fatal: false,
           );
           debugPrint('MessagingService: token refresh save failed: $e');
@@ -160,7 +227,8 @@ class MessagingService {
       FirebaseCrashlytics.instance.recordError(
         e,
         st,
-        reason: 'FCM token register/save failed — device may never receive pushes',
+        reason:
+            'FCM token register/save failed — device may never receive pushes',
         fatal: false,
       );
       debugPrint('MessagingService: register failed: $e');

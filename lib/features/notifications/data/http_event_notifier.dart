@@ -26,14 +26,35 @@ class HttpEventNotifier implements NotificationEventNotifier {
     required String targetUid,
     required String itemId,
   }) async {
-    if (kNotifyEndpoint.isEmpty) return; // Worker not deployed yet.
+    await notifyConfirmed(event: event, targetUid: targetUid, itemId: itemId);
+  }
+
+  @override
+  Future<NotificationDeliveryResult> notifyConfirmed({
+    required NotifyEvent event,
+    required String targetUid,
+    required String itemId,
+  }) async {
+    if (kNotifyEndpoint.isEmpty) {
+      return const NotificationDeliveryResult(
+        delivered: false,
+        reason: 'worker-not-configured',
+      );
+    }
 
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      return const NotificationDeliveryResult(
+        delivered: false,
+        reason: 'signed-out',
+      );
+    }
 
     try {
-      final idToken = await user.getIdToken();
-      await http
+      final idToken = await user.getIdToken().timeout(
+        const Duration(seconds: 10),
+      );
+      final response = await http
           .post(
             Uri.parse(kNotifyEndpoint),
             headers: {
@@ -47,6 +68,19 @@ class HttpEventNotifier implements NotificationEventNotifier {
             }),
           )
           .timeout(const Duration(seconds: 10));
+      final result = notificationDeliveryFromWorkerResponse(
+        statusCode: response.statusCode,
+        body: response.body,
+      );
+      if (!result.delivered) {
+        FirebaseCrashlytics.instance.recordError(
+          StateError('Worker delivery failed: ${result.reason}'),
+          StackTrace.current,
+          reason: 'notification push was not delivered (state still saved)',
+          fatal: false,
+        );
+      }
+      return result;
     } catch (e, st) {
       // Safety net is the in-app live views; a missed push is tolerable at N=2.
       // Record it so an otherwise-silent push failure is visible remotely — this
@@ -59,6 +93,42 @@ class HttpEventNotifier implements NotificationEventNotifier {
         fatal: false,
       );
       debugPrint('EventNotifier: push call failed (state still saved): $e');
+      return NotificationDeliveryResult(
+        delivered: false,
+        reason: 'transport-error:${e.runtimeType}',
+      );
     }
+  }
+}
+
+NotificationDeliveryResult notificationDeliveryFromWorkerResponse({
+  required int statusCode,
+  required String body,
+}) {
+  if (statusCode < 200 || statusCode >= 300) {
+    return NotificationDeliveryResult(
+      delivered: false,
+      reason: 'worker-http-$statusCode',
+    );
+  }
+  try {
+    final decoded = jsonDecode(body);
+    if (decoded is! Map<String, dynamic>) {
+      return const NotificationDeliveryResult(
+        delivered: false,
+        reason: 'invalid-worker-response',
+      );
+    }
+    final sent = decoded['sent'];
+    final reason = decoded['reason'];
+    return NotificationDeliveryResult(
+      delivered: sent is num && sent > 0,
+      reason: reason is String ? reason : 'invalid-worker-response',
+    );
+  } catch (_) {
+    return const NotificationDeliveryResult(
+      delivered: false,
+      reason: 'invalid-worker-response',
+    );
   }
 }

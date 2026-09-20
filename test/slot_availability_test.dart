@@ -24,19 +24,18 @@ void main() {
     String timezone = kolkata,
     ScheduleItemStatus status = ScheduleItemStatus.approved,
     ScheduleOutcome? outcome,
-  }) =>
-      ScheduleItem(
-        id: id,
-        targetUid: 'B',
-        createdByUid: 'A',
-        groupId: 'g',
-        title: 'Gym',
-        localWallTime: '',
-        timezone: timezone,
-        scheduledInstantUtc: instantUtc,
-        status: status,
-        outcome: outcome,
-      );
+  }) => ScheduleItem(
+    id: id,
+    targetUid: 'B',
+    createdByUid: 'A',
+    groupId: 'g',
+    title: 'Gym',
+    localWallTime: '',
+    timezone: timezone,
+    scheduledInstantUtc: instantUtc,
+    status: status,
+    outcome: outcome,
+  );
 
   group('the slot grid', () {
     test('is 30 minutes and anchored to the epoch', () {
@@ -76,19 +75,35 @@ void main() {
     });
   });
 
-  group('what blocks a slot', () {
-    test('pending and approved block; nothing else does', () {
-      expect(blocksSlot(item(instantUtc: DateTime.utc(2026, 8, 25, 16),
-          status: ScheduleItemStatus.pending)), isTrue);
-      expect(blocksSlot(item(instantUtc: DateTime.utc(2026, 8, 25, 16),
-          status: ScheduleItemStatus.approved)), isTrue);
+  group('what appears on the schedule', () {
+    test('pending and approved appear; nothing else does', () {
+      expect(
+        blocksSlot(
+          item(
+            instantUtc: DateTime.utc(2026, 8, 25, 16),
+            status: ScheduleItemStatus.pending,
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        blocksSlot(
+          item(
+            instantUtc: DateTime.utc(2026, 8, 25, 16),
+            status: ScheduleItemStatus.approved,
+          ),
+        ),
+        isTrue,
+      );
       for (final dead in [
         ScheduleItemStatus.rejected,
         ScheduleItemStatus.withdrawn,
         ScheduleItemStatus.cancelled,
       ]) {
         expect(
-          blocksSlot(item(instantUtc: DateTime.utc(2026, 8, 25, 16), status: dead)),
+          blocksSlot(
+            item(instantUtc: DateTime.utc(2026, 8, 25, 16), status: dead),
+          ),
           isFalse,
           reason: '$dead is dead and cannot hold a slot',
         );
@@ -97,15 +112,17 @@ void main() {
 
     test('a recorded outcome releases the claim', () {
       expect(
-        blocksSlot(item(
-          instantUtc: DateTime.utc(2026, 8, 25, 16),
-          outcome: const ScheduleOutcome(result: OutcomeResult.done),
-        )),
+        blocksSlot(
+          item(
+            instantUtc: DateTime.utc(2026, 8, 25, 16),
+            outcome: const ScheduleOutcome(result: OutcomeResult.done),
+          ),
+        ),
         isFalse,
       );
     });
 
-    test('a PENDING plan blocks — it is one tap from being real', () {
+    test('a pending plan is visible but does not block another plan', () {
       final slots = slotsForLocalDay(
         localDay: DateTime.utc(2026, 8, 25),
         timezone: kolkata,
@@ -113,14 +130,16 @@ void main() {
           item(
             instantUtc: DateTime.utc(2026, 8, 25, 10, 30), // 16:00 IST
             status: ScheduleItemStatus.pending,
-          )
+          ),
         ],
         now: DateTime.utc(2026, 8, 25, 0),
       );
       final at16 = slots.firstWhere(
-          (s) => s.index == slotIndexFor(DateTime.utc(2026, 8, 25, 10, 30)));
-      expect(at16.isBlocked, isTrue);
-      expect(at16.isSelectable, isFalse);
+        (s) => s.index == slotIndexFor(DateTime.utc(2026, 8, 25, 10, 30)),
+      );
+      expect(at16.occupants, hasLength(1));
+      expect(at16.isBlocked, isFalse);
+      expect(at16.isSelectable, isTrue);
     });
   });
 
@@ -158,8 +177,11 @@ void main() {
         now: DateTime.utc(2026, 8, 24),
       );
       for (var i = 1; i < slots.length; i++) {
-        expect(slots[i].startUtc, slots[i - 1].endUtc,
-            reason: 'slots must tile without gaps');
+        expect(
+          slots[i].startUtc,
+          slots[i - 1].endUtc,
+          reason: 'slots must tile without gaps',
+        );
       }
     });
 
@@ -187,15 +209,14 @@ void main() {
         items: [item(instantUtc: instant, timezone: chicago)],
         now: DateTime.utc(2026, 8, 25, 0),
       );
-      expect(
-        slots.where((s) => s.isBlocked).map((s) => s.index),
-        [slotIndexFor(instant)],
-      );
+      expect(slots.where((s) => s.occupants.isNotEmpty).map((s) => s.index), [
+        slotIndexFor(instant),
+      ]);
     });
   });
 
   group('nextFreeSlot', () {
-    test('skips blocked and past slots', () {
+    test('existing plans do not make a future slot unavailable', () {
       final busy = DateTime.utc(2026, 8, 25, 10, 30);
       final slots = slotsForLocalDay(
         localDay: DateTime.utc(2026, 8, 25),
@@ -206,7 +227,7 @@ void main() {
       final next = nextFreeSlot(slots);
       expect(next, isNotNull);
       expect(next!.isSelectable, isTrue);
-      expect(next.index, isNot(slotIndexFor(busy)));
+      expect(next.index, slotIndexFor(busy));
     });
 
     test('returns null when the whole day is gone', () {
@@ -234,16 +255,14 @@ void main() {
       );
     });
 
-    test('anything in the same bucket blocks it, not just the same instant', () {
-      // 16:00 and 16:15 IST are one half-hour. The whole reason a slot exists
-      // is that `ScheduleItem` has no duration to overlap.
+    test('another item in the same bucket does not block it', () {
       expect(
         isInstantBookable(
           instantUtc: DateTime.utc(2026, 8, 25, 10, 45),
           items: [item(instantUtc: DateTime.utc(2026, 8, 25, 10, 30))],
           now: now,
         ),
-        isFalse,
+        isTrue,
       );
     });
 
@@ -273,7 +292,7 @@ void main() {
   // The planner-access hint rule (`desiredAccess`) moved to planner-side and is
   // covered by test/planner_access_reconciler_test.dart.
 
-  group('releasableSlotLocks — keep only live FUTURE slots', () {
+  group('releasableSlotLocks — remove the legacy blocker', () {
     // A fixed clock: everything before noon is past, everything after is future.
     final now = DateTime.utc(2026, 8, 25, 12, 0);
     final past9 = DateTime.utc(2026, 8, 25, 9, 30);
@@ -282,15 +301,24 @@ void main() {
     final future13 = DateTime.utc(2026, 8, 25, 13, 30);
     final future14 = DateTime.utc(2026, 8, 25, 14, 30);
 
-    test('a live FUTURE item keeps its lock', () {
+    test('live future items release their obsolete locks too', () {
       expect(
         releasableSlotLocks([
-          item(id: 'a', instantUtc: future13,
-              status: ScheduleItemStatus.approved),
-          item(id: 'b', instantUtc: future14,
-              status: ScheduleItemStatus.pending),
+          item(
+            id: 'a',
+            instantUtc: future13,
+            status: ScheduleItemStatus.approved,
+          ),
+          item(
+            id: 'b',
+            instantUtc: future14,
+            status: ScheduleItemStatus.pending,
+          ),
         ], now),
-        isEmpty,
+        {
+          slotIndexFor(future13): {'a'},
+          slotIndexFor(future14): {'b'},
+        },
       );
     });
 
@@ -301,10 +329,15 @@ void main() {
       // lock forever; the time dimension frees it.
       expect(
         releasableSlotLocks([
-          item(id: 'a', instantUtc: past10,
-              status: ScheduleItemStatus.approved),
+          item(
+            id: 'a',
+            instantUtc: past10,
+            status: ScheduleItemStatus.approved,
+          ),
         ], now),
-        {slotIndexFor(past10): {'a'}},
+        {
+          slotIndexFor(past10): {'a'},
+        },
       );
     });
 
@@ -314,8 +347,11 @@ void main() {
       final inProgress = DateTime.utc(2026, 8, 25, 12, 10);
       expect(
         releasableSlotLocks([
-          item(id: 'a', instantUtc: inProgress,
-              status: ScheduleItemStatus.approved),
+          item(
+            id: 'a',
+            instantUtc: inProgress,
+            status: ScheduleItemStatus.approved,
+          ),
         ], now).keys,
         {slotIndexFor(inProgress)},
       );
@@ -324,16 +360,31 @@ void main() {
     test('EVERY ended state on a past slot releases', () {
       // done, skipped, rejected, withdrawn, and fired-approved-untouched.
       final released = releasableSlotLocks([
-        item(id: 'done', instantUtc: DateTime.utc(2026, 8, 25, 10, 0),
-            outcome: const ScheduleOutcome(result: OutcomeResult.done)),
-        item(id: 'skip', instantUtc: past10,
-            outcome: const ScheduleOutcome(result: OutcomeResult.skipped)),
-        item(id: 'rej', instantUtc: DateTime.utc(2026, 8, 25, 11, 0),
-            status: ScheduleItemStatus.rejected),
-        item(id: 'wd', instantUtc: past11,
-            status: ScheduleItemStatus.withdrawn),
-        item(id: 'fired', instantUtc: past9,
-            status: ScheduleItemStatus.approved), // fired, no outcome
+        item(
+          id: 'done',
+          instantUtc: DateTime.utc(2026, 8, 25, 10, 0),
+          outcome: const ScheduleOutcome(result: OutcomeResult.done),
+        ),
+        item(
+          id: 'skip',
+          instantUtc: past10,
+          outcome: const ScheduleOutcome(result: OutcomeResult.skipped),
+        ),
+        item(
+          id: 'rej',
+          instantUtc: DateTime.utc(2026, 8, 25, 11, 0),
+          status: ScheduleItemStatus.rejected,
+        ),
+        item(
+          id: 'wd',
+          instantUtc: past11,
+          status: ScheduleItemStatus.withdrawn,
+        ),
+        item(
+          id: 'fired',
+          instantUtc: past9,
+          status: ScheduleItemStatus.approved,
+        ), // fired, no outcome
       ], now);
       expect(released.keys, {
         slotIndexFor(DateTime.utc(2026, 8, 25, 10, 0)),
@@ -344,29 +395,42 @@ void main() {
       });
     });
 
-    test('a live FUTURE item protects a shared slot; a dead one cannot free it',
-        () {
-      // Two items in one FUTURE slot: the live one holds it, so the reconciler
-      // must not free it out from under the upcoming booking.
+    test('all item ids in one future slot are cleanup candidates', () {
       expect(
         releasableSlotLocks([
-          item(id: 'dead', instantUtc: future13,
-              status: ScheduleItemStatus.rejected),
-          item(id: 'live', instantUtc: future13.add(const Duration(minutes: 15)),
-              status: ScheduleItemStatus.approved),
+          item(
+            id: 'dead',
+            instantUtc: future13,
+            status: ScheduleItemStatus.rejected,
+          ),
+          item(
+            id: 'live',
+            instantUtc: future13.add(const Duration(minutes: 15)),
+            status: ScheduleItemStatus.approved,
+          ),
         ], now),
-        isEmpty,
+        {
+          slotIndexFor(future13): {'dead', 'live'},
+        },
       );
     });
 
-    test('two ended items in one PAST slot both name it as candidate owners', () {
-      final s = DateTime.utc(2026, 8, 25, 10, 0);
-      final released = releasableSlotLocks([
-        item(id: 'd1', instantUtc: s, status: ScheduleItemStatus.rejected),
-        item(id: 'd2', instantUtc: s.add(const Duration(minutes: 15)),
-            outcome: const ScheduleOutcome(result: OutcomeResult.skipped)),
-      ], now);
-      expect(released, {slotIndexFor(s): {'d1', 'd2'}});
-    });
+    test(
+      'two ended items in one PAST slot both name it as candidate owners',
+      () {
+        final s = DateTime.utc(2026, 8, 25, 10, 0);
+        final released = releasableSlotLocks([
+          item(id: 'd1', instantUtc: s, status: ScheduleItemStatus.rejected),
+          item(
+            id: 'd2',
+            instantUtc: s.add(const Duration(minutes: 15)),
+            outcome: const ScheduleOutcome(result: OutcomeResult.skipped),
+          ),
+        ], now);
+        expect(released, {
+          slotIndexFor(s): {'d1', 'd2'},
+        });
+      },
+    );
   });
 }

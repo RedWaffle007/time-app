@@ -33,6 +33,24 @@ abstract class NotificationEventNotifier {
     required String targetUid,
     required String itemId,
   });
+
+  /// Same send, with the Worker's actual delivery result exposed to flows that
+  /// must not claim the recipient was notified when FCM had no usable token.
+  Future<NotificationDeliveryResult> notifyConfirmed({
+    required NotifyEvent event,
+    required String targetUid,
+    required String itemId,
+  });
+}
+
+class NotificationDeliveryResult {
+  const NotificationDeliveryResult({
+    required this.delivered,
+    required this.reason,
+  });
+
+  final bool delivered;
+  final String reason;
 }
 
 /// The card-day implementation: does nothing, because the server sends on write.
@@ -45,10 +63,21 @@ class NoopEventNotifier implements NotificationEventNotifier {
     required String targetUid,
     required String itemId,
   }) async {}
+
+  @override
+  Future<NotificationDeliveryResult> notifyConfirmed({
+    required NotifyEvent event,
+    required String targetUid,
+    required String itemId,
+  }) async => const NotificationDeliveryResult(
+    delivered: true,
+    reason: 'server-triggered',
+  );
 }
 
-final notificationEventNotifierProvider =
-    Provider<NotificationEventNotifier>((ref) {
+final notificationEventNotifierProvider = Provider<NotificationEventNotifier>((
+  ref,
+) {
   // No-card transport for now. Swap to `const NoopEventNotifier()` on card-day.
   return HttpEventNotifier();
 });

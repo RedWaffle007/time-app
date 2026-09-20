@@ -12,6 +12,7 @@ import '../../../core/platform/oem_info.dart';
 import '../../../core/platform/oem_profile.dart';
 import '../../../core/platform/system_permissions.dart';
 import '../domain/reminder.dart';
+import 'alarm_delivery.dart';
 import 'reminder_audit_log.dart';
 import 'reminder_scheduler.dart';
 
@@ -38,13 +39,16 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
     required FlutterLocalNotificationsPlugin plugin,
     required ReminderAuditLog audit,
     required void Function(String itemId) onTapItem,
-  })  : _plugin = plugin,
-        _audit = audit,
-        _onTapItem = onTapItem;
+    AlarmDelivery delivery = const AlarmDelivery(),
+  }) : _plugin = plugin,
+       _audit = audit,
+       _onTapItem = onTapItem,
+       _delivery = delivery;
 
   final FlutterLocalNotificationsPlugin _plugin;
   final ReminderAuditLog _audit;
   final void Function(String itemId) _onTapItem;
+  final AlarmDelivery _delivery;
 
   /// **Created in code, not left to the plugin.** A channel auto-created by the
   /// first notification inherits whatever that notification asked for, and — the
@@ -69,6 +73,7 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
   /// old one is deleted in [initialize].
   static const _legacyChannelId = 'time_app_reminders';
   static const channelId = 'time_app_reminders_alert';
+  static const receivedPlanChannelId = 'time_app_received_plans';
   static final _channel = AndroidNotificationChannel(
     channelId,
     'Reminders',
@@ -83,7 +88,8 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
     // The device's own alarm tone — no bundled asset, and it is what the user
     // already recognises as "an alarm".
     sound: const UriAndroidNotificationSound(
-        'content://settings/system/alarm_alert'),
+      'content://settings/system/alarm_alert',
+    ),
     enableVibration: true,
     vibrationPattern: Int64List.fromList([0, 500, 250, 500]),
   );
@@ -117,6 +123,24 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
     ),
   );
 
+  static const _receivedPlanChannel = AndroidNotificationChannel(
+    receivedPlanChannelId,
+    'Plans from friends',
+    description: 'Alerts when a friend adds a plan for you.',
+    importance: Importance.high,
+  );
+
+  static const _receivedPlanDetails = NotificationDetails(
+    android: AndroidNotificationDetails(
+      receivedPlanChannelId,
+      'Plans from friends',
+      channelDescription: 'Alerts when a friend adds a plan for you.',
+      importance: Importance.high,
+      priority: Priority.high,
+      icon: 'ic_notification',
+    ),
+  );
+
   @override
   Future<void> initialize() async {
     await _plugin.initialize(
@@ -129,14 +153,17 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
       onDidReceiveNotificationResponse: _onResponse,
     );
 
-    final android = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     // Retire the old NOTIFICATION-stream channel so Settings shows a single
     // "Reminders" entry — the audible one. Deleting is the only way to remove a
     // channel whose frozen audio-usage we are replacing; harmless if it was
     // never created (a fresh install).
     await android?.deleteNotificationChannel(channelId: _legacyChannelId);
     await android?.createNotificationChannel(_channel);
+    await android?.createNotificationChannel(_receivedPlanChannel);
   }
 
   void _onResponse(NotificationResponse response) {
@@ -144,6 +171,24 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
     if (itemId == null || itemId.isEmpty) return;
     _audit.note(event: 'TAPPED', itemId: itemId, id: response.id);
     _onTapItem(itemId);
+  }
+
+  /// Show the immediate, non-ringing alert paired with a background emergency
+  /// alarm command. High-priority FCM data is reserved for user-visible work;
+  /// displaying this alert prevents FCM from treating repeated silent commands
+  /// as abuse and deprioritising later alarms. The due-time alarm remains a
+  /// separate notification on the alarm channel.
+  Future<void> showReceivedPlan({
+    required String itemId,
+    required String title,
+    required String body,
+  }) {
+    return _plugin.show(
+      id: reminderNotificationId('received:$itemId'),
+      title: title,
+      body: body,
+      notificationDetails: _receivedPlanDetails,
+    );
   }
 
   @override
@@ -164,24 +209,36 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
       return false;
     }
 
+    Future<void> install(AndroidScheduleMode mode) => _plugin.zonedSchedule(
+      id: notificationId,
+      title: request.title,
+      body: request.body,
+      // The item's stored instant is the source of truth (v1 timezone handling
+      // is a pure snapshot — DECISIONS.md 2026-07-22), so this schedules an
+      // ABSOLUTE moment and hands the OS UTC rather than re-deriving a wall
+      // time. Re-deriving would let the reminder drift away from the instant
+      // the target actually approved.
+      scheduledDate: tz.TZDateTime.from(request.fireAtUtc, tz.UTC),
+      notificationDetails: _details,
+      androidScheduleMode: mode,
+      // The whole deep link, and deliberately just the id: a payload is a
+      // string the OS keeps for hours, so it holds a key to look up, never a
+      // copy of anything.
+      payload: request.itemId,
+    );
+
+    var exact = true;
     try {
-      await _plugin.zonedSchedule(
-        id: notificationId,
-        title: request.title,
-        body: request.body,
-        // The item's stored instant is the source of truth (v1 timezone handling
-        // is a pure snapshot — DECISIONS.md 2026-07-22), so this schedules an
-        // ABSOLUTE moment and hands the OS UTC rather than re-deriving a wall
-        // time. Re-deriving would let the reminder drift away from the instant
-        // the target actually approved.
-        scheduledDate: tz.TZDateTime.from(request.fireAtUtc, tz.UTC),
-        notificationDetails: _details,
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        // The whole deep link, and deliberately just the id: a payload is a
-        // string the OS keeps for hours, so it holds a key to look up, never a
-        // copy of anything.
-        payload: request.itemId,
-      );
+      try {
+        await install(AndroidScheduleMode.exactAllowWhileIdle);
+      } on PlatformException catch (e) {
+        if (e.code != 'exact_alarms_not_permitted') rethrow;
+        // Exact permission is user-controlled on Android 12+. Missing it must
+        // degrade timing, not delete the alarm entirely. This still wakes from
+        // idle, though Android may batch it later than requested.
+        exact = false;
+        await install(AndroidScheduleMode.inexactAllowWhileIdle);
+      }
     } catch (e, st) {
       // A refusal here is normal on Android 14+ (exact-alarm permission), and it
       // must not take down the item stream that triggered it. Recorded in both
@@ -200,30 +257,57 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
         reason: 'Reminder scheduling failed — this reminder will never fire',
         fatal: false,
       );
-      debugPrint('ReminderScheduler: schedule failed for ${request.itemId}: $e');
+      debugPrint(
+        'ReminderScheduler: schedule failed for ${request.itemId}: $e',
+      );
       return false;
     }
 
     _audit.note(
-      event: 'ARMED',
+      event: exact ? 'ARMED' : 'ARMED_INEXACT',
       itemId: request.itemId,
       id: notificationId,
       fireAtUtc: request.fireAtUtc,
     );
+    // Sound is armed separately from notification presentation. Android may
+    // post a full-screen notification without launching its Activity while the
+    // device is locked (observed on HyperOS); tying playback to AlarmScreen
+    // would then postpone the sound until the user unlocks. The native delivery
+    // receiver starts AlarmSoundService at the due instant with no Dart/UI
+    // dependency. Best-effort: the already-armed notification remains a usable
+    // fallback if the companion alarm is refused.
+    final delivery = await _delivery.arm(
+      id: notificationId,
+      itemId: request.itemId,
+      fireAtUtc: request.fireAtUtc,
+      exact: exact,
+    );
+    if (delivery != 'ok') {
+      _audit.note(
+        event: 'AUDIO_ARM_FAILED',
+        itemId: request.itemId,
+        id: notificationId,
+        fireAtUtc: request.fireAtUtc,
+        note: delivery,
+      );
+    }
     // The shadow alarm that measures when this actually lands. Best-effort and
     // deliberately after the real schedule: the instrument must never be able to
     // prevent the thing it measures.
-    await _audit.arm(
-      id: notificationId,
-      itemId: request.itemId,
-      fireAtUtc: request.fireAtUtc,
-    );
+    if (exact) {
+      await _audit.arm(
+        id: notificationId,
+        itemId: request.itemId,
+        fireAtUtc: request.fireAtUtc,
+      );
+    }
     return true;
   }
 
   @override
   Future<void> cancel(int notificationId) async {
     await _plugin.cancel(id: notificationId);
+    await _delivery.cancel(notificationId);
     await _audit.cancel(notificationId);
     _audit.note(event: 'CANCELLED', id: notificationId);
   }
@@ -231,6 +315,7 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
   @override
   Future<void> cancelAll() async {
     await _plugin.cancelAll();
+    await _delivery.cancelAll();
     await _audit.cancelAll();
     _audit.note(event: 'CANCELLED_ALL');
   }
@@ -243,8 +328,8 @@ class LocalNotificationsReminderPermissions implements ReminderPermissions {
     this._plugin, {
     SystemPermissions system = const MethodChannelSystemPermissions(),
     OemInfo oem = const DeviceInfoOemInfo(),
-  })  : _system = system,
-        _oem = oem;
+  }) : _system = system,
+       _oem = oem;
 
   final FlutterLocalNotificationsPlugin _plugin;
 
@@ -260,9 +345,10 @@ class LocalNotificationsReminderPermissions implements ReminderPermissions {
   /// Matches `MainActivity.kt`'s `FSI_CHANNEL`/`FSI_METHOD`.
   static const _fsiChannel = MethodChannel('time_app/full_screen_intent');
 
-  AndroidFlutterLocalNotificationsPlugin? get _android =>
-      _plugin.resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
+  AndroidFlutterLocalNotificationsPlugin? get _android => _plugin
+      .resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin
+      >();
 
   Future<bool> _canUseFullScreenIntent() async {
     try {
@@ -295,7 +381,8 @@ class LocalNotificationsReminderPermissions implements ReminderPermissions {
     final oem = oemProfileFor(await _oem.manufacturer());
     return ReminderPermissionState(
       notificationsEnabled: await android.areNotificationsEnabled() ?? false,
-      exactAlarmsAllowed: await android.canScheduleExactNotifications() ?? false,
+      exactAlarmsAllowed:
+          await android.canScheduleExactNotifications() ?? false,
       fullScreenIntentAllowed: await _canUseFullScreenIntent(),
       batteryUnrestricted: await _system.isBatteryUnrestricted(),
       autostartLikelyNeeded: oem.autostartLikelyNeeded,

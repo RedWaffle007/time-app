@@ -8,9 +8,8 @@ import 'schedule_providers.dart';
 ///
 /// This is a `.snapshots()` stream all the way down, so the modal is live: if
 /// the target books something while the planner has the modal open, the row
-/// greys out under them. That is the first line of defence against a stale
-/// view; the slot lock in `ScheduleRepository.createItem` is the one that
-/// actually holds.
+/// updates under them. Existing plans remain visible as context, but never
+/// disable a time: schedule items are point alarms and carry no duration.
 ///
 /// Reading this requires `plannerAccess/{me}_{targetUid}` to exist — see
 /// `firestore.rules`. Without it the stream errors with `permission-denied`,
@@ -22,8 +21,10 @@ import 'schedule_providers.dart';
 /// Availability has to be computed from everything that is really there.
 final targetScheduleProvider =
     StreamProvider.family<List<ScheduleItem>, String>((ref, targetUid) {
-  return ref.watch(scheduleRepositoryProvider).watchItemsForTarget(targetUid);
-});
+      return ref
+          .watch(scheduleRepositoryProvider)
+          .watchItemsForTarget(targetUid);
+    });
 
 /// Does the signed-in user currently hold a planner grant over [targetUid]?
 ///
@@ -33,8 +34,10 @@ final targetScheduleProvider =
 /// be fooled by a stale row.
 ///
 /// This gates whether the modal opens at all. No grant, no modal.
-final canViewTargetScheduleProvider =
-    Provider.family<bool, String>((ref, targetUid) {
+final canViewTargetScheduleProvider = Provider.family<bool, String>((
+  ref,
+  targetUid,
+) {
   final grants = ref.watch(myPlanningTargetsProvider).value;
   if (grants == null) return false;
   return grants.any((g) => g.granted && g.targetUid == targetUid);

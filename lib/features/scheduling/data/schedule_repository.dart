@@ -2,17 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/timezone/tz_resolver.dart';
 import '../domain/schedule_item.dart';
-import '../domain/slot.dart';
-
-/// Raised when the target's slot was claimed between the planner opening the
-/// modal and submitting. Carries a message already written for the user, the
-/// same contract as `ChatbotFailure`.
-class SlotTakenException implements Exception {
-  const SlotTakenException(this.message);
-  final String message;
-  @override
-  String toString() => message;
-}
 
 /// Creates schedule items and drives their status/outcome transitions.
 class ScheduleRepository {
@@ -47,35 +36,12 @@ class ScheduleRepository {
   }) async {
     final instant = resolveWallTimeToUtc(wall, timezone);
 
-    // The item and its SLOT LOCK land in one batch, or neither does.
-    //
-    // This is the server-side conflict re-check, and it is the only one
-    // available: there is no Cloud Function in this project, and rules cannot
-    // run a query, so "does something already occupy this slot" cannot be asked
-    // directly. What can be done is the `usernames/{handle}` device — a computed
-    // id whose `create` fails when the document exists. `allow update: if false`
-    // on the lock is what turns a `set` into a failure rather than an overwrite.
-    //
-    // So a slot taken while the planner's modal was open is rejected HERE, at
-    // write time, however stale the UI was.
-    final slot = slotIndexFor(instant);
     final itemRef = _items(targetUid).doc();
-    final lockRef = _slotLock(targetUid, slot);
-
-    final batch = _db.batch();
-    batch.set(lockRef, {
-      'targetUid': targetUid,
-      'createdByUid': createdByUid,
-      // Carried so the lock's create rule can verify the SAME active grant the
-      // item does, rather than the `plannerAccess` mirror — which only the
-      // target's device writes, and whose absence otherwise failed this whole
-      // batch cross-device. See DECISIONS.md "Cross-device relationship +
-      // planning denials (2026-08-24)".
-      'groupId': groupId ?? '',
-      'itemId': itemRef.id,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-    batch.set(itemRef, {
+    // Items are point-in-time alarms, not 30-minute appointments: the model has
+    // no duration. Multiple plans may therefore share a half-hour (or even the
+    // same instant). The old scheduleSlots write is intentionally gone; the
+    // target's schedule remains visible to planners as context, never a lock.
+    await itemRef.set({
       'targetUid': targetUid,
       'createdByUid': createdByUid,
       'groupId': groupId ?? '',
@@ -97,34 +63,8 @@ class ScheduleRepository {
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
-
-    try {
-      await batch.commit();
-    } on FirebaseException catch (e) {
-      // A denial here is ambiguous on its own — the lock branch and the item
-      // branch both answer `permission-denied`. Re-reading the lock is what
-      // separates "someone just took this slot" from a genuine authz failure,
-      // and the difference is the whole point: one is the user's problem to
-      // solve by picking another time, the other is not their problem at all.
-      if (e.code == 'permission-denied' && await _slotIsTaken(lockRef)) {
-        throw const SlotTakenException(
-          'That time was just taken. Pick another slot.',
-        );
-      }
-      rethrow;
-    }
     return itemRef.id;
   }
-
-  DocumentReference<Map<String, dynamic>> _slotLock(
-    String targetUid,
-    int slotIndex,
-  ) =>
-      _db
-          .collection('scheduleSlots')
-          .doc(targetUid)
-          .collection('slots')
-          .doc(slotLockId(slotIndex));
 
   /// **Group planning — the fan-out** (pairwise friendships cannot do this).
   ///
@@ -146,11 +86,13 @@ class ScheduleRepository {
   /// gone in that member's zone) versus [skippedOther] (a taken slot, a missing
   /// grant, any write failure).
   Future<
-      ({
-        List<({String uid, String itemId, bool isSelf})> sent,
-        int skippedPast,
-        int skippedOther,
-      })> planForGroup({
+    ({
+      List<({String uid, String itemId, bool isSelf})> sent,
+      int skippedPast,
+      int skippedOther,
+    })
+  >
+  planForGroup({
     required String groupId,
     required String createdByUid,
     required List<({String uid, String timezone, bool isSelf})> targets,
@@ -190,39 +132,11 @@ class ScheduleRepository {
     return (sent: sent, skippedPast: skippedPast, skippedOther: skippedOther);
   }
 
-  Future<bool> _slotIsTaken(
-    DocumentReference<Map<String, dynamic>> lockRef,
-  ) async {
-    try {
-      return (await lockRef.get()).exists;
-    } catch (_) {
-      // Cannot tell — say no and let the original error surface unchanged.
-      // Claiming "taken" on a failed read would send the planner hunting for a
-      // free slot that was never the problem.
-      return false;
-    }
-  }
-
-  /// Free the slot a dead item was holding.
-  ///
-  /// Best-effort and deliberately NOT batched with the status write. A lock that
-  /// outlives its item costs one falsely-blocked half-hour; a status write that
-  /// failed because a lock delete failed would break the consent loop, which
-  /// matters more.
-  Future<void> _releaseSlot(String targetUid, ScheduleItem item) async {
-    try {
-      await _slotLock(targetUid, slotIndexFor(item.scheduledInstantUtc))
-          .delete();
-    } catch (_) {
-      // Ignored on purpose — see above.
-    }
-  }
-
   /// All items belonging to a target (they filter by status in the UI).
   Stream<List<ScheduleItem>> watchItemsForTarget(String targetUid) {
-    return _items(targetUid).snapshots().map(
-          (s) => s.docs.map(ScheduleItem.fromDoc).toList(),
-        );
+    return _items(
+      targetUid,
+    ).snapshots().map((s) => s.docs.map(ScheduleItem.fromDoc).toList());
   }
 
   /// All items a planner created, across targets — powers their activity view.
@@ -249,24 +163,28 @@ class ScheduleRepository {
     }, SetOptions(merge: true));
   }
 
-  Future<void> approve(String targetUid, String itemId) =>
-      _setStatus(targetUid, itemId, ScheduleItemStatus.approved,
-          extra: {'decidedAt': FieldValue.serverTimestamp()});
+  Future<void> approve(String targetUid, String itemId) => _setStatus(
+    targetUid,
+    itemId,
+    ScheduleItemStatus.approved,
+    extra: {'decidedAt': FieldValue.serverTimestamp()},
+  );
 
   /// Planner withdraws a plan they created, BEFORE the target has decided on it
   /// (Group C). Only a `pending` item can be withdrawn; the field set here must
   /// match exactly what the withdraw branch of firestore.rules permits (status,
   /// withdrawnAt, updatedAt) — the planner is not the target, so this is the one
   /// item write a non-target is allowed, and it is tightly scoped.
-  Future<void> withdraw(String targetUid, String itemId, {ScheduleItem? item}) async {
+  Future<void> withdraw(
+    String targetUid,
+    String itemId, {
+    ScheduleItem? item,
+  }) async {
     await _items(targetUid).doc(itemId).set({
       'status': ScheduleItemStatus.withdrawn.name,
       'withdrawnAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
-    // A withdrawn plan is dead, so it must stop holding the target's slot.
-    // Without this a retracted plan would block that half-hour forever.
-    if (item != null) await _releaseSlot(targetUid, item);
   }
 
   Future<void> reject(
@@ -275,13 +193,16 @@ class ScheduleRepository {
     String? reason,
     ScheduleItem? item,
   }) async {
-    await _setStatus(targetUid, itemId, ScheduleItemStatus.rejected, extra: {
-      'decidedAt': FieldValue.serverTimestamp(),
-      if (reason != null && reason.trim().isNotEmpty)
-        'rejectionReason': reason.trim(),
-    });
-    // Same reasoning as withdraw: a rejected plan has no claim on the slot.
-    if (item != null) await _releaseSlot(targetUid, item);
+    await _setStatus(
+      targetUid,
+      itemId,
+      ScheduleItemStatus.rejected,
+      extra: {
+        'decidedAt': FieldValue.serverTimestamp(),
+        if (reason != null && reason.trim().isNotEmpty)
+          'rejectionReason': reason.trim(),
+      },
+    );
   }
 
   /// Target records completion — status stays `approved`, outcome is layered on.
@@ -300,7 +221,8 @@ class ScheduleRepository {
       'outcome': {
         'result': OutcomeResult.skipped.name,
         'skippedAt': FieldValue.serverTimestamp(),
-        if (reason != null && reason.trim().isNotEmpty) 'skipReason': reason.trim(),
+        if (reason != null && reason.trim().isNotEmpty)
+          'skipReason': reason.trim(),
       },
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));

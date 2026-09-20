@@ -24,16 +24,16 @@ void main() {
   setUpAll(tzdata.initializeTimeZones);
 
   ScheduleItem item() => ScheduleItem(
-        id: 'a',
-        targetUid: 'me',
-        createdByUid: 'me',
-        groupId: '',
-        title: 'Morning run',
-        localWallTime: '',
-        timezone: 'Asia/Kolkata',
-        scheduledInstantUtc: DateTime.utc(2030, 1, 1, 3, 30),
-        status: ScheduleItemStatus.approved,
-      );
+    id: 'a',
+    targetUid: 'me',
+    createdByUid: 'me',
+    groupId: '',
+    title: 'Morning run',
+    localWallTime: '',
+    timezone: 'Asia/Kolkata',
+    scheduledInstantUtc: DateTime.utc(2030, 1, 1, 3, 30),
+    status: ScheduleItemStatus.approved,
+  );
 
   Widget harness(_FakeAlarmSound sound, _FakeScheduler scheduler) {
     final service = ReminderService(
@@ -61,10 +61,7 @@ void main() {
         reminderServiceProvider.overrideWithValue(service),
         allItemsAsTargetProvider.overrideWith((ref) => Stream.value([item()])),
       ],
-      child: MaterialApp.router(
-        theme: AppTheme.light,
-        routerConfig: router,
-      ),
+      child: MaterialApp.router(theme: AppTheme.light, routerConfig: router),
     );
   }
 
@@ -77,8 +74,9 @@ void main() {
     expect(find.text('Morning run'), findsOneWidget);
   });
 
-  testWidgets('cancels the fired notification on mount (no double tone)',
-      (t) async {
+  testWidgets('cancels the fired notification on mount (no double tone)', (
+    t,
+  ) async {
     final scheduler = _FakeScheduler();
     await t.pumpWidget(harness(_FakeAlarmSound(), scheduler));
     await t.pump();
@@ -105,10 +103,10 @@ class _FakeAlarmSound implements AlarmSound {
   int stops = 0;
 
   @override
-  Future<void> start() async => starts++;
+  Future<void> start(String itemId) async => starts++;
 
   @override
-  Future<void> stop() async => stops++;
+  Future<void> stop(String itemId) async => stops++;
 }
 
 class _FakeScheduler implements ReminderScheduler {
@@ -122,7 +120,8 @@ class _FakeScheduler implements ReminderScheduler {
       true;
 
   @override
-  Future<void> cancel(int notificationId) async => cancelled.add(notificationId);
+  Future<void> cancel(int notificationId) async =>
+      cancelled.add(notificationId);
 
   @override
   Future<void> cancelAll() async {}
