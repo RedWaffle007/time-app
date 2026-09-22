@@ -112,7 +112,9 @@ jobs:
           cache: true
 
       - name: Prepare non-production Firebase configuration
-        run: cp .github/ci/google-services.json android/app/google-services.json
+        run: |
+          cp .github/ci/firebase_options.dart lib/firebase_options.dart
+          cp .github/ci/google-services.json android/app/google-services.json
 
       - name: Install Flutter dependencies
         run: flutter pub get
