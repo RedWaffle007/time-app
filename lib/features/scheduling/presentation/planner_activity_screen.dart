@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/format/datetime_format.dart';
 import '../../../core/theme/app_icons.dart';
+import '../../../core/theme/app_text.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/theme/status_style.dart';
@@ -145,10 +146,19 @@ class _ActivityCard extends ConsumerWidget {
             // Always name the zone: this time is in the TARGET's local time, not
             // the planner's — a bare "09:00" here is the most misleading thing a
             // planner could see.
-            Text(
-              'for $targetName · '
-              '${formatInstant(context, item.scheduledInstantUtc, item.timezone)} '
-              '(${item.timezone}, their local time)',
+            Text.rich(
+              TextSpan(
+                children: [
+                  const TextSpan(text: 'for '),
+                  TextSpan(text: targetName, style: AppText.bodySmallStrong),
+                  TextSpan(
+                    text:
+                        ' · '
+                        '${formatInstant(context, item.scheduledInstantUtc, item.timezone)} '
+                        '(${item.timezone}, their local time)',
+                  ),
+                ],
+              ),
               // bodySmall, not labelSmall: this reads as a sentence even though
               // it carries metadata (UI-RULES.md §3, prose-wins tiebreaker).
               style: context.text.bodySmall?.copyWith(

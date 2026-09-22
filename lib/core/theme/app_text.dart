@@ -86,6 +86,18 @@ abstract final class AppText {
     fontWeight: FontWeight.w400,
   );
 
+  /// Emphasis within [bodySmall] prose — same scale slot, bold weight.
+  ///
+  /// This is deliberately not a tenth type size. It exists for a person's name
+  /// inside otherwise-muted metadata, where emphasis must not make the line
+  /// jump in size or invite screens to invent an inline font weight.
+  static const bodySmallStrong = TextStyle(
+    fontFamily: _body,
+    fontSize: 13,
+    height: 18 / 13,
+    fontWeight: FontWeight.w700,
+  );
+
   /// Metadata: timestamps, timezone labels, counts. Not for prose.
   static const labelSmall = TextStyle(
     fontFamily: _body,
