@@ -22,6 +22,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.timeapp.time_app.MainActivity
+import com.timeapp.time_app.R
 
 /**
  * Owns the alarm SOUND so it is independent of the screen.
@@ -254,7 +255,10 @@ class AlarmSoundService : Service() {
 
     private fun buildNotification() =
         NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(applicationInfo.icon)
+            // Android small icons are monochrome silhouettes. The launcher icon
+            // becomes a solid blob here; this resource is the Checkmate mark
+            // specifically drawn for the notification tray.
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Reminder")
             .setContentText("Alarm ringing — tap to open")
             .setOngoing(true)
