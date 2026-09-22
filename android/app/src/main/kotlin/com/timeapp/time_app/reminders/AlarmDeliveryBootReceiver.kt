@@ -8,7 +8,7 @@ import android.content.Intent
 class AlarmDeliveryBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val now = System.currentTimeMillis()
-        val future = AlarmDeliveryStore.load(context).filter { it.scheduledEpoch > now }
+        val future = AlarmDeliveryStore.futureOnly(AlarmDeliveryStore.load(context), now)
         future.forEach { item ->
             AlarmDeliveryScheduler.arm(
                 context,

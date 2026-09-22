@@ -53,14 +53,24 @@ object AlarmDeliveryStore {
     }
 
     fun put(context: Context, item: Pending) {
-        save(context, load(context).filterNot { it.id == item.id } + item)
+        save(context, upsert(load(context), item))
     }
 
     fun remove(context: Context, id: Int) {
-        save(context, load(context).filterNot { it.id == id })
+        save(context, withoutId(load(context), id))
     }
 
     fun clear(context: Context) {
         prefs(context).edit().remove(KEY).apply()
     }
+
+    /** Pure collection rules used by the scheduler/boot receiver and JVM tests. */
+    internal fun upsert(items: List<Pending>, item: Pending): List<Pending> =
+        items.filterNot { it.id == item.id } + item
+
+    internal fun withoutId(items: List<Pending>, id: Int): List<Pending> =
+        items.filterNot { it.id == id }
+
+    internal fun futureOnly(items: List<Pending>, nowEpoch: Long): List<Pending> =
+        items.filter { it.scheduledEpoch > nowEpoch }
 }

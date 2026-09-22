@@ -55,7 +55,6 @@ class AlarmSoundService : Service() {
         // same id updates the one notification rather than stacking them.
         private const val NOTIF_ID = 0x7A1A
         private const val WAKE_TAG = "time_app:alarm_sound"
-        private const val MAX_MS = 10L * 60L * 1000L
         private const val TAG = "AlarmSound"
 
         fun start(context: Context, notificationId: Int, itemId: String) {
@@ -100,8 +99,7 @@ class AlarmSoundService : Service() {
 
     private var player: MediaPlayer? = null
     private var wakeLock: PowerManager.WakeLock? = null
-    private val activeNotifications = mutableMapOf<Int, String>()
-    private val activeUiItems = mutableSetOf<String>()
+    private val ownership = AlarmPlaybackOwnership()
     private val handler = Handler(Looper.getMainLooper())
     private val autoStop = Runnable {
         Log.i(TAG, "10-minute safety cap reached — stopping")
@@ -120,16 +118,15 @@ class AlarmSoundService : Service() {
             ACTION_STOP_NOTIFICATION -> {
                 val notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, -1)
                 Log.i(TAG, "release notification owner $notificationId")
-                activeNotifications.remove(notificationId)
-                if (activeNotifications.isEmpty() && activeUiItems.isEmpty()) stopAlarm()
+                ownership.releaseNotification(notificationId)
+                if (!ownership.hasOwners) stopAlarm()
                 return START_NOT_STICKY
             }
             ACTION_STOP_ITEM -> {
                 val itemId = intent.getStringExtra(EXTRA_ITEM_ID) ?: ""
                 Log.i(TAG, "stop item $itemId")
-                activeNotifications.entries.removeAll { it.value == itemId }
-                activeUiItems.remove(itemId)
-                if (activeNotifications.isEmpty() && activeUiItems.isEmpty()) stopAlarm()
+                ownership.releaseItem(itemId)
+                if (!ownership.hasOwners) stopAlarm()
                 return START_NOT_STICKY
             }
             else -> {
@@ -138,14 +135,14 @@ class AlarmSoundService : Service() {
                 if (itemId.isNotEmpty()) {
                     if (notificationId >= 0) {
                         Log.i(TAG, "claim notification owner $notificationId")
-                        activeNotifications[notificationId] = itemId
+                        ownership.claimNotification(notificationId, itemId)
                     } else {
                         // AlarmScreen owns playback independently from the fired
                         // notification. It immediately cancels that notification
                         // to prevent a second tone; retaining this UI owner keeps
                         // the service ringing until the user actually dismisses.
                         Log.i(TAG, "claim UI owner $itemId")
-                        activeUiItems.add(itemId)
+                        ownership.claimUi(itemId)
                     }
                 }
                 startAlarm()
@@ -158,7 +155,7 @@ class AlarmSoundService : Service() {
 
     private fun startAlarm() {
         // Idempotent — the UI can call start more than once (mount + resume).
-        if (player != null) return
+        if (!AlarmSoundPolicy.shouldStartPlayer(player != null)) return
 
         createChannel()
         val type =
@@ -173,7 +170,7 @@ class AlarmSoundService : Service() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_TAG).apply {
             setReferenceCounted(false)
-            acquire(MAX_MS + 5_000L)
+            acquire(AlarmSoundPolicy.MAX_RING_DURATION_MS + 5_000L)
         }
 
         try {
@@ -185,7 +182,7 @@ class AlarmSoundService : Service() {
                         .build(),
                 )
                 setDataSource(this@AlarmSoundService, alarmUri())
-                isLooping = true
+                isLooping = AlarmSoundPolicy.LOOP_WHOLE_TONE
                 setOnErrorListener { _, what, extra ->
                     Log.e(TAG, "MediaPlayer error $what/$extra")
                     false
@@ -201,7 +198,7 @@ class AlarmSoundService : Service() {
             return
         }
 
-        handler.postDelayed(autoStop, MAX_MS)
+        handler.postDelayed(autoStop, AlarmSoundPolicy.MAX_RING_DURATION_MS)
     }
 
     private fun stopAlarm() {
@@ -216,8 +213,7 @@ class AlarmSoundService : Service() {
         player = null
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
-        activeNotifications.clear()
-        activeUiItems.clear()
+        ownership.clear()
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -273,12 +269,12 @@ class AlarmSoundService : Service() {
      * same AlarmScreen. This matters when an OEM hides one of the two entries.
      */
     private fun launchAlarmUi(): PendingIntent {
-        val alarm = activeNotifications.entries.lastOrNull()
-        val itemId = alarm?.value ?: activeUiItems.lastOrNull().orEmpty()
+        val alarm = ownership.latestNotification()
+        val itemId = alarm?.second ?: ownership.latestUiItem().orEmpty()
         val intent = Intent(this, MainActivity::class.java).apply {
             action = "SELECT_NOTIFICATION"
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            putExtra("notificationId", alarm?.key ?: NOTIF_ID)
+            putExtra("notificationId", alarm?.first ?: NOTIF_ID)
             putExtra("payload", itemId)
         }
         return PendingIntent.getActivity(

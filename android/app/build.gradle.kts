@@ -108,6 +108,12 @@ dependencies {
     // restore the SDK call in src/debug/AppDistributionUpdate.kt) for a
     // deliberate tester-distribution session.
     // debugImplementation("com.google.firebase:firebase-appdistribution:16.0.0-beta20")
+
+    // App-owned native regression tests. Keep this deliberately to plain JUnit:
+    // the alarm state machines below are pure Kotlin, so they do not need a
+    // simulated Android runtime. That also avoids coupling our suite to the
+    // Robolectric/host-JDK mismatch in flutter_local_notifications' own tests.
+    testImplementation("junit:junit:4.13.2")
 }
 
 kotlin {

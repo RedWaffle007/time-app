@@ -12,11 +12,9 @@ object AlarmDeliveryScheduler {
     private const val EXTRA_ITEM = "delivery_item_id"
     private const val EXTRA_SCHEDULED = "delivery_scheduled_epoch"
 
-    private fun requestCode(id: Int) = (id xor 0x41A2_6D37) and 0x7FFF_FFFF
-
     private fun intent(context: Context, id: Int, itemId: String, scheduledEpoch: Long) =
         Intent(context, AlarmDeliveryReceiver::class.java).apply {
-            action = "com.timeapp.time_app.ALARM_DELIVERY.$id"
+            action = AlarmDeliveryIdentity.action(id)
             putExtra(EXTRA_ID, id)
             putExtra(EXTRA_ITEM, itemId)
             putExtra(EXTRA_SCHEDULED, scheduledEpoch)
@@ -30,7 +28,7 @@ object AlarmDeliveryScheduler {
         flags: Int,
     ): PendingIntent? = PendingIntent.getBroadcast(
         context,
-        requestCode(id),
+        AlarmDeliveryIdentity.requestCode(id),
         intent(context, id, itemId, scheduledEpoch),
         flags or PendingIntent.FLAG_IMMUTABLE,
     )
@@ -52,17 +50,19 @@ object AlarmDeliveryScheduler {
             PendingIntent.FLAG_UPDATE_CURRENT,
         ) ?: return "no_pending_intent"
 
-        when {
-            exact && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ->
+        when (alarmDeliveryMode(exact, Build.VERSION.SDK_INT)) {
+            AlarmDeliveryMode.EXACT_ALLOW_IDLE ->
                 manager.setExactAndAllowWhileIdle(
                     AlarmManager.RTC_WAKEUP,
                     scheduledEpoch,
                     operation,
                 )
-            exact -> manager.setExact(AlarmManager.RTC_WAKEUP, scheduledEpoch, operation)
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ->
+            AlarmDeliveryMode.EXACT ->
+                manager.setExact(AlarmManager.RTC_WAKEUP, scheduledEpoch, operation)
+            AlarmDeliveryMode.INEXACT_ALLOW_IDLE ->
                 manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, scheduledEpoch, operation)
-            else -> manager.set(AlarmManager.RTC_WAKEUP, scheduledEpoch, operation)
+            AlarmDeliveryMode.INEXACT ->
+                manager.set(AlarmManager.RTC_WAKEUP, scheduledEpoch, operation)
         }
         AlarmDeliveryStore.put(
             context,
