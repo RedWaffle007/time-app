@@ -9,6 +9,7 @@ import '../../../core/widgets/async_view.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../notifications/application/outcome_notifier.dart';
+import '../../scheduling/application/schedule_item_order.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
 
@@ -34,7 +35,7 @@ class PendingApprovalsScreen extends ConsumerWidget {
           final pending = items
               .where((i) => i.status == ScheduleItemStatus.pending)
               .toList()
-            ..sort((a, b) => a.scheduledInstantUtc.compareTo(b.scheduledInstantUtc));
+            ..sort(compareScheduleItemsDayAscendingLatestFirst);
           return ListView(
             children: [
               // The one place in the app where an orange section rule is

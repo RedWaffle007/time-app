@@ -18,6 +18,7 @@ import '../../auth/application/auth_providers.dart';
 import '../../calendar/application/calendar_grouping.dart';
 import '../../notifications/application/outcome_notifier.dart';
 import '../../reminders/presentation/reminder_primer.dart';
+import '../../scheduling/application/schedule_item_order.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
 import '../../time_tracking/presentation/log_from_done_prompt.dart';
@@ -286,9 +287,7 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
             byGroup.putIfAbsent(key, () => []).add(item);
           }
           for (final list in byGroup.values) {
-            list.sort(
-              (a, b) => a.scheduledInstantUtc.compareTo(b.scheduledInstantUtc),
-            );
+            list.sort(compareScheduleItemsLatestFirst);
           }
           final orderedKeys = byGroup.keys.toList()..sort(_compareGroupKeys);
 

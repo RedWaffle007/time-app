@@ -51,6 +51,19 @@ void main() {
 
     expect(find.text('Planned by Amina'), findsOneWidget);
     expect(find.text('Planned by you'), findsOneWidget);
+    final selfCardTitle = find.descendant(
+      of: find.byType(Card),
+      matching: find.text('Self plan'),
+    );
+    final friendCardTitle = find.descendant(
+      of: find.byType(Card),
+      matching: find.text('Friend plan'),
+    );
+    expect(
+      tester.getTopLeft(selfCardTitle).dy,
+      lessThan(tester.getTopLeft(friendCardTitle).dy),
+      reason: 'the 12:30 card must appear above the noon card',
+    );
   });
 
   testWidgets(

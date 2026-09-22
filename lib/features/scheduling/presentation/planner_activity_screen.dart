@@ -15,6 +15,7 @@ import '../../calendar/application/calendar_grouping.dart';
 import '../../archive/presentation/archive_menu_button.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../notifications/application/outcome_notifier.dart';
+import '../application/schedule_item_order.dart';
 import '../application/schedule_providers.dart';
 import '../domain/schedule_item.dart';
 
@@ -59,10 +60,8 @@ class PlannerActivityScreen extends ConsumerWidget {
         emptyMessage: "You haven't planned anything for anyone yet.",
         builder: (context, items) {
           final sorted =
-              items.where((i) => i.createdByUid != i.targetUid).toList()..sort(
-                (a, b) =>
-                    b.scheduledInstantUtc.compareTo(a.scheduledInstantUtc),
-              );
+              items.where((i) => i.createdByUid != i.targetUid).toList()
+                ..sort(compareScheduleItemsLatestFirst);
           return CollapsibleDayGroups(
             initiallyExpandedKeys: {dayKeyOf(DateTime.now())},
             groups: _grouped(context, sorted),

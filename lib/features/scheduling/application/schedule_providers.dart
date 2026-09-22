@@ -5,6 +5,7 @@ import '../../archive/application/archive_providers.dart';
 import '../../auth/application/auth_providers.dart';
 import '../data/schedule_repository.dart';
 import '../domain/schedule_item.dart';
+import 'schedule_item_order.dart';
 
 final scheduleRepositoryProvider = Provider<ScheduleRepository>((ref) {
   return ScheduleRepository(FirebaseFirestore.instance);
@@ -141,7 +142,7 @@ final archivedItemsProvider = Provider<AsyncValue<List<ScheduleItem>>>((ref) {
   final items = byId.values
       .where((i) => i.isAutoArchived || archived.contains(i.id))
       .toList()
-    ..sort((a, b) => b.scheduledInstantUtc.compareTo(a.scheduledInstantUtc));
+    ..sort(compareScheduleItemsLatestFirst);
   return AsyncData(items);
 });
 
