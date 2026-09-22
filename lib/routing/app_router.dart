@@ -38,9 +38,9 @@ import 'go_router_refresh_stream.dart';
 /// pillar is nested under its path, so its location names the branch it lives in
 /// — `go()` from a notification lands inside the right pillar with the bottom bar
 /// and a back stack, not on a bare screen. Account-level routes (`/profile`,
-/// `/archived`, `/calendar`, `/friends`, `/dev`) stay top-level: they are reached
-/// from the You pillar and belong to no single pillar. The three old delegation
-/// stances live as sub-tabs inside `/plan` (see [plan]).
+/// `/archived`, `/calendar`, `/dev`) stay top-level; Friends lives under You so
+/// notification entry has a main-tab route underneath it. The three old
+/// delegation stances live as sub-tabs inside `/plan` (see [plan]).
 class Routes {
   static const home = '/'; // HomeGate: profile-completion or app home.
   static const auth = '/auth';
@@ -73,9 +73,9 @@ class Routes {
   /// This is the REAL [ScheduleBuilderScreen], not a parallel create flow — the
   /// calendar's whole integration with the builder is one optional
   /// `initialDate`. It is a sub-route of [calendar] for the same reason
-  /// `/friends/search` is a sub-route of `/friends`: the calendar is pushed at
-  /// the root, so its create flow belongs to its own stack and Back returns to
-  /// the grid.
+  /// `/you/friends/search` is a sub-route of `/you/friends`: the calendar is
+  /// pushed at the root, so its create flow belongs to its own stack and Back
+  /// returns to the grid.
   ///
   /// It is a SECOND registration of that screen, and that is examined rather
   /// than assumed. D2 was three screens registered as tabs *and* as flat
@@ -132,16 +132,12 @@ class Routes {
         queryParameters: {alarmItemParam: itemId},
       ).toString();
 
-  /// **The social layer.** All top-level and pushed, deliberately — the same
-  /// reasoning as [profile] and [archived]. The nav bar's three tabs are the
-  /// three stances in the delegation loop (target, planner, group member) and a
-  /// friend graph is none of them; making Friends a fourth tab would dilute
-  /// that meaning exactly as `DECISIONS.md` 2026-08-18 records for the chatbot.
-  ///
-  /// They are reached from the account menu, which every tab's AppBar shows, so
-  /// one entry point serves all three tabs and Back returns to whichever tab
-  /// launched it.
-  static const friends = '/friends';
+  /// **The social layer.** Friends belongs under the You pillar rather than as
+  /// a separate pillar. Keeping it in that branch is also load-bearing for
+  /// notification entry: `go('/you/friends')` builds You underneath Friends,
+  /// so Back has a main-tab destination even when the app was opened directly
+  /// from a friend-accept notification.
+  static const friends = '/you/friends';
   static const friendRequests = '$friends/requests';
   static const userSearch = '$friends/search';
   static const blockedUsers = '$friends/blocked';
@@ -429,6 +425,32 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: Routes.you,
                 builder: (context, state) => const YouScreen(),
+                routes: [
+                  // Social screens live in You's branch. In particular, a
+                  // friend-accept notification uses `go(Routes.friends)`; this
+                  // parent route gives that deep link a real screen beneath it
+                  // instead of leaving Friends as the root and letting Back
+                  // exit the activity.
+                  GoRoute(
+                    path: 'friends',
+                    builder: (context, state) => const FriendsScreen(),
+                    routes: [
+                      GoRoute(
+                        path: 'requests',
+                        builder: (context, state) =>
+                            const FriendRequestsScreen(),
+                      ),
+                      GoRoute(
+                        path: 'search',
+                        builder: (context, state) => const UserSearchScreen(),
+                      ),
+                      GoRoute(
+                        path: 'blocked',
+                        builder: (context, state) => const BlockedUsersScreen(),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ],
           ),
@@ -489,31 +511,6 @@ final routerProvider = Provider<GoRouter>((ref) {
                 state.uri.queryParameters[Routes.calendarDateParam],
               ),
             ),
-          ),
-        ],
-      ),
-      // The social layer. Account-level and pushed, for the reason spelled out
-      // on the `Routes.friends` constant: a friend graph is not one of the
-      // three stances the nav bar names.
-      //
-      // Search, requests and blocked users are SUB-ROUTES of `/friends`, so
-      // each resolves into the same stack and Back returns to the friends list
-      // rather than to whichever tab was underneath.
-      GoRoute(
-        path: Routes.friends,
-        builder: (context, state) => const FriendsScreen(),
-        routes: [
-          GoRoute(
-            path: 'requests',
-            builder: (context, state) => const FriendRequestsScreen(),
-          ),
-          GoRoute(
-            path: 'search',
-            builder: (context, state) => const UserSearchScreen(),
-          ),
-          GoRoute(
-            path: 'blocked',
-            builder: (context, state) => const BlockedUsersScreen(),
           ),
         ],
       ),
