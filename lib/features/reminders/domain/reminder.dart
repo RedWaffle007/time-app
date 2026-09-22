@@ -1,5 +1,13 @@
 import 'dart:convert';
 
+/// Increment when the OS-level notification/delivery configuration changes in
+/// a way that requires already scheduled reminders to be replaced.
+///
+/// Revision 2 removes Android's FLAG_INSISTENT so AlarmSoundService is the sole
+/// owner of whole-tone repetition. Including this in the fingerprint migrates
+/// existing future alarms on the next reconciliation, not just newly made ones.
+const reminderDeliveryRevision = 2;
+
 /// The reminder layer's value types. No plugins, no Firestore, no BuildContext —
 /// everything here is pure, so the reconciler that consumes it is unit-testable
 /// without a device.
@@ -32,6 +40,7 @@ class ReminderRequest {
   /// holding the wrong thing. Compared against the mirror to decide whether a
   /// re-schedule is needed — see [ScheduledReminder.fingerprint].
   String get fingerprint =>
+      '$reminderDeliveryRevision|'
       '${fireAtUtc.millisecondsSinceEpoch}|$title|$body';
 
   @override

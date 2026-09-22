@@ -27,14 +27,12 @@ import com.timeapp.time_app.R
 /**
  * Owns the alarm SOUND so it is independent of the screen.
  *
- * The reminder's notification carries an insistent tone, which is what rings a
- * fired reminder over a foreground app. But FLAG_INSISTENT holds nothing awake:
- * once the full-screen intent's screen times out, the OS stops servicing that
- * sound and it cuts out — an alarm you would sleep through. So the moment the
- * alarm UI comes up ([AlarmScreen]), it cancels that notification and starts
- * THIS service instead. A foreground service holding a PARTIAL_WAKE_LOCK, playing
- * a looping [MediaPlayer] on USAGE_ALARM, keeps ringing with the screen off until
- * the user dismisses — exactly how AOSP DeskClock's AlarmService behaves.
+ * The reminder's notification carries a one-shot fallback tone. Repetition is
+ * deliberately owned here instead of by FLAG_INSISTENT: some Android variants
+ * restart notification audio on a short cadence without waiting for the source
+ * to finish. A foreground service holding a PARTIAL_WAKE_LOCK and playing a
+ * looping [MediaPlayer] on USAGE_ALARM finishes the selected tone before each
+ * replay and keeps ringing with the screen off until the user dismisses.
  *
  * Lifecycle is driven from Dart over `time_app/alarm_sound` (start on mount, stop
  * on dismiss), with a 10-minute safety cap so a missed dismiss cannot ring — or

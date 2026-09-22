@@ -330,6 +330,29 @@ void main() {
       expect(retitled.toSchedule, hasLength(1));
     });
 
+    test('a legacy delivery policy is replaced under the same notification id',
+        () {
+      final desired = request('a');
+      final legacy = ScheduledReminder(
+        itemId: desired.itemId,
+        notificationId: 41,
+        fireAtUtc: desired.fireAtUtc,
+        // Revision 1 had no delivery-policy prefix and used FLAG_INSISTENT.
+        fingerprint:
+            '${desired.fireAtUtc.millisecondsSinceEpoch}|${desired.title}|${desired.body}',
+      );
+
+      final migrated = reconcileReminders(
+        desired: [desired],
+        mirror: [legacy],
+        now: now,
+      );
+
+      expect(migrated.toSchedule, hasLength(1));
+      expect(migrated.toSchedule.single.notificationId, 41);
+      expect(migrated.mirror.single.fingerprint, desired.fingerprint);
+    });
+
     test('an item that stops being desired is cancelled', () {
       // One rule covering withdraw, reject, done, skip, un-approval and outright
       // deletion: each of them simply stops producing a desired entry.

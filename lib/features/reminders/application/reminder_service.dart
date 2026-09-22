@@ -137,9 +137,10 @@ class ReminderService {
   /// Sign-out. Drops every scheduled reminder and the mirror with it.
   Future<void> clearAll() => sync(items: const [], uid: null, reason: 'clear');
 
-  /// Silence and clear the alarm notification for [itemId] — the alarm screen's
-  /// Dismiss. FLAG_INSISTENT loops the tone until the notification is cancelled,
-  /// so this is what stops the sound.
+  /// Clear the alarm notification for [itemId] — the alarm screen's Dismiss.
+  /// Repeating playback is owned separately by AlarmSoundService and stopped by
+  /// AlarmScreen; cancelling here removes the visible notification and its
+  /// one-shot fallback sound.
   ///
   /// It cancels the OS notification but does NOT touch the mirror: the reminder
   /// has already fired, so on the next reconcile its instant is in the past,

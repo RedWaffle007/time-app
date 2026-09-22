@@ -21,11 +21,11 @@ import '../application/reminder_providers.dart';
 /// at `Routes.alarm` — a single place that decides where a reminder goes.
 ///
 /// **The sound lives in a native service, not here.** On mount this screen
-/// starts `AlarmSoundService` (a foreground service holding a wake lock) and
-/// cancels the fired notification so its insistent tone does not double up. The
-/// service is what keeps ringing with the screen off; every way off this screen
-/// stops it. The notification's own tone still covers the foreground-app case,
-/// where this screen never opens.
+/// claims `AlarmSoundService` (a foreground service holding a wake lock) and
+/// cancels the fired notification so its one-shot fallback tone does not double
+/// up. The service is what keeps ringing with the screen off; every way off this
+/// screen stops it. The notification's own tone still covers the case where
+/// native delivery is delayed.
 ///
 /// It is deliberately thin: it shows what is due and hands off to My Schedule,
 /// where Done and Skip already live. It never marks an outcome itself.
@@ -45,15 +45,15 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
   @override
   void initState() {
     super.initState();
-    // Start the wake-lock-backed tone FIRST so there is no gap, then cancel the
-    // notification's insistent tone so the two do not overlap for more than an
-    // instant. Deferred a frame: `ref` must not be used during initState's
+    // Claim the wake-lock-backed tone FIRST so there is no gap, then cancel the
+    // notification's one-shot fallback so the two do not overlap for more than
+    // an instant. Deferred a frame: `ref` must not be used during initState's
     // synchronous build, and a platform call has no place there either.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(alarmSoundProvider).start(widget.itemId);
       // `dismiss` here means "cancel the OS notification for this item" — it
-      // stops the insistent notification tone now that the service owns the
+      // stops any remaining notification tone now that the service owns the
       // sound. It does not navigate; that is `_leave`.
       ref.read(reminderServiceProvider).dismiss(widget.itemId);
     });

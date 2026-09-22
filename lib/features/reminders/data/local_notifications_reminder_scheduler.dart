@@ -16,6 +16,36 @@ import 'alarm_delivery.dart';
 import 'reminder_audit_log.dart';
 import 'reminder_scheduler.dart';
 
+/// Builds the visible alarm notification without asking Android's notification
+/// subsystem to repeat its sound. [AlarmSoundService] is the single repeating
+/// owner: its looping MediaPlayer reaches the end of the selected tone before
+/// starting it again. The notification remains audible once as a fallback if
+/// native delivery is delayed.
+@visibleForTesting
+AndroidNotificationDetails buildAlarmNotificationDetails(String channelId) =>
+    AndroidNotificationDetails(
+      channelId,
+      'Reminders',
+      channelDescription: 'Reminders for items on your schedule.',
+      importance: Importance.high,
+      priority: Priority.high,
+      // The white-on-transparent tray glyph. Without it Android falls back to
+      // the launcher icon and, because the small icon is rendered as an alpha
+      // silhouette, draws a featureless blob.
+      icon: 'ic_notification',
+      // ALARM, not reminder. The category drives the OS's interruption and DND
+      // handling: `alarm` is the treatment a clock alarm gets — allowed through
+      // where an ordinary reminder is held back.
+      category: AndroidNotificationCategory.alarm,
+      // A full-screen intent is not a suppressible notification: while another
+      // app is foreground it alerts over the top, and while the screen is
+      // locked/off it launches the app full-screen.
+      fullScreenIntent: true,
+      // Deliberately no FLAG_INSISTENT (0x4). Several Android variants restart
+      // notification audio on a short cadence instead of waiting for a long
+      // tone to finish. AlarmSoundService owns whole-tone repetition instead.
+    );
+
 /// The Android implementation, and the only file in the feature that knows what
 /// AlarmManager is.
 ///
@@ -95,32 +125,7 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
   );
 
   static final _details = NotificationDetails(
-    android: AndroidNotificationDetails(
-      channelId,
-      'Reminders',
-      channelDescription: 'Reminders for items on your schedule.',
-      importance: Importance.high,
-      priority: Priority.high,
-      // The white-on-transparent tray glyph. Without it Android falls back to
-      // the launcher icon and, because the small icon is rendered as an alpha
-      // silhouette, draws a featureless blob.
-      icon: 'ic_notification',
-      // ALARM, not reminder. The category drives the OS's interruption and DND
-      // handling: `alarm` is the treatment a clock alarm gets — allowed through
-      // where an ordinary reminder is held back.
-      category: AndroidNotificationCategory.alarm,
-      // The whole point of this change. A full-screen intent is not a
-      // suppressible notification: while another app is foreground it alerts
-      // over the top (heads-up + sound), and while the screen is locked/off it
-      // launches the app full-screen. This is what makes a reminder ring
-      // regardless of what the user is doing — the silence-while-in-another-app
-      // bug the USAGE_ALARM channel alone did not fix.
-      fullScreenIntent: true,
-      // FLAG_INSISTENT (0x4): loop the alarm tone until the notification is
-      // dismissed, rather than playing once. The alarm screen's Dismiss cancels
-      // the notification, which is what stops the loop.
-      additionalFlags: Int32List.fromList(<int>[4]),
-    ),
+    android: buildAlarmNotificationDetails(channelId),
   );
 
   static const _receivedPlanChannel = AndroidNotificationChannel(
