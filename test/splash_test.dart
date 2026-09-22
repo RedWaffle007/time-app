@@ -20,6 +20,16 @@ Widget _host() => ProviderScope(
   ),
 );
 
+Widget _switchableHost({required bool skipReveal}) => ProviderScope(
+  overrides: [
+    authStateProvider.overrideWith((ref) => Stream<User?>.value(null)),
+  ],
+  child: Directionality(
+    textDirection: TextDirection.ltr,
+    child: SplashOverlay(skipReveal: skipReveal, child: const Text('APP')),
+  ),
+);
+
 void main() {
   setUp(SplashOverlay.resetForTest);
 
@@ -125,4 +135,20 @@ void main() {
     expect(find.text('CHECKMATE'), findsNothing);
     expect(find.text('APP'), findsOneWidget);
   });
+
+  testWidgets(
+    'a notification launch dismisses an in-progress cold-start reveal',
+    (tester) async {
+      await tester.pumpWidget(_switchableHost(skipReveal: false));
+      expect(find.text('CHECKMATE'), findsOneWidget);
+
+      // Mirrors getInitialMessage completing after the first frame.
+      await tester.pumpWidget(_switchableHost(skipReveal: true));
+      await tester.pump();
+
+      expect(find.text('CHECKMATE'), findsNothing);
+      expect(find.text('APP'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

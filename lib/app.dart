@@ -55,6 +55,11 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
   bool _registrationFailureDismissed = false;
   bool _registrationRetryRequested = false;
 
+  /// A notification tap that cold-started this process. The FCM/local plugins
+  /// report it asynchronously, so the splash may already be mounted when this
+  /// flips; [SplashOverlay.skipReveal] handles both the initial and late signal.
+  bool _openedFromNotification = false;
+
   @override
   void initState() {
     super.initState();
@@ -187,6 +192,7 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
       final itemId = launch?.notificationResponse?.payload;
       if (itemId == null || itemId.isEmpty) return;
       if (!mounted) return;
+      _dismissColdStartReveal();
       ref.read(notificationRouterProvider).openItem(itemId);
     } catch (e) {
       // Nothing here is worth failing a launch over — on a platform with no
@@ -261,7 +267,13 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
   /// would drift the first time a route moved — which these routes already did
   /// once, in the Session 3 shell refactor.
   void _handleTap(RemoteMessage message) {
+    _dismissColdStartReveal();
     ref.read(notificationRouterProvider).openForPushEvent(message.data);
+  }
+
+  void _dismissColdStartReveal() {
+    if (!mounted || _openedFromNotification) return;
+    setState(() => _openedFromNotification = true);
   }
 
   @override
@@ -416,13 +428,14 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
       // every route is under `child` here — so neither can paint over the lock.
       // `LockScreen` deliberately uses `Material` rather than `Scaffold`, so
       // nothing can be posted onto it either.
-      // THE COLD-START REVEAL wraps the app lock, not the reverse: on a fresh
-      // process launch the black Supercell-style reveal covers EVERYTHING —
+      // THE COLD-START REVEAL wraps the app lock, not the reverse: on an ordinary
+      // fresh launch the black Supercell-style reveal covers EVERYTHING —
       // including the lock screen — then fades to reveal whatever gate resolves
-      // beneath. A warm resume never re-runs `main()`, so the reveal is
-      // cold-start-only by construction (see SplashOverlay). It holds until the
-      // app is ready, so no boot flicker shows through.
+      // beneath. A notification launch bypasses it because the user explicitly
+      // asked to see one destination now; a warm resume never re-runs `main()`.
+      // See SplashOverlay for both paths.
       builder: (context, child) => SplashOverlay(
+        skipReveal: _openedFromNotification,
         child: AppLockGate(
           child: TimeBackdrop(
             key: TimeBackdrop.backdropKey,

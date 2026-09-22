@@ -18,12 +18,13 @@ import '../data/splash_sound.dart';
 /// isolate — which is precisely Android's cold-start / warm-resume distinction,
 /// read the reliable way (isolate lifetime) rather than guessed from lifecycle
 /// callbacks. So the reveal is intrinsically cold-start-only: resume never
-/// triggers it.
+/// triggers it. A notification cold start is the deliberate exception: the user
+/// already chose a destination, so [skipReveal] exposes it immediately.
 ///
 /// It is guarded two ways so it can never replay WITHIN a process either:
 ///   1. [_revealPlayed] — a process-scoped static, `false` on every fresh
-///      isolate, set `true` only once the reveal fully completes. A killed
-///      process resets it (a genuine cold start); a live one keeps it.
+///      isolate, set `true` once the reveal completes or a notification launch
+///      bypasses it. A killed process resets it; a live one keeps it.
 ///   2. This State's own `_done` flag survives parent rebuilds (auth changes,
 ///      etc.), so a mid-session rebuild of `MaterialApp.builder` can't replay it.
 ///
@@ -33,10 +34,19 @@ import '../data/splash_sound.dart';
 /// wait: if the profile read stalls, the reveal fades anyway and HomeGate's own
 /// loading/Retry UI takes over beneath, rather than the black holding forever.
 class SplashOverlay extends ConsumerStatefulWidget {
-  const SplashOverlay({super.key, required this.child});
+  const SplashOverlay({
+    super.key,
+    required this.child,
+    this.skipReveal = false,
+  });
 
   /// The whole app (the app-lock gate + router) rendered beneath the reveal.
   final Widget child;
+
+  /// A notification tap is already an explicit destination request, so a cold
+  /// start must reveal that destination immediately instead of holding it
+  /// behind the normal launch animation and its readiness timeout.
+  final bool skipReveal;
 
   /// Process-scoped: has the reveal already played in THIS process? Reset only by
   /// a fresh isolate, i.e. a true cold start.
@@ -108,9 +118,11 @@ class _SplashOverlayState extends ConsumerState<SplashOverlay>
   void initState() {
     super.initState();
 
-    if (SplashOverlay._revealPlayed) {
+    if (SplashOverlay._revealPlayed || widget.skipReveal) {
       // Warm path within a live process (or a rebuild): the reveal has already
-      // played, so this is a pass-through from the first frame.
+      // played, so this is a pass-through from the first frame. Notification
+      // launches take the same immediate path even on a fresh process.
+      if (widget.skipReveal) SplashOverlay._revealPlayed = true;
       _done = true;
       // Late finals must still be initialised — disposed immediately below is
       // avoided by only creating them on the cold path.
@@ -150,6 +162,22 @@ class _SplashOverlayState extends ConsumerState<SplashOverlay>
     SplashSound.instance.play();
 
     _intro.forward();
+  }
+
+  @override
+  void didUpdateWidget(SplashOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // `getInitialMessage()` completes asynchronously after the first frame. If
+    // it identifies a notification launch while the reveal is already running,
+    // tear the reveal down on this parent rebuild instead of waiting for its
+    // 3-second intro or 10-second readiness ceiling.
+    if (widget.skipReveal && !oldWidget.skipReveal && !_done) {
+      SplashOverlay._revealPlayed = true;
+      _holdTimer?.cancel();
+      _intro.stop();
+      _outro.stop();
+      _done = true;
+    }
   }
 
   @override
