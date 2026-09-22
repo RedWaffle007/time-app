@@ -21,6 +21,7 @@ import '../../reminders/presentation/reminder_primer.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
 import '../../time_tracking/presentation/log_from_done_prompt.dart';
+import '../application/schedule_time_section.dart';
 import 'hero_band.dart';
 
 /// The target's approved items — where they mark Done or Skip, and where a
@@ -63,7 +64,8 @@ class OutcomeScreen extends ConsumerStatefulWidget {
   ConsumerState<OutcomeScreen> createState() => _OutcomeScreenState();
 }
 
-class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
+class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
+    with WidgetsBindingObserver {
   /// The item currently outlined. Separate from `widget.highlightItemId`
   /// because it FADES: this tab is a shell branch, so its location — query
   /// parameter and all — survives every tab switch for the life of the process.
@@ -71,6 +73,12 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
   /// would still be outlined tonight.
   String? _highlighted;
   Timer? _fade;
+
+  /// Drives time-section changes even when Firestore is quiet. Without this,
+  /// a screen left open across midnight can keep yesterday under Future until
+  /// some unrelated state happens to rebuild it.
+  Timer? _clockTick;
+  late DateTime _nowUtc;
 
   /// Key on the highlighted card, so it can be scrolled to precisely once built.
   final _highlightKey = GlobalKey();
@@ -97,7 +105,19 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _nowUtc = DateTime.now().toUtc();
+    _clockTick = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() => _nowUtc = DateTime.now().toUtc());
+    });
     _applyHighlight(widget.highlightItemId);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      setState(() => _nowUtc = DateTime.now().toUtc());
+    }
   }
 
   @override
@@ -113,7 +133,9 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _fade?.cancel();
+    _clockTick?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
@@ -247,34 +269,28 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
               .where((i) => i.status == ScheduleItemStatus.approved)
               .toList();
 
-          // Group by each item's OWN-timezone day (`calendarDayFor`, never the
-          // viewer's — a "Tue 9:00" card must not file under Monday). UPCOMING
-          // days rise to the top (soonest first); PAST days sink below
-          // (most-recent first). Within a day, items read chronologically.
-          // (Upcoming-first chosen 2026-08-26; day grouping added 2026-08-27.)
-          final byDay = <String, List<ScheduleItem>>{};
-          final dateFor = <String, DateTime>{};
+          // Group by time section AND each item's own-timezone day. The section
+          // must use that same timezone: comparing a Kolkata card's date with a
+          // Chicago phone's date is how an old plan can appear under Future.
+          // Today comes first, then future days soonest-first, then past days
+          // most-recent-first. Within a day, items read chronologically.
+          final byGroup = <_ScheduleGroupKey, List<ScheduleItem>>{};
+          final dateFor = <_ScheduleGroupKey, DateTime>{};
           for (final item in approved) {
             final day = calendarDayFor(item);
-            final key = dayKeyOf(day);
+            final key = (
+              section: scheduleTimeSection(item, _nowUtc),
+              day: dayKeyOf(day),
+            );
             dateFor[key] = day;
-            byDay.putIfAbsent(key, () => []).add(item);
+            byGroup.putIfAbsent(key, () => []).add(item);
           }
-          for (final list in byDay.values) {
+          for (final list in byGroup.values) {
             list.sort(
               (a, b) => a.scheduledInstantUtc.compareTo(b.scheduledInstantUtc),
             );
           }
-          // yyyy-MM-dd keys sort lexicographically = chronologically, so the
-          // today-split and the per-side ordering can work on the keys directly.
-          final todayKey = dayKeyOf(DateTime.now());
-          final upcomingKeys =
-              byDay.keys.where((k) => k.compareTo(todayKey) >= 0).toList()
-                ..sort();
-          final pastKeys =
-              byDay.keys.where((k) => k.compareTo(todayKey) < 0).toList()
-                ..sort((a, b) => b.compareTo(a));
-          final orderedKeys = [...upcomingKeys, ...pastKeys];
+          final orderedKeys = byGroup.keys.toList()..sort(_compareGroupKeys);
 
           _approvedCount = approved.length;
           // Keep the flattened position for the lazy-list fallback. Expanding a
@@ -285,7 +301,7 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
           _highlightIndex = null;
           if (_highlighted != null) {
             for (final key in orderedKeys) {
-              final dayItems = byDay[key]!;
+              final dayItems = byGroup[key]!;
               final index = dayItems.indexWhere(
                 (item) => item.id == _highlighted,
               );
@@ -299,10 +315,10 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
 
           // The NEXT upcoming item (earliest future, no outcome) drives the hero
           // band and the primer — the same facts the old `upcoming` list carried.
-          final now = DateTime.now().toUtc();
           ScheduleItem? nextItem;
           for (final item in approved) {
-            if (item.outcome == null && item.scheduledInstantUtc.isAfter(now)) {
+            if (item.outcome == null &&
+                item.scheduledInstantUtc.isAfter(_nowUtc)) {
               if (nextItem == null ||
                   item.scheduledInstantUtc.isBefore(
                     nextItem.scheduledInstantUtc,
@@ -319,7 +335,10 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
           if (_highlighted != null) {
             for (final item in approved) {
               if (item.id == _highlighted) {
-                forceKey = dayKeyOf(calendarDayFor(item));
+                forceKey = _storageKey((
+                  section: scheduleTimeSection(item, _nowUtc),
+                  day: dayKeyOf(calendarDayFor(item)),
+                ));
                 break;
               }
             }
@@ -327,7 +346,10 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
 
           return CollapsibleDayGroups(
             controller: _scrollController,
-            initiallyExpandedKeys: {todayKey},
+            initiallyExpandedKeys: {
+              for (final key in orderedKeys)
+                if (key.section == ScheduleTimeSection.today) _storageKey(key),
+            },
             forceExpandKey: forceKey,
             leading: [
               HeroBand(nextItem: nextItem),
@@ -336,18 +358,16 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
             groups: [
               for (final key in orderedKeys)
                 DayGroupData(
-                  key: key,
+                  key: _storageKey(key),
                   label: formatWallDate(context, dateFor[key]!),
-                  // Today / Future plans / Past plans buckets. yyyy-MM-dd keys
-                  // compare chronologically, so today is ==, future is >, past <.
-                  section: key == todayKey
-                      ? 'Today'
-                      : (key.compareTo(todayKey) > 0
-                            ? 'Future plans'
-                            : 'Past plans'),
-                  itemCount: byDay[key]!.length,
+                  section: switch (key.section) {
+                    ScheduleTimeSection.today => 'Today',
+                    ScheduleTimeSection.future => 'Future plans',
+                    ScheduleTimeSection.past => 'Past plans',
+                  },
+                  itemCount: byGroup[key]!.length,
                   itemBuilder: (context, index) {
-                    final item = byDay[key]![index];
+                    final item = byGroup[key]![index];
                     return _OutcomeCard(
                       item: item,
                       highlighted: item.id == _highlighted,
@@ -363,6 +383,23 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen> {
       ),
     );
   }
+}
+
+typedef _ScheduleGroupKey = ({ScheduleTimeSection section, String day});
+
+String _storageKey(_ScheduleGroupKey key) => '${key.section.name}:${key.day}';
+
+int _compareGroupKeys(_ScheduleGroupKey a, _ScheduleGroupKey b) {
+  const rank = {
+    ScheduleTimeSection.today: 0,
+    ScheduleTimeSection.future: 1,
+    ScheduleTimeSection.past: 2,
+  };
+  final bySection = rank[a.section]!.compareTo(rank[b.section]!);
+  if (bySection != 0) return bySection;
+  return a.section == ScheduleTimeSection.past
+      ? b.day.compareTo(a.day)
+      : a.day.compareTo(b.day);
 }
 
 class _OutcomeCard extends ConsumerWidget {

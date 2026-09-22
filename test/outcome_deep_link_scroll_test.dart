@@ -9,22 +9,14 @@ import 'package:time_app/features/outcomes/presentation/outcome_screen.dart';
 import 'package:time_app/features/scheduling/application/schedule_providers.dart';
 import 'package:time_app/features/scheduling/domain/schedule_item.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
-import 'package:timezone/timezone.dart' as tz;
 
 void main() {
   testWidgets('My Schedule identifies external and self planners', (
     tester,
   ) async {
     tz_data.initializeTimeZones();
-    final localNow = DateTime.now();
-    final location = tz.getLocation('Asia/Kolkata');
-    final todayAtNoon = tz.TZDateTime(
-      location,
-      localNow.year,
-      localNow.month,
-      localNow.day,
-      12,
-    ).toUtc();
+    final utcNow = DateTime.now().toUtc();
+    final todayAtNoon = DateTime.utc(utcNow.year, utcNow.month, utcNow.day, 12);
     final items = [
       _item(
         id: 'from-friend',
