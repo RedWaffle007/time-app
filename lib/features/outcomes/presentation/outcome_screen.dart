@@ -14,6 +14,7 @@ import '../../../core/widgets/async_view.dart';
 import '../../../core/widgets/collapsible_day_groups.dart';
 import '../../../routing/app_router.dart';
 import '../../archive/presentation/archive_menu_button.dart';
+import '../../auth/application/auth_providers.dart';
 import '../../calendar/application/calendar_grouping.dart';
 import '../../notifications/application/outcome_notifier.dart';
 import '../../reminders/presentation/reminder_primer.dart';
@@ -382,6 +383,10 @@ class _OutcomeCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final outcome = item.outcome;
+    final plannerName = _isSelfPlanned
+        ? 'you'
+        : ref.watch(profileByUidProvider(item.createdByUid)).value?.name ??
+              'someone';
 
     return Card(
       key: cardKey,
@@ -418,6 +423,13 @@ class _OutcomeCard extends ConsumerWidget {
             const SizedBox(height: Space.xs),
             Text(
               formatInstant(context, item.scheduledInstantUtc, item.timezone),
+            ),
+            const SizedBox(height: Space.xs),
+            Text(
+              'Planned by $plannerName',
+              style: context.text.bodySmall?.copyWith(
+                color: context.colors.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: Space.md),
             if (outcome == null)

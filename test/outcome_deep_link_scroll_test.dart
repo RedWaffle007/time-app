@@ -3,16 +3,68 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:time_app/core/theme/app_theme.dart';
 import 'package:time_app/core/theme/app_tokens.dart';
+import 'package:time_app/features/auth/application/auth_providers.dart';
+import 'package:time_app/features/auth/domain/user_profile.dart';
 import 'package:time_app/features/outcomes/presentation/outcome_screen.dart';
 import 'package:time_app/features/scheduling/application/schedule_providers.dart';
 import 'package:time_app/features/scheduling/domain/schedule_item.dart';
-import 'package:timezone/data/latest.dart' as tz;
+import 'package:timezone/data/latest.dart' as tz_data;
+import 'package:timezone/timezone.dart' as tz;
 
 void main() {
+  testWidgets('My Schedule identifies external and self planners', (
+    tester,
+  ) async {
+    tz_data.initializeTimeZones();
+    final localNow = DateTime.now();
+    final location = tz.getLocation('Asia/Kolkata');
+    final todayAtNoon = tz.TZDateTime(
+      location,
+      localNow.year,
+      localNow.month,
+      localNow.day,
+      12,
+    ).toUtc();
+    final items = [
+      _item(
+        id: 'from-friend',
+        title: 'Friend plan',
+        instant: todayAtNoon,
+        createdByUid: 'planner',
+      ),
+      _item(
+        id: 'self-plan',
+        title: 'Self plan',
+        instant: todayAtNoon.add(const Duration(minutes: 30)),
+      ),
+    ];
+    const planner = UserProfile(
+      uid: 'planner',
+      name: 'Amina',
+      homeTimezone: 'Asia/Kolkata',
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          myItemsAsTargetProvider.overrideWithValue(AsyncData(items)),
+          profileByUidProvider.overrideWith(
+            (ref, uid) => Stream.value(uid == planner.uid ? planner : null),
+          ),
+        ],
+        child: MaterialApp(theme: AppTheme.light, home: const OutcomeScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Planned by Amina'), findsOneWidget);
+    expect(find.text('Planned by you'), findsOneWidget);
+  });
+
   testWidgets(
     'a far deep-linked schedule item is built, revealed and highlighted',
     (tester) async {
-      tz.initializeTimeZones();
+      tz_data.initializeTimeZones();
       final now = DateTime.now().toUtc();
       const targetId = 'far-target';
       const targetTitle = 'Deep linked target';
@@ -83,10 +135,11 @@ ScheduleItem _item({
   required String id,
   required String title,
   required DateTime instant,
+  String createdByUid = 'user',
 }) => ScheduleItem(
   id: id,
   targetUid: 'user',
-  createdByUid: 'user',
+  createdByUid: createdByUid,
   groupId: 'group',
   title: title,
   localWallTime: '09:00',
