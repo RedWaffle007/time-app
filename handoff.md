@@ -2,10 +2,11 @@
 
 ## Baseline
 
-- Branch: `main`; latest verified and pushed commit is `2474756` (Android alarm
-  wake/fallback Dismiss and splash-ting fade); GitHub CI was green.
-- The working tree contains the device-regression stabilization pass described
-  below. It has not yet been verified or committed.
+- Branch: `main`; latest verified and pushed commit is `01ff2b5` (alarm delivery
+  and completion regression stabilization); the user confirmed the reported
+  regressions are gone on-device.
+- The working tree replaces the completion confetti motion model from the
+  supplied WhatsApp reference. It has not yet been verified or committed.
 - Do not assume backend/rules deployment from a Git push. Confirm with the user
   before any deployment or other external state change.
 
@@ -124,7 +125,8 @@ Back behavior, bottom bar, and notification routing.
 
 26. Apply silent completion confetti to every task type:
 
-  **Implemented in the current stabilization pass; verification pending.**
+  **Delivery/lifecycle is complete. The working tree replaces its visual motion
+  with a measured 1.4-second ballistic burst; verification pending.**
 
 Self-planned items, items another person planned for the current user, and
 items the current user planned for someone else. The existing durable event
@@ -239,8 +241,6 @@ platform permits:
 
 ## Next session
 
-Verify and commit the current device-regression stabilization pass. It fixes the
-unlocked alarm restart loop, foreground Volume Down handling, scheduled-time
-delivery (including the previously unregistered native arm channel) and
-priority, celebration duplication/coverage/continuation and sound, immutable
-outcomes, and the remaining splash hard cut. Then resume item 22.
+Verify and commit the completion-confetti visual replacement, including its
+1.4-second timing/physics/widget regressions and an on-device visual pass. Then
+resume item 22.

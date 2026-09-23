@@ -5752,3 +5752,21 @@ Done and Skip are now transactional first-write-wins operations. The UI disables
 both controls while a write is pending, and Firestore rules reject replacing an
 existing human outcome. The only allowed replacement remains the established
 automatic lapse refinement from `Did not respond` to `User unavailable`.
+
+---
+
+## Completion confetti uses measured ballistic motion (2026-09-23)
+
+The supplied WhatsApp reference was inspected frame by frame at 30 fps. Its
+first complete effect remains visible for 42 frames and is absent on the next:
+the visual contract is therefore 1,400ms, replacing the previous guessed
+1,500ms duration. The reference is an instantaneous compact burst followed by
+drag, gravity, rotation and fade—not a bottom-origin sine arc.
+
+The old painter is replaced by a deterministic per-event ballistic simulation.
+It precomputes 132 paper, ribbon and sparkle particles once per event, then one
+`CustomPaint` samples their positions while the controller runs. Density and
+dispersion intentionally exceed the reference, reaching the horizontal edges
+and both vertical halves without extending the measured duration. The overlay
+remains `IgnorePointer`, isolated by `RepaintBoundary`, and is removed by the
+animation controller's completion signal rather than a second timer.

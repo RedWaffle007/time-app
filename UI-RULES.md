@@ -817,9 +817,12 @@ never lengthen the reveal or end in an abrupt hard cut.
 ### 6.15a Completion celebration
 
 Done produces one silent, full-viewport colored-paper celebration per task. It
-never plays background audio. Repeated live snapshots must not restart the same
-event, a slow acknowledgement must not block the next event, and pausing or
-locking the app pauses the current visual rather than replaying it from zero.
+is a 1.4-second ballistic burst: paper rapidly explodes from a compact central
+source, disperses toward every screen region, then falls under gravity and fades.
+It is never a continuous top-down rain and never plays background audio.
+Repeated live snapshots must not restart the same event, a slow acknowledgement
+must not block the next event, and pausing or locking the app pauses the current
+visual rather than replaying it from zero.
 
 ### 6.16 Missed-alarm review
 

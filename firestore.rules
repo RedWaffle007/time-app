@@ -1177,7 +1177,7 @@ service cloud.firestore {
     }
 
     // ---- completionCelebrations/{targetUid_itemId} ----
-    // Durable, per-participant delivery for the 1.5-second completion effect.
+    // Durable, per-participant delivery for the 1.4-second completion effect.
     // The target creates it atomically with the DONE outcome. Each participant
     // may acknowledge only themselves; the last unseen participant deletes it.
     match /completionCelebrations/{celebrationId} {

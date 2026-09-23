@@ -33,7 +33,7 @@ class CompletionCelebrationRepository implements CompletionCelebrationStore {
     );
   }
 
-  /// Acknowledge only after the 1.5-second display finishes. The last unseen
+  /// Acknowledge only after the 1.4-second display finishes. The last unseen
   /// participant deletes the event atomically; otherwise this uid is appended.
   @override
   Future<void> acknowledge(CompletionCelebration event, String uid) {

@@ -1,17 +1,14 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/theme/app_colors.dart';
 import '../../applock/application/app_lock_providers.dart';
 import '../../auth/application/auth_providers.dart';
 import '../application/celebration_providers.dart';
 import '../application/celebration_queue.dart';
 import '../domain/completion_celebration.dart';
-
-const completionCelebrationDuration = Duration(milliseconds: 1500);
+import 'completion_confetti.dart';
 
 /// App-wide overlay host. Firestore is the delivery queue, so it covers the
 /// target immediately, an online planner live, and an offline planner on their
@@ -36,7 +33,7 @@ class _CompletionCelebrationHostState
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final _queue = CompletionCelebrationQueue();
   late final AnimationController _animation;
-  Timer? _finishTimer;
+  late CompletionConfettiBurst _burst;
   bool _playing = false;
   bool _paused = false;
   bool _resumed = true;
@@ -52,7 +49,8 @@ class _CompletionCelebrationHostState
     _animation = AnimationController(
       vsync: this,
       duration: completionCelebrationDuration,
-    );
+    )..addStatusListener(_animationStatusChanged);
+    _burst = CompletionConfettiBurst.seeded(0);
   }
 
   @override
@@ -79,7 +77,6 @@ class _CompletionCelebrationHostState
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _finishTimer?.cancel();
     _animation.dispose();
     super.dispose();
   }
@@ -112,16 +109,17 @@ class _CompletionCelebrationHostState
     }
     _playing = true;
     _paused = false;
+    _burst = CompletionConfettiBurst.seeded(
+      CompletionConfettiBurst.seedForEvent(event.id),
+    );
     _animation.forward(from: 0);
     setState(() {});
-    _armFinish(event, completionCelebrationDuration);
   }
 
   void _pauseCurrent({bool notify = true}) {
     if (!_playing || _paused) {
       return;
     }
-    _finishTimer?.cancel();
     _animation.stop(canceled: false);
     _paused = true;
     if (notify && mounted) {
@@ -139,19 +137,13 @@ class _CompletionCelebrationHostState
     final event = _queue.current;
     if (event == null) return;
     _paused = false;
-    final remaining = Duration(
-      milliseconds:
-          (completionCelebrationDuration.inMilliseconds *
-                  (1 - _animation.value))
-              .round(),
-    );
     _animation.forward();
-    _armFinish(event, remaining);
   }
 
-  void _armFinish(CompletionCelebration event, Duration delay) {
-    _finishTimer?.cancel();
-    _finishTimer = Timer(delay, () => _finish(event));
+  void _animationStatusChanged(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    final event = _queue.current;
+    if (event != null) _finish(event);
   }
 
   void _finish(CompletionCelebration event) {
@@ -181,7 +173,6 @@ class _CompletionCelebrationHostState
     if (_sessionUid != uid) {
       _sessionUid = uid;
       _queue.clear();
-      _finishTimer?.cancel();
       _playing = false;
       _paused = false;
       _animation.reset();
@@ -215,8 +206,9 @@ class _CompletionCelebrationHostState
                 child: IgnorePointer(
                   child: AnimatedBuilder(
                     animation: _animation,
-                    builder: (_, _) => CustomPaint(
-                      painter: _ColoredPaperPainter(_animation.value),
+                    builder: (_, _) => CompletionConfetti(
+                      progress: _animation.value,
+                      burst: _burst,
                     ),
                   ),
                 ),
@@ -226,51 +218,4 @@ class _CompletionCelebrationHostState
       },
     );
   }
-}
-
-class _ColoredPaperPainter extends CustomPainter {
-  const _ColoredPaperPainter(this.progress);
-
-  final double progress;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    for (var i = 0; i < 120; i++) {
-      final delay = (i % 12) * 0.012;
-      final p = ((progress - delay) / (1 - delay)).clamp(0.0, 1.0);
-      if (p <= 0) {
-        continue;
-      }
-      final seed = (i * 37 % 101) / 101;
-      final drift = ((i * 19 % 97) / 97) - 0.5;
-      final originX = size.width * (0.04 + seed * 0.92);
-      final x = originX + drift * size.width * 0.42 * p;
-      final y =
-          size.height * 1.04 -
-          size.height * (0.92 + seed * 0.48) * math.sin(math.pi * p);
-      final opacity = ((1 - p) / 0.18).clamp(0.0, 1.0);
-      final paint = Paint()
-        ..color = AppColors
-            .completionCelebrationPaper[i %
-                AppColors.completionCelebrationPaper.length]
-            .withValues(alpha: opacity);
-      final width = 5.0 + (i % 4) * 1.8;
-      final height = 10.0 + (i % 5) * 2.2;
-      canvas.save();
-      canvas.translate(x, y);
-      canvas.rotate(p * math.pi * (2 + i % 4) + seed * math.pi);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromCenter(center: Offset.zero, width: width, height: height),
-          const Radius.circular(1.5),
-        ),
-        paint,
-      );
-      canvas.restore();
-    }
-  }
-
-  @override
-  bool shouldRepaint(_ColoredPaperPainter oldDelegate) =>
-      oldDelegate.progress != progress;
 }
