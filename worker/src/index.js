@@ -20,7 +20,12 @@ import {
   sendFriendNotification,
   FRIEND_EVENTS,
 } from './notify.js';
-import { handleAvatarUpload, handleAvatarDelete } from './avatar.js';
+import {
+  handleAvatarUpload,
+  handleAvatarDelete,
+  handleGroupAvatarUpload,
+  handleGroupAvatarDelete,
+} from './avatar.js';
 import { sendDueInactivityNotifications } from './inactivity.js';
 
 const MAX_BODY_BYTES = 2048;
@@ -35,7 +40,8 @@ export default {
     // --- routing ---
     //
     // Two features share one Worker: push (the root path, unchanged) and
-    // profile-picture storage (`/avatar`). One Worker rather than two because
+    // picture storage (`/avatar` and `/group-avatar`). One Worker rather than
+    // two because
     // both need exactly the same thing — a verified Firebase ID token and a
     // privileged credential that must never reach a phone — and that
     // verification code is not worth duplicating or keeping in step.
@@ -75,6 +81,15 @@ export default {
           500,
         );
       }
+    }
+
+    if (url.pathname === '/group-avatar') {
+      if (request.method !== 'POST' && request.method !== 'DELETE') {
+        return json({ error: 'method-not-allowed' }, 405, {
+          Allow: 'POST, DELETE',
+        });
+      }
+      return handleGroupAvatarRequest(request, env);
     }
 
     if (request.method !== 'POST') {
@@ -175,6 +190,51 @@ export default {
     ctx.waitUntil(run);
   },
 };
+
+async function handleGroupAvatarRequest(request, env) {
+  const groupId = request.headers.get('x-group-id') || '';
+  if (!groupId || groupId.includes('/')) {
+    return json({ error: 'invalid-group' }, 400);
+  }
+
+  let uid;
+  try {
+    uid = await requireUid(request, env.PROJECT_ID);
+  } catch (e) {
+    if (e instanceof IdTokenError) return json({ error: 'unauthorized' }, 401);
+    throw e;
+  }
+
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
+  } catch {
+    return json({ error: 'server-misconfigured' }, 500);
+  }
+
+  try {
+    const accessToken = await getAccessToken(serviceAccount);
+    const db = makeFirestoreDb(env.PROJECT_ID, accessToken);
+    const group = await db.getDoc(`groups/${groupId}`);
+    const denial = groupAvatarAuthorization(group, uid);
+    if (denial) return json({ error: denial.error }, denial.status);
+    return request.method === 'POST'
+      ? await handleGroupAvatarUpload(request, env, groupId)
+      : await handleGroupAvatarDelete(request, env, groupId);
+  } catch (e) {
+    console.error('group avatar handler failed', {
+      operation: request.method === 'POST' ? 'upload' : 'delete',
+      name: e?.name || 'Error',
+    });
+    return json({ error: 'avatar-failed' }, 500);
+  }
+}
+
+export function groupAvatarAuthorization(group, uid) {
+  if (!group) return { error: 'group-not-found', status: 404 };
+  if (group.ownerUid !== uid) return { error: 'forbidden', status: 403 };
+  return null;
+}
 
 async function runInactivityCron(env, now) {
   let serviceAccount;

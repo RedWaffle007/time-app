@@ -61,6 +61,33 @@ class WorkerAvatarUploader implements AvatarUploader {
     required Uint8List bytes,
     required String mime,
     String? previousKey,
+  }) => _upload(
+    path: '/avatar',
+    bytes: bytes,
+    mime: mime,
+    previousKey: previousKey,
+  );
+
+  @override
+  Future<ProfileAvatar> uploadGroup({
+    required String groupId,
+    required Uint8List bytes,
+    required String mime,
+    String? previousKey,
+  }) => _upload(
+    path: '/group-avatar',
+    groupId: groupId,
+    bytes: bytes,
+    mime: mime,
+    previousKey: previousKey,
+  );
+
+  Future<ProfileAvatar> _upload({
+    required String path,
+    required Uint8List bytes,
+    required String mime,
+    String? groupId,
+    String? previousKey,
   }) async {
     // Pre-flight, so an oversized file fails instantly instead of after a
     // 5 MB upload. Not the authoritative check — see the class doc.
@@ -69,7 +96,7 @@ class WorkerAvatarUploader implements AvatarUploader {
       throw AvatarUploadFailure(describeAvatarRejection(rejection, mime));
     }
 
-    final uri = _endpoint('/avatar');
+    final uri = _endpoint(path);
     if (uri == null) {
       throw const AvatarUploadFailure(
         'Picture uploads are not set up yet on this build.',
@@ -91,6 +118,7 @@ class WorkerAvatarUploader implements AvatarUploader {
               // image — there is nowhere else to put it.
               if (previousKey != null && previousKey.isNotEmpty)
                 'X-Previous-Key': previousKey,
+              'X-Group-Id': ?groupId,
             },
             body: bytes,
           )
@@ -135,8 +163,22 @@ class WorkerAvatarUploader implements AvatarUploader {
   }
 
   @override
-  Future<void> remove({required String storageKey}) async {
-    final uri = _endpoint('/avatar');
+  Future<void> remove({required String storageKey}) =>
+      _remove(path: '/avatar', storageKey: storageKey);
+
+  @override
+  Future<void> removeGroup({
+    required String groupId,
+    required String storageKey,
+  }) =>
+      _remove(path: '/group-avatar', groupId: groupId, storageKey: storageKey);
+
+  Future<void> _remove({
+    required String path,
+    required String storageKey,
+    String? groupId,
+  }) async {
+    final uri = _endpoint(path);
     if (uri == null || storageKey.isEmpty) return;
 
     final idToken = await _idToken();
@@ -147,6 +189,7 @@ class WorkerAvatarUploader implements AvatarUploader {
             headers: {
               'Authorization': 'Bearer $idToken',
               'X-Storage-Key': storageKey,
+              'X-Group-Id': ?groupId,
             },
           )
           .timeout(_timeout);

@@ -38,6 +38,23 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Group-picture metadata for a byte-validated object returned by the Worker.
+    // The Worker enforces the per-format byte cap; rules enforce the larger
+    // animated ceiling and the exact document shape as a second boundary.
+    function groupAvatarMetadataValid(avatar, groupId) {
+      return avatar.keys().hasOnly([
+          'url', 'storageKey', 'mime', 'sizeBytes', 'moderation', 'updatedAt'])
+        && avatar.url is string
+        && avatar.url.size() > 0
+        && avatar.storageKey is string
+        && avatar.storageKey.matches('^group-avatars/' + groupId + '/[^/]+$')
+        && avatar.mime in ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+        && avatar.sizeBytes is int
+        && avatar.sizeBytes > 0
+        && avatar.sizeBytes <= 5242880
+        && avatar.moderation in ['approved', 'flagged', 'pending', 'rejected'];
+    }
+
     // Is `uid` in the group's denormalized memberUids array?
     function uidInGroup(groupId, uid) {
       return exists(/databases/$(database)/documents/groups/$(groupId))
@@ -509,7 +526,9 @@ service cloud.firestore {
 
       allow create: if signedIn()
         && request.resource.data.ownerUid == request.auth.uid
-        && request.resource.data.memberUids == [request.auth.uid];
+        && request.resource.data.memberUids == [request.auth.uid]
+        && (!('avatar' in request.resource.data)
+            || groupAvatarMetadataValid(request.resource.data.avatar, groupId));
 
       // One approved request, its roster row, and the group array must commit
       // in the same atomic write. `lastAdmittedUid` makes the candidate path
@@ -553,6 +572,11 @@ service cloud.firestore {
           (changedKeys().hasOnly(['memberUids']) && isMemberRemoval())
           || (changedKeys().hasOnly(['memberUids', 'lastAdmittedUid'])
               && isUnanimousAdmission())
+          || (request.auth.uid == resource.data.ownerUid
+              && changedKeys().hasOnly(['avatar'])
+              && (!('avatar' in request.resource.data)
+                  || groupAvatarMetadataValid(
+                      request.resource.data.avatar, groupId)))
         );
 
       allow delete: if false;

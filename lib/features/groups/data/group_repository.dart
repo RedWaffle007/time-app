@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../social/domain/avatar.dart';
 import '../domain/group.dart';
 import '../domain/group_join_request.dart';
 import '../domain/membership.dart';
@@ -39,6 +40,19 @@ class GroupRepository {
         .collection('members')
         .snapshots()
         .map((s) => s.docs.map(Membership.fromDoc).toList());
+  }
+
+  /// Stores picture metadata after the owner-authorized upload has completed.
+  Future<void> setAvatar({
+    required String groupId,
+    required ProfileAvatar avatar,
+  }) {
+    return _groups.doc(groupId).update({'avatar': avatar.toMap()});
+  }
+
+  /// Clears the visible metadata before best-effort object deletion.
+  Future<void> clearAvatar(String groupId) {
+    return _groups.doc(groupId).update({'avatar': FieldValue.delete()});
   }
 
   /// Create a group; the creator becomes owner + first member.

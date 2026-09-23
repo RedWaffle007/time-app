@@ -29,6 +29,7 @@ import {
   collection,
   collectionGroup,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -423,6 +424,68 @@ describe('issue 1 — groups are not enumerable', () => {
         memberUids: [MALLORY],
         createdAt: serverTimestamp(),
       }),
+    );
+  });
+
+  it('DENIES creating a group with malformed avatar metadata', async () => {
+    await assertFails(
+      setDoc(doc(as(MALLORY), 'groups', 'group_bad_avatar'), {
+        name: 'Bad picture',
+        ownerUid: MALLORY,
+        joinCode: 'BAD999',
+        memberUids: [MALLORY],
+        avatar: {
+          url: 'https://storage.example/not-an-image.svg',
+          storageKey: 'group-avatars/group_bad_avatar/file.svg',
+          mime: 'image/svg+xml',
+          sizeBytes: 100,
+          moderation: 'approved',
+          updatedAt: serverTimestamp(),
+        },
+      }),
+    );
+  });
+
+  it('allows only the owner to write valid group-avatar metadata', async () => {
+    const avatar = {
+      url: 'https://storage.example/group.gif',
+      storageKey: `group-avatars/${GROUP}/group.gif`,
+      mime: 'image/gif',
+      sizeBytes: 1024,
+      moderation: 'approved',
+      updatedAt: serverTimestamp(),
+    };
+    await assertSucceeds(
+      setDoc(doc(as(ALICE), 'groups', GROUP), { avatar }, { merge: true }),
+    );
+    await assertFails(
+      setDoc(doc(as(BOB), 'groups', GROUP), { avatar }, { merge: true }),
+    );
+    await assertFails(
+      setDoc(
+        doc(as(ALICE), 'groups', GROUP),
+        { avatar: { ...avatar, mime: 'image/svg+xml' } },
+        { merge: true },
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(as(ALICE), 'groups', GROUP),
+        {
+          avatar: {
+            ...avatar,
+            storageKey: 'group-avatars/someone-elses-group/group.gif',
+          },
+        },
+        { merge: true },
+      ),
+    );
+    await assertSucceeds(
+      setDoc(
+        doc(as(ALICE), 'groups', GROUP),
+        { avatar: deleteField() },
+        { merge: true },
+      ),
     );
   });
 

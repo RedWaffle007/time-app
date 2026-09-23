@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import worker from '../src/index.js';
+import worker, { groupAvatarAuthorization } from '../src/index.js';
 
 const env = { PROJECT_ID: 'demo-time-app' };
 
@@ -28,6 +28,46 @@ test('the avatar endpoint allows only POST and DELETE', async () => {
 
   assert.equal(response.status, 405);
   assert.equal(response.headers.get('allow'), 'POST, DELETE');
+});
+
+test('the group-avatar endpoint validates method and group before auth', async () => {
+  const wrongMethod = await worker.fetch(
+    new Request('https://worker.example/group-avatar', { method: 'PUT' }),
+    env,
+  );
+  const missingGroup = await worker.fetch(
+    new Request('https://worker.example/group-avatar', { method: 'DELETE' }),
+    env,
+  );
+  const missingAuth = await worker.fetch(
+    new Request('https://worker.example/group-avatar', {
+      method: 'DELETE',
+      headers: { 'X-Group-Id': 'group-1' },
+    }),
+    env,
+  );
+
+  assert.equal(wrongMethod.status, 405);
+  assert.equal(wrongMethod.headers.get('allow'), 'POST, DELETE');
+  assert.equal(missingGroup.status, 400);
+  assert.deepEqual(await body(missingGroup), { error: 'invalid-group' });
+  assert.equal(missingAuth.status, 401);
+  assert.deepEqual(await body(missingAuth), { error: 'unauthorized' });
+});
+
+test('group-avatar storage authorization is owner-only', () => {
+  assert.deepEqual(groupAvatarAuthorization(null, 'owner'), {
+    error: 'group-not-found',
+    status: 404,
+  });
+  assert.deepEqual(
+    groupAvatarAuthorization({ownerUid: 'owner'}, 'member'),
+    {error: 'forbidden', status: 403},
+  );
+  assert.equal(
+    groupAvatarAuthorization({ownerUid: 'owner'}, 'owner'),
+    null,
+  );
 });
 
 test('declared and actual oversized payloads are rejected before authentication', async () => {

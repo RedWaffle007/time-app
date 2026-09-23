@@ -47,7 +47,39 @@ class AvatarImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final url = profile?.displayAvatarUrl;
+    return DisplayAvatarImage(
+      displayName: profile?.name,
+      imageUrl: profile?.displayAvatarUrl,
+      size: size,
+      openSemanticsLabel: 'Open profile picture',
+      viewerDescription: 'Profile picture',
+    );
+  }
+}
+
+/// The shared rounded-square image used for people and groups.
+///
+/// Callers decide which stored URL is displayable; this widget owns rendering,
+/// animation preservation, fallback behavior, and the shared full-screen viewer.
+class DisplayAvatarImage extends StatelessWidget {
+  const DisplayAvatarImage({
+    super.key,
+    required this.displayName,
+    required this.imageUrl,
+    required this.openSemanticsLabel,
+    required this.viewerDescription,
+    this.size = Sizes.avatarRow,
+  });
+
+  final String? displayName;
+  final String? imageUrl;
+  final String openSemanticsLabel;
+  final String viewerDescription;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final url = imageUrl;
     final cs = context.colors;
 
     final avatar = SizedBox(
@@ -62,7 +94,7 @@ class AvatarImage extends StatelessWidget {
           color: cs.primaryContainer,
           alignment: Alignment.center,
           child: url == null
-              ? _Initial(profile: profile, size: size)
+              ? _Initial(displayName: displayName, size: size)
               : Image.network(
                   url,
                   width: size,
@@ -70,14 +102,14 @@ class AvatarImage extends StatelessWidget {
                   fit: BoxFit.cover,
                   // See point 1 in the class doc — no cacheWidth/cacheHeight.
                   errorBuilder: (context, error, stack) =>
-                      _Initial(profile: profile, size: size),
+                      _Initial(displayName: displayName, size: size),
                   // The initial stands in while bytes arrive, rather than a
                   // spinner. A 40pt spinner in a list row reads as breakage;
                   // the letter is what the row will fall back to anyway if the
                   // load fails, so nothing moves when it resolves.
                   loadingBuilder: (context, child, progress) => progress == null
                       ? child
-                      : _Initial(profile: profile, size: size),
+                      : _Initial(displayName: displayName, size: size),
                 ),
         ),
       ),
@@ -87,10 +119,14 @@ class AvatarImage extends StatelessWidget {
     if (url == null) return avatar;
     return Semantics(
       button: true,
-      label: 'Open profile picture',
+      label: openSemanticsLabel,
       child: InkWell(
         borderRadius: Radii.md,
-        onTap: () => showProfilePictureViewer(context, url),
+        onTap: () => showProfilePictureViewer(
+          context,
+          url,
+          description: viewerDescription,
+        ),
         child: avatar,
       ),
     );
@@ -98,14 +134,14 @@ class AvatarImage extends StatelessWidget {
 }
 
 class _Initial extends StatelessWidget {
-  const _Initial({required this.profile, required this.size});
+  const _Initial({required this.displayName, required this.size});
 
-  final UserProfile? profile;
+  final String? displayName;
   final double size;
 
   @override
   Widget build(BuildContext context) {
-    final name = profile?.name.trim() ?? '';
+    final name = displayName?.trim() ?? '';
     // `characters` semantics matter here: `name[0]` on an emoji or a
     // combining-mark name would slice a grapheme in half and render a
     // replacement glyph. Taking the first *character cluster* is correct in

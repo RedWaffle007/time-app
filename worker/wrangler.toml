@@ -11,15 +11,14 @@ PROJECT_ID = "time-app-1e1c9"
 SUPABASE_URL = "https://sssbuqrseunytlcqhlqy.supabase.co"
 SUPABASE_BUCKET = "avatars"
 
-# Profile-picture storage (Supabase). Non-secret: the project URL and the
+# Profile/group-picture storage (Supabase). Non-secret: the project URL and the
 # bucket name are both public identifiers — the public object URL contains
 # them. Chosen over Firebase Storage because that needs the Blaze plan and this
 # project has no payment card attached (DECISIONS.md); chosen over Cloudflare
 # R2 because R2 requires a card even on its free tier.
 #
-# SET THESE before deploying the avatar route. Until they are set, /avatar
-# answers 500 `storage-not-configured` and the app shows "Picture uploads are
-# not set up yet on this build" — it does not half-work.
+# SET THESE before deploying the avatar routes. Until they are set, /avatar and
+# /group-avatar answer 500 `storage-not-configured`; they do not half-work.
 # SUPABASE_URL    = "https://<project>.supabase.co"
 # SUPABASE_BUCKET = "avatars"     # create it PUBLIC in the Supabase dashboard
 

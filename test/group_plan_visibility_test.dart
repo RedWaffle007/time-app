@@ -65,6 +65,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.widgetWithText(OutlinedButton, 'Add photo'), findsOneWidget);
     expect(find.text('Plan for the group'), findsOneWidget);
     expect(
       find.text('One item for 1 member you can plan for, plus you'),

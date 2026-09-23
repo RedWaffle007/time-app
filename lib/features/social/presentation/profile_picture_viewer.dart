@@ -4,26 +4,37 @@ import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 
-/// Opens the one immersive viewer used by every displayable profile picture.
+/// Opens the one immersive viewer used by every displayable profile or group
+/// picture.
 ///
-/// It accepts only a URL already approved by [UserProfile.displayAvatarUrl].
-/// Callers therefore cannot accidentally open a withheld/rejected upload or an
-/// initials placeholder. The original network image is intentionally used with
-/// no decode-size hints so animated GIF/WebP files retain their playback.
-Future<void> showProfilePictureViewer(BuildContext context, String imageUrl) {
+/// Callers pass only a URL already approved by their model's display predicate,
+/// so withheld/rejected uploads and initials placeholders cannot open it. The
+/// original network image is used without decode-size hints so animated
+/// GIF/WebP files retain playback.
+Future<void> showProfilePictureViewer(
+  BuildContext context,
+  String imageUrl, {
+  String description = 'Profile picture',
+}) {
   return showDialog<void>(
     context: context,
     barrierDismissible: true,
-    builder: (_) => ProfilePictureViewer(imageUrl: imageUrl),
+    builder: (_) =>
+        ProfilePictureViewer(imageUrl: imageUrl, description: description),
   );
 }
 
 /// Full-screen content used by [showProfilePictureViewer]. Public so the
 /// loading/error affordances can be embedded and regression-tested directly.
 class ProfilePictureViewer extends StatelessWidget {
-  const ProfilePictureViewer({super.key, required this.imageUrl});
+  const ProfilePictureViewer({
+    super.key,
+    required this.imageUrl,
+    this.description = 'Profile picture',
+  });
 
   final String imageUrl;
+  final String description;
 
   @override
   Widget build(BuildContext context) {
@@ -49,7 +60,7 @@ class ProfilePictureViewer extends StatelessWidget {
                       return const ProfilePictureViewerLoading();
                     },
                     errorBuilder: (context, error, stackTrace) =>
-                        const ProfilePictureViewerError(),
+                        ProfilePictureViewerError(description: description),
                   ),
                 ),
               ),
@@ -61,7 +72,7 @@ class ProfilePictureViewer extends StatelessWidget {
                     backgroundColor: controlBackground,
                     foregroundColor: foreground,
                   ),
-                  tooltip: 'Close profile picture',
+                  tooltip: 'Close ${description.toLowerCase()}',
                   onPressed: () => Navigator.of(context).pop(),
                   icon: const Icon(AppIcons.close),
                 ),
@@ -88,11 +99,16 @@ class ProfilePictureViewerLoading extends StatelessWidget {
 
 /// Accessible failure affordance for an image that could not be fetched.
 class ProfilePictureViewerError extends StatelessWidget {
-  const ProfilePictureViewerError({super.key});
+  const ProfilePictureViewerError({
+    super.key,
+    this.description = 'Profile picture',
+  });
+
+  final String description;
 
   @override
   Widget build(BuildContext context) => Semantics(
-    label: 'Profile picture could not be loaded',
+    label: '$description could not be loaded',
     child: Icon(
       AppIcons.error,
       size: Sizes.emptyStateIcon,

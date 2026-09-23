@@ -8,6 +8,7 @@ import '../../../routing/app_router.dart';
 import '../../auth/application/auth_providers.dart';
 import '../application/group_providers.dart';
 import '../domain/group.dart';
+import 'group_avatar_image.dart';
 
 /// Lists the user's groups; lets them create a new one or join by code.
 class GroupsScreen extends ConsumerWidget {
@@ -58,7 +59,7 @@ class GroupsScreen extends ConsumerWidget {
           children: [
             for (final g in groups)
               ListTile(
-                leading: const Icon(AppIcons.group),
+                leading: GroupAvatarImage(group: g),
                 title: Text(g.name),
                 subtitle: Text(
                   'Code: ${g.joinCode} · ${g.memberUids.length} member(s)',

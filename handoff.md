@@ -37,7 +37,10 @@ the approved ballistic confetti, the 1.5-second splash/audio fade, and shared
 two-month categorization plus persistent explainer cards for Activity and Track.
 Details and rationale live in `DECISIONS.md`; do not duplicate them here.
 
-Remaining work, in intended order: **22, 25, 31, 23, 27, 24**.
+Remaining feature work, in intended order: **25, 31, 23, 27, 32, 24, 33**.
+Item 22 is implementation-complete and locally verified, but its backend
+deployment and real-device acceptance are intentionally deferred to the final
+combined release pass after the feature list is complete.
 
 The newly requested schedule/history pass takes priority after the current
 picture work. Item 24 remains last because it is explicitly a product review of
@@ -46,7 +49,7 @@ about to change.
 
 ## Remaining roadmap
 
-### 22. Friend and group pictures — next
+### 22. Friend and group pictures — implementation complete; release gate deferred
 
 - Fix full-screen friend-photo opening through the real Friends/Profile
   surfaces; the isolated `AvatarImage` test is insufficient.
@@ -57,10 +60,22 @@ about to change.
 - As part of this work, verify the complete profile-picture path for animated
   GIF and WebP files: picker, validation, upload, storage response, rendering,
   animation, replacement, and deletion on a real supported device. The current
-  implementation and tests claim support for JPEG, PNG, GIF, and WebP, including
-  animated GIF/WebP, but the Edit Profile helper text must list only formats
-  that pass this end-to-end check. Remove a format everywhere if the deployed
-  path cannot preserve and display it correctly.
+  Flutter SDK explicitly supports animated GIF/WebP decoding and tests both
+  codecs' loop counts, so JPEG, PNG, GIF, and WebP remain enabled pending the
+  deployed real-device check. The Edit Profile helper text must list only
+  formats that pass end-to-end. Remove a format everywhere if the deployed path
+  cannot preserve and display it correctly.
+- Implemented shared friend/group rendering and full-screen viewing, shared
+  JPEG/PNG/GIF/WebP selection, owner-only group upload/replacement/deletion,
+  Firestore metadata validation, Worker storage authorization, legacy/broken
+  image fallbacks, exact helper copy, and regression coverage. The targeted
+  Flutter suite, Firestore rules suite, Worker suite, and analyzer passed on
+  2026-09-24.
+- Deferred release gate: deploy `firestore.rules` and the Cloudflare Worker,
+  then verify profile and group GIF/WebP upload, visible animation in list,
+  detail, and full-screen surfaces, replacement, deletion, and non-owner denial
+  on supported real devices. Batch this with the final feature-list acceptance
+  pass as requested; do not mark Item 22 production-complete before it passes.
 
 ### 23. Request a plan
 
@@ -146,6 +161,61 @@ about to change.
   update coach marks, help copy, screenshots, and tests that refer to `+` as the
   manual planning entry point. Do not rename Track's separate log-time action.
 
+### 32. Custom voice-note alarms
+
+- Allow a planner scheduling for another person to record or select a custom
+  voice note as a per-alarm override of that recipient's default alarm tone.
+  Do not offer the override for unrelated audio surfaces or silently change the
+  recipient's account-level default.
+- Limit every recording to 20 seconds. Before confirmation, support playback,
+  discard, and re-record. The planner may attach the one-off recording directly
+  and may optionally save it to their personal voice-note library for reuse.
+- When the alarm fires on the recipient's device, play the attached recording
+  exactly three times, independent of clip length. End the alarm completely
+  after the third playback: no default-tone fallback and no minimum alarm-cycle
+  duration. Existing Dismiss and Snooze actions must interrupt playback
+  immediately; a snoozed occurrence retains the same attached recording and
+  receives its own three-play limit when it fires again.
+- Treat the scheduled attachment as an immutable delivered snapshot, not a
+  live reference to the planner's library entry. Once scheduling succeeds, the
+  recipient must retain everything needed to fire it independently and offline.
+  Renaming or deleting the planner's saved source must not alter any existing
+  scheduled alarm. Define cleanup for withdrawn, rejected, completed, skipped,
+  and permanently expired alarms without deleting bytes still referenced by a
+  live recipient alarm.
+- Add a dedicated Saved Voice Notes tab. The owner can listen to, rename, and
+  delete recordings. Sort newest-to-oldest by save date. If no custom name is
+  supplied, use a localized timestamp-derived name such as
+  `Voice Note – Sep 24, 2026`.
+- Activate localized month dropdowns as soon as saved recordings span two
+  distinct calendar months. Keep a single-month library unwrapped and order
+  both month headers and recordings newest-to-oldest.
+- Keep audio bytes out of notification payloads and Firestore documents. Design
+  authenticated storage, server-validated MIME/duration/size limits, planner
+  ownership, recipient-scoped delivery access, retry/idempotency, and local
+  durable download before considering the alarm scheduled. A notification URL
+  alone is not sufficient for an offline due-time alarm.
+- Integrate with the native due-alarm lifecycle and its single-owner audio
+  policy. Preserve full-screen delivery, hardware Volume Down dismissal,
+  missed-alarm recovery, process death/reboot recovery, and the existing
+  immutable outcome rules.
+- Test recording limits and permissions, preview/re-record, one-off versus
+  saved selection, naming/rename/delete, two-month activation, attachment
+  snapshot independence, sender deletion, recipient authorization, upload and
+  download failures, offline/process-death/reboot delivery, exact three-loop
+  completion for short and long clips, Dismiss/Snooze during every loop,
+  concurrency/replay safety, cleanup, and default-tone regression for alarms
+  without an override. Finish with real-device audio and lifecycle acceptance.
+
+### 33. Competitor review — last
+
+- Direct competitors identified by the user: **PingPal** and **SnoozeSquad**.
+- Return to these only after every preceding roadmap task is complete. At that
+  point, compare positioning, planning/alarm flows, social permissions, custom
+  audio, pricing, privacy, reliability expectations, and meaningful product
+  gaps using current first-party store/site evidence. Do not copy branding or
+  interaction details merely for parity.
+
 ## Constraints worth carrying forward
 
 - Schedule items are under `scheduleItems/{targetUid}/items/{itemId}` and are
@@ -162,6 +232,6 @@ about to change.
 
 ## Next session
 
-Start item 22 by tracing friend-photo taps through the real Friends and Profile
-screens, then inspect the current profile image/storage model before designing
-group-avatar writes or rules.
+Commit the locally verified Item 22 implementation, then proceed to Item 25.
+Keep Item 22's Firestore/Worker deployment and real-device GIF/WebP acceptance
+on the final combined release checklist after all feature work is complete.

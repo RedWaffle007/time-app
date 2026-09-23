@@ -1,4 +1,4 @@
-// avatar.js — profile-picture upload and deletion.
+// avatar.js — profile and group picture upload and deletion.
 //
 // WHY THIS LIVES IN THE WORKER AT ALL
 //
@@ -103,6 +103,11 @@ export function keyBelongsTo(key, uid) {
   return typeof key === 'string' && key.startsWith(`avatars/${uid}/`);
 }
 
+export function groupKeyBelongsTo(key, groupId) {
+  return typeof key === 'string' &&
+    key.startsWith(`group-avatars/${groupId}/`);
+}
+
 function objectPath(env, key) {
   return `${env.SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/${env.SUPABASE_BUCKET}/${key}`;
 }
@@ -165,6 +170,24 @@ async function deleteObject(env, key) {
  * @param {string} uid  the VERIFIED caller (never taken from the body)
  */
 export async function handleAvatarUpload(request, env, uid) {
+  return handleScopedAvatarUpload(
+    request,
+    env,
+    `avatars/${uid}`,
+    (key) => keyBelongsTo(key, uid),
+  );
+}
+
+export async function handleGroupAvatarUpload(request, env, groupId) {
+  return handleScopedAvatarUpload(
+    request,
+    env,
+    `group-avatars/${groupId}`,
+    (key) => groupKeyBelongsTo(key, groupId),
+  );
+}
+
+async function handleScopedAvatarUpload(request, env, keyPrefix, ownsKey) {
   if (!configured(env)) {
     return json({ error: 'storage-not-configured' }, 500);
   }
@@ -207,7 +230,7 @@ export async function handleAvatarUpload(request, env, uid) {
   // The random suffix means a replacement never reuses a URL a CDN or an
   // Image widget may still be caching, so a new picture appears immediately.
   const key =
-    `avatars/${uid}/${Date.now()}-${crypto.randomUUID()}.${EXT_BY_MIME[mime]}`;
+    `${keyPrefix}/${Date.now()}-${crypto.randomUUID()}.${EXT_BY_MIME[mime]}`;
 
   const put = await fetch(objectPath(env, key), {
     method: 'POST',
@@ -235,7 +258,7 @@ export async function handleAvatarUpload(request, env, uid) {
   // Replace AFTER the new object is safely stored. The other order can delete
   // the only copy and then fail to write the replacement.
   const previous = request.headers.get('x-previous-key');
-  if (previous && keyBelongsTo(previous, uid) && previous !== key) {
+  if (previous && ownsKey(previous) && previous !== key) {
     await deleteObject(env, previous);
   }
 
@@ -252,6 +275,22 @@ export async function handleAvatarUpload(request, env, uid) {
 
 /** DELETE /avatar — `X-Storage-Key` names the object. */
 export async function handleAvatarDelete(request, env, uid) {
+  return handleScopedAvatarDelete(
+    request,
+    env,
+    (key) => keyBelongsTo(key, uid),
+  );
+}
+
+export async function handleGroupAvatarDelete(request, env, groupId) {
+  return handleScopedAvatarDelete(
+    request,
+    env,
+    (key) => groupKeyBelongsTo(key, groupId),
+  );
+}
+
+async function handleScopedAvatarDelete(request, env, ownsKey) {
   if (!configured(env)) {
     return json({ error: 'storage-not-configured' }, 500);
   }
@@ -260,7 +299,7 @@ export async function handleAvatarDelete(request, env, uid) {
   // nothing to tell them: either it is theirs and it is now gone, or it never
   // was and no state of theirs changed. A 403 here would confirm that some
   // other user's key exists.
-  if (!key || !keyBelongsTo(key, uid)) return json({ ok: true }, 200);
+  if (!key || !ownsKey(key)) return json({ ok: true }, 200);
 
   await deleteObject(env, key);
   return json({ ok: true }, 200);

@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../social/domain/avatar.dart';
+
 /// A trusted circle. Stored at `groups/{id}`.
 ///
 /// `memberUids` is a denormalized array so we can query "groups I'm in" with a
@@ -12,6 +14,7 @@ class Group {
     required this.joinCode,
     required this.memberUids,
     this.lastAdmittedUid,
+    this.avatar,
   });
 
   final String id;
@@ -26,6 +29,12 @@ class Group {
   /// unanimously approved request. It is not membership state.
   final String? lastAdmittedUid;
 
+  /// Optional group picture. Legacy groups omit this and render their initial.
+  final ProfileAvatar? avatar;
+
+  String? get displayAvatarUrl =>
+      avatar?.isDisplayable == true ? avatar!.url : null;
+
   factory Group.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final d = doc.data() ?? const {};
     return Group(
@@ -35,6 +44,7 @@ class Group {
       joinCode: (d['joinCode'] ?? '') as String,
       memberUids: List<String>.from(d['memberUids'] ?? const []),
       lastAdmittedUid: d['lastAdmittedUid'] as String?,
+      avatar: ProfileAvatar.fromMap(d['avatar'] as Map<String, dynamic>?),
     );
   }
 }

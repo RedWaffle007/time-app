@@ -78,6 +78,7 @@ ever be added to this document**.
 |---|---|---|
 | `name` | string | |
 | `ownerUid` | string | Creator. |
+| `avatar` | map? | Optional group picture metadata: `{url, storageKey, mime, sizeBytes, moderation, updatedAt}`. Only the owner may set or remove it. |
 | `createdAt` | Timestamp | |
 
 ### `groups/{groupId}/members/{uid}`

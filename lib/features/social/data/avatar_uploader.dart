@@ -36,6 +36,20 @@ abstract class AvatarUploader {
 
   /// Remove the picture entirely, returning the profile to its fallback.
   Future<void> remove({required String storageKey});
+
+  /// Upload a group picture. The backend verifies the caller owns [groupId].
+  Future<ProfileAvatar> uploadGroup({
+    required String groupId,
+    required Uint8List bytes,
+    required String mime,
+    String? previousKey,
+  });
+
+  /// Remove a group picture with the same server-side ownership check.
+  Future<void> removeGroup({
+    required String groupId,
+    required String storageKey,
+  });
 }
 
 /// An upload that did not happen, carrying copy the UI can show verbatim.

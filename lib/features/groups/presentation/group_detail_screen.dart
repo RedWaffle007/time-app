@@ -18,6 +18,7 @@ import '../application/group_providers.dart';
 import '../domain/group_join_request.dart';
 import '../domain/membership.dart';
 import '../domain/planner_grant.dart';
+import 'group_avatar_editor.dart';
 
 /// Shows a group's invite code and members, lets the signed-in user grant other
 /// members permission to plan for them (consent-first), and lets them end a
@@ -92,7 +93,12 @@ class GroupDetailScreen extends ConsumerWidget {
           );
 
           return ListView(
+            padding: const EdgeInsets.only(top: Space.lg),
             children: [
+              if (group != null) ...[
+                GroupAvatarEditor(group: group, editable: iAmOwner),
+                const SizedBox(height: Space.sm),
+              ],
               // Invite code with one-tap copy + share.
               Card(
                 child: ListTile(

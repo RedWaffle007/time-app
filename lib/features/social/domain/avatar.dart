@@ -40,6 +40,10 @@ const Map<String, String> kAvatarMimeByExtension = {
 /// alternative is rejecting animated WebP outright.
 const Set<String> kAnimatedCapableMimes = {'image/gif', 'image/webp'};
 
+/// Picker helper copy, kept beside the accepted formats so the two cannot drift.
+const String kAvatarFormatHelperText =
+    'JPEG, PNG, GIF or WebP. GIFs and WebP can be animated.';
+
 /// Cap for a still image. 2 MB.
 const int kAvatarMaxBytesStatic = 2 * 1024 * 1024;
 
