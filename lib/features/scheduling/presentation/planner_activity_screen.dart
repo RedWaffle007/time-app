@@ -18,6 +18,7 @@ import '../../notifications/application/outcome_notifier.dart';
 import '../application/schedule_item_order.dart';
 import '../application/schedule_providers.dart';
 import '../domain/schedule_item.dart';
+import 'planner_item_detail_sheet.dart';
 
 /// The planner's view of everything they created — updates LIVE as the target
 /// approves/rejects and marks Done/Skip (Option B: no push, just a Firestore
@@ -116,80 +117,88 @@ class _ActivityCard extends ConsumerWidget {
     // CardTheme (UI-RULES.md §6.1) — a bare Card would inherit Material's
     // default shadow, which the flat-by-default rule forbids.
     return Card(
-      child: Padding(
-        padding: Space.cardPadding,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(item.title, style: context.text.titleMedium),
-                ),
-                const SizedBox(width: Space.sm),
-                // ONE badge. Once an outcome exists it replaces the approval
-                // status, because "Done" strictly implies "Approved" — showing
-                // both states the same fact twice.
-                if (item.outcome case final o?)
-                  StatusBadge.outcome(o.result, context)
-                else
-                  StatusBadge.status(item.status, context),
-                // Done or skipped — the planner may clear it from their own
-                // feed when they're ready, from the card overflow. Rejected and
-                // withdrawn rows never render here at all: they are auto-hidden
-                // the moment their status is set, so this feed no longer
-                // accumulates them.
-                if (item.isManuallyArchivable) ArchiveMenuButton(item: item),
-              ],
-            ),
-            const SizedBox(height: Space.xs),
-            // Always name the zone: this time is in the TARGET's local time, not
-            // the planner's — a bare "09:00" here is the most misleading thing a
-            // planner could see.
-            Text.rich(
-              TextSpan(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => showPlannerItemDetailSheet(
+          context,
+          item: item,
+          targetName: targetName,
+        ),
+        child: Padding(
+          padding: Space.cardPadding,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  const TextSpan(text: 'for '),
-                  TextSpan(text: targetName, style: AppText.bodySmallStrong),
-                  TextSpan(
-                    text:
-                        ' · '
-                        '${formatInstant(context, item.scheduledInstantUtc, item.timezone)} '
-                        '(${item.timezone}, their local time)',
+                  Expanded(
+                    child: Text(item.title, style: context.text.titleMedium),
                   ),
+                  const SizedBox(width: Space.sm),
+                  // ONE badge. Once an outcome exists it replaces the approval
+                  // status, because "Done" strictly implies "Approved" — showing
+                  // both states the same fact twice.
+                  if (item.outcome case final o?)
+                    StatusBadge.outcome(o.result, context)
+                  else
+                    StatusBadge.status(item.status, context),
+                  // Done or skipped — the planner may clear it from their own
+                  // feed when they're ready, from the card overflow. Rejected and
+                  // withdrawn rows never render here at all: they are auto-hidden
+                  // the moment their status is set, so this feed no longer
+                  // accumulates them.
+                  if (item.isManuallyArchivable) ArchiveMenuButton(item: item),
                 ],
               ),
-              // bodySmall, not labelSmall: this reads as a sentence even though
-              // it carries metadata (UI-RULES.md §3, prose-wins tiebreaker).
-              style: context.text.bodySmall?.copyWith(
-                color: context.colors.onSurfaceVariant,
-              ),
-            ),
-            ..._reasonLine(context),
-            // Late completion — the delay is honest accountability data, so the
-            // planner sees it here too (muted line, not a red flag: it was done).
-            if (item.completionDelay case final delay?) ...[
               const SizedBox(height: Space.xs),
-              Text(
-                'Completed ${formatDurationMinutes(context, delay.inMinutes)} late',
+              // Always name the zone: this time is in the TARGET's local time, not
+              // the planner's — a bare "09:00" here is the most misleading thing a
+              // planner could see.
+              Text.rich(
+                TextSpan(
+                  children: [
+                    const TextSpan(text: 'for '),
+                    TextSpan(text: targetName, style: AppText.bodySmallStrong),
+                    TextSpan(
+                      text:
+                          ' · '
+                          '${formatInstant(context, item.scheduledInstantUtc, item.timezone)} '
+                          '(${item.timezone}, their local time)',
+                    ),
+                  ],
+                ),
+                // bodySmall, not labelSmall: this reads as a sentence even though
+                // it carries metadata (UI-RULES.md §3, prose-wins tiebreaker).
                 style: context.text.bodySmall?.copyWith(
                   color: context.colors.onSurfaceVariant,
                 ),
               ),
-            ],
-            // A plan can be withdrawn only while it's still pending — once the
-            // target has decided, it's theirs to keep or reject.
-            if (item.status == ScheduleItemStatus.pending) ...[
-              const SizedBox(height: Space.xs),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () => _withdraw(context, ref),
-                  child: const Text('Withdraw'),
+              ..._reasonLine(context),
+              // Late completion — the delay is honest accountability data, so the
+              // planner sees it here too (muted line, not a red flag: it was done).
+              if (item.completionDelay case final delay?) ...[
+                const SizedBox(height: Space.xs),
+                Text(
+                  'Completed ${formatDurationMinutes(context, delay.inMinutes)} late',
+                  style: context.text.bodySmall?.copyWith(
+                    color: context.colors.onSurfaceVariant,
+                  ),
                 ),
-              ),
+              ],
+              // A plan can be withdrawn only while it's still pending — once the
+              // target has decided, it's theirs to keep or reject.
+              if (item.status == ScheduleItemStatus.pending) ...[
+                const SizedBox(height: Space.xs),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => _withdraw(context, ref),
+                    child: const Text('Withdraw'),
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

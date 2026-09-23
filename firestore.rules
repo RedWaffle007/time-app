@@ -1276,6 +1276,19 @@ service cloud.firestore {
     // field scoping also stops a target rewriting `title`,
     // `scheduledInstantUtc` or `createdByUid` after the fact.
     match /scheduleItems/{targetUid}/items/{itemId} {
+      function alarmTimelineIsValid() {
+        return !('alarm' in request.resource.data)
+          || (
+            request.resource.data.alarm is map
+            && request.resource.data.alarm.keys().hasOnly(
+                 ['rangAt', 'dismissedAt'])
+            && (!('rangAt' in request.resource.data.alarm)
+                || request.resource.data.alarm.rangAt is timestamp)
+            && (!('dismissedAt' in request.resource.data.alarm)
+                || request.resource.data.alarm.dismissedAt is timestamp)
+          );
+      }
+
       // The target always. A PLANNER holding access over them may also read —
       // that is the "view B's schedule before picking a time" modal, and it is
       // read-only: every write branch below still requires the caller to be the
@@ -1328,14 +1341,18 @@ service cloud.firestore {
 
       allow update: if signedIn()
         && (
-          // Target: approve / reject / mark done / mark skipped — and NOTHING
-          // else. The whitelist is exactly the fields those four transitions
-          // write (schedule_repository.dart: approve / reject / markDone /
-          // markSkipped); `outcome` is the whole map, written wholesale.
+          // Target: approve / reject / mark done / mark skipped, or append its
+          // device-observed alarm timeline — and NOTHING else. `outcome` and
+          // `alarm` are whole maps at the rules boundary even though the alarm
+          // repository updates one nested timestamp at a time.
           (
             request.auth.uid == targetUid
             && changedKeys().hasOnly(
-                 ['status', 'decidedAt', 'rejectionReason', 'outcome', 'updatedAt'])
+                 ['status', 'decidedAt', 'rejectionReason', 'outcome', 'alarm',
+                  'updatedAt'])
+            && alarmTimelineIsValid()
+            && (!changedKeys().hasAny(['alarm'])
+                || request.resource.data.status == 'approved')
             // Changing `status` is a DECISION, and a decision is only ever made
             // once, on a pending item: pending → approved | rejected. This stops
             // a target reviving a withdrawn/rejected item or faking a withdrawal.

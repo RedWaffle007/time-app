@@ -5,9 +5,14 @@ import 'package:go_router/go_router.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 
 import 'package:time_app/core/theme/app_theme.dart';
+import 'package:time_app/features/auth/application/auth_providers.dart';
+import 'package:time_app/features/reminders/application/alarm_timeline_providers.dart';
+import 'package:time_app/features/reminders/application/alarm_timeline_service.dart';
 import 'package:time_app/features/reminders/application/reminder_providers.dart';
 import 'package:time_app/features/reminders/application/reminder_service.dart';
 import 'package:time_app/features/reminders/data/alarm_sound.dart';
+import 'package:time_app/features/reminders/data/alarm_timeline_repository.dart';
+import 'package:time_app/features/reminders/data/reminder_audit_log.dart';
 import 'package:time_app/features/reminders/data/reminder_mirror_store.dart';
 import 'package:time_app/features/reminders/data/reminder_scheduler.dart';
 import 'package:time_app/features/reminders/domain/reminder.dart';
@@ -35,7 +40,11 @@ void main() {
     status: ScheduleItemStatus.approved,
   );
 
-  Widget harness(_FakeAlarmSound sound, _FakeScheduler scheduler) {
+  Widget harness(
+    _FakeAlarmSound sound,
+    _FakeScheduler scheduler, {
+    _FakeAlarmTimelineRepository? timeline,
+  }) {
     final service = ReminderService(
       scheduler: scheduler,
       store: InMemoryReminderMirrorStore(),
@@ -57,7 +66,14 @@ void main() {
     );
     return ProviderScope(
       overrides: [
+        currentUidProvider.overrideWithValue('me'),
         alarmSoundProvider.overrideWithValue(sound),
+        alarmTimelineServiceProvider.overrideWithValue(
+          AlarmTimelineService(
+            repository: timeline ?? _FakeAlarmTimelineRepository(),
+            audit: const ReminderAuditLog(),
+          ),
+        ),
         reminderServiceProvider.overrideWithValue(service),
         allItemsAsTargetProvider.overrideWith((ref) => Stream.value([item()])),
       ],
@@ -87,15 +103,41 @@ void main() {
 
   testWidgets('Dismiss stops the sound and leaves for My Schedule', (t) async {
     final sound = _FakeAlarmSound();
-    await t.pumpWidget(harness(sound, _FakeScheduler()));
+    final timeline = _FakeAlarmTimelineRepository();
+    await t.pumpWidget(harness(sound, _FakeScheduler(), timeline: timeline));
     await t.pump();
 
     await t.tap(find.text('Dismiss'));
     await t.pumpAndSettle();
 
     expect(sound.stops, 1);
+    expect(timeline.rang, ['a']);
+    expect(timeline.dismissed, ['a']);
     expect(find.text('PLAN'), findsOneWidget);
   });
+}
+
+class _FakeAlarmTimelineRepository implements AlarmTimelineRepository {
+  final rang = <String>[];
+  final dismissed = <String>[];
+
+  @override
+  Future<void> recordRang(
+    String targetUid,
+    String itemId,
+    DateTime atUtc,
+  ) async {
+    rang.add(itemId);
+  }
+
+  @override
+  Future<void> recordDismissed(
+    String targetUid,
+    String itemId,
+    DateTime atUtc,
+  ) async {
+    dismissed.add(itemId);
+  }
 }
 
 class _FakeAlarmSound implements AlarmSound {

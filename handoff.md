@@ -2,11 +2,12 @@
 
 ## Baseline
 
-- Branch: `main`; clean and synchronized with `origin/main` at `eba8b32`.
-- GitHub CI is green: Flutter analyze/tests, Worker tests, Firestore rules tests,
-  and Android native tests.
-- Latest release work added durable 1.5-second completion celebrations for both
-  target and planner, including offline delivery to the planner.
+- Branch: `main`; latest verified local commit is `cdb89e8` (month-grouped long
+  histories). The preceding inactivity work is `0665a89`.
+- The full local verification command passed through `cdb89e8`; remote sync and
+  GitHub CI status were not re-checked in this handoff.
+- Item 18 (planner activity timeline) is implemented in the working tree and is
+  awaiting the full user-run verification command.
 - Do not assume backend/rules deployment from a Git push. Confirm with the user
   before any deployment or other external state change.
 
@@ -43,18 +44,17 @@ Completed and committed:
    permission control only for non-friend members, with migration and tests.
 14/20. WhatsApp-style colored-paper completion celebration with a 1.5-second
    sound for the target and planner; queued durably for an offline planner.
+15–16. Durable six-hour inactivity notification with 50 sequential variants and
+   real-use timer reset (`0665a89`).
+17. Month/year buckets for sufficiently long histories, preserving day order,
+   deep links, archive behavior, and accessibility (`cdb89e8`).
 
 Still to do, in original order:
 
-15–16. Six-hour inactivity notification: about 50 short variants delivered in
-sequence, repeat only after all are used, and reset the timer on real app use.
-
-17. Collapse sufficiently long item histories into month/year groups without
-breaking day ordering, deep-link scrolling, archive behavior, or accessibility.
-
 18. Activity item detail/timeline for planners: scheduled/rang/dismissed and
 done/skipped timestamps. Show reached events and keep the final outcome visibly
-pending until the target actually marks the item done or skipped.
+pending until the target actually marks the item done or skipped. Implemented
+in the working tree; verification and commit remain.
 
 19. Investigate why “Plan for group” was missing for Testmates. Permission
 resolution changed in `b7adf45`, so reproduce first and determine whether that
@@ -157,10 +157,9 @@ party sees duplicates; skipped/rejected/withdrawn items never celebrate.
 
 ## Next session
 
-Start with item 15/16 unless the user reprioritizes. First inspect lifecycle and
-notification infrastructure, define exactly what counts as activity, and design
-the durable per-user sequence cursor/timer before editing. Add tests first or in
-the same slice; then give the user the full verification command above.
+Run the full verification command for item 18. If it passes and the user commits
+it, continue with item 19 by reproducing “Plan for group” through the Testmates
+permission path before changing code; `b7adf45` may already contain the fix.
 
 On-device feedback from the previously distributed APK may still arrive. Apply
 it to the relevant roadmap item without broadening unrelated work.

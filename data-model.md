@@ -1,8 +1,6 @@
 # time-app — Data Model (v1)
 
-**Status:** design doc, no app code. Firestore (committed backend). Alarm-related
-shapes are marked **DESIGN-ONLY — NOT BUILT** and exist only so the model doesn't
-paint itself into a corner; no alarm code follows from this doc.
+**Status:** live Firestore model plus explicitly marked future shapes.
 
 Conventions:
 - IDs are Firestore auto-ids unless noted.
@@ -150,7 +148,8 @@ Split into **commitment fields** (changing these re-triggers consent) and
 | `createdByUid` | string | The planner. |
 | `groupId` | string | Group context the planning happened in. |
 | `status` | enum | See state machine. |
-| `outcome` | map? | See below. Recordable in the core loop **without alarms** (Step 5 records completion/skip directly). |
+| `outcome` | map? | See below. Target-recorded completion or skip. |
+| `alarm` | map? | Target-device observations: optional `rangAt` and `dismissedAt` timestamps. See below. |
 | `rejectionReason` / `withdrawnReason` / `cancellationReason` | string? | Optional, per terminal transition. |
 | `createdAt` / `decidedAt` / `updatedAt` | Timestamp | `decidedAt` = when the target approved/rejected. |
 
@@ -222,10 +221,35 @@ the UI and notifications treat them differently.
 
 ---
 
-## Alarms — DESIGN-ONLY, NOT BUILT
+## Alarm lifecycle — built device state and shared observations
 
-Sketched so the item model above doesn't corner us. **No alarm code is written
-from this.** When an item is `approved`, an alarm record *would* be created:
+Approved future items are installed on the target device. The native scheduler,
+its durable mirror, reboot restoration, and diagnostic audit remain local to
+that device. The shared item stores only planner-visible facts observed by the
+target device:
+
+```
+alarm: {
+  rangAt:       Timestamp?,  // native AUDIO_FIRED observation
+  dismissedAt: Timestamp?,  // target dismissed the full-screen alarm
+}
+```
+
+Only the target may write this map, only on an approved item, and only these two
+timestamp keys are valid. Writes preserve the earliest observation, making
+resume-time audit reconciliation idempotent. `rangAt` comes from the native
+`AUDIO_FIRED` audit row when available; opening the alarm screen supplies a
+best-effort fallback. `dismissedAt` means the target silenced the alarm, not that
+they completed or skipped the item. The outcome therefore remains visibly
+pending until the target explicitly records Done or Skip.
+
+The planner reads this data from the existing schedule-item stream; there is no
+separate timeline collection and no fabricated timestamp for legacy outcomes.
+
+## Future alarm record — DESIGN-ONLY, NOT BUILT
+
+This older server-side alarm-record shape remains only as a possible future
+multi-device design. The built local scheduler does not create it:
 
 ```
 alarms/{alarmId}                         # DESIGN-ONLY — NOT BUILT

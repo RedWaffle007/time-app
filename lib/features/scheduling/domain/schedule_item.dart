@@ -62,13 +62,32 @@ class ScheduleOutcome {
 
   static ScheduleOutcome? fromMap(Map<String, dynamic>? m) {
     if (m == null) return null;
-    final result = m['result'] == 'skipped' ? OutcomeResult.skipped : OutcomeResult.done;
+    final result = m['result'] == 'skipped'
+        ? OutcomeResult.skipped
+        : OutcomeResult.done;
     return ScheduleOutcome(
       result: result,
       completedAt: (m['completedAt'] as Timestamp?)?.toDate(),
       skippedAt: (m['skippedAt'] as Timestamp?)?.toDate(),
       skipReason: m['skipReason'] as String?,
     );
+  }
+}
+
+/// Device-observed alarm lifecycle, synchronized into the shared item so the
+/// planner can see what actually happened without access to the target's phone.
+class ScheduleAlarmTimeline {
+  const ScheduleAlarmTimeline({this.rangAt, this.dismissedAt});
+
+  final DateTime? rangAt;
+  final DateTime? dismissedAt;
+
+  static ScheduleAlarmTimeline? fromMap(Map<String, dynamic>? map) {
+    if (map == null) return null;
+    final rangAt = (map['rangAt'] as Timestamp?)?.toDate();
+    final dismissedAt = (map['dismissedAt'] as Timestamp?)?.toDate();
+    if (rangAt == null && dismissedAt == null) return null;
+    return ScheduleAlarmTimeline(rangAt: rangAt, dismissedAt: dismissedAt);
   }
 }
 
@@ -88,6 +107,7 @@ class ScheduleItem {
     this.tier = ItemTier.normal,
     this.note,
     this.outcome,
+    this.alarm,
     this.rejectionReason,
     this.createdAt,
     this.decidedAt,
@@ -115,6 +135,7 @@ class ScheduleItem {
   final ItemTier tier;
 
   final ScheduleOutcome? outcome;
+  final ScheduleAlarmTimeline? alarm;
   final String? rejectionReason;
   final DateTime? createdAt;
 
@@ -206,13 +227,15 @@ class ScheduleItem {
       localWallTime: (d['localWallTime'] ?? '') as String,
       timezone: (d['timezone'] ?? '') as String,
       scheduledInstantUtc:
-          (d['scheduledInstantUtc'] as Timestamp?)?.toDate() ?? DateTime.now().toUtc(),
+          (d['scheduledInstantUtc'] as Timestamp?)?.toDate() ??
+          DateTime.now().toUtc(),
       status: ScheduleItemStatus.values.firstWhere(
         (s) => s.name == d['status'],
         orElse: () => ScheduleItemStatus.pending,
       ),
       tier: d['tier'] == 'emergency' ? ItemTier.emergency : ItemTier.normal,
       outcome: ScheduleOutcome.fromMap(d['outcome'] as Map<String, dynamic>?),
+      alarm: ScheduleAlarmTimeline.fromMap(d['alarm'] as Map<String, dynamic>?),
       rejectionReason: d['rejectionReason'] as String?,
       createdAt: (d['createdAt'] as Timestamp?)?.toDate(),
       decidedAt: (d['decidedAt'] as Timestamp?)?.toDate(),

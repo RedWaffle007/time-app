@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,9 +9,11 @@ import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../routing/app_router.dart';
+import '../../auth/application/auth_providers.dart';
 import '../../plan/application/plan_intent.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
+import '../application/alarm_timeline_providers.dart';
 import '../application/reminder_providers.dart';
 
 /// The full-screen alarm surface a reminder lands on.
@@ -52,6 +56,14 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(alarmSoundProvider).start(widget.itemId);
+      final uid = ref.read(currentUidProvider);
+      if (uid != null) {
+        unawaited(
+          ref
+              .read(alarmTimelineServiceProvider)
+              .recordRangFallback(uid, widget.itemId),
+        );
+      }
       // `dismiss` here means "cancel the OS notification for this item" — it
       // stops any remaining notification tone now that the service owns the
       // sound. It does not navigate; that is `_leave`.
@@ -73,6 +85,15 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
     if (_dismissing) return;
     _dismissing = true;
     await ref.read(alarmSoundProvider).stop(widget.itemId);
+    final uid = ref.read(currentUidProvider);
+    if (uid != null) {
+      // Navigation must not wait on Firestore: Dismiss has to work offline.
+      unawaited(
+        ref
+            .read(alarmTimelineServiceProvider)
+            .recordDismissed(uid, widget.itemId),
+      );
+    }
     if (!mounted) return;
     if (widget.itemId.isNotEmpty) {
       // Set the highlight intent BEFORE navigating — the deterministic signal

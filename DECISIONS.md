@@ -5594,3 +5594,26 @@ existing keyed-card scroll. Headers expose button, heading, expanded/collapsed,
 label, hint, and tap semantics. Archived adopts the same grouping but keeps
 short archives fully visible; long archives collapse while Unarchive continues
 to write through the unchanged owner-scoped repository.
+
+---
+
+## Planner item timeline uses observed facts (2026-09-23)
+
+The planner's Activity card opens a detail sheet with Scheduled, Rang,
+Dismissed, and the final Done/Skipped event. Reached events carry their actual
+timestamps. Until the target explicitly marks Done or Skip, the final row stays
+visibly “Outcome pending”; dismissing an alarm is never treated as an outcome.
+
+Native Android `AUDIO_FIRED` audit rows are the authoritative ring observation
+and are reconciled into `scheduleItems/{targetUid}/items/{itemId}.alarm.rangAt`
+when the target app runs. The full-screen alarm records a current-time fallback
+so the planner can see a live ring even before reconciliation, and records
+`dismissedAt` when Dismiss is pressed. First/earliest writes win, allowing the
+exact native time to replace a later fallback without resume-time duplicates.
+Reconciliation passes are serialized, while event writes are best-effort and do
+not hold up reminder playback, dismissal, or navigation if Firestore is offline.
+
+The shared map is target-written, approved-item-only, and field-scoped by
+Firestore rules. Existing planner read access already exposes the item. Legacy
+outcomes with no timestamp are shown as reached with “Time unavailable”; the UI
+never substitutes `updatedAt` or the scheduled time.

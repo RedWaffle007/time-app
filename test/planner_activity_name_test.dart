@@ -34,6 +34,10 @@ void main() {
       timezone: 'Asia/Kolkata',
       scheduledInstantUtc: scheduled,
       status: ScheduleItemStatus.approved,
+      alarm: ScheduleAlarmTimeline(
+        rangAt: scheduled.add(const Duration(minutes: 1)),
+        dismissedAt: scheduled.add(const Duration(minutes: 2)),
+      ),
     );
     const target = UserProfile(
       uid: 'target',
@@ -70,5 +74,14 @@ void main() {
     expect(name.text, 'Amina');
     expect(name.style?.fontWeight, FontWeight.w700);
     expect(tester.takeException(), isNull);
+
+    await tester.tap(find.text('Morning walk'));
+    await tester.pumpAndSettle();
+    expect(find.text('Timeline'), findsOneWidget);
+    expect(find.text('Scheduled'), findsOneWidget);
+    expect(find.text('Outcome pending'), findsOneWidget);
+    expect(find.text('Waiting for target'), findsOneWidget);
+    expect(find.text('Rang'), findsOneWidget);
+    expect(find.text('Dismissed'), findsOneWidget);
   });
 }

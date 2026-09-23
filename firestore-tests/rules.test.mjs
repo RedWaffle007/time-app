@@ -754,6 +754,43 @@ describe('issue 2 — no client may write the Worker dedup fields', () => {
   });
 });
 
+describe('alarm timeline writes', () => {
+  it('allows the target to record reached alarm events', async () => {
+    await assertSucceeds(setDoc(itemRef(as(ALICE), APPROVED_ITEM), {
+      alarm: {
+        rangAt: Timestamp.fromDate(new Date('2026-08-11T13:30:01Z')),
+        dismissedAt: Timestamp.fromDate(new Date('2026-08-11T13:30:10Z')),
+      },
+      updatedAt: serverTimestamp(),
+    }, { merge: true }));
+  });
+
+  it('denies planners, outsiders, and unknown alarm fields', async () => {
+    const alarm = {
+      rangAt: Timestamp.fromDate(new Date('2026-08-11T13:30:01Z')),
+    };
+    await assertFails(setDoc(itemRef(as(BOB), APPROVED_ITEM), {
+      alarm, updatedAt: serverTimestamp(),
+    }, { merge: true }));
+    await assertFails(setDoc(itemRef(as(MALLORY), APPROVED_ITEM), {
+      alarm, updatedAt: serverTimestamp(),
+    }, { merge: true }));
+    await assertFails(setDoc(itemRef(as(ALICE), APPROVED_ITEM), {
+      alarm: { ...alarm, forged: true },
+      updatedAt: serverTimestamp(),
+    }, { merge: true }));
+  });
+
+  it('denies alarm events on an unapproved item', async () => {
+    await assertFails(setDoc(itemRef(as(ALICE), PENDING_ITEM), {
+      alarm: {
+        rangAt: Timestamp.fromDate(new Date('2026-08-11T13:30:01Z')),
+      },
+      updatedAt: serverTimestamp(),
+    }, { merge: true }));
+  });
+});
+
 describe('issue 2 — the target cannot rewrite the plan itself', () => {
   it('DENIES the target editing the title', async () => {
     await assertFails(
