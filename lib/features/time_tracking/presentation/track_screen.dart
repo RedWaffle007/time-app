@@ -73,6 +73,7 @@ class TrackScreen extends ConsumerWidget {
         if (entriesByDay.remove(entry.logDate) case final dayEntries?)
           DayGroupData(
             key: entry.logDate,
+            date: _dayDate(entry.logDate),
             label: _dayLabel(context, entry.logDate),
             itemCount: dayEntries.length,
             itemBuilder: (context, index) =>
@@ -89,13 +90,18 @@ class TrackScreen extends ConsumerWidget {
   /// ("Today"/"Yesterday") wait on the relative-time helper that does not exist
   /// yet (CLAUDE.md) — a plain localized date is correct in the meantime.
   static String _dayLabel(BuildContext context, String logDate) {
+    final date = _dayDate(logDate);
+    return date.year == 1 ? logDate : formatWallDate(context, date);
+  }
+
+  static DateTime _dayDate(String logDate) {
     final parts = logDate.split('-');
-    if (parts.length != 3) return logDate;
+    if (parts.length != 3) return DateTime(1);
     final y = int.tryParse(parts[0]);
     final m = int.tryParse(parts[1]);
     final d = int.tryParse(parts[2]);
-    if (y == null || m == null || d == null) return logDate;
-    return formatWallDate(context, DateTime(y, m, d));
+    if (y == null || m == null || d == null) return DateTime(1);
+    return DateTime(y, m, d);
   }
 }
 

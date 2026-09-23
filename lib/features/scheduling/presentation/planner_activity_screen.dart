@@ -92,6 +92,7 @@ class PlannerActivityScreen extends ConsumerWidget {
       for (final key in keys)
         DayGroupData(
           key: key,
+          date: dateFor[key]!,
           label: formatWallDate(context, dateFor[key]!),
           itemCount: byDay[key]!.length,
           itemBuilder: (context, index) =>

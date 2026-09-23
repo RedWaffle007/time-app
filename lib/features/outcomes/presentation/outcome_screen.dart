@@ -358,6 +358,7 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
               for (final key in orderedKeys)
                 DayGroupData(
                   key: _storageKey(key),
+                  date: dateFor[key]!,
                   label: formatWallDate(context, dateFor[key]!),
                   section: switch (key.section) {
                     ScheduleTimeSection.today => 'Today',

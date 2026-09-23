@@ -5575,3 +5575,22 @@ inactivity schedules another prompt six hours later; any genuine app use resets
 that timer. Conditional claims prevent overlapping cron sends, while a final
 activity re-check prevents an app-open racing delivery from shortening the new
 six-hour window.
+
+---
+
+## Long histories use month-year buckets (2026-09-23)
+
+The existing day grouping remains the source of ordering and row construction.
+Once a surface reaches 12 distinct day groups, the shared history widget wraps
+consecutive days in localized month-year buckets without re-sorting them. This
+is a navigation layer, not a datastore or archive rule: My Schedule, Activity,
+Track, and Archived still receive their existing filtered lists and item order.
+
+Twelve days is the deliberate crossover: below it, another tap and heading add
+more friction than scanning; at and above it, month landmarks materially reduce
+a long wall of dates. A bucket containing an initially open day or a forced
+deep-link day opens automatically. The forced day opens too, preserving the
+existing keyed-card scroll. Headers expose button, heading, expanded/collapsed,
+label, hint, and tap semantics. Archived adopts the same grouping but keeps
+short archives fully visible; long archives collapse while Unarchive continues
+to write through the unchanged owner-scoped repository.

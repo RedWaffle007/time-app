@@ -7,7 +7,9 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/theme/status_style.dart';
 import '../../../core/widgets/async_view.dart';
+import '../../../core/widgets/collapsible_day_groups.dart';
 import '../../auth/application/auth_providers.dart';
+import '../../calendar/application/calendar_grouping.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
 import '../application/archive_providers.dart';
@@ -41,16 +43,48 @@ class ArchivedScreen extends ConsumerWidget {
         },
         isEmpty: (items) => items.isEmpty,
         emptyIcon: AppIcons.emptyArchive,
-        emptyMessage: "You haven't archived anything.\n"
+        emptyMessage:
+            "You haven't archived anything.\n"
             'Archiving hides a finished item from your own views — it never '
             'changes the record or what anyone else sees.',
-        builder: (context, items) => ListView(
-          // Full-screen route (no in-app bottom bar): clear the system nav bar.
-          padding: EdgeInsets.only(bottom: Space.systemBottomInset(context)),
-          children: [for (final item in items) _ArchivedCard(item: item)],
-        ),
+        builder: (context, items) {
+          final groups = _grouped(context, items);
+          return CollapsibleDayGroups(
+            // Full-screen route (no in-app bottom bar): clear the system nav.
+            padding: Space.screenListSafe(context),
+            // Preserve the old immediately-visible short archive. Once it is a
+            // genuinely long history, month buckets become the navigation and
+            // start collapsed instead of mounting the whole record.
+            initiallyExpandedKeys:
+                groups.length < CollapsibleDayGroups.monthGroupingDayThreshold
+                ? {for (final group in groups) group.key}
+                : const {},
+            groups: groups,
+          );
+        },
       ),
     );
+  }
+
+  List<DayGroupData> _grouped(BuildContext context, List<ScheduleItem> items) {
+    final byDay = <String, List<ScheduleItem>>{};
+    final dateFor = <String, DateTime>{};
+    for (final item in items) {
+      final date = calendarDayFor(item);
+      final key = dayKeyOf(date);
+      dateFor[key] = date;
+      byDay.putIfAbsent(key, () => []).add(item);
+    }
+    return [
+      for (final entry in byDay.entries)
+        DayGroupData(
+          key: entry.key,
+          date: dateFor[entry.key]!,
+          label: formatWallDate(context, dateFor[entry.key]!),
+          itemCount: entry.value.length,
+          itemBuilder: (_, index) => _ArchivedCard(item: entry.value[index]),
+        ),
+    ];
   }
 }
 
@@ -66,8 +100,11 @@ class _ArchivedCard extends ConsumerWidget {
     // Activity row needs to know which target it belonged to; a target archiving
     // their own schedule row does not need to be told it was theirs.
     final isMine = item.targetUid == uid;
-    final otherName = ref
-            .watch(profileByUidProvider(isMine ? item.createdByUid : item.targetUid))
+    final otherName =
+        ref
+            .watch(
+              profileByUidProvider(isMine ? item.createdByUid : item.targetUid),
+            )
             .value
             ?.name ??
         'someone';
@@ -80,7 +117,9 @@ class _ArchivedCard extends ConsumerWidget {
           children: [
             Row(
               children: [
-                Expanded(child: Text(item.title, style: context.text.titleMedium)),
+                Expanded(
+                  child: Text(item.title, style: context.text.titleMedium),
+                ),
                 const SizedBox(width: Space.sm),
                 // Same one-badge rule as everywhere else: an outcome replaces
                 // the approval status, because "Done" implies "Approved".
@@ -101,8 +140,9 @@ class _ArchivedCard extends ConsumerWidget {
                   'for $otherName',
                 formatInstant(context, item.scheduledInstantUtc, item.timezone),
               ].join(' · '),
-              style: context.text.bodySmall
-                  ?.copyWith(color: context.colors.onSurfaceVariant),
+              style: context.text.bodySmall?.copyWith(
+                color: context.colors.onSurfaceVariant,
+              ),
             ),
             ..._reasonLine(context),
             // Only a MANUAL archive is reversible. A rejected or withdrawn item
@@ -136,7 +176,10 @@ class _ArchivedCard extends ConsumerWidget {
   /// exactly that.
   List<Widget> _reasonLine(BuildContext context) {
     final reason = switch (item) {
-      ScheduleItem(status: ScheduleItemStatus.rejected, :final rejectionReason?) =>
+      ScheduleItem(
+        status: ScheduleItemStatus.rejected,
+        :final rejectionReason?,
+      ) =>
         'Reason: $rejectionReason',
       ScheduleItem(outcome: ScheduleOutcome(:final skipReason?)) =>
         'Reason: $skipReason',
@@ -145,9 +188,12 @@ class _ArchivedCard extends ConsumerWidget {
     if (reason == null) return const [];
     return [
       const SizedBox(height: Space.xs),
-      Text(reason,
-          style: context.text.bodySmall
-              ?.copyWith(color: context.colors.onSurfaceVariant)),
+      Text(
+        reason,
+        style: context.text.bodySmall?.copyWith(
+          color: context.colors.onSurfaceVariant,
+        ),
+      ),
     ];
   }
 

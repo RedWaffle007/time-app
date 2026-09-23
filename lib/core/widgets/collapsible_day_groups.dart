@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../format/datetime_format.dart';
 import '../theme/app_icons.dart';
 import '../theme/app_theme.dart';
 import '../theme/app_tokens.dart';
@@ -19,6 +20,7 @@ String dayKeyOf(DateTime date) =>
 class DayGroupData {
   const DayGroupData({
     required this.key,
+    required this.date,
     required this.label,
     required this.itemCount,
     required this.itemBuilder,
@@ -36,6 +38,12 @@ class DayGroupData {
   /// collapsed when the list refreshes.
   final String key;
 
+  /// Calendar date represented by this group. Kept separate from [key] because
+  /// My Schedule prefixes its stable state key with a time-section name. Long
+  /// histories use this value to form localized month/year buckets without
+  /// trying to parse presentation or storage strings.
+  final DateTime date;
+
   /// The localized date label shown in the header (e.g. "Mon, 12 Aug 2026").
   final String label;
 
@@ -48,9 +56,9 @@ class DayGroupData {
   int get count => itemCount;
 }
 
-/// **The one** collapsible date-grouped list, shared by My Schedule, Activity
-/// and Track so the pattern is identical across all three (a tap on the header —
-/// or its chevron — expands/collapses just that day, smoothly and independently).
+/// **The one** collapsible date-grouped list, shared by My Schedule, Activity,
+/// Track and Archived so the pattern is identical across item histories (a tap
+/// on the header — or its chevron — expands/collapses that group).
 ///
 /// It owns ONLY the expand/collapse UI + state. Each screen decides its own day
 /// order (My Schedule upcoming-first; Activity/Track most-recent-first) and
@@ -89,6 +97,11 @@ class CollapsibleDayGroups extends StatefulWidget {
   @visibleForTesting
   static int debugAnimationControllerCount = 0;
 
+  /// Below this many distinct day groups, another hierarchy level costs more
+  /// taps than it saves. At this threshold a history is long enough that month
+  /// landmarks materially reduce scanning.
+  static const monthGroupingDayThreshold = 12;
+
   @override
   State<CollapsibleDayGroups> createState() => _CollapsibleDayGroupsState();
 }
@@ -101,6 +114,12 @@ class _CollapsibleDayGroupsState extends State<CollapsibleDayGroups> {
     if (widget.forceExpandKey != null) widget.forceExpandKey!,
   };
 
+  late final Set<String> _expandedMonths = {
+    for (final bucket in _monthBuckets())
+      if (bucket.groups.any((group) => _expanded.contains(group.key)))
+        bucket.key,
+  };
+
   @override
   void didUpdateWidget(CollapsibleDayGroups oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -108,14 +127,22 @@ class _CollapsibleDayGroupsState extends State<CollapsibleDayGroups> {
     // card mounts and the screen can scroll to it. Only ADD — never re-collapse
     // what the user chose.
     final force = widget.forceExpandKey;
-    if (force != null && force != oldWidget.forceExpandKey) {
+    if (force != null) {
       _expanded.add(force);
+      final bucket = _monthBucketForDay(force);
+      if (bucket != null) _expandedMonths.add(bucket.key);
     }
   }
 
   void _toggle(String key) {
     setState(() {
       if (!_expanded.remove(key)) _expanded.add(key);
+    });
+  }
+
+  void _toggleMonth(String key) {
+    setState(() {
+      if (!_expandedMonths.remove(key)) _expandedMonths.add(key);
     });
   }
 
@@ -136,11 +163,64 @@ class _CollapsibleDayGroupsState extends State<CollapsibleDayGroups> {
           sliver: SliverToBoxAdapter(child: leading),
         ),
     ];
-    // Tracks the section of the previous group so a header is emitted only when
-    // the section changes (groups sharing a section sit under one header).
+    if (widget.groups.length < CollapsibleDayGroups.monthGroupingDayThreshold) {
+      _addDayGroups(slivers, widget.groups, horizontal);
+    } else {
+      // Preserve the incoming day order exactly. A bucket is a consecutive run
+      // of one section + calendar month; no sorting happens at this layer.
+      String? lastSection;
+      for (final bucket in _monthBuckets()) {
+        if (bucket.section != null && bucket.section != lastSection) {
+          slivers.add(
+            SliverPadding(
+              padding: horizontal,
+              sliver: SliverToBoxAdapter(child: SectionHeader(bucket.section!)),
+            ),
+          );
+          lastSection = bucket.section;
+        }
+        final expanded = _expandedMonths.contains(bucket.key);
+        slivers.add(
+          SliverPadding(
+            padding: horizontal,
+            sliver: SliverToBoxAdapter(
+              child: _GroupHeader(
+                label: formatMonthYear(context, bucket.date),
+                count: bucket.itemCount,
+                expanded: expanded,
+                onTap: () => _toggleMonth(bucket.key),
+                level: _GroupHeaderLevel.month,
+              ),
+            ),
+          ),
+        );
+        if (expanded) {
+          _addDayGroups(
+            slivers,
+            bucket.groups,
+            horizontal.add(const EdgeInsetsDirectional.only(start: Space.lg)),
+            showSections: false,
+          );
+        }
+      }
+    }
+    if (padding.bottom > 0) {
+      slivers.add(SliverToBoxAdapter(child: SizedBox(height: padding.bottom)));
+    }
+    return CustomScrollView(controller: widget.controller, slivers: slivers);
+  }
+
+  void _addDayGroups(
+    List<Widget> slivers,
+    List<DayGroupData> groups,
+    EdgeInsetsGeometry horizontal, {
+    bool showSections = true,
+  }) {
     String? lastSection;
-    for (final group in widget.groups) {
-      if (group.section != null && group.section != lastSection) {
+    for (final group in groups) {
+      if (showSections &&
+          group.section != null &&
+          group.section != lastSection) {
         slivers.add(
           SliverPadding(
             padding: horizontal,
@@ -154,11 +234,12 @@ class _CollapsibleDayGroupsState extends State<CollapsibleDayGroups> {
         SliverPadding(
           padding: horizontal,
           sliver: SliverToBoxAdapter(
-            child: _DayHeader(
+            child: _GroupHeader(
               label: group.label,
               count: group.count,
               expanded: expanded,
               onTap: () => _toggle(group.key),
+              level: _GroupHeaderLevel.day,
             ),
           ),
         ),
@@ -180,64 +261,128 @@ class _CollapsibleDayGroupsState extends State<CollapsibleDayGroups> {
         ),
       );
     }
-    if (padding.bottom > 0) {
-      slivers.add(SliverToBoxAdapter(child: SizedBox(height: padding.bottom)));
+  }
+
+  List<_MonthBucket> _monthBuckets() {
+    final buckets = <_MonthBucket>[];
+    for (final group in widget.groups) {
+      final month =
+          '${group.date.year.toString().padLeft(4, '0')}-'
+          '${group.date.month.toString().padLeft(2, '0')}';
+      final key = '${group.section ?? ''}:$month';
+      final previous = buckets.isEmpty ? null : buckets.last;
+      if (previous == null || previous.key != key) {
+        buckets.add(
+          _MonthBucket(
+            key: key,
+            date: DateTime(group.date.year, group.date.month),
+            section: group.section,
+            groups: [group],
+          ),
+        );
+      } else {
+        previous.groups.add(group);
+      }
     }
-    return CustomScrollView(controller: widget.controller, slivers: slivers);
+    return buckets;
+  }
+
+  _MonthBucket? _monthBucketForDay(String dayKey) {
+    for (final bucket in _monthBuckets()) {
+      if (bucket.groups.any((group) => group.key == dayKey)) return bucket;
+    }
+    return null;
   }
 }
 
-class _DayHeader extends StatelessWidget {
-  const _DayHeader({
+class _MonthBucket {
+  const _MonthBucket({
+    required this.key,
+    required this.date,
+    required this.section,
+    required this.groups,
+  });
+
+  final String key;
+  final DateTime date;
+  final String? section;
+  final List<DayGroupData> groups;
+  int get itemCount => groups.fold(0, (sum, group) => sum + group.count);
+}
+
+enum _GroupHeaderLevel { month, day }
+
+class _GroupHeader extends StatelessWidget {
+  const _GroupHeader({
     required this.label,
     required this.count,
     required this.expanded,
     required this.onTap,
+    required this.level,
   });
 
   final String label;
   final int count;
   final bool expanded;
   final VoidCallback onTap;
+  final _GroupHeaderLevel level;
 
   @override
   Widget build(BuildContext context) {
     final unit = count == 1 ? 'item' : 'items';
-    return InkWell(
+    final text = '$label · $count $unit';
+    return Semantics(
+      container: true,
+      header: true,
+      button: true,
+      expanded: expanded,
+      label: text,
+      hint: expanded ? 'Collapse group' : 'Expand group',
       onTap: onTap,
-      borderRadius: Radii.sm,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          vertical: Space.md,
-          horizontal: Space.xs,
-        ),
-        child: Row(
-          children: [
-            // A compact, themed marker distinguishes adjacent dates without
-            // competing with SectionHeader's horizontal structural rule.
-            Icon(
-              AppIcons.bullet,
-              size: Sizes.bulletMarker,
-              color: context.colors.categoricalAccentFor(label),
+      child: ExcludeSemantics(
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: Radii.sm,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              vertical: Space.md,
+              horizontal: Space.xs,
             ),
-            const SizedBox(width: Space.md),
-            Expanded(
-              child: Text(
-                '$label · $count $unit',
-                style: context.text.titleMedium,
-              ),
+            child: Row(
+              children: [
+                // A compact, themed marker distinguishes adjacent dates without
+                // competing with SectionHeader's horizontal structural rule.
+                Icon(
+                  level == _GroupHeaderLevel.month
+                      ? AppIcons.calendar
+                      : AppIcons.bullet,
+                  size: level == _GroupHeaderLevel.month
+                      ? Sizes.inlineIcon
+                      : Sizes.bulletMarker,
+                  color: context.colors.categoricalAccentFor(label),
+                ),
+                const SizedBox(width: Space.md),
+                Expanded(
+                  child: Text(
+                    text,
+                    style: level == _GroupHeaderLevel.month
+                        ? context.text.titleLarge
+                        : context.text.titleMedium,
+                  ),
+                ),
+                AnimatedRotation(
+                  // Down (V) when collapsed → up when expanded.
+                  turns: expanded ? 0.5 : 0.0,
+                  duration: Motion.fast,
+                  curve: Motion.curve,
+                  child: Icon(
+                    AppIcons.expandGroup,
+                    color: context.colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ),
-            AnimatedRotation(
-              // Down (V) when collapsed → up when expanded.
-              turns: expanded ? 0.5 : 0.0,
-              duration: Motion.fast,
-              curve: Motion.curve,
-              child: Icon(
-                AppIcons.expandGroup,
-                color: context.colors.onSurfaceVariant,
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
