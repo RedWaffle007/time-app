@@ -2,12 +2,12 @@
 
 ## Baseline
 
-- Branch: `main`; latest verified local commit is `5066218` (planner activity
-  timelines).
-- The full local verification command passed through `5066218`; remote sync and
-  GitHub CI status were not re-checked in this handoff.
-- Item 19 (Testmates group-plan visibility regression) is implemented in the
-  working tree and is awaiting the full user-run verification command.
+- Branch: `main`; latest verified local commit is `b6d822a` (Testmates group
+  planning visibility regression).
+- The full local verification command passed for the item 21 working tree;
+  remote sync and GitHub CI status were not re-checked in this handoff.
+- Item 21 (one-minute alarm cap and missed handling) is implemented and fully
+  verified in the working tree; its commit is pending.
 - Do not assume backend/rules deployment from a Git push. Confirm with the user
   before any deployment or other external state change.
 
@@ -50,20 +50,17 @@ Completed and committed:
    deep links, archive behavior, and accessibility (`cdb89e8`).
 18. Planner Activity detail timeline with observed ring/dismiss timestamps and
    an explicit pending outcome (`5066218`).
+19. Testmates group planning visibility regression proving friendship-scoped
+   permission works on the real group screen (`b6d822a`).
+
+Completed and verified; commit pending:
+
+21. Alarm auto-stop and missed handling: one-minute native cap, foreground
+Volume Down silence where Android delivers the key, durable timeout recovery,
+conditional `Skipped: User unavailable`, planner notification retry, and an
+app-wide next-open review card. Missed items remain in their normal date groups.
 
 Still to do, in original order:
-
-19. Investigate why “Plan for group” was missing for Testmates. Permission
-resolution changed in `b7adf45`, so reproduce first and determine whether that
-already fixed it; add a regression case for the actual cause. Investigation
-confirmed the fix; the real-screen regression is awaiting verification.
-
-21. Alarm auto-stop and missed handling: ring for at most one minute; permit
-volume-down silencing where Android permits it; auto-record `Skipped: user
-unavailable` when the minute expires; notify the planner; show missed tasks on
-next open and mark them reviewed/skipped. They remain in normal date groups in
-My Schedule. Do not promise identical volume-key interception on every Android
-OEM without validating platform limitations.
 
 22. Group and friend pictures:
 
@@ -167,6 +164,59 @@ party sees duplicates; skipped/rejected/withdrawn items never celebrate.
   removal of the old auto-open grid/reopen button; and preservation of normal
   save behavior after acknowledging a warning.
 
+28. Wake the Android screen for an alarm and expose Dismiss as reliably as the
+platform permits:
+
+- This is feasible as a best-effort Android feature, not an all-device
+  guarantee. `Activity.setTurnScreenOn(true)` plus `setShowWhenLocked(true)` is
+  the supported API on Android 8.1+ (legacy window flags below that), but it only
+  helps if the alarm Activity is actually launched and visible. Android 14+
+  lets the user revoke full-screen-intent access, notification/channel settings
+  remain user-controlled, and OEM background policy may suppress the launch.
+- The current app already applies show-when-locked, turn-screen-on, and
+  keep-screen-on, but only after Flutter mounts `AlarmScreen` and invokes the
+  sound channel. Move this configuration to the earliest native alarm-intent
+  boundary—before Activity resume/content presentation—and apply it on both
+  cold `onCreate` and warm `onNewIntent` paths. Use an explicit alarm-launch
+  marker rather than waking the screen for ordinary app or notification opens.
+- Keep the full-screen notification as the delivery mechanism, verify
+  `canUseFullScreenIntent()` on Android 14+, and retain a high-priority,
+  lock-screen-visible notification with a direct Dismiss action when full-screen
+  launch is unavailable. Do not use a deprecated screen wake lock as the primary
+  mechanism; the foreground service's partial wake lock remains audio/CPU-only.
+- Clear turn/show/keep-screen state on every dismiss, timeout, non-alarm intent,
+  and Activity teardown so later ordinary launches cannot inherit alarm window
+  behavior. Do not request keyguard dismissal or bypass device authentication;
+  the alarm UI may cover the keyguard, not unlock the phone.
+- Regression tests: pure native alarm-intent classification (alarm versus FCM,
+  ordinary launch, malformed/empty payload); a testable wake-window controller
+  proving enable/clear symmetry across modern and legacy branches; cold/warm
+  launch routing to the same Dismiss UI; denied full-screen permission preserving
+  the actionable notification fallback; timeout/dismiss clearing flags; and the
+  existing alarm-screen navigation/Volume Down behavior. On-device acceptance
+  matrix: locked/unlocked × screen off/on × full-screen access allowed/denied on
+  AOSP/Pixel plus Redmi/HyperOS and Motorola, with an explicit recorded result
+  rather than a claim of universal support.
+
+29. Fade the cold-start clock ting without changing the 1.5-second reveal:
+
+- Keep `SplashOverlay.introDuration` at 1,150 ms and `outroDuration` at 350 ms;
+  the existing exact-1,500-ms visual contract remains unchanged.
+- Replace `SplashSound`'s abrupt 1,500-ms `SoundPool.stop()` edge with a short
+  native volume ramp over the final portion of the same deadline, ending at
+  zero and then stopping/releasing the stream. Use `SoundPool.setVolume()` on
+  the active stream and cancel all prior fade/stop callbacks before replay.
+- Anchor the audio deadline to the original `play` request, not delayed sample
+  load completion. If preload finishes late, shorten the remaining playback and
+  fade; if the 1.5-second deadline has passed, do not start a stale ting. Preserve
+  the current ringer-normal check and one-shot behavior.
+- Regression tests: the existing widget assertion that intro + outro equals
+  exactly 1,500 ms; pure native fade-policy tests for full volume before the
+  fade, monotonic ramp-down, zero at 1,500 ms, clamping, and late-load expiry;
+  controller tests proving replay cancels stale callbacks and stops only the
+  current stream; and mute/vibrate behavior remaining silent. On-device listen
+  checks cover normal and delayed cold starts without extending the splash.
+
 ## Important architecture constraints
 
 - Schedule items live under `scheduleItems/{targetUid}/items/{itemId}`. Current
@@ -184,9 +234,9 @@ party sees duplicates; skipped/rejected/withdrawn items never celebrate.
 
 ## Next session
 
-Run the full verification command for item 19. If it passes and the user commits
-it, continue with item 21: research Android volume-key constraints, then design
-the one-minute timeout/missed-item state before changing native alarm behavior.
+Commit the fully verified item 21 working tree. Then continue with item 22 unless
+the user promotes item 27 (conditional conflict disclosure), item 28 (alarm
+screen wake), or item 29 (splash-sound fade) ahead of group/friend pictures.
 
 On-device feedback from the previously distributed APK may still arrive. Apply
 it to the relevant roadmap item without broadening unrelated work.

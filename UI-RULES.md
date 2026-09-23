@@ -811,6 +811,17 @@ with the tagline **“Mates Always Remember”**. It is a theme-independent pure
 black reveal with white wordmark and glow. The two fixed brand bars are green
 `#2FA35A` over burnt orange `#EA6A2E`, from `SplashTokens`.
 
+### 6.16 Missed-alarm review
+
+After the native one-minute ring cap expires, the next unlocked foreground
+session places one blocking review card over the current route. It uses the
+ordinary surface Card on the standard scrim, not an error-red takeover: a missed
+alarm is a neutral Skipped outcome, not app failure. The underlying route is
+`IgnorePointer` + `ExcludeSemantics` while visible. Multiple misses are one
+scrollable card with one row per task and one filled **Mark reviewed** action;
+the card appears only after the automatic outcome is durably recorded and never
+above the app lock or cold-start reveal.
+
 ---
 
 ## 7. Accessibility floor

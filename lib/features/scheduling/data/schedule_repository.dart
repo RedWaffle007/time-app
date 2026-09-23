@@ -246,4 +246,70 @@ class ScheduleRepository {
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
+
+  /// Timeout-only outcome write. Unlike the interactive Skip action, this can
+  /// race a person pressing Done, so it must prove `outcome` is still absent in
+  /// the same transaction that writes the automatic skip.
+  Future<bool> markSkippedIfUnsettled(
+    String targetUid,
+    String itemId, {
+    required String reason,
+    DateTime? atUtc,
+  }) async {
+    final ref = _items(targetUid).doc(itemId);
+    return _db.runTransaction((transaction) async {
+      final snapshot = await transaction.get(ref);
+      final data = snapshot.data();
+      if (data == null ||
+          data['status'] != ScheduleItemStatus.approved.name ||
+          data['outcome'] != null) {
+        return false;
+      }
+      transaction.set(ref, {
+        'outcome': {
+          'result': OutcomeResult.skipped.name,
+          'skippedAt': atUtc == null
+              ? FieldValue.serverTimestamp()
+              : Timestamp.fromDate(atUtc),
+          'skipReason': reason,
+        },
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      return true;
+    });
+  }
+
+  /// Reclassifies only the automatic end-of-day fallback. A one-minute alarm
+  /// timeout is more specific evidence than the later generic lapse pass, but
+  /// neither automatic path may replace an outcome chosen by the person.
+  Future<bool> replaceAutomaticSkipIfMatches(
+    String targetUid,
+    String itemId, {
+    required String expectedReason,
+    required String reason,
+    required DateTime atUtc,
+  }) async {
+    final ref = _items(targetUid).doc(itemId);
+    return _db.runTransaction((transaction) async {
+      final snapshot = await transaction.get(ref);
+      final data = snapshot.data();
+      final outcome = data?['outcome'];
+      if (data == null ||
+          data['status'] != ScheduleItemStatus.approved.name ||
+          outcome is! Map ||
+          outcome['result'] != OutcomeResult.skipped.name ||
+          outcome['skipReason'] != expectedReason) {
+        return false;
+      }
+      transaction.set(ref, {
+        'outcome': {
+          'result': OutcomeResult.skipped.name,
+          'skippedAt': Timestamp.fromDate(atUtc),
+          'skipReason': reason,
+        },
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      return true;
+    });
+  }
 }

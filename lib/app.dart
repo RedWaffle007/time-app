@@ -18,7 +18,9 @@ import 'features/groups/application/group_providers.dart';
 import 'features/groups/application/group_stats_providers.dart';
 import 'features/groups/application/planner_access_reconciler.dart';
 import 'features/reminders/application/alarm_timeline_providers.dart';
+import 'features/reminders/application/missed_alarm_providers.dart';
 import 'features/reminders/application/reminder_providers.dart';
+import 'features/reminders/presentation/missed_alarm_review_host.dart';
 import 'features/scheduling/application/item_lapse_reconciler.dart';
 import 'features/scheduling/application/schedule_providers.dart';
 import 'features/scheduling/application/slot_lock_reconciler.dart';
@@ -121,6 +123,7 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
           .read(reminderServiceProvider)
           .sync(items: items, uid: uid, reason: 'resume');
       ref.read(alarmTimelineServiceProvider).sync(items, uid);
+      ref.read(missedAlarmServiceProvider).sync(items, uid);
     }
 
     // Permissions can be changed from Settings behind the app's back, and on
@@ -372,6 +375,7 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     // alarm really rang while Dart was dead. Reconcile them into the shared
     // item so its planner-facing timeline can display reached events.
     ref.watch(alarmTimelineSyncProvider);
+    ref.watch(missedAlarmSyncProvider);
 
     // THE PLANNER-ACCESS MIRROR'S ONE WIRE — same shape again, and here the
     // argument is sharper than for either of its neighbours. `plannerAccess` is
@@ -486,9 +490,12 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
           child: AppLockGate(
             child: CompletionCelebrationHost(
               enabled: _splashReady,
-              child: TimeBackdrop(
-                key: TimeBackdrop.backdropKey,
-                child: child ?? const SizedBox.shrink(),
+              child: MissedAlarmReviewHost(
+                enabled: _splashReady,
+                child: TimeBackdrop(
+                  key: TimeBackdrop.backdropKey,
+                  child: child ?? const SizedBox.shrink(),
+                ),
               ),
             ),
           ),

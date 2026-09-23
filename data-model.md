@@ -246,6 +246,15 @@ pending until the target explicitly records Done or Skip.
 The planner reads this data from the existing schedule-item stream; there is no
 separate timeline collection and no fabricated timestamp for legacy outcomes.
 
+Android also keeps a device-protected local reconciliation queue for two facts
+that can occur while Dart and Firebase are unavailable: the one-minute ring cap
+expired, or the foreground alarm was silenced with Volume Down. Timeout rows are
+retained through process death/reboot until the authenticated target app records
+`outcome.result = skipped`, `skipReason = "User unavailable"`, attempts the
+planner notification, and the target reviews the missed-alarm summary. This
+queue is device state, not a Firestore collection. Volume-silence rows only add
+the shared `alarm.dismissedAt` observation; silencing is not an outcome.
+
 ## Future alarm record — DESIGN-ONLY, NOT BUILT
 
 This older server-side alarm-record shape remains only as a possible future

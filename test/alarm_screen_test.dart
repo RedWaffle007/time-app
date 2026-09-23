@@ -8,10 +8,12 @@ import 'package:time_app/core/theme/app_theme.dart';
 import 'package:time_app/features/auth/application/auth_providers.dart';
 import 'package:time_app/features/reminders/application/alarm_timeline_providers.dart';
 import 'package:time_app/features/reminders/application/alarm_timeline_service.dart';
+import 'package:time_app/features/reminders/application/missed_alarm_providers.dart';
 import 'package:time_app/features/reminders/application/reminder_providers.dart';
 import 'package:time_app/features/reminders/application/reminder_service.dart';
 import 'package:time_app/features/reminders/data/alarm_sound.dart';
 import 'package:time_app/features/reminders/data/alarm_timeline_repository.dart';
+import 'package:time_app/features/reminders/data/alarm_lifecycle_store.dart';
 import 'package:time_app/features/reminders/data/reminder_audit_log.dart';
 import 'package:time_app/features/reminders/data/reminder_mirror_store.dart';
 import 'package:time_app/features/reminders/data/reminder_scheduler.dart';
@@ -44,6 +46,7 @@ void main() {
     _FakeAlarmSound sound,
     _FakeScheduler scheduler, {
     _FakeAlarmTimelineRepository? timeline,
+    _FakeAlarmKeyEvents? keys,
   }) {
     final service = ReminderService(
       scheduler: scheduler,
@@ -68,6 +71,7 @@ void main() {
       overrides: [
         currentUidProvider.overrideWithValue('me'),
         alarmSoundProvider.overrideWithValue(sound),
+        alarmKeyEventsProvider.overrideWithValue(keys ?? _FakeAlarmKeyEvents()),
         alarmTimelineServiceProvider.overrideWithValue(
           AlarmTimelineService(
             repository: timeline ?? _FakeAlarmTimelineRepository(),
@@ -115,6 +119,36 @@ void main() {
     expect(timeline.dismissed, ['a']);
     expect(find.text('PLAN'), findsOneWidget);
   });
+
+  testWidgets('Volume Down silence leaves through the same dismiss path', (
+    t,
+  ) async {
+    final sound = _FakeAlarmSound();
+    final timeline = _FakeAlarmTimelineRepository();
+    final keys = _FakeAlarmKeyEvents();
+    await t.pumpWidget(
+      harness(sound, _FakeScheduler(), timeline: timeline, keys: keys),
+    );
+    await t.pump();
+
+    await keys.silence();
+    await t.pumpAndSettle();
+
+    expect(sound.stops, 1);
+    expect(timeline.dismissed, ['a']);
+    expect(find.text('PLAN'), findsOneWidget);
+  });
+}
+
+class _FakeAlarmKeyEvents implements AlarmKeyEvents {
+  Future<void> Function()? handler;
+
+  @override
+  void listen(Future<void> Function()? onVolumeSilenced) {
+    handler = onVolumeSilenced;
+  }
+
+  Future<void> silence() async => handler?.call();
 }
 
 class _FakeAlarmTimelineRepository implements AlarmTimelineRepository {

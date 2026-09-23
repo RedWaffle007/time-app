@@ -6,8 +6,9 @@ import 'package:flutter/services.dart';
 ///
 /// The sound does NOT live here or in the Dart UI: it lives in the native
 /// `AlarmSoundService`, a foreground service holding a wake lock, so it keeps
-/// ringing with the screen off. This is only the switch. `start` also drives the
-/// window flags that show the alarm over the lock screen; `stop` clears them.
+/// ringing with the screen off, bounded by the native one-minute cap. This is
+/// only the switch. `start` also drives the window flags that show the alarm
+/// over the lock screen; `stop` clears them.
 ///
 /// A hand-written channel rather than a package, the same call [SecureWindow]
 /// makes: the job is two verbs over one native service, and an audio package

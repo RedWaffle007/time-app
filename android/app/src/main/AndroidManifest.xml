@@ -215,7 +215,7 @@
         </receiver>
 
         <!-- Plays the alarm tone on a PARTIAL_WAKE_LOCK so it keeps ringing with
-             the screen off, until dismissed (or the 10-minute safety cap). Not
+             the screen off, until dismissed (or the one-minute cap). Not
              exported — AlarmDeliveryReceiver starts it at the due instant and
              MainActivity controls the UI fallback/dismiss lifecycle. The
              mediaPlayback FGS type matches the AudioAttributes(USAGE_ALARM)

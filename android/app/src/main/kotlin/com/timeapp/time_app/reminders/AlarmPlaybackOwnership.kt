@@ -43,6 +43,10 @@ internal class AlarmPlaybackOwnership {
 
     fun latestUiItem(): String? = uiItems.lastOrNull()
 
+    fun itemIds(): Set<String> = notifications.values.toSet() + uiItems
+
+    fun notificationIds(): Set<Int> = notifications.keys.toSet()
+
     fun clear() {
         notifications.clear()
         uiItems.clear()
@@ -51,7 +55,7 @@ internal class AlarmPlaybackOwnership {
 
 /** Constants whose values are part of the alarm's user-visible contract. */
 internal object AlarmSoundPolicy {
-    const val MAX_RING_DURATION_MS = 10L * 60L * 1000L
+    const val MAX_RING_DURATION_MS = 60_000L
 
     // MediaPlayer implements this by finishing the entire source before seeking
     // back to its start. Never replace it with a timer that calls start/reseek.

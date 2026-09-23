@@ -59,9 +59,20 @@ class AlarmPlaybackOwnershipTest {
     }
 
     @Test
-    fun `the playback policy loops a complete tone for at most ten minutes`() {
+    fun `the playback policy loops a complete tone for at most one minute`() {
         assertTrue(AlarmSoundPolicy.LOOP_WHOLE_TONE)
-        assertEquals(10L * 60L * 1000L, AlarmSoundPolicy.MAX_RING_DURATION_MS)
+        assertEquals(60_000L, AlarmSoundPolicy.MAX_RING_DURATION_MS)
+    }
+
+    @Test
+    fun `timeout sees every item that still owns playback`() {
+        val ownership = AlarmPlaybackOwnership()
+        ownership.claimNotification(41, "item-a")
+        ownership.claimUi("item-a")
+        ownership.claimNotification(42, "item-b")
+
+        assertEquals(setOf("item-a", "item-b"), ownership.itemIds())
+        assertEquals(setOf(41, 42), ownership.notificationIds())
     }
 
     @Test

@@ -18,9 +18,10 @@ import 'schedule_providers.dart';
 /// on, would otherwise sit in "next" indefinitely. One rule — [lapsedItems] —
 /// applied to whatever the stream currently says resolves both at end of the
 /// item's own local day: pending → `reject` ("Not approved in time"),
-/// approved-with-no-outcome → `markSkipped` ("Did not respond"). Nothing is
-/// deleted; the settled item stays visible to the accountability partner, and
-/// its reason feeds stats.
+/// approved-with-no-outcome → conditional skip ("Did not respond"). Nothing
+/// is deleted; the settled item stays visible to the accountability partner,
+/// and its reason feeds stats. The conditional write prevents this generic
+/// fallback from overwriting a more specific alarm-timeout outcome.
 ///
 /// ## Doctrine
 ///
@@ -68,12 +69,12 @@ class ItemLapseReconciler {
         rejected++;
       }
       for (final item in lapsed.toSkip) {
-        await _repository.markSkipped(
+        final recorded = await _repository.markSkippedIfUnsettled(
           targetUid,
           item.id,
           reason: kLapsedSkipReason,
         );
-        skipped++;
+        if (recorded) skipped++;
       }
       return (rejected: rejected, skipped: skipped);
     } finally {
@@ -97,15 +98,16 @@ final itemLapseSyncProvider = Provider<void>((ref) {
   if (uid == null) return;
   final reconciler = ref.watch(itemLapseReconcilerProvider);
 
-  ref.listen<AsyncValue<List<ScheduleItem>>>(
-    allItemsAsTargetProvider,
-    (_, next) {
-      final items = next.value;
-      if (items == null) return;
-      unawaited(reconciler
+  ref.listen<AsyncValue<List<ScheduleItem>>>(allItemsAsTargetProvider, (
+    _,
+    next,
+  ) {
+    final items = next.value;
+    if (items == null) return;
+    unawaited(
+      reconciler
           .reconcile(targetUid: uid, items: items)
-          .catchError((_) => (rejected: 0, skipped: 0)));
-    },
-    fireImmediately: true,
-  );
+          .catchError((_) => (rejected: 0, skipped: 0)),
+    );
+  }, fireImmediately: true);
 });

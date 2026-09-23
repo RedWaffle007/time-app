@@ -5633,3 +5633,40 @@ and group grants for non-friend members. No further permission or datastore
 change is needed. The regression is pinned at the real Testmates group screen:
 an empty group-grant stream plus an effective friendship grant must render the
 group-planning action and open a sheet containing both the caller and friend.
+
+---
+
+## One-minute alarm cap and durable missed handling (2026-09-23)
+
+Native alarm playback now has a hard 60-second cap (down from the old ten-minute
+safety valve). The foreground service records every active item into a
+device-protected lifecycle queue before releasing audio and its wake lock, so a
+dead Flutter process, locked device, or lost network cannot erase the miss. It
+also cancels the owning reminder notifications at timeout or hardware silence;
+otherwise a stale notification could be tapped after the cap and start a second
+ringing session.
+
+When authenticated Dart is available, the stream-driven reconciler writes
+Skipped with reason `User unavailable` through a transaction that succeeds only
+while the item is still approved and has no outcome. A concurrent human Done or
+Skip therefore wins. The ordinary end-of-day lapse pass uses the same
+write-if-unsettled rule; if that generic `Did not respond` fallback won just
+before the native timeout was reconciled, only that exact automatic outcome may
+be replaced by the more specific `User unavailable` fact and its real timeout
+timestamp. Planner outcome notification is retried from the durable row until
+delivered (or the Worker confirms it was already sent). Review and notification
+delivery are separate flags: acknowledging the next-open review cannot discard
+an undelivered planner notification.
+
+Volume Down is consumed only when Android delivers it to the foreground
+`MainActivity` while alarm playback is active. It stops native playback
+immediately, drives the same Dart dismissal/navigation path when Flutter is
+present, and durably backfills `dismissedAt` otherwise. It never records Skip.
+There is deliberately no accessibility service, global key capture, or promise
+that an OEM will deliver Volume Down while the activity is absent; Android's
+standard behavior is to adjust the active audio stream in that case.
+
+The next unlocked foreground shows one app-wide review card containing every
+unreviewed missed task. Items remain in their normal date groups because the
+existing outcome map—not archive or a separate missed collection—represents the
+skip. The native local queue is the delivery/review cursor only.

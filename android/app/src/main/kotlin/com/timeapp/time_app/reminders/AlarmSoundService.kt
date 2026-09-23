@@ -35,8 +35,8 @@ import com.timeapp.time_app.R
  * replay and keeps ringing with the screen off until the user dismisses.
  *
  * Lifecycle is driven from Dart over `time_app/alarm_sound` (start on mount, stop
- * on dismiss), with a 10-minute safety cap so a missed dismiss cannot ring — or
- * hold the wake lock — forever.
+ * on dismiss), with a one-minute cap so a missed dismiss cannot ring — or hold
+ * the wake lock — indefinitely.
  */
 class AlarmSoundService : Service() {
 
@@ -46,6 +46,8 @@ class AlarmSoundService : Service() {
         private const val ACTION_STOP_NOTIFICATION =
             "com.timeapp.time_app.ALARM_STOP_NOTIFICATION"
         private const val ACTION_STOP_ITEM = "com.timeapp.time_app.ALARM_STOP_ITEM"
+        private const val ACTION_VOLUME_SILENCE =
+            "com.timeapp.time_app.ALARM_VOLUME_SILENCE"
         private const val EXTRA_NOTIFICATION_ID = "notification_id"
         private const val EXTRA_ITEM_ID = "item_id"
 
@@ -55,6 +57,7 @@ class AlarmSoundService : Service() {
         private const val NOTIF_ID = 0x7A1A
         private const val WAKE_TAG = "time_app:alarm_sound"
         private const val TAG = "AlarmSound"
+        @Volatile private var ringing = false
 
         fun start(context: Context, notificationId: Int, itemId: String) {
             val intent = Intent(context, AlarmSoundService::class.java)
@@ -94,6 +97,18 @@ class AlarmSoundService : Service() {
             } catch (_: Throwable) {
             }
         }
+
+        /** True only while this process owns active alarm playback. */
+        fun isRinging(): Boolean = ringing
+
+        /** Called only from the foreground Activity's hardware-key dispatch. */
+        fun silenceFromVolumeDown(context: Context) {
+            if (!ringing) return
+            context.startService(
+                Intent(context, AlarmSoundService::class.java)
+                    .setAction(ACTION_VOLUME_SILENCE),
+            )
+        }
     }
 
     private var player: MediaPlayer? = null
@@ -101,7 +116,20 @@ class AlarmSoundService : Service() {
     private val ownership = AlarmPlaybackOwnership()
     private val handler = Handler(Looper.getMainLooper())
     private val autoStop = Runnable {
-        Log.i(TAG, "10-minute safety cap reached — stopping")
+        val at = System.currentTimeMillis()
+        cancelOwningNotifications()
+        ownership.itemIds().forEach { itemId ->
+            AlarmLifecycleStore.record(this, itemId, AlarmLifecycleStore.KIND_TIMEOUT, at)
+            ReminderAuditLog.write(
+                this,
+                event = "AUDIO_TIMEOUT",
+                itemId = itemId,
+                atEpoch = at,
+                note = "one_minute_cap",
+            )
+        }
+        AlarmLifecycleChannel.notifyChanged()
+        Log.i(TAG, "one-minute ring cap reached — stopping")
         stopAlarm()
     }
 
@@ -126,6 +154,28 @@ class AlarmSoundService : Service() {
                 Log.i(TAG, "stop item $itemId")
                 ownership.releaseItem(itemId)
                 if (!ownership.hasOwners) stopAlarm()
+                return START_NOT_STICKY
+            }
+            ACTION_VOLUME_SILENCE -> {
+                val at = System.currentTimeMillis()
+                cancelOwningNotifications()
+                ownership.itemIds().forEach { itemId ->
+                    AlarmLifecycleStore.record(
+                        this,
+                        itemId,
+                        AlarmLifecycleStore.KIND_VOLUME_SILENCED,
+                        at,
+                    )
+                    ReminderAuditLog.write(
+                        this,
+                        event = "VOLUME_SILENCED",
+                        itemId = itemId,
+                        atEpoch = at,
+                        note = "foreground_activity",
+                    )
+                }
+                AlarmLifecycleChannel.notifyChanged()
+                stopAlarm()
                 return START_NOT_STICKY
             }
             else -> {
@@ -189,6 +239,7 @@ class AlarmSoundService : Service() {
                 prepare()
                 start()
             }
+            ringing = true
             Log.i(TAG, "alarm ringing")
         } catch (e: Exception) {
             // If playback cannot start there is nothing to keep foreground for.
@@ -198,6 +249,12 @@ class AlarmSoundService : Service() {
         }
 
         handler.postDelayed(autoStop, AlarmSoundPolicy.MAX_RING_DURATION_MS)
+    }
+
+    /** A capped/silenced alarm must not remain tappable and restart playback. */
+    private fun cancelOwningNotifications() {
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        ownership.notificationIds().forEach(manager::cancel)
     }
 
     private fun stopAlarm() {
@@ -210,6 +267,7 @@ class AlarmSoundService : Service() {
             it.release()
         }
         player = null
+        ringing = false
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
         ownership.clear()

@@ -9,11 +9,13 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
+import android.view.KeyEvent
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import com.timeapp.time_app.reminders.AlarmSoundService
+import com.timeapp.time_app.reminders.AlarmLifecycleChannel
 import com.timeapp.time_app.reminders.ReminderAuditChannel
 
 /**
@@ -62,6 +64,7 @@ class MainActivity : FlutterFragmentActivity() {
     // use (channel call), which is the cold-start reveal mounting.
     private var splashSound: SplashSound? = null
     private var celebrationSound: CelebrationSound? = null
+    private var alarmKeyChannel: MethodChannel? = null
 
     private companion object {
         const val CHANNEL = "time_app/secure_window"
@@ -78,6 +81,7 @@ class MainActivity : FlutterFragmentActivity() {
         // mount and stops it on dismiss; the sound itself lives in
         // [AlarmSoundService] so it survives the screen going dark.
         const val ALARM_CHANNEL = "time_app/alarm_sound"
+        const val ALARM_KEY_CHANNEL = "time_app/alarm_keys"
 
         // The cold-start reveal's clock ting. Fired once from Dart as the black
         // splash mounts; duration + the mute-switch check live in [SplashSound].
@@ -152,6 +156,12 @@ class MainActivity : FlutterFragmentActivity() {
         // activity by hours, and holding an Activity in a PendingIntent's
         // context is how a leak becomes a crash on a 6am delivery.
         ReminderAuditChannel(applicationContext).register(flutterEngine.dartExecutor.binaryMessenger)
+        AlarmLifecycleChannel(applicationContext)
+            .register(flutterEngine.dartExecutor.binaryMessenger)
+        alarmKeyChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            ALARM_KEY_CHANNEL,
+        )
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, INSTALL_IDENTITY_CHANNEL)
             .setMethodCallHandler { call, result ->
@@ -311,6 +321,26 @@ class MainActivity : FlutterFragmentActivity() {
                     result.success(null)
                 }
             }
+    }
+
+    /**
+     * Volume Down can silence only while this foreground Activity receives the
+     * hardware event. Android may route it to system volume instead when the UI
+     * is absent; no accessibility/global-key privilege is requested to bypass
+     * that platform boundary.
+     */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (
+            event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN &&
+            event.action == KeyEvent.ACTION_DOWN &&
+            event.repeatCount == 0 &&
+            AlarmSoundService.isRinging()
+        ) {
+            AlarmSoundService.silenceFromVolumeDown(this)
+            alarmKeyChannel?.invokeMethod("volumeSilenced", null)
+            return true
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     /**

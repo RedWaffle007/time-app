@@ -14,7 +14,9 @@ import '../../plan/application/plan_intent.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
 import '../application/alarm_timeline_providers.dart';
+import '../application/missed_alarm_providers.dart';
 import '../application/reminder_providers.dart';
+import '../data/alarm_lifecycle_store.dart';
 
 /// The full-screen alarm surface a reminder lands on.
 ///
@@ -45,6 +47,7 @@ class AlarmScreen extends ConsumerStatefulWidget {
 
 class _AlarmScreenState extends ConsumerState<AlarmScreen> {
   bool _dismissing = false;
+  AlarmKeyEvents? _keyEvents;
 
   @override
   void initState() {
@@ -55,6 +58,9 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
     // synchronous build, and a platform call has no place there either.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      final keyEvents = ref.read(alarmKeyEventsProvider);
+      _keyEvents = keyEvents;
+      keyEvents.listen(_leave);
       ref.read(alarmSoundProvider).start(widget.itemId);
       final uid = ref.read(currentUidProvider);
       if (uid != null) {
@@ -69,6 +75,12 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
       // sound. It does not navigate; that is `_leave`.
       ref.read(reminderServiceProvider).dismiss(widget.itemId);
     });
+  }
+
+  @override
+  void dispose() {
+    _keyEvents?.listen(null);
+    super.dispose();
   }
 
   ScheduleItem? _find(List<ScheduleItem> items) {
