@@ -24,21 +24,24 @@ class _RecordingArchiveRepository implements ArchiveRepository {
 
 void main() {
   testWidgets(
-    'a long archive stays grouped and an item can still be restored',
+    'a two-month archive is month-grouped and an item can still be restored',
     (tester) async {
       tz_data.initializeTimeZones();
       final repository = _RecordingArchiveRepository();
       final items = [
-        for (var day = 12; day >= 1; day--)
+        for (final date in [
+          DateTime.utc(2026, 2, 1),
+          DateTime.utc(2026, 1, 12),
+        ])
           ScheduleItem(
-            id: 'item-$day',
+            id: 'item-${date.month}',
             targetUid: 'me',
             createdByUid: 'me',
             groupId: '',
-            title: 'Archived item $day',
+            title: 'Archived item ${date.month}',
             localWallTime: '',
             timezone: 'Etc/UTC',
-            scheduledInstantUtc: DateTime.utc(2026, 1, day, 9),
+            scheduledInstantUtc: date.add(const Duration(hours: 9)),
             status: ScheduleItemStatus.approved,
             outcome: const ScheduleOutcome(result: OutcomeResult.done),
           ),
@@ -60,20 +63,21 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('January 2026 · 12 items'), findsOneWidget);
-      expect(find.text('Archived item 12'), findsNothing);
+      expect(find.text('February 2026 · 1 item'), findsOneWidget);
+      expect(find.text('January 2026 · 1 item'), findsOneWidget);
+      expect(find.text('Archived item 2'), findsNothing);
 
-      await tester.tap(find.text('January 2026 · 12 items'));
+      await tester.tap(find.text('February 2026 · 1 item'));
       await tester.pumpAndSettle();
-      final firstDayHeader = find.textContaining('Jan 12, 2026 · 1 item');
+      final firstDayHeader = find.textContaining('Feb 1, 2026 · 1 item');
       expect(firstDayHeader, findsOneWidget);
       await tester.tap(firstDayHeader);
       await tester.pumpAndSettle();
 
-      expect(find.text('Archived item 12'), findsOneWidget);
+      expect(find.text('Archived item 2'), findsOneWidget);
       await tester.tap(find.widgetWithText(TextButton, 'Unarchive'));
       await tester.pump();
-      expect(repository.unarchived, [('me', 'item-12')]);
+      expect(repository.unarchived, [('me', 'item-2')]);
     },
   );
 }

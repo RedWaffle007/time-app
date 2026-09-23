@@ -97,10 +97,17 @@ class CollapsibleDayGroups extends StatefulWidget {
   @visibleForTesting
   static int debugAnimationControllerCount = 0;
 
-  /// Below this many distinct day groups, another hierarchy level costs more
-  /// taps than it saves. At this threshold a history is long enough that month
-  /// landmarks materially reduce scanning.
-  static const monthGroupingDayThreshold = 12;
+  /// Month navigation starts as soon as the feed spans two calendar months.
+  /// A single month stays day-only no matter how many populated days it has.
+  static bool usesMonthGrouping(Iterable<DayGroupData> groups) {
+    String? firstMonth;
+    for (final group in groups) {
+      final month = '${group.date.year}-${group.date.month}';
+      firstMonth ??= month;
+      if (month != firstMonth) return true;
+    }
+    return false;
+  }
 
   @override
   State<CollapsibleDayGroups> createState() => _CollapsibleDayGroupsState();
@@ -163,7 +170,7 @@ class _CollapsibleDayGroupsState extends State<CollapsibleDayGroups> {
           sliver: SliverToBoxAdapter(child: leading),
         ),
     ];
-    if (widget.groups.length < CollapsibleDayGroups.monthGroupingDayThreshold) {
+    if (!CollapsibleDayGroups.usesMonthGrouping(widget.groups)) {
       _addDayGroups(slivers, widget.groups, horizontal);
     } else {
       // Preserve the incoming day order exactly. A bucket is a consecutive run

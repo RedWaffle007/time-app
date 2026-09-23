@@ -7,6 +7,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../core/widgets/collapsible_day_groups.dart';
+import '../../../core/widgets/explainer_card.dart';
 import '../../auth/application/auth_providers.dart';
 import '../application/time_tracking_providers.dart';
 import '../domain/tracked_entry.dart';
@@ -40,19 +41,26 @@ class TrackScreen extends ConsumerWidget {
         onPressed: () => showLogTimeSheet(context, ref),
         child: const Icon(AppIcons.add),
       ),
-      body: AsyncView<List<TrackedEntry>>(
-        value: entriesAsync,
-        onRetry: () => ref.invalidate(myTrackedEntriesProvider),
-        isEmpty: (entries) => entries.isEmpty,
-        emptyIcon: AppIcons.emptyTrack,
-        emptyMessage:
-            "You haven't logged any time yet.\n"
-            'Tap + to log time you spent on anything — it need not be a plan.',
-        builder: (context, entries) => CollapsibleDayGroups(
-          padding: Space.screenList,
-          initiallyExpandedKeys: {_todayKey()},
-          groups: _grouped(context, entries),
-        ),
+      body: Column(
+        children: [
+          const ExplainerCard('Track the time you spend.'),
+          Expanded(
+            child: AsyncView<List<TrackedEntry>>(
+              value: entriesAsync,
+              onRetry: () => ref.invalidate(myTrackedEntriesProvider),
+              isEmpty: (entries) => entries.isEmpty,
+              emptyIcon: AppIcons.emptyTrack,
+              emptyMessage:
+                  "You haven't logged any time yet.\n"
+                  'Tap + to log time you spent on anything — it need not be a plan.',
+              builder: (context, entries) => CollapsibleDayGroups(
+                padding: Space.screenList,
+                initiallyExpandedKeys: {_todayKey()},
+                groups: _grouped(context, entries),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

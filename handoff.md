@@ -30,13 +30,19 @@
 
 ## Status
 
-Items 1–21, 26, 28, and 29 are complete. Recent stability work includes native
+Items 1–21, 26, 28, 29, and 30 are complete. Recent stability work includes native
 due-time alarm delivery, single-owner alarm audio, Volume Down dismissal,
 immutable outcomes, missed-alarm recovery, silent durable completion events,
-the approved ballistic confetti, and the 1.5-second splash/audio fade. Details
-and rationale live in `DECISIONS.md`; do not duplicate them here.
+the approved ballistic confetti, the 1.5-second splash/audio fade, and shared
+two-month categorization plus persistent explainer cards for Activity and Track.
+Details and rationale live in `DECISIONS.md`; do not duplicate them here.
 
-Remaining work, in intended order: **22, 23, 24, 25, 27**.
+Remaining work, in intended order: **22, 25, 31, 23, 27, 24**.
+
+The newly requested schedule/history pass takes priority after the current
+picture work. Item 24 remains last because it is explicitly a product review of
+the completed product surface, and should not be performed against UI that is
+about to change.
 
 ## Remaining roadmap
 
@@ -48,6 +54,13 @@ Remaining work, in intended order: **22, 23, 24, 25, 27**.
   storage authorization; list/detail rendering; and the shared viewer.
 - Preserve legacy fallbacks. Test real gesture routing, ownership/rules,
   metadata validation, broken URLs, deletion, and animated formats.
+- As part of this work, verify the complete profile-picture path for animated
+  GIF and WebP files: picker, validation, upload, storage response, rendering,
+  animation, replacement, and deletion on a real supported device. The current
+  implementation and tests claim support for JPEG, PNG, GIF, and WebP, including
+  animated GIF/WebP, but the Edit Profile helper text must list only formats
+  that pass this end-to-end check. Remove a format everywhere if the deployed
+  path cannot preserve and display it correctly.
 
 ### 23. Request a plan
 
@@ -74,12 +87,38 @@ Remaining work, in intended order: **22, 23, 24, 25, 27**.
 - Decide whether standalone Log Time earns its friction through meaningful
   planned-vs-actual insight; research before changing or removing it.
 
-### 25. Calendar prominence
+### 25. My Schedule, History, and Calendar restructure
 
-- Plan is the landing surface. Calendar already exists in its app bar and is
-  duplicated under You. Confirm desired prominence with the user, then remove
-  the misplaced You entry without changing the route, creation flow, Back
-  behavior, bottom navigation, or notification routing.
+- Keep My Schedule focused on scheduled upcoming plans only. Move elapsed and
+  completed plans into a dedicated History surface; do not duplicate a plan
+  between Upcoming and History. Use one explicit, timezone-safe boundary so a
+  plan cannot jump into the wrong surface around midnight or DST.
+- Replace the current `Today` / time-section heading on My Schedule with
+  `Upcoming Plans`. Put two rounded text buttons in that same row: bold,
+  all-caps `CALENDAR` in the middle and bold, all-caps `HISTORY` at the far
+  right. Remove the calendar glyph from this affordance.
+- History retains the current past-plan card and collapsible day UI, remains
+  latest-to-oldest, shows the `Past Plans` heading, and adds localized month
+  grouping the moment entries span two distinct calendar months. A feed confined
+  to one month remains day-grouped, regardless of its number of entries. Preserve
+  lazy building, expansion state, and empty/error behavior.
+- Calendar remains a projection of existing streams. Opening a past plan from
+  Calendar must route to History, expand its month/day as necessary, auto-scroll
+  to the exact plan, and retain the existing temporary highlight treatment.
+  Current/future plans must continue to route to My Schedule; pending items must
+  continue to route to Approvals.
+- Remove the old Calendar app-bar icon and the duplicate Calendar entry under
+  You after the new row control is working. Preserve the existing calendar
+  route, Back behavior, bottom navigation, creation flows, and notification
+  routing.
+- Implement in this internal order: define/test the Upcoming-versus-History
+  partition; extract the History surface and route/intent; add the row controls;
+  update Calendar ownership routing and deep-link scrolling; then remove the
+  superseded entry points.
+- Cover boundary-time and timezone/DST partitioning, latest-first month/day
+  order, short and long histories, cold/warm navigation, a far-away highlighted
+  plan, collapsed month/day expansion, pending-plan routing, empty states, and
+  regression of the existing Upcoming outcome actions.
 
 ### 27. Conditional conflict disclosure
 
@@ -96,6 +135,16 @@ Remaining work, in intended order: **22, 23, 24, 25, 27**.
 - Test timezone/DST filtering, state exclusions, ordering/fingerprints, empty /
   one / many conflicts, mixed-zone groups, read failures, removal of the old
   timetable entry points, and successful save after acknowledgement.
+
+### 31. Rename the manual Plan affordance
+
+- Replace the Plan shell's bottom-right plus-icon FAB with a bold `PLAN` label.
+  Keep its existing schedule-builder destination, tooltip/semantics, placement,
+  availability across all three Plan sub-tabs, and separation from the center
+  voice FAB.
+- Use an extended or equivalently accessible rounded button sized for text, and
+  update coach marks, help copy, screenshots, and tests that refer to `+` as the
+  manual planning entry point. Do not rename Track's separate log-time action.
 
 ## Constraints worth carrying forward
 

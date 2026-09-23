@@ -10,6 +10,7 @@ import '../../../core/theme/app_tokens.dart';
 import '../../../core/theme/status_style.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../core/widgets/collapsible_day_groups.dart';
+import '../../../core/widgets/explainer_card.dart';
 import '../../../routing/app_router.dart';
 import '../../calendar/application/calendar_grouping.dart';
 import '../../archive/presentation/archive_menu_button.dart';
@@ -49,25 +50,33 @@ class PlannerActivityScreen extends ConsumerWidget {
               icon: const Icon(AppIcons.add),
               label: const Text('Plan an item'),
             ),
-      body: AsyncView<List<ScheduleItem>>(
-        value: itemsAsync,
-        // Retry the SOURCE stream. `myItemsAsPlannerProvider` is a derived
-        // Provider; invalidating it would recompute the filter without ever
-        // reconnecting the Firestore listener that actually failed.
-        onRetry: () => ref.invalidate(allItemsAsPlannerProvider),
-        // Self-planned items (creator == target) live in My Schedule, not here —
-        // Activity is about people you plan FOR.
-        isEmpty: (items) => items.every((i) => i.createdByUid == i.targetUid),
-        emptyMessage: "You haven't planned anything for anyone yet.",
-        builder: (context, items) {
-          final sorted =
-              items.where((i) => i.createdByUid != i.targetUid).toList()
-                ..sort(compareScheduleItemsLatestFirst);
-          return CollapsibleDayGroups(
-            initiallyExpandedKeys: {dayKeyOf(DateTime.now())},
-            groups: _grouped(context, sorted),
-          );
-        },
+      body: Column(
+        children: [
+          const ExplainerCard('Plans you make for others.'),
+          Expanded(
+            child: AsyncView<List<ScheduleItem>>(
+              value: itemsAsync,
+              // Retry the SOURCE stream. `myItemsAsPlannerProvider` is a derived
+              // Provider; invalidating it would recompute the filter without ever
+              // reconnecting the Firestore listener that actually failed.
+              onRetry: () => ref.invalidate(allItemsAsPlannerProvider),
+              // Self-planned items (creator == target) live in My Schedule, not
+              // here — Activity is about people you plan FOR.
+              isEmpty: (items) =>
+                  items.every((i) => i.createdByUid == i.targetUid),
+              emptyMessage: "You haven't planned anything for anyone yet.",
+              builder: (context, items) {
+                final sorted =
+                    items.where((i) => i.createdByUid != i.targetUid).toList()
+                      ..sort(compareScheduleItemsLatestFirst);
+                return CollapsibleDayGroups(
+                  initiallyExpandedKeys: {dayKeyOf(DateTime.now())},
+                  groups: _grouped(context, sorted),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

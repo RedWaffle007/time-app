@@ -116,21 +116,18 @@ void main() {
     },
   );
 
-  testWidgets('long histories collapse into localized month-year buckets', (
+  testWidgets('two distinct months immediately use localized month buckets', (
     tester,
   ) async {
     final groups = [
       for (var month = 1; month <= 2; month++)
-        for (var day = 1; day <= 6; day++)
-          DayGroupData(
-            key:
-                '2024-${month.toString().padLeft(2, '0')}-'
-                '${day.toString().padLeft(2, '0')}',
-            date: DateTime(2024, month, day),
-            label: 'Month $month day $day',
-            itemCount: 1,
-            itemBuilder: (_, _) => Text('Row $month:$day'),
-          ),
+        DayGroupData(
+          key: '2024-${month.toString().padLeft(2, '0')}-01',
+          date: DateTime(2024, month),
+          label: 'Month $month day 1',
+          itemCount: 1,
+          itemBuilder: (_, _) => Text('Row $month:1'),
+        ),
     ];
     await tester.pumpWidget(
       MaterialApp(
@@ -139,33 +136,58 @@ void main() {
       ),
     );
 
-    expect(find.text('January 2024 · 6 items'), findsOneWidget);
-    expect(find.text('February 2024 · 6 items'), findsOneWidget);
+    expect(find.text('January 2024 · 1 item'), findsOneWidget);
+    expect(find.text('February 2024 · 1 item'), findsOneWidget);
     expect(find.text('Month 1 day 1 · 1 item'), findsNothing);
 
-    await tester.tap(find.text('January 2024 · 6 items'));
+    await tester.tap(find.text('January 2024 · 1 item'));
     await tester.pumpAndSettle();
     expect(find.text('Month 1 day 1 · 1 item'), findsOneWidget);
-    expect(find.text('Month 1 day 6 · 1 item'), findsOneWidget);
-    expect(
-      tester.getTopLeft(find.text('Month 1 day 1 · 1 item')).dy,
-      lessThan(tester.getTopLeft(find.text('Month 1 day 6 · 1 item')).dy),
-      reason: 'month grouping must preserve the caller\'s day order',
+  });
+
+  testWidgets('many days in one month remain day-only', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: CollapsibleDayGroups(
+            groups: [
+              for (var day = 1; day <= 12; day++)
+                DayGroupData(
+                  key: '2024-01-${day.toString().padLeft(2, '0')}',
+                  date: DateTime(2024, 1, day),
+                  label: 'January day $day',
+                  itemCount: 1,
+                  itemBuilder: (_, _) => Text('Row $day'),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
+
+    expect(find.text('January 2024 · 12 items'), findsNothing);
+    expect(find.text('January day 1 · 1 item'), findsOneWidget);
   });
 
   testWidgets('a forced day opens both its month and its own rows', (
     tester,
   ) async {
     final groups = [
-      for (var index = 0; index < 12; index++)
-        DayGroupData(
-          key: '2024-02-${(index + 1).toString().padLeft(2, '0')}',
-          date: DateTime(2024, 2, index + 1),
-          label: 'Day ${index + 1}',
-          itemCount: 1,
-          itemBuilder: (_, _) => Text('Row ${index + 1}'),
-        ),
+      DayGroupData(
+        key: '2024-01-01',
+        date: DateTime(2024, 1),
+        label: 'Day 1',
+        itemCount: 1,
+        itemBuilder: (_, _) => const Text('Row 1'),
+      ),
+      DayGroupData(
+        key: '2024-02-04',
+        date: DateTime(2024, 2, 4),
+        label: 'Day 4',
+        itemCount: 1,
+        itemBuilder: (_, _) => const Text('Row 4'),
+      ),
     ];
     await tester.pumpWidget(
       MaterialApp(
@@ -180,7 +202,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('February 2024 · 12 items'), findsOneWidget);
+    expect(find.text('February 2024 · 1 item'), findsOneWidget);
     expect(find.text('Day 4 · 1 item'), findsOneWidget);
     expect(find.text('Row 4'), findsOneWidget);
     expect(find.text('Row 3'), findsNothing);

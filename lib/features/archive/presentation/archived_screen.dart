@@ -52,11 +52,11 @@ class ArchivedScreen extends ConsumerWidget {
           return CollapsibleDayGroups(
             // Full-screen route (no in-app bottom bar): clear the system nav.
             padding: Space.screenListSafe(context),
-            // Preserve the old immediately-visible short archive. Once it is a
-            // genuinely long history, month buckets become the navigation and
-            // start collapsed instead of mounting the whole record.
+            // Preserve an immediately-visible single-month archive. As soon as
+            // a second calendar month appears, month buckets become the
+            // navigation and start collapsed.
             initiallyExpandedKeys:
-                groups.length < CollapsibleDayGroups.monthGroupingDayThreshold
+                !CollapsibleDayGroups.usesMonthGrouping(groups)
                 ? {for (final group in groups) group.key}
                 : const {},
             groups: groups,
