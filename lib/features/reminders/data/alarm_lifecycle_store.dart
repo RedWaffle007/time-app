@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-enum AlarmLifecycleEventKind { timeout, volumeSilenced }
+enum AlarmLifecycleEventKind { timeout, dismissed }
 
 class AlarmLifecycleEvent {
   const AlarmLifecycleEvent({
@@ -29,13 +29,17 @@ class AlarmLifecycleEvent {
     final epoch = raw['occurredAtEpoch'];
     final kind = raw['kind'];
     if (key is! String || itemId is! String || epoch is! int) return null;
+    final parsedKind = switch (kind) {
+      'timeout' => AlarmLifecycleEventKind.timeout,
+      'volume_silenced' || 'dismissed' => AlarmLifecycleEventKind.dismissed,
+      _ => null,
+    };
+    if (parsedKind == null) return null;
     return AlarmLifecycleEvent(
       key: key,
       itemId: itemId,
       occurredAtUtc: DateTime.fromMillisecondsSinceEpoch(epoch, isUtc: true),
-      kind: kind == 'volume_silenced'
-          ? AlarmLifecycleEventKind.volumeSilenced
-          : AlarmLifecycleEventKind.timeout,
+      kind: parsedKind,
       outcomeRecorded: raw['outcomeRecorded'] == true,
       notificationDelivered: raw['notificationDelivered'] == true,
       reviewed: raw['reviewed'] == true,

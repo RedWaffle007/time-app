@@ -43,15 +43,19 @@ class AlarmSoundService : Service() {
     companion object {
         const val ACTION_START = "com.timeapp.time_app.ALARM_START"
         const val ACTION_STOP = "com.timeapp.time_app.ALARM_STOP"
+        const val ACTION_RINGING_ENDED = "com.timeapp.time_app.ALARM_RINGING_ENDED"
         private const val ACTION_STOP_NOTIFICATION =
             "com.timeapp.time_app.ALARM_STOP_NOTIFICATION"
         private const val ACTION_STOP_ITEM = "com.timeapp.time_app.ALARM_STOP_ITEM"
         private const val ACTION_VOLUME_SILENCE =
             "com.timeapp.time_app.ALARM_VOLUME_SILENCE"
+        private const val ACTION_NOTIFICATION_DISMISS =
+            "com.timeapp.time_app.ALARM_NOTIFICATION_DISMISS"
         private const val EXTRA_NOTIFICATION_ID = "notification_id"
         private const val EXTRA_ITEM_ID = "item_id"
 
-        private const val CHANNEL_ID = "time_app_alarm_ringing"
+        private const val CHANNEL_ID = "time_app_alarm_ringing_v2"
+        private const val LEGACY_CHANNEL_ID = "time_app_alarm_ringing"
         // Fixed id: there is only ever one alarm ringing, and re-posting under the
         // same id updates the one notification rather than stacking them.
         private const val NOTIF_ID = 0x7A1A
@@ -157,24 +161,12 @@ class AlarmSoundService : Service() {
                 return START_NOT_STICKY
             }
             ACTION_VOLUME_SILENCE -> {
-                val at = System.currentTimeMillis()
-                cancelOwningNotifications()
-                ownership.itemIds().forEach { itemId ->
-                    AlarmLifecycleStore.record(
-                        this,
-                        itemId,
-                        AlarmLifecycleStore.KIND_VOLUME_SILENCED,
-                        at,
-                    )
-                    ReminderAuditLog.write(
-                        this,
-                        event = "VOLUME_SILENCED",
-                        itemId = itemId,
-                        atEpoch = at,
-                        note = "foreground_activity",
-                    )
-                }
-                AlarmLifecycleChannel.notifyChanged()
+                recordDismissal("VOLUME_SILENCED", "foreground_activity")
+                stopAlarm()
+                return START_NOT_STICKY
+            }
+            ACTION_NOTIFICATION_DISMISS -> {
+                recordDismissal("NOTIFICATION_DISMISSED", "notification_action")
                 stopAlarm()
                 return START_NOT_STICKY
             }
@@ -257,6 +249,27 @@ class AlarmSoundService : Service() {
         ownership.notificationIds().forEach(manager::cancel)
     }
 
+    private fun recordDismissal(event: String, note: String) {
+        val at = System.currentTimeMillis()
+        cancelOwningNotifications()
+        ownership.itemIds().forEach { itemId ->
+            AlarmLifecycleStore.record(
+                this,
+                itemId,
+                AlarmLifecycleStore.KIND_DISMISSED,
+                at,
+            )
+            ReminderAuditLog.write(
+                this,
+                event = event,
+                itemId = itemId,
+                atEpoch = at,
+                note = note,
+            )
+        }
+        AlarmLifecycleChannel.notifyChanged()
+    }
+
     private fun stopAlarm() {
         handler.removeCallbacks(autoStop)
         player?.let {
@@ -273,6 +286,7 @@ class AlarmSoundService : Service() {
         ownership.clear()
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
+        sendBroadcast(Intent(ACTION_RINGING_ENDED).setPackage(packageName))
     }
 
     override fun onDestroy() {
@@ -288,18 +302,20 @@ class AlarmSoundService : Service() {
             ?: Settings.System.DEFAULT_ALARM_ALERT_URI
 
     /**
-     * A SILENT channel — the service plays the sound, the notification must not
-     * add a second one. IMPORTANCE_LOW keeps it out of the way while still
-     * carrying the full-screen intent that can relaunch the alarm UI.
+     * A SILENT, HIGH channel — the service plays the sound, so the notification
+     * must not add a second one. High importance lets its full-screen intent or
+     * heads-up Dismiss fallback remain visible when the scheduled notification
+     * path is suppressed.
      */
     private fun createChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (nm.getNotificationChannel(CHANNEL_ID) != null) return
+        nm.deleteNotificationChannel(LEGACY_CHANNEL_ID)
         val channel = NotificationChannel(
             CHANNEL_ID,
             "Alarm ringing",
-            NotificationManager.IMPORTANCE_LOW,
+            NotificationManager.IMPORTANCE_HIGH,
         ).apply {
             description = "Shown while a reminder alarm is sounding."
             setSound(null, null)
@@ -319,9 +335,25 @@ class AlarmSoundService : Service() {
             .setContentText("Alarm ringing — tap to open")
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(launchAlarmUi())
+            .setFullScreenIntent(launchAlarmUi(), true)
+            .addAction(
+                R.drawable.ic_notification,
+                "Dismiss",
+                dismissFromNotification(),
+            )
             .build()
+
+    private fun dismissFromNotification(): PendingIntent =
+        PendingIntent.getService(
+            this,
+            NOTIF_ID,
+            Intent(this, AlarmSoundService::class.java)
+                .setAction(ACTION_NOTIFICATION_DISMISS),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
 
     /**
      * Uses flutter_local_notifications' own tap contract so tapping either the

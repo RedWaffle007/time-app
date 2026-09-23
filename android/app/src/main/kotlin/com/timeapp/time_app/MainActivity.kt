@@ -1,22 +1,26 @@
 package com.timeapp.time_app
 
 import android.app.NotificationManager
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
 import android.view.KeyEvent
 import android.view.WindowManager
+import androidx.core.content.ContextCompat
+import com.timeapp.time_app.reminders.AlarmLifecycleChannel
+import com.timeapp.time_app.reminders.AlarmSoundService
+import com.timeapp.time_app.reminders.ReminderAuditChannel
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
-import com.timeapp.time_app.reminders.AlarmSoundService
-import com.timeapp.time_app.reminders.AlarmLifecycleChannel
-import com.timeapp.time_app.reminders.ReminderAuditChannel
 
 /**
  * Hosts the `time_app/secure_window` channel — the Android half of
@@ -65,6 +69,40 @@ class MainActivity : FlutterFragmentActivity() {
     private var splashSound: SplashSound? = null
     private var celebrationSound: CelebrationSound? = null
     private var alarmKeyChannel: MethodChannel? = null
+    private var alarmEndedReceiverRegistered = false
+    private val alarmWakeWindow by lazy {
+        AlarmWakeWindowController(
+            sdkInt = Build.VERSION.SDK_INT,
+            host = object : AlarmWakeWindowHost {
+                override fun setModern(showWhenLocked: Boolean, turnScreenOn: Boolean) {
+                    this@MainActivity.setShowWhenLocked(showWhenLocked)
+                    this@MainActivity.setTurnScreenOn(turnScreenOn)
+                }
+
+                override fun setLegacy(enabled: Boolean) {
+                    @Suppress("DEPRECATION")
+                    val flags = WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                        WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                    if (enabled) window.addFlags(flags) else window.clearFlags(flags)
+                }
+
+                override fun setKeepScreenOn(enabled: Boolean) {
+                    if (enabled) {
+                        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    } else {
+                        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    }
+                }
+            },
+        )
+    }
+    private val alarmEndedReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == AlarmSoundService.ACTION_RINGING_ENDED) {
+                showOverLockAndWake(false)
+            }
+        }
+    }
 
     private companion object {
         const val CHANNEL = "time_app/secure_window"
@@ -146,6 +184,32 @@ class MainActivity : FlutterFragmentActivity() {
     override fun onResume() {
         super.onResume()
         AppDistributionUpdate.checkForUpdate(this)
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        ContextCompat.registerReceiver(
+            this,
+            alarmEndedReceiver,
+            IntentFilter(AlarmSoundService.ACTION_RINGING_ENDED),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        alarmEndedReceiverRegistered = true
+        syncAlarmWake(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        syncAlarmWake(intent)
+    }
+
+    override fun onDestroy() {
+        showOverLockAndWake(false)
+        if (alarmEndedReceiverRegistered) {
+            unregisterReceiver(alarmEndedReceiver)
+            alarmEndedReceiverRegistered = false
+        }
+        super.onDestroy()
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -425,19 +489,14 @@ class MainActivity : FlutterFragmentActivity() {
      * the window can be touched directly.
      */
     private fun showOverLockAndWake(on: Boolean) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(on)
-            setTurnScreenOn(on)
-        } else {
-            @Suppress("DEPRECATION")
-            val flags = WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
-            if (on) window.addFlags(flags) else window.clearFlags(flags)
-        }
-        if (on) {
-            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        } else {
-            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        }
+        alarmWakeWindow.setEnabled(on)
+    }
+
+    private fun syncAlarmWake(launchIntent: Intent?) {
+        val isAlarm = AlarmLaunchPolicy.isAlarmLaunch(
+            action = launchIntent?.action,
+            payload = launchIntent?.getStringExtra("payload"),
+        )
+        showOverLockAndWake(isAlarm)
     }
 }

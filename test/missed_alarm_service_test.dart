@@ -21,6 +21,25 @@ import 'package:time_app/features/scheduling/domain/schedule_item.dart';
 void main() {
   setUpAll(tzdata.initializeTimeZones);
 
+  test('native dismissal names migrate without becoming false timeouts', () {
+    Map<String, Object> event(String kind) => {
+      'key': '$kind:item:1000',
+      'itemId': 'item',
+      'occurredAtEpoch': 1000,
+      'kind': kind,
+    };
+
+    expect(
+      AlarmLifecycleEvent.fromMap(event('volume_silenced'))?.kind,
+      AlarmLifecycleEventKind.dismissed,
+    );
+    expect(
+      AlarmLifecycleEvent.fromMap(event('dismissed'))?.kind,
+      AlarmLifecycleEventKind.dismissed,
+    );
+    expect(AlarmLifecycleEvent.fromMap(event('future_kind')), isNull);
+  });
+
   test(
     'timeout records skipped outcome, notifies planner, and awaits review',
     () async {
@@ -121,7 +140,7 @@ void main() {
 
   test('volume silence is reconciled as dismissal without skipping', () async {
     final store = _MemoryLifecycleStore([
-      _event(kind: AlarmLifecycleEventKind.volumeSilenced),
+      _event(kind: AlarmLifecycleEventKind.dismissed),
     ]);
     final outcomes = _RecordingOutcomes();
     final timeline = _RecordingTimeline();

@@ -124,7 +124,7 @@ class MissedAlarmService extends ChangeNotifier {
       final item = byId[event.itemId];
       if (item == null || item.targetUid != uid) continue;
 
-      if (event.kind == AlarmLifecycleEventKind.volumeSilenced) {
+      if (event.kind == AlarmLifecycleEventKind.dismissed) {
         await _timeline.recordDismissed(uid, item.id, event.occurredAtUtc);
         await _store.remove(event.key);
         continue;

@@ -810,6 +810,9 @@ The cold-start reveal uses the CHECKMATE wordmark `CHECKMATE` in Space Grotesk,
 with the tagline **“Mates Always Remember”**. It is a theme-independent pure
 black reveal with white wordmark and glow. The two fixed brand bars are green
 `#2FA35A` over burnt orange `#EA6A2E`, from `SplashTokens`.
+The complete reveal remains exactly 1.5 seconds. Its clock ting begins at mount
+and fades over the final 300ms of that same deadline; audio must never lengthen
+the reveal or end in an abrupt hard cut.
 
 ### 6.16 Missed-alarm review
 
@@ -821,6 +824,16 @@ alarm is a neutral Skipped outcome, not app failure. The underlying route is
 scrollable card with one row per task and one filled **Mark reviewed** action;
 the card appears only after the automatic outcome is durably recorded and never
 above the app lock or cold-start reveal.
+
+### 6.17 Android alarm wake surface
+
+An Android alarm launch requests screen-on and show-over-lock-screen before the
+Flutter route mounts, then keeps the screen on only while ringing. This covers
+the keyguard but never dismisses it or bypasses authentication. The native
+ringing notification is public on the lock screen and always includes a direct
+**Dismiss** action, providing a usable fallback when Android or an OEM refuses
+full-screen presentation. Ordinary app and push-notification launches must not
+inherit any alarm window flags.
 
 ---
 

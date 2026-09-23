@@ -215,11 +215,13 @@
         </receiver>
 
         <!-- Plays the alarm tone on a PARTIAL_WAKE_LOCK so it keeps ringing with
-             the screen off, until dismissed (or the one-minute cap). Not
-             exported — AlarmDeliveryReceiver starts it at the due instant and
-             MainActivity controls the UI fallback/dismiss lifecycle. The
-             mediaPlayback FGS type matches the AudioAttributes(USAGE_ALARM)
-             playback and satisfies Android 14+'s typed-FGS requirement. -->
+             the screen off, until dismissed (or the one-minute cap). Its silent,
+             high-priority foreground notification carries a second full-screen
+             launch path plus a native Dismiss action, so the alarm stays usable
+             when Flutter's scheduled-notification presentation is suppressed.
+             Not exported — AlarmDeliveryReceiver starts it at the due instant.
+             The mediaPlayback FGS type matches AudioAttributes(USAGE_ALARM) and
+             satisfies Android 14+'s typed-FGS requirement. -->
         <service
             android:name=".reminders.AlarmSoundService"
             android:directBootAware="true"

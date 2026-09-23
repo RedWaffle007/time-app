@@ -2,12 +2,13 @@
 
 ## Baseline
 
-- Branch: `main`; latest verified local commit is `b6d822a` (Testmates group
-  planning visibility regression).
-- The full local verification command passed for the item 21 working tree;
-  remote sync and GitHub CI status were not re-checked in this handoff.
-- Item 21 (one-minute alarm cap and missed handling) is implemented and fully
-  verified in the working tree; its commit is pending.
+- Branch: `main`; latest verified local commit is `aa6b8fc` (durable missed
+  alarm handling).
+- The full local verification command passed through `aa6b8fc`; remote sync and
+  GitHub CI status were not re-checked in this handoff.
+- Items 28–29 (early native alarm wake/fallback Dismiss and splash-ting fade)
+  are implemented and fully verified in the working tree; their commit is
+  pending.
 - Do not assume backend/rules deployment from a Git push. Confirm with the user
   before any deployment or other external state change.
 
@@ -52,13 +53,11 @@ Completed and committed:
    an explicit pending outcome (`5066218`).
 19. Testmates group planning visibility regression proving friendship-scoped
    permission works on the real group screen (`b6d822a`).
-
-Completed and verified; commit pending:
-
 21. Alarm auto-stop and missed handling: one-minute native cap, foreground
 Volume Down silence where Android delivers the key, durable timeout recovery,
 conditional `Skipped: User unavailable`, planner notification retry, and an
-app-wide next-open review card. Missed items remain in their normal date groups.
+app-wide next-open review card. Missed items remain in their normal date groups
+(`aa6b8fc`).
 
 Still to do, in original order:
 
@@ -167,6 +166,8 @@ party sees duplicates; skipped/rejected/withdrawn items never celebrate.
 28. Wake the Android screen for an alarm and expose Dismiss as reliably as the
 platform permits:
 
+  **Implemented and verified in the working tree; commit pending.**
+
 - This is feasible as a best-effort Android feature, not an all-device
   guarantee. `Activity.setTurnScreenOn(true)` plus `setShowWhenLocked(true)` is
   the supported API on Android 8.1+ (legacy window flags below that), but it only
@@ -199,6 +200,8 @@ platform permits:
   rather than a claim of universal support.
 
 29. Fade the cold-start clock ting without changing the 1.5-second reveal:
+
+  **Implemented and verified in the working tree; commit pending.**
 
 - Keep `SplashOverlay.introDuration` at 1,150 ms and `outroDuration` at 350 ms;
   the existing exact-1,500-ms visual contract remains unchanged.
@@ -234,9 +237,7 @@ platform permits:
 
 ## Next session
 
-Commit the fully verified item 21 working tree. Then continue with item 22 unless
-the user promotes item 27 (conditional conflict disclosure), item 28 (alarm
-screen wake), or item 29 (splash-sound fade) ahead of group/friend pictures.
+Commit items 28–29, then continue with item 22 (group and friend pictures).
 
 On-device feedback from the previously distributed APK may still arrive. Apply
 it to the relevant roadmap item without broadening unrelated work.

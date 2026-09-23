@@ -5670,3 +5670,42 @@ The next unlocked foreground shows one app-wide review card containing every
 unreviewed missed task. Items remain in their normal date groups because the
 existing outcome map—not archive or a separate missed collection—represents the
 skip. The native local queue is the delivery/review cursor only.
+
+---
+
+## Android alarm wake is early native state, with an actionable fallback (2026-09-23)
+
+`setTurnScreenOn` and `setShowWhenLocked` were already present, but Flutter only
+invoked them after `AlarmScreen` mounted and claimed audio. That is too late for
+the launch decision: the Activity must request those window behaviors before it
+is resumed and visible. `MainActivity` now classifies the plugin's explicit
+`SELECT_NOTIFICATION` plus non-empty item payload on both cold `onCreate` and
+warm `onNewIntent`, applies the modern Activity APIs (legacy flags below API 27),
+and clears all three show/turn/keep-screen behaviors on dismiss, timeout,
+ordinary intents, and destruction. It never requests keyguard dismissal.
+
+The native delivery service now posts its own silent high-priority alarm
+notification with the same full-screen Activity intent. This is intentionally a
+second delivery path: it originates at the native due-time receiver and does not
+wait for Flutter or the scheduled-notification plugin to present correctly. The
+notification always exposes a native Dismiss action, which stops sound, cancels
+the owning reminder notification, and durably records `dismissedAt` even when no
+Flutter UI appeared.
+
+This remains best effort, not an “all Android devices” guarantee. Android 14+
+lets users revoke full-screen-intent access, notification/channel visibility is
+user-controlled, and OEM background policy may still refuse Activity launch.
+The supported fallback is therefore an actionable lock-screen notification, not
+a deprecated screen wake lock or any attempt to bypass user settings.
+
+---
+
+## Splash ting fades inside—not beyond—the 1.5-second reveal (2026-09-23)
+
+The visual timing is unchanged: 1,150ms intro plus 350ms outro. Native
+`SplashSound` now ramps its `SoundPool` stream to zero over the final 300ms and
+stops at the original 1,500ms deadline. The deadline is measured from the Dart
+play request, not from asynchronous sample-load completion; a late preload gets
+only the remaining window and an expired request never starts a stale sound.
+Replay cancels the previous fade callback, while the existing ringer-normal
+gate and one-shot playback remain unchanged.

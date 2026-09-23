@@ -248,12 +248,13 @@ separate timeline collection and no fabricated timestamp for legacy outcomes.
 
 Android also keeps a device-protected local reconciliation queue for two facts
 that can occur while Dart and Firebase are unavailable: the one-minute ring cap
-expired, or the foreground alarm was silenced with Volume Down. Timeout rows are
-retained through process death/reboot until the authenticated target app records
+expired, or the foreground alarm was dismissed natively (Volume Down or the
+lock-screen notification action). Timeout rows are retained through process
+death/reboot until the authenticated target app records
 `outcome.result = skipped`, `skipReason = "User unavailable"`, attempts the
 planner notification, and the target reviews the missed-alarm summary. This
-queue is device state, not a Firestore collection. Volume-silence rows only add
-the shared `alarm.dismissedAt` observation; silencing is not an outcome.
+queue is device state, not a Firestore collection. Native-dismissal rows only
+add the shared `alarm.dismissedAt` observation; silencing is not an outcome.
 
 ## Future alarm record — DESIGN-ONLY, NOT BUILT
 

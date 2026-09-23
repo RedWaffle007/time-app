@@ -10,6 +10,9 @@ object AlarmLifecycleStore {
     private const val KEY = "events"
 
     const val KIND_TIMEOUT = "timeout"
+    const val KIND_DISMISSED = "dismissed"
+    // Read compatibility for item 21 builds installed before the generalized
+    // dismissal event name. Dart accepts both values.
     const val KIND_VOLUME_SILENCED = "volume_silenced"
 
     data class Event(
