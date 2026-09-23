@@ -25,7 +25,8 @@ class _PrimerDismissed extends Notifier<bool> {
   void dismiss() => state = true;
 }
 
-/// **The contextual primer** — the deliberate ask for POST_NOTIFICATIONS.
+/// **The contextual primer** — the repair path for POST_NOTIFICATIONS after the
+/// first-install permission onboarding was skipped, denied, or later revoked.
 ///
 /// It appears on My Schedule, and only when BOTH are true:
 ///
@@ -40,8 +41,8 @@ class _PrimerDismissed extends Notifier<bool> {
 /// screen of the app and had no idea what they were being asked about. Android
 /// gives that prompt out roughly once, and a "deny" is effectively final — the
 /// OS will not ask again and the only route back is Settings. Spending it on a
-/// cold launch is spending it badly. That call is now gone, and this is the one
-/// place the app asks (DECISIONS.md → "Reminder layer, Part 1").
+/// cold launch is spending it badly. That raw call is gone; every ask now follows
+/// an explanation, either in first-install onboarding or in this repair card.
 ///
 /// It asks for the two permissions SEPARATELY and in order of consequence.
 /// POST_NOTIFICATIONS decides whether a reminder appears at all;

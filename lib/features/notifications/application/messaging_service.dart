@@ -183,10 +183,9 @@ class MessagingService {
       // a "deny" is final and the only way back is Settings. Spending the one
       // ask on a cold launch, with no context, is spending it badly.
       //
-      // The ask now belongs to the reminder primer
-      // (`features/reminders/presentation/reminder_primer.dart`), which shows it
-      // when the user has an approved item that is about to need a reminder, and
-      // explains itself first. One deliberate ask, one place.
+      // The ask belongs to the first-install permission onboarding, which
+      // explains it before the OS prompt. The reminder primer is the repair path
+      // when a user skips, denies, or later revokes it.
       //
       // **Token registration is unaffected**, which is why this is safe to
       // remove rather than move: `getToken()` does not require notification

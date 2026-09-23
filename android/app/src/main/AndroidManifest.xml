@@ -5,8 +5,8 @@
          fail (SecurityException) and the app crashes on launch. Declare it here
          in the main manifest so release has it too. -->
     <uses-permission android:name="android.permission.INTERNET"/>
-    <!-- Android 13+ runtime notification permission (requested at runtime by
-         firebase_messaging). Declared explicitly for clarity. -->
+    <!-- Android 13+ runtime notification permission, requested by the
+         first-install reminders onboarding after its on-screen explanation. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <!-- Voice STT (redesign S6). The mic is requested at runtime by

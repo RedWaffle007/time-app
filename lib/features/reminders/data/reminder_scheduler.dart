@@ -113,9 +113,9 @@ abstract interface class ReminderPermissions {
   Future<ReminderPermissionState> read();
 
   /// Shows the Android 13+ POST_NOTIFICATIONS system prompt. Call this only
-  /// AFTER the user has agreed to a primer — the OS prompt can be shown once
-  /// per install in practice, and spending it on a launch-time surprise is how
-  /// an app ends up permanently unable to notify anyone.
+  /// AFTER the user has agreed to an onboarding/primer explanation — the OS
+  /// prompt can be shown once per install in practice, and spending it on an
+  /// unexplained launch-time surprise can leave notifications denied.
   Future<bool> requestNotifications();
 
   /// Sends the user to the system's exact-alarm settings page. There is no

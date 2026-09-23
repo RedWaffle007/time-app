@@ -82,6 +82,11 @@ class MainActivity : FlutterFragmentActivity() {
         // splash mounts; duration + the mute-switch check live in [SplashSound].
         const val SPLASH_SOUND_CHANNEL = "time_app/splash_sound"
 
+        // A reinstall boundary that Android Auto Backup cannot fake. Package
+        // firstInstallTime survives updates but changes after uninstall, while
+        // restored SharedPreferences may still claim onboarding was completed.
+        const val INSTALL_IDENTITY_CHANNEL = "time_app/install_identity"
+
         // Battery / Doze exemption. `isIgnoring` reports the current state;
         // `request` fires the DIRECT system yes/no dialog (needs the
         // REQUEST_IGNORE_BATTERY_OPTIMIZATIONS permission — see the manifest).
@@ -145,6 +150,18 @@ class MainActivity : FlutterFragmentActivity() {
         // activity by hours, and holding an Activity in a PendingIntent's
         // context is how a leak becomes a crash on a 6am delivery.
         ReminderAuditChannel(applicationContext).register(flutterEngine.dartExecutor.binaryMessenger)
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, INSTALL_IDENTITY_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                if (call.method != "current") {
+                    result.notImplemented()
+                    return@setMethodCallHandler
+                }
+                @Suppress("DEPRECATION")
+                val firstInstallTime =
+                    packageManager.getPackageInfo(packageName, 0).firstInstallTime
+                result.success(firstInstallTime.toString())
+            }
 
         // Can a full-screen reminder actually launch over the top of another app?
         // On Android 14+ (API 34) USE_FULL_SCREEN_INTENT is user-revocable for a
