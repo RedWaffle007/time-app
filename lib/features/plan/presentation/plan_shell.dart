@@ -86,8 +86,11 @@ class _PlanShellState extends ConsumerState<PlanShell>
           ? _mySchedule
           : (intent.tab?.index ?? _mySchedule);
     }
-    _tabController =
-        TabController(length: 3, vsync: this, initialIndex: initialIndex);
+    _tabController = TabController(
+      length: 3,
+      vsync: this,
+      initialIndex: initialIndex,
+    );
     // App-bar actions depend on the active sub-tab, so rebuild when it settles.
     // Guarded to the settle only (`!indexIsChanging`) so a drag does not storm
     // setState every frame.
@@ -191,24 +194,25 @@ class _PlanShellState extends ConsumerState<PlanShell>
     );
   }
 
-  /// The app-bar actions for the active sub-tab, followed by the two constant
-  /// Plan actions (Calendar, then the overflow that houses Archived). Detail
+  /// The app-bar actions for the active sub-tab, followed by the overflow that
+  /// houses Archived. Calendar now lives beside Upcoming Plans in My Schedule.
+  /// Detail
   /// pushes target the Plan stack (`/plan/...`) so Back returns to this shell.
   List<Widget> _actionsFor(int index) {
     final contextual = <Widget>[
       switch (index) {
         _mySchedule => IconButton(
-            tooltip: 'Pending approvals',
-            icon: const Icon(AppIcons.approvals),
-            onPressed: () => context.push('${Routes.plan}/approvals'),
-          ),
+          tooltip: 'Pending approvals',
+          icon: const Icon(AppIcons.approvals),
+          onPressed: () => context.push('${Routes.plan}/approvals'),
+        ),
         // "Plan an item" now lives on the always-present bottom-right FAB, so it
         // is no longer duplicated as an Activity app-bar action.
         _groups => IconButton(
-            tooltip: 'New group',
-            icon: const Icon(AppIcons.add),
-            onPressed: () => showGroupCreateDialog(context, ref),
-          ),
+          tooltip: 'New group',
+          icon: const Icon(AppIcons.add),
+          onPressed: () => showGroupCreateDialog(context, ref),
+        ),
         _ => const SizedBox.shrink(),
       },
       // Groups carries a second action (Join by code), like the old screen.
@@ -222,13 +226,6 @@ class _PlanShellState extends ConsumerState<PlanShell>
 
     return [
       ...contextual,
-      // Calendar is a Plan app-bar action per the locked IA (a lens over all
-      // three sub-tabs). Pushed at the root, unchanged.
-      IconButton(
-        tooltip: 'Calendar',
-        icon: const Icon(AppIcons.calendar),
-        onPressed: () => context.push(Routes.calendar),
-      ),
       // Archived lives in the Plan overflow per the locked call — it is settled
       // *plan* content, so it does not belong on the identity-only You hub.
       PopupMenuButton<String>(

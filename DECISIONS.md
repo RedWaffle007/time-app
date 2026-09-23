@@ -5770,3 +5770,27 @@ dispersion intentionally exceed the reference, reaching the horizontal edges
 and both vertical halves without extending the measured duration. The overlay
 remains `IgnorePointer`, isolated by `RepaintBoundary`, and is removed by the
 animation controller's completion signal rather than a second timer.
+
+---
+
+## My Schedule owns Upcoming; History owns elapsed and completed plans (2026-09-24)
+
+My Schedule is now a forward-looking surface. An approved plan appears there
+only while it has no outcome and its scheduled UTC instant has not passed.
+Equality stays Upcoming; immediately after that instant, or as soon as an
+outcome exists, it belongs to History. Comparing absolute instants instead of
+local dates makes the partition disjoint across midnight, timezone changes, and
+DST folds or gaps.
+
+History is a Plan sub-route, not another bottom-navigation pillar. It preserves
+the existing outcome cards and collapsible days, orders days and plans newest
+first, and introduces localized month buckets exactly when two calendar months
+are represented. A Calendar selection follows ownership first: pending target
+items go to Approvals, elapsed/completed target items go to History, other
+target items go to My Schedule, and planner-side items remain in Activity.
+History intents force the relevant month and day open before the existing lazy
+scroll/highlight behavior runs.
+
+The visible entry points are now the bold rounded `CALENDAR` and `HISTORY`
+controls beside `Upcoming Plans`. The superseded Plan app-bar calendar glyph
+and You-hub Calendar row were removed so there is one discoverable path.

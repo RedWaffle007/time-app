@@ -27,9 +27,6 @@ import '../../theme/application/theme_mode_controller.dart';
 /// temporary-door strategy); it becomes the fifth bottom-bar pillar at the S5
 /// cutover, at which point the popup is retired.
 ///
-/// Note (flagged in DECISIONS.md): Calendar is housed here per the S3 brief. The
-/// locked IA has it as a Plan app-bar action — but the Plan shell does not exist
-/// until S4, so it lives here in the meantime and relocates at S4/S5.
 class YouScreen extends ConsumerWidget {
   const YouScreen({super.key});
 
@@ -62,11 +59,6 @@ class YouScreen extends ConsumerWidget {
             label: 'Friends',
             badgeCount: pendingRequests,
             onTap: () => context.push(Routes.friends),
-          ),
-          _YouTile(
-            icon: AppIcons.calendar,
-            label: 'Calendar',
-            onTap: () => context.push(Routes.calendar),
           ),
           const SectionHeader('Account & device'),
           _YouTile(

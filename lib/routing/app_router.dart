@@ -15,6 +15,7 @@ import '../features/auth/presentation/profile_edit_screen.dart';
 import '../features/calendar/presentation/calendar_screen.dart';
 import '../features/home/presentation/home_gate.dart';
 import '../features/onboarding/presentation/onboarding_screen.dart';
+import '../features/outcomes/presentation/history_screen.dart';
 import '../features/walkthrough/presentation/how_it_works_screen.dart';
 import '../features/social/presentation/blocked_users_screen.dart';
 import '../features/social/presentation/friend_requests_screen.dart';
@@ -60,9 +61,9 @@ class Routes {
   static const howItWorks = '/how-it-works';
 
   /// **The calendar** — a month/week/day view over the items that already
-  /// exist. Top-level and pushed, reached from the account menu, for exactly
-  /// the reason [archived] is: it merges the items you are the TARGET of with
-  /// the ones you planned for others, so it belongs to no single tab. It is
+  /// exist. Top-level and pushed from My Schedule's `CALENDAR` control. It
+  /// merges the items you are the TARGET of with the ones you planned for
+  /// others, so it belongs to no single tab. It is
   /// deliberately not a fourth nav destination — the bar's three tabs are the
   /// three stances in the delegation loop, and a calendar is a lens over all
   /// three rather than a fourth one (DECISIONS.md → "In-app calendar").
@@ -93,13 +94,14 @@ class Routes {
   static const calendarDateParam = 'date';
 
   static String calendarNewFor(DateTime day) => Uri(
-        path: calendarNew,
-        queryParameters: {
-          calendarDateParam: '${day.year.toString().padLeft(4, '0')}-'
-              '${day.month.toString().padLeft(2, '0')}-'
-              '${day.day.toString().padLeft(2, '0')}',
-        },
-      ).toString();
+    path: calendarNew,
+    queryParameters: {
+      calendarDateParam:
+          '${day.year.toString().padLeft(4, '0')}-'
+          '${day.month.toString().padLeft(2, '0')}-'
+          '${day.day.toString().padLeft(2, '0')}',
+    },
+  ).toString();
 
   /// Parse [calendarDateParam] back to a LOCAL-kind date.
   ///
@@ -127,10 +129,8 @@ class Routes {
   static const alarm = '/alarm';
   static const alarmItemParam = 'item';
 
-  static String alarmForItem(String itemId) => Uri(
-        path: alarm,
-        queryParameters: {alarmItemParam: itemId},
-      ).toString();
+  static String alarmForItem(String itemId) =>
+      Uri(path: alarm, queryParameters: {alarmItemParam: itemId}).toString();
 
   /// **The social layer.** Friends belongs under the You pillar rather than as
   /// a separate pillar. Keeping it in that branch is also load-bearing for
@@ -188,6 +188,10 @@ class Routes {
   /// S5 device pass); a Riverpod intent notifies deterministically instead.
   static const plan = '/plan';
 
+  /// Elapsed and completed target-side plans. A Plan sub-route so Back returns
+  /// to My Schedule and the bottom navigation remains present.
+  static const history = '$plan/history';
+
   /// The planner's create flow — a Plan sub-route so it stacks over the shell.
   /// (Was `/activity/schedule-builder` before the S5 cutover.)
   static const scheduleBuilder = '$plan/schedule-builder';
@@ -211,18 +215,17 @@ class Routes {
     String? title,
     DateTime? date,
     TimeOfDay? time,
-  }) =>
-      Uri(
-        path: scheduleBuilder,
-        queryParameters: _voiceParams(
-          targetUid: targetUid,
-          isSelf: isSelf,
-          groupId: groupId,
-          title: title,
-          date: date,
-          time: time,
-        ),
-      ).toString();
+  }) => Uri(
+    path: scheduleBuilder,
+    queryParameters: _voiceParams(
+      targetUid: targetUid,
+      isSelf: isSelf,
+      groupId: groupId,
+      title: title,
+      date: date,
+      time: time,
+    ),
+  ).toString();
 
   static Map<String, String> _voiceParams({
     required String targetUid,
@@ -239,12 +242,14 @@ class Routes {
     if (groupId != null) params[sbGroupParam] = groupId;
     if (title != null && title.trim().isNotEmpty) params[sbTitleParam] = title;
     if (date != null) {
-      params[calendarDateParam] = '${date.year.toString().padLeft(4, '0')}-'
+      params[calendarDateParam] =
+          '${date.year.toString().padLeft(4, '0')}-'
           '${date.month.toString().padLeft(2, '0')}-'
           '${date.day.toString().padLeft(2, '0')}';
     }
     if (time != null) {
-      params[sbTimeParam] = '${time.hour.toString().padLeft(2, '0')}:'
+      params[sbTimeParam] =
+          '${time.hour.toString().padLeft(2, '0')}:'
           '${time.minute.toString().padLeft(2, '0')}';
     }
     return params;
@@ -318,10 +323,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       // `/` is a pure redirect: the shell's first branch IS the landing screen,
       // so home is an alias for it rather than a fourth screen. Keeping the path
       // registered means `redirect` (and any saved `/` link) still resolves.
-      GoRoute(
-        path: Routes.home,
-        redirect: (context, state) => Routes.plan,
-      ),
+      GoRoute(path: Routes.home, redirect: (context, state) => Routes.plan),
       GoRoute(
         path: Routes.auth,
         builder: (context, state) => const AuthScreen(),
@@ -371,9 +373,12 @@ final routerProvider = Provider<GoRouter>((ref) {
                         initialGroupId: q[Routes.sbGroupParam],
                         initialIsSelf: q[Routes.sbSelfParam] == '1',
                         initialTitle: q[Routes.sbTitleParam],
-                        initialDate:
-                            Routes.calendarDateFrom(q[Routes.calendarDateParam]),
-                        initialTime: Routes.timeOfDayFrom(q[Routes.sbTimeParam]),
+                        initialDate: Routes.calendarDateFrom(
+                          q[Routes.calendarDateParam],
+                        ),
+                        initialTime: Routes.timeOfDayFrom(
+                          q[Routes.sbTimeParam],
+                        ),
                       );
                     },
                   ),
@@ -382,6 +387,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'approvals',
                     builder: (context, state) => const PendingApprovalsScreen(),
+                  ),
+                  GoRoute(
+                    path: 'history',
+                    builder: (context, state) => const HistoryScreen(),
                   ),
                   GoRoute(
                     path: 'groups/:groupId',
@@ -497,8 +506,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           itemId: state.uri.queryParameters[Routes.alarmItemParam] ?? '',
         ),
       ),
-      // The calendar. Account-level and pushed, alongside Archived and for the
-      // same reason — see the doc on `Routes.calendar`. Its create flow is a
+      // The calendar. Root-pushed from My Schedule; its create flow is a
       // sub-route, so Back from the builder returns to the grid the user tapped.
       GoRoute(
         path: Routes.calendar,

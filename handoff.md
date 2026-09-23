@@ -30,14 +30,14 @@
 
 ## Status
 
-Items 1–21, 26, 28, 29, and 30 are complete. Recent stability work includes native
+Items 1–22, 25, 26, 28, 29, and 30 are complete locally. Recent stability work includes native
 due-time alarm delivery, single-owner alarm audio, Volume Down dismissal,
 immutable outcomes, missed-alarm recovery, silent durable completion events,
 the approved ballistic confetti, the 1.5-second splash/audio fade, and shared
 two-month categorization plus persistent explainer cards for Activity and Track.
 Details and rationale live in `DECISIONS.md`; do not duplicate them here.
 
-Remaining feature work, in intended order: **25, 31, 23, 27, 32, 24, 33**.
+Remaining feature work, in intended order: **31, 23, 27, 32, 24, 33**.
 Item 22 is implementation-complete and locally verified, but its backend
 deployment and real-device acceptance are intentionally deferred to the final
 combined release pass after the feature list is complete.
@@ -102,7 +102,7 @@ about to change.
 - Decide whether standalone Log Time earns its friction through meaningful
   planned-vs-actual insight; research before changing or removing it.
 
-### 25. My Schedule, History, and Calendar restructure
+### 25. My Schedule, History, and Calendar restructure — complete locally
 
 - Keep My Schedule focused on scheduled upcoming plans only. Move elapsed and
   completed plans into a dedicated History surface; do not duplicate a plan
@@ -134,6 +134,14 @@ about to change.
   order, short and long histories, cold/warm navigation, a far-away highlighted
   plan, collapsed month/day expansion, pending-plan routing, empty states, and
   regression of the existing Upcoming outcome actions.
+- Implemented with one UTC-instant partition: an approved, outcome-less plan is
+  Upcoming through its exact due instant; elapsed or outcome-bearing plans are
+  History. History is a Plan sub-route with `Past Plans`, lazy day/month groups,
+  two-distinct-month activation, and cold/warm forced highlight scrolling.
+  Calendar routes past target-side plans there while preserving Approvals,
+  My Schedule, and Activity ownership. The old Plan app-bar glyph and You entry
+  are removed. Full local verification passed on 2026-09-24; final device
+  acceptance is batched with the remaining feature list.
 
 ### 27. Conditional conflict disclosure
 
@@ -232,6 +240,7 @@ about to change.
 
 ## Next session
 
-Commit the locally verified Item 22 implementation, then proceed to Item 25.
-Keep Item 22's Firestore/Worker deployment and real-device GIF/WebP acceptance
-on the final combined release checklist after all feature work is complete.
+Commit the locally verified Item 25 implementation, then proceed to Item 31
+(rename the manual Plan affordance). Keep Item 22's Firestore/Worker deployment
+and GIF/WebP device acceptance, plus Item 25 navigation/layout acceptance, on
+the final combined release checklist after all feature work is complete.

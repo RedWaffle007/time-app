@@ -9,6 +9,8 @@ import '../../../core/theme/app_tokens.dart';
 import '../../../core/theme/status_style.dart';
 import '../../../routing/app_router.dart';
 import '../../auth/application/auth_providers.dart';
+import '../../outcomes/application/history_intent.dart';
+import '../../outcomes/application/schedule_partition.dart';
 import '../../plan/application/plan_intent.dart';
 import '../../scheduling/domain/schedule_item.dart';
 import '../application/calendar_grouping.dart';
@@ -30,10 +32,7 @@ import '../application/calendar_grouping.dart';
 /// controls are two things to keep in step. So the sheet's primary action
 /// **routes** — and `Routes.planForItem` already scrolls to the card and
 /// outlines it, so the tap still ends one gesture from closing the loop.
-Future<void> showCalendarItemSheet(
-  BuildContext context,
-  CalendarEntry entry,
-) {
+Future<void> showCalendarItemSheet(BuildContext context, CalendarEntry entry) {
   return showModalBottomSheet<void>(
     context: context,
     // Long notes on a small screen: let it grow and scroll rather than clip.
@@ -91,7 +90,10 @@ class _CalendarItemSheet extends ConsumerWidget {
             _DetailRow(
               icon: AppIcons.time,
               text: formatInstant(
-                  context, item.scheduledInstantUtc, item.timezone),
+                context,
+                item.scheduledInstantUtc,
+                item.timezone,
+              ),
             ),
             _DetailRow(icon: AppIcons.timezone, text: item.timezone),
 
@@ -112,8 +114,9 @@ class _CalendarItemSheet extends ConsumerWidget {
               // (UI-RULES.md §3).
               Text(
                 note,
-                style: context.text.bodyMedium
-                    ?.copyWith(color: context.colors.onSurfaceVariant),
+                style: context.text.bodyMedium?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
               ),
             ],
 
@@ -123,8 +126,9 @@ class _CalendarItemSheet extends ConsumerWidget {
               const SizedBox(height: Space.lg),
               Text(
                 reason,
-                style: context.text.bodySmall
-                    ?.copyWith(color: context.colors.onSurfaceVariant),
+                style: context.text.bodySmall?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
               ),
             ],
 
@@ -139,7 +143,15 @@ class _CalendarItemSheet extends ConsumerWidget {
                 _open(context, ref, item, isMine: isMine);
               },
               icon: const Icon(AppIcons.openRow),
-              label: Text(isMine ? 'Open in My Schedule' : 'Open in Activity'),
+              label: Text(
+                !isMine
+                    ? 'Open in Activity'
+                    : item.status == ScheduleItemStatus.pending
+                    ? 'Open in Approvals'
+                    : isHistoryPlan(item, DateTime.now().toUtc())
+                    ? 'Open in History'
+                    : 'Open in My Schedule',
+              ),
             ),
           ],
         ),
@@ -166,6 +178,9 @@ class _CalendarItemSheet extends ConsumerWidget {
     if (isMine) {
       if (item.status == ScheduleItemStatus.pending) {
         context.go(Routes.approvals);
+      } else if (isHistoryPlan(item, DateTime.now().toUtc())) {
+        ref.read(historyIntentProvider.notifier).highlightItem(item.id);
+        context.go(Routes.history);
       } else {
         ref.read(planIntentProvider.notifier).highlightItem(item.id);
         context.go(Routes.plan);
@@ -177,15 +192,15 @@ class _CalendarItemSheet extends ConsumerWidget {
   }
 
   String? _reason(ScheduleItem item) => switch (item) {
-        ScheduleItem(
-          status: ScheduleItemStatus.rejected,
-          :final rejectionReason?
-        ) =>
-          'Reason: $rejectionReason',
-        ScheduleItem(outcome: ScheduleOutcome(:final skipReason?)) =>
-          'Reason: $skipReason',
-        _ => null,
-      };
+    ScheduleItem(
+      status: ScheduleItemStatus.rejected,
+      :final rejectionReason?,
+    ) =>
+      'Reason: $rejectionReason',
+    ScheduleItem(outcome: ScheduleOutcome(:final skipReason?)) =>
+      'Reason: $skipReason',
+    _ => null,
+  };
 }
 
 /// One labelled fact. Icons are structural here, so they take their colour from
@@ -203,8 +218,11 @@ class _DetailRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon,
-              size: Sizes.inlineIcon, color: context.colors.onSurfaceVariant),
+          Icon(
+            icon,
+            size: Sizes.inlineIcon,
+            color: context.colors.onSurfaceVariant,
+          ),
           const SizedBox(width: Space.md),
           Expanded(child: Text(text, style: context.text.bodyMedium)),
         ],

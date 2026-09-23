@@ -32,8 +32,9 @@ class HowItWorksScreen extends ConsumerWidget {
           Text(
             'Checkmate lets people you trust build your schedule and set your '
             'reminders — always with your approval. Here is every part of it.',
-            style: context.text.bodyMedium
-                ?.copyWith(color: context.colors.onSurfaceVariant),
+            style: context.text.bodyMedium?.copyWith(
+              color: context.colors.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: Space.lg),
 
@@ -41,32 +42,37 @@ class HowItWorksScreen extends ConsumerWidget {
           const _Feature(
             icon: AppIcons.navSchedule,
             title: 'Plan',
-            body: 'Your schedule across three tabs — My Schedule (your day, next '
+            body:
+                'Your schedule across three tabs — My Schedule (your day, next '
                 'task first), Activity (what you planned for others) and Groups. '
                 'Tap the ＋ button, bottom-right, to plan an item on any of them.',
           ),
           const _Feature(
             icon: AppIcons.navTrack,
             title: 'Track',
-            body: 'Log time you have already spent and see where your hours go. '
+            body:
+                'Log time you have already spent and see where your hours go. '
                 'Tap the ＋ button, bottom-right, to add an entry.',
           ),
           const _Feature(
             icon: AppIcons.voice,
             title: 'Speak to create (centre mic)',
-            body: 'Tap the centre mic to log time or plan a reminder by voice, '
+            body:
+                'Tap the centre mic to log time or plan a reminder by voice, '
                 'hands-free. You review it before anything is saved.',
           ),
           const _Feature(
             icon: AppIcons.stats,
             title: 'Stats',
-            body: 'Your totals, streaks, follow-through and on-time rate at a '
+            body:
+                'Your totals, streaks, follow-through and on-time rate at a '
                 'glance.',
           ),
           const _Feature(
             icon: AppIcons.navYou,
             title: 'You',
-            body: 'Your profile plus everything below — Friends, Calendar, '
+            body:
+                'Your profile plus everything below — Friends, Calendar, '
                 'Language practice, this guide, and reminder permissions.',
           ),
 
@@ -75,25 +81,29 @@ class HowItWorksScreen extends ConsumerWidget {
           const _Feature(
             icon: AppIcons.group,
             title: 'Groups & invites',
-            body: 'Create a group and invite people with a code. Members can be '
+            body:
+                'Create a group and invite people with a code. Members can be '
                 'given permission to plan for each other.',
           ),
           const _Feature(
             icon: AppIcons.permissions,
             title: 'Consent to be planned for',
-            body: 'Nobody can plan for you until you allow it — per person, and '
+            body:
+                'Nobody can plan for you until you allow it — per person, and '
                 'revocable any time. A friendship alone grants nothing.',
           ),
           const _Feature(
             icon: AppIcons.approved,
             title: 'Approve or reject',
-            body: 'Every item a planner creates lands pending. It only fires '
+            body:
+                'Every item a planner creates lands pending. It only fires '
                 'after you approve it; reject or withdraw removes it.',
           ),
           const _Feature(
             icon: AppIcons.emergency,
             title: 'Emergency items',
-            body: 'A separate grant lets a trusted friend place an item that '
+            body:
+                'A separate grant lets a trusted friend place an item that '
                 'skips the queue and rings straight away. Off by default.',
           ),
 
@@ -102,19 +112,22 @@ class HowItWorksScreen extends ConsumerWidget {
           const _Feature(
             icon: AppIcons.reminders,
             title: 'Reminders',
-            body: 'Approved items notify you when they are due — on this device, '
+            body:
+                'Approved items notify you when they are due — on this device, '
                 'nothing leaving it.',
           ),
           const _Feature(
             icon: AppIcons.ringOverApps,
             title: 'Alarm mode',
-            body: 'With the right permissions a reminder rings like a real '
+            body:
+                'With the right permissions a reminder rings like a real '
                 'alarm: on time, over other apps, and on the lock screen.',
           ),
           const _Feature(
             icon: AppIcons.approved,
             title: 'Accountability',
-            body: 'When you mark an item done or skipped, the person who planned '
+            body:
+                'When you mark an item done or skipped, the person who planned '
                 'it is notified — that is what closes the loop.',
           ),
 
@@ -123,25 +136,29 @@ class HowItWorksScreen extends ConsumerWidget {
           const _Feature(
             icon: AppIcons.stats,
             title: 'Group progress & leaderboard',
-            body: 'A shared streak and a follow-through leaderboard across a '
+            body:
+                'A shared streak and a follow-through leaderboard across a '
                 "group's members.",
           ),
           const _Feature(
             icon: AppIcons.friends,
             title: 'Friends  ·  in the You tab',
-            body: 'Add people, manage requests, and control who can see your '
+            body:
+                'Add people, manage requests, and control who can see your '
                 'profile. Open the You tab → Friends.',
           ),
           const _Feature(
             icon: AppIcons.calendar,
-            title: 'Calendar  ·  You tab, or Plan',
-            body: 'A month, week and day view over everything scheduled, in each '
-                "item's own timezone. In the You tab, or the calendar icon on Plan.",
+            title: 'Calendar  ·  in My Schedule',
+            body:
+                'A month, week and day view over everything scheduled, in each '
+                "item's own timezone. Open it beside Upcoming Plans.",
           ),
           const _Feature(
             icon: AppIcons.permissions,
             title: 'Reminders & permissions  ·  in the You tab',
-            body: 'Review and fix the permissions reliable reminders need, any '
+            body:
+                'Review and fix the permissions reliable reminders need, any '
                 'time.',
           ),
 
@@ -175,8 +192,11 @@ class _Feature extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon,
-              color: context.colors.onSurfaceVariant, size: Sizes.inlineIcon),
+          Icon(
+            icon,
+            color: context.colors.onSurfaceVariant,
+            size: Sizes.inlineIcon,
+          ),
           const SizedBox(width: Space.md),
           Expanded(
             child: Column(
@@ -186,8 +206,9 @@ class _Feature extends StatelessWidget {
                 const SizedBox(height: Space.xs),
                 Text(
                   body,
-                  style: context.text.bodySmall
-                      ?.copyWith(color: context.colors.onSurfaceVariant),
+                  style: context.text.bodySmall?.copyWith(
+                    color: context.colors.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),

@@ -40,7 +40,7 @@ const kWalkthroughStepCopy = <WalkthroughStepCopy>[
   ),
   WalkthroughStepCopy(
     'You',
-    'Everything else lives here: Profile, Friends, Calendar, Language practice, '
+    'Everything else lives here: Profile, Friends, Language practice, '
         '“How this app works”, and reminder permissions.',
   ),
 ];
@@ -177,8 +177,10 @@ class _WalkthroughScrimState extends State<WalkthroughScrim> {
   ) {
     final arrowTipY = hole.top - _arrowGap;
     final arrowTopY = arrowTipY - _arrowHeight;
-    final arrowLeft = (hole.center.dx - _arrowWidth / 2)
-        .clamp(Space.lg, size.width - Space.lg - _arrowWidth);
+    final arrowLeft = (hole.center.dx - _arrowWidth / 2).clamp(
+      Space.lg,
+      size.width - Space.lg - _arrowWidth,
+    );
 
     return [
       // The tooltip card, spanning the width above the target.
@@ -274,18 +276,12 @@ class _CoachCard extends StatelessWidget {
                   ),
                   const SizedBox(width: Space.sm),
                 ],
-                TextButton(
-                  onPressed: onSkip,
-                  child: const Text('Skip'),
-                ),
+                TextButton(onPressed: onSkip, child: const Text('Skip')),
                 const SizedBox(width: Space.sm),
                 // Next carries a trailing forward arrow; on the last step it is
                 // the plain "Done" that finishes the tour.
                 isLast
-                    ? FilledButton(
-                        onPressed: onNext,
-                        child: const Text('Done'),
-                      )
+                    ? FilledButton(onPressed: onNext, child: const Text('Done'))
                     : FilledButton.icon(
                         onPressed: onNext,
                         icon: const Icon(AppIcons.stepForward),
@@ -323,10 +319,7 @@ class _SpotlightPainter extends CustomPainter {
     }
     final full = Path()..addRect(screen);
     final cut = Path()..addRRect(radius.toRRect(hole!));
-    canvas.drawPath(
-      Path.combine(PathOperation.difference, full, cut),
-      paint,
-    );
+    canvas.drawPath(Path.combine(PathOperation.difference, full, cut), paint);
   }
 
   @override

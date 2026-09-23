@@ -22,6 +22,8 @@ import '../../scheduling/application/schedule_item_order.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
 import '../../time_tracking/presentation/log_from_done_prompt.dart';
+import '../application/history_intent.dart';
+import '../application/schedule_partition.dart';
 import '../application/schedule_time_section.dart';
 import 'hero_band.dart';
 
@@ -79,6 +81,7 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
   /// a screen left open across midnight can keep yesterday under Future until
   /// some unrelated state happens to rebuild it.
   Timer? _clockTick;
+  Timer? _boundaryTick;
   late DateTime _nowUtc;
 
   /// Key on the highlighted card, so it can be scrolled to precisely once built.
@@ -137,6 +140,7 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
     WidgetsBinding.instance.removeObserver(this);
     _fade?.cancel();
     _clockTick?.cancel();
+    _boundaryTick?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
@@ -232,6 +236,28 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
     return boxTop < viewBottom && boxBottom > viewTop;
   }
 
+  void _scheduleBoundaryTick(List<ScheduleItem> items) {
+    _boundaryTick?.cancel();
+    final now = DateTime.now().toUtc();
+    DateTime? next;
+    for (final item in items) {
+      if (item.status != ScheduleItemStatus.approved || item.outcome != null) {
+        continue;
+      }
+      final due = item.scheduledInstantUtc;
+      if (!due.isBefore(now) && (next == null || due.isBefore(next))) {
+        next = due;
+      }
+    }
+    if (next == null) return;
+    _boundaryTick = Timer(
+      next.difference(now) + const Duration(milliseconds: 1),
+      () {
+        if (mounted) setState(() => _nowUtc = DateTime.now().toUtc());
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final itemsAsync = ref.watch(myItemsAsTargetProvider);
@@ -262,34 +288,27 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
         value: itemsAsync,
         // Retry the SOURCE stream — see the note in planner_activity_screen.
         onRetry: () => ref.invalidate(allItemsAsTargetProvider),
-        isEmpty: (items) =>
-            !items.any((i) => i.status == ScheduleItemStatus.approved),
-        emptyMessage: 'No approved items yet.',
         builder: (context, items) {
+          _scheduleBoundaryTick(items);
           final approved = items
-              .where((i) => i.status == ScheduleItemStatus.approved)
+              .where((item) => isUpcomingPlan(item, _nowUtc))
               .toList();
 
-          // Group by time section AND each item's own-timezone day. The section
-          // must use that same timezone: comparing a Kolkata card's date with a
-          // Chicago phone's date is how an old plan can appear under Future.
-          // Today comes first, then future days soonest-first, then past days
-          // most-recent-first. Within a day, items read chronologically.
-          final byGroup = <_ScheduleGroupKey, List<ScheduleItem>>{};
-          final dateFor = <_ScheduleGroupKey, DateTime>{};
+          // Upcoming is one surface, grouped only by each item's own-timezone
+          // calendar day. The partition itself is absolute-instant based; the
+          // day is presentation only.
+          final byGroup = <String, List<ScheduleItem>>{};
+          final dateFor = <String, DateTime>{};
           for (final item in approved) {
             final day = calendarDayFor(item);
-            final key = (
-              section: scheduleTimeSection(item, _nowUtc),
-              day: dayKeyOf(day),
-            );
+            final key = dayKeyOf(day);
             dateFor[key] = day;
             byGroup.putIfAbsent(key, () => []).add(item);
           }
           for (final list in byGroup.values) {
             list.sort(compareScheduleItemsLatestFirst);
           }
-          final orderedKeys = byGroup.keys.toList()..sort(_compareGroupKeys);
+          final orderedKeys = byGroup.keys.toList()..sort();
 
           _approvedCount = approved.length;
           // Keep the flattened position for the lazy-list fallback. Expanding a
@@ -334,10 +353,7 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
           if (_highlighted != null) {
             for (final item in approved) {
               if (item.id == _highlighted) {
-                forceKey = _storageKey((
-                  section: scheduleTimeSection(item, _nowUtc),
-                  day: dayKeyOf(calendarDayFor(item)),
-                ));
+                forceKey = dayKeyOf(calendarDayFor(item));
                 break;
               }
             }
@@ -347,28 +363,26 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
             controller: _scrollController,
             initiallyExpandedKeys: {
               for (final key in orderedKeys)
-                if (key.section == ScheduleTimeSection.today) _storageKey(key),
+                if (byGroup[key]!.any((item) => _isOnCurrentDay(item, _nowUtc)))
+                  key,
             },
             forceExpandKey: forceKey,
             leading: [
               HeroBand(nextItem: nextItem),
               ReminderPrimerCard(hasUpcomingItems: hasUpcoming),
+              const _UpcomingPlansHeader(),
+              if (approved.isEmpty) const _NoUpcomingPlans(),
             ],
             groups: [
               for (final key in orderedKeys)
                 DayGroupData(
-                  key: _storageKey(key),
+                  key: key,
                   date: dateFor[key]!,
                   label: formatWallDate(context, dateFor[key]!),
-                  section: switch (key.section) {
-                    ScheduleTimeSection.today => 'Today',
-                    ScheduleTimeSection.future => 'Future plans',
-                    ScheduleTimeSection.past => 'Past plans',
-                  },
                   itemCount: byGroup[key]!.length,
                   itemBuilder: (context, index) {
                     final item = byGroup[key]![index];
-                    return _OutcomeCard(
+                    return OutcomeCard(
                       item: item,
                       highlighted: item.id == _highlighted,
                       // The key rides on the highlighted card only; that is all
@@ -385,25 +399,71 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
   }
 }
 
-typedef _ScheduleGroupKey = ({ScheduleTimeSection section, String day});
+bool _isOnCurrentDay(ScheduleItem item, DateTime nowUtc) =>
+    scheduleTimeSection(item, nowUtc) == ScheduleTimeSection.today;
 
-String _storageKey(_ScheduleGroupKey key) => '${key.section.name}:${key.day}';
+class _UpcomingPlansHeader extends ConsumerWidget {
+  const _UpcomingPlansHeader();
 
-int _compareGroupKeys(_ScheduleGroupKey a, _ScheduleGroupKey b) {
-  const rank = {
-    ScheduleTimeSection.today: 0,
-    ScheduleTimeSection.future: 1,
-    ScheduleTimeSection.past: 2,
-  };
-  final bySection = rank[a.section]!.compareTo(rank[b.section]!);
-  if (bySection != 0) return bySection;
-  return a.section == ScheduleTimeSection.past
-      ? b.day.compareTo(a.day)
-      : a.day.compareTo(b.day);
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final buttonStyle = OutlinedButton.styleFrom(
+      padding: const EdgeInsets.symmetric(horizontal: Space.sm),
+      textStyle: context.text.labelLarge?.copyWith(fontWeight: FontWeight.bold),
+      visualDensity: VisualDensity.compact,
+      shape: const RoundedRectangleBorder(borderRadius: Radii.md),
+    );
+    return Padding(
+      padding: const EdgeInsets.only(top: Space.lg, bottom: Space.sm),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Upcoming Plans',
+              style: context.text.titleLarge,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          OutlinedButton(
+            style: buttonStyle,
+            onPressed: () => context.push(Routes.calendar),
+            child: const Text('CALENDAR'),
+          ),
+          const SizedBox(width: Space.sm),
+          OutlinedButton(
+            style: buttonStyle,
+            onPressed: () {
+              ref.read(historyIntentProvider.notifier).open();
+              context.push(Routes.history);
+            },
+            child: const Text('HISTORY'),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-class _OutcomeCard extends ConsumerStatefulWidget {
-  const _OutcomeCard({
+class _NoUpcomingPlans extends StatelessWidget {
+  const _NoUpcomingPlans();
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: Space.xxl),
+    child: Center(
+      child: Text(
+        'No upcoming plans.',
+        style: context.text.titleMedium,
+        textAlign: TextAlign.center,
+      ),
+    ),
+  );
+}
+
+class OutcomeCard extends ConsumerStatefulWidget {
+  const OutcomeCard({
+    super.key,
     required this.item,
     this.highlighted = false,
     this.cardKey,
@@ -414,10 +474,10 @@ class _OutcomeCard extends ConsumerStatefulWidget {
   final Key? cardKey;
 
   @override
-  ConsumerState<_OutcomeCard> createState() => _OutcomeCardState();
+  ConsumerState<OutcomeCard> createState() => _OutcomeCardState();
 }
 
-class _OutcomeCardState extends ConsumerState<_OutcomeCard> {
+class _OutcomeCardState extends ConsumerState<OutcomeCard> {
   bool _writingOutcome = false;
 
   /// A self-planned item has the same person as creator and target — no planner

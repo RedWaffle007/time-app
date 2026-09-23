@@ -107,12 +107,17 @@ void main() {
     expect(find.text('Nothing planned for this day.'), findsOneWidget);
   });
 
-  testWidgets('an item on today appears in the agenda under the grid',
-      (tester) async {
+  testWidgets('an item on today appears in the agenda under the grid', (
+    tester,
+  ) async {
     final today = viewerToday();
-    await tester.pumpWidget(harness(entriesFor([
-      item(id: 'a', instantUtc: nineAmOn(today), title: 'Morning run'),
-    ])));
+    await tester.pumpWidget(
+      harness(
+        entriesFor([
+          item(id: 'a', instantUtc: nineAmOn(today), title: 'Morning run'),
+        ]),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Morning run'), findsOneWidget);
@@ -121,8 +126,9 @@ void main() {
     expect(find.text('Approved'), findsOneWidget);
   });
 
-  testWidgets('an item on another day is NOT shown until that day is selected',
-      (tester) async {
+  testWidgets('an item on another day is NOT shown until that day is selected', (
+    tester,
+  ) async {
     final today = viewerToday();
     // A MID-MONTH day (never today), in the same grid but not the opening cell.
     // Mid-month is deliberate: a grid's outside days are the boundary days of
@@ -136,9 +142,13 @@ void main() {
         ? DateTime(today.year, today.month, 16)
         : mid;
 
-    await tester.pumpWidget(harness(entriesFor([
-      item(id: 'a', instantUtc: nineAmOn(other), title: 'Gym session'),
-    ])));
+    await tester.pumpWidget(
+      harness(
+        entriesFor([
+          item(id: 'a', instantUtc: nineAmOn(other), title: 'Gym session'),
+        ]),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Gym session'), findsNothing);
@@ -152,12 +162,17 @@ void main() {
     expect(find.text('Gym session'), findsOneWidget);
   });
 
-  testWidgets('switching to Day swaps the grid for the hour rail',
-      (tester) async {
+  testWidgets('switching to Day swaps the grid for the hour rail', (
+    tester,
+  ) async {
     final today = viewerToday();
-    await tester.pumpWidget(harness(entriesFor([
-      item(id: 'a', instantUtc: nineAmOn(today), title: 'Morning run'),
-    ])));
+    await tester.pumpWidget(
+      harness(
+        entriesFor([
+          item(id: 'a', instantUtc: nineAmOn(today), title: 'Morning run'),
+        ]),
+      ),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Day'));
@@ -167,8 +182,10 @@ void main() {
     // on midnight and not on the wall clock. `openingHourFor` decides that, and
     // the scroll is what makes it visible; a `ListView.builder` this far down
     // would not even have built the row otherwise.
-    expect(find.text(DateFormat.j('en').format(DateTime(2000, 1, 1, 9))),
-        findsWidgets);
+    expect(
+      find.text(DateFormat.j('en').format(DateTime(2000, 1, 1, 9))),
+      findsWidgets,
+    );
     // The item is still there, now pinned beside that hour.
     expect(find.text('Morning run'), findsOneWidget);
     // The heading switched from a month to that day.
@@ -182,8 +199,9 @@ void main() {
     final now = DateTime.now();
     final thisMonth = DateFormat.yMMMM('en').format(now);
     // Day 15, so adding a month can never skip one via a short-month rollover.
-    final nextMonth = DateFormat.yMMMM('en')
-        .format(DateTime(now.year, now.month + 1, 15));
+    final nextMonth = DateFormat.yMMMM(
+      'en',
+    ).format(DateTime(now.year, now.month + 1, 15));
 
     expect(find.text(thisMonth), findsOneWidget);
 
@@ -209,12 +227,17 @@ void main() {
     expect(find.text(thisMonth), findsOneWidget);
   });
 
-  testWidgets('Week keeps the grid and the agenda, Day drops the grid',
-      (tester) async {
+  testWidgets('Week keeps the grid and the agenda, Day drops the grid', (
+    tester,
+  ) async {
     final today = viewerToday();
-    await tester.pumpWidget(harness(entriesFor([
-      item(id: 'a', instantUtc: nineAmOn(today), title: 'Morning run'),
-    ])));
+    await tester.pumpWidget(
+      harness(
+        entriesFor([
+          item(id: 'a', instantUtc: nineAmOn(today), title: 'Morning run'),
+        ]),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.byType(TableCalendar<CalendarEntry>), findsOneWidget);
@@ -231,12 +254,17 @@ void main() {
     expect(find.byType(TableCalendar<CalendarEntry>), findsNothing);
   });
 
-  testWidgets('tapping an item opens a VIEW sheet with no edit control',
-      (tester) async {
+  testWidgets('tapping an item opens a VIEW sheet with no edit control', (
+    tester,
+  ) async {
     final today = viewerToday();
-    await tester.pumpWidget(harness(entriesFor([
-      item(id: 'a', instantUtc: nineAmOn(today), title: 'Morning run'),
-    ])));
+    await tester.pumpWidget(
+      harness(
+        entriesFor([
+          item(id: 'a', instantUtc: nineAmOn(today), title: 'Morning run'),
+        ]),
+      ),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Morning run'));
@@ -246,7 +274,10 @@ void main() {
     // plan can never read as the viewer's own local time.
     expect(find.text(kolkata), findsOneWidget);
     // Its one action ROUTES to the screen that owns the real controls.
-    expect(find.text('Open in My Schedule'), findsOneWidget);
+    final expectedDestination = nineAmOn(today).isBefore(DateTime.now().toUtc())
+        ? 'Open in History'
+        : 'Open in My Schedule';
+    expect(find.text(expectedDestination), findsOneWidget);
 
     // No edit affordance, disabled or otherwise. The deployed rules make
     // `title` and `scheduledInstantUtc` immutable after create, and a greyed

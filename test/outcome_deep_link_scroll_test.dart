@@ -20,7 +20,7 @@ void main() {
     final item = _item(
       id: 'one-outcome',
       title: 'One outcome',
-      instant: DateTime.now().toUtc().subtract(const Duration(minutes: 5)),
+      instant: DateTime.now().toUtc().add(const Duration(hours: 1)),
     );
 
     await tester.pumpWidget(
@@ -33,6 +33,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    if (find.widgetWithText(FilledButton, 'Done').evaluate().isEmpty) {
+      await tester.tap(find.textContaining('· 1 item').first);
+      await tester.pumpAndSettle();
+    }
 
     await tester.tap(find.widgetWithText(FilledButton, 'Done'));
     await tester.tap(find.widgetWithText(FilledButton, 'Done'));
@@ -53,19 +57,24 @@ void main() {
     tester,
   ) async {
     tz_data.initializeTimeZones();
-    final utcNow = DateTime.now().toUtc();
-    final todayAtNoon = DateTime.utc(utcNow.year, utcNow.month, utcNow.day, 12);
+    final tomorrow = DateTime.now().toUtc().add(const Duration(days: 1));
+    final tomorrowAtNoon = DateTime.utc(
+      tomorrow.year,
+      tomorrow.month,
+      tomorrow.day,
+      12,
+    );
     final items = [
       _item(
         id: 'from-friend',
         title: 'Friend plan',
-        instant: todayAtNoon,
+        instant: tomorrowAtNoon,
         createdByUid: 'planner',
       ),
       _item(
         id: 'self-plan',
         title: 'Self plan',
-        instant: todayAtNoon.add(const Duration(minutes: 30)),
+        instant: tomorrowAtNoon.add(const Duration(minutes: 30)),
       ),
     ];
     const planner = UserProfile(
@@ -85,6 +94,8 @@ void main() {
         child: MaterialApp(theme: AppTheme.light, home: const OutcomeScreen()),
       ),
     );
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('· 2 items').first);
     await tester.pumpAndSettle();
 
     expect(find.text('Planned by Amina'), findsOneWidget);

@@ -31,8 +31,8 @@ enum CalendarViewMode { month, week, day }
 /// no document, no rule, no index, no permission was added for it
 /// (DECISIONS.md → "In-app calendar").
 ///
-/// Top-level and pushed, reached from the account menu, exactly like Archived —
-/// a cross-role view belongs to no tab. It is deliberately not a fourth nav
+/// Top-level and pushed from My Schedule's CALENDAR control. A cross-role view
+/// belongs to no tab. It is deliberately not a fourth nav
 /// destination: the bar's three tabs are the three stances in the delegation
 /// loop, and a calendar is a lens over all three rather than a fourth one.
 class CalendarScreen extends ConsumerStatefulWidget {
@@ -236,34 +236,24 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
         dowBuilder: (context, day) => Center(
           child: Text(
             formatWeekdayShort(context, day),
-            style: context.text.labelSmall
-                ?.copyWith(color: context.colors.onSurfaceVariant),
+            style: context.text.labelSmall?.copyWith(
+              color: context.colors.onSurfaceVariant,
+            ),
           ),
         ),
-        defaultBuilder: (context, day, _) => _DayCell(
-          day: day,
-          entries: entriesOn(byDay, day),
-        ),
-        todayBuilder: (context, day, _) => _DayCell(
-          day: day,
-          entries: entriesOn(byDay, day),
-          isToday: true,
-        ),
+        defaultBuilder: (context, day, _) =>
+            _DayCell(day: day, entries: entriesOn(byDay, day)),
+        todayBuilder: (context, day, _) =>
+            _DayCell(day: day, entries: entriesOn(byDay, day), isToday: true),
         selectedBuilder: (context, day, _) => _DayCell(
           day: day,
           entries: entriesOn(byDay, day),
           isSelected: true,
         ),
-        outsideBuilder: (context, day, _) => _DayCell(
-          day: day,
-          entries: entriesOn(byDay, day),
-          isOutside: true,
-        ),
-        disabledBuilder: (context, day, _) => _DayCell(
-          day: day,
-          entries: const [],
-          isOutside: true,
-        ),
+        outsideBuilder: (context, day, _) =>
+            _DayCell(day: day, entries: entriesOn(byDay, day), isOutside: true),
+        disabledBuilder: (context, day, _) =>
+            _DayCell(day: day, entries: const [], isOutside: true),
       ),
     );
   }
@@ -382,10 +372,10 @@ class _DayCell extends StatelessWidget {
     final Color numberColor = isSelected
         ? cs.onPrimary
         : isToday
-            ? cs.primary
-            : isOutside
-                ? cs.onSurfaceVariant
-                : cs.onSurface;
+        ? cs.primary
+        : isOutside
+        ? cs.onSurfaceVariant
+        : cs.onSurface;
 
     // The ring/disc wraps ONLY the number badge — a fixed-size circle sized to
     // the digits — with the marker strip BELOW it. Wrapping the whole column

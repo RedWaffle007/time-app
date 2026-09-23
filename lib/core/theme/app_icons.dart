@@ -421,7 +421,7 @@ abstract final class AppIcons {
 
   // ---- the calendar (UI-RULES.md §6.10) ----
 
-  /// The calendar screen as a *destination* — the account-menu entry and the
+  /// The calendar screen as a *destination* — the My Schedule entry and the
   /// screen's own identity.
   ///
   /// Deliberately not [date] (`calendar_today`), which is the *pick a date*
