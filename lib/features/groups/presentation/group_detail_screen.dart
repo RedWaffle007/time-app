@@ -11,8 +11,8 @@ import '../../../core/widgets/async_view.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../routing/app_router.dart';
 import '../../auth/application/auth_providers.dart';
-import '../../scheduling/presentation/group_plan_sheet.dart';
 import '../../scheduling/application/planning_target_picker.dart';
+import '../../scheduling/presentation/group_plan_sheet.dart';
 import '../../social/application/social_providers.dart';
 import '../application/group_providers.dart';
 import '../domain/group_join_request.dart';
@@ -30,7 +30,7 @@ class GroupDetailScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final myUid = ref.watch(authStateProvider).value?.uid;
+    final myUid = ref.watch(currentUidProvider);
     final membersAsync = ref.watch(membersProvider(groupId));
     final grantsAsync = ref.watch(grantsProvider(groupId));
     final friendsAsync = ref.watch(myFriendshipsProvider);

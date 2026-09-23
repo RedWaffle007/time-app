@@ -5617,3 +5617,19 @@ The shared map is target-written, approved-item-only, and field-scoped by
 Firestore rules. Existing planner read access already exposes the item. Legacy
 outcomes with no timestamp are shown as reached with “Time unavailable”; the UI
 never substitutes `updatedAt` or the scheduled time.
+
+---
+
+## Testmates “Plan for the group” was fixed by permission unification (2026-09-23)
+
+The missing action was caused by the group detail screen looking only at
+`grantsProvider(groupId)`. After friend planning permission moved permanently
+to profiles, a friend’s live grant sits below the friendship with `groupId == ''`,
+so the group-local query correctly returned no row and the action disappeared.
+
+Commit `b7adf45` already fixed the production path: group planning now consumes
+`effectivePlanningTargetsProvider`, which selects friendship grants for friends
+and group grants for non-friend members. No further permission or datastore
+change is needed. The regression is pinned at the real Testmates group screen:
+an empty group-grant stream plus an effective friendship grant must render the
+group-planning action and open a sheet containing both the caller and friend.

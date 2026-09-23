@@ -2,12 +2,12 @@
 
 ## Baseline
 
-- Branch: `main`; latest verified local commit is `cdb89e8` (month-grouped long
-  histories). The preceding inactivity work is `0665a89`.
-- The full local verification command passed through `cdb89e8`; remote sync and
+- Branch: `main`; latest verified local commit is `5066218` (planner activity
+  timelines).
+- The full local verification command passed through `5066218`; remote sync and
   GitHub CI status were not re-checked in this handoff.
-- Item 18 (planner activity timeline) is implemented in the working tree and is
-  awaiting the full user-run verification command.
+- Item 19 (Testmates group-plan visibility regression) is implemented in the
+  working tree and is awaiting the full user-run verification command.
 - Do not assume backend/rules deployment from a Git push. Confirm with the user
   before any deployment or other external state change.
 
@@ -48,17 +48,15 @@ Completed and committed:
    real-use timer reset (`0665a89`).
 17. Month/year buckets for sufficiently long histories, preserving day order,
    deep links, archive behavior, and accessibility (`cdb89e8`).
+18. Planner Activity detail timeline with observed ring/dismiss timestamps and
+   an explicit pending outcome (`5066218`).
 
 Still to do, in original order:
 
-18. Activity item detail/timeline for planners: scheduled/rang/dismissed and
-done/skipped timestamps. Show reached events and keep the final outcome visibly
-pending until the target actually marks the item done or skipped. Implemented
-in the working tree; verification and commit remain.
-
 19. Investigate why “Plan for group” was missing for Testmates. Permission
 resolution changed in `b7adf45`, so reproduce first and determine whether that
-already fixed it; add a regression case for the actual cause.
+already fixed it; add a regression case for the actual cause. Investigation
+confirmed the fix; the real-screen regression is awaiting verification.
 
 21. Alarm auto-stop and missed handling: ring for at most one minute; permit
 volume-down silencing where Android permits it; auto-record `Skipped: user
@@ -140,6 +138,35 @@ once on the same device; a target celebrates immediately when completing an
 incoming plan; its planner celebrates live or once on next app open; neither
 party sees duplicates; skipped/rejected/withdrawn items never celebrate.
 
+27. Conditional schedule-conflict disclosure while planning:
+
+- Replace the always-visible/auto-open full timetable with a day-scoped conflict
+  summary. Do not open or offer a timetable when the selected target has no live
+  items on the day being planned.
+- Once target and date are known, show a compact pop-up only when live pending or
+  approved items without outcomes exist on that calendar day in the target's
+  own timezone. Say who has an item and at what localized time/date; list every
+  existing item, sorted by instant, without exposing titles or notes.
+- Apply the same policy to self, individual, calendar/voice-prefilled, and group
+  creation. For a group, evaluate each eligible target in their own timezone and
+  show one consolidated, name-grouped pop-up; omit members with no items.
+- Treat this as warning/context, not a collision block: current schedule items
+  are point alarms and may share a time. Date/target changes re-evaluate; avoid
+  duplicate pop-ups for an unchanged target/day/item-set, but alert again if the
+  live conflict set changes. A read error must say the schedule could not be
+  checked, never masquerade as an empty day.
+- Reuse the existing authorized schedule streams and `blocksSlot` live-item
+  policy. This is UI data minimization, not a tighter Firestore privacy boundary:
+  planners still need the existing read permission to detect conflicts. A true
+  backend free/busy-only guarantee would require a separate projection and is
+  outside this item unless explicitly requested.
+- Regression tests: pure target-timezone/DST day filtering, terminal/outcome
+  exclusion, ordering and duplicate-dialog fingerprinting; widget cases for
+  empty versus one/multiple conflicts across self, individual, prefilled, and
+  group flows; group members in different zones; inaccessible schedule state;
+  removal of the old auto-open grid/reopen button; and preservation of normal
+  save behavior after acknowledging a warning.
+
 ## Important architecture constraints
 
 - Schedule items live under `scheduleItems/{targetUid}/items/{itemId}`. Current
@@ -157,9 +184,9 @@ party sees duplicates; skipped/rejected/withdrawn items never celebrate.
 
 ## Next session
 
-Run the full verification command for item 18. If it passes and the user commits
-it, continue with item 19 by reproducing “Plan for group” through the Testmates
-permission path before changing code; `b7adf45` may already contain the fix.
+Run the full verification command for item 19. If it passes and the user commits
+it, continue with item 21: research Android volume-key constraints, then design
+the one-minute timeout/missed-item state before changing native alarm behavior.
 
 On-device feedback from the previously distributed APK may still arrive. Apply
 it to the relevant roadmap item without broadening unrelated work.
