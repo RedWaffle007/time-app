@@ -57,10 +57,13 @@ service cloud.firestore {
     }
 
     // Does the caller hold an ACTIVE planner grant over `targetUid` in `groupId`?
+    // Group permission exists only for non-friends. Once the pair are friends,
+    // the profile/friendship grant below is their sole planning authority.
     // Grant id is deterministic: `{plannerUid}_{targetUid}` (PlannerGrant.docId).
     function callerHasActiveGrant(targetUid, groupId) {
       let grant = /databases/$(database)/documents/groups/$(groupId)/plannerGrants/$(request.auth.uid + '_' + targetUid);
-      return exists(grant) && get(grant).data.granted == true;
+      return !areFriends(request.auth.uid, targetUid)
+        && exists(grant) && get(grant).data.granted == true;
     }
 
     // Does the CALLER hold planner access to read `targetUid`'s schedule?
@@ -701,8 +704,8 @@ service cloud.firestore {
       // /{path=**}/plannerGrants rule at the bottom. (Verified on the emulator;
       // see DECISIONS.md.)
       // Write: consent is the TARGET's to give — the caller must be the target
-      // and the recorded grantedByUid, the grant must name this group, and both
-      // parties must be group members.
+      // and the recorded grantedByUid, the grant must name this group, both
+      // parties must be group members, and they must not already be friends.
       match /plannerGrants/{grantId} {
         allow read: if callerInGroup(groupId);
 
@@ -711,7 +714,10 @@ service cloud.firestore {
           && request.resource.data.grantedByUid == request.auth.uid
           && request.resource.data.groupId == groupId
           && callerInGroup(groupId)
-          && uidInGroup(groupId, request.resource.data.plannerUid);
+          && uidInGroup(groupId, request.resource.data.plannerUid)
+          && !areFriends(
+               request.resource.data.plannerUid,
+               request.resource.data.targetUid);
 
         // Two callers may update a grant, and they may do different things.
         //
@@ -730,6 +736,10 @@ service cloud.firestore {
           && request.resource.data.groupId == groupId
           && callerInGroup(groupId)
           && uidInGroup(groupId, request.resource.data.plannerUid)
+          && (request.resource.data.granted == false
+              || !areFriends(
+                   request.resource.data.plannerUid,
+                   request.resource.data.targetUid))
           && (
             (request.resource.data.targetUid == request.auth.uid
               && request.resource.data.grantedByUid == request.auth.uid)

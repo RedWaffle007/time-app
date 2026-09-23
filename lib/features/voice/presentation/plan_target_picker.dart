@@ -5,8 +5,8 @@ import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../auth/application/auth_providers.dart';
-import '../../groups/application/group_providers.dart';
 import '../../groups/domain/planner_grant.dart';
+import '../../social/application/social_providers.dart';
 
 /// Who a voice-driven plan is for. Mirrors the schedule builder's own three
 /// selection fields so it can be handed straight into it.
@@ -49,11 +49,16 @@ class _PlanTargetPicker extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final me = ref.watch(authRepositoryProvider).currentUser;
-    final grants = ref.watch(myPlanningTargetsProvider);
+    final grants = ref.watch(effectivePlanningTargetsProvider);
 
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(Space.lg, Space.sm, Space.lg, Space.lg),
+        padding: const EdgeInsets.fromLTRB(
+          Space.lg,
+          Space.sm,
+          Space.lg,
+          Space.lg,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -65,8 +70,9 @@ class _PlanTargetPicker extends ConsumerWidget {
             const SizedBox(height: Space.sm),
             if (me != null) _selfTile(context, ref, me.uid),
             ...grants.when(
-              data: (list) =>
-                  [for (final g in list) _targetTile(context, ref, g)],
+              data: (list) => [
+                for (final g in list) _targetTile(context, ref, g),
+              ],
               loading: () => const [
                 Padding(
                   padding: EdgeInsets.all(Space.lg),
@@ -92,10 +98,8 @@ class _PlanTargetPicker extends ConsumerWidget {
       leading: const Icon(AppIcons.person),
       title: Text(profile == null ? 'Myself' : '${profile.name} (myself)'),
       subtitle: profile == null ? null : Text(profile.homeTimezone),
-      onTap: () => Navigator.pop(
-        context,
-        PlanTargetSelection(uid: uid, isSelf: true),
-      ),
+      onTap: () =>
+          Navigator.pop(context, PlanTargetSelection(uid: uid, isSelf: true)),
     );
   }
 

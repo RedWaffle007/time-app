@@ -12,6 +12,7 @@ import '../../../core/widgets/section_header.dart';
 import '../../../routing/app_router.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../scheduling/presentation/group_plan_sheet.dart';
+import '../../scheduling/application/planning_target_picker.dart';
 import '../../social/application/social_providers.dart';
 import '../application/group_providers.dart';
 import '../domain/group_join_request.dart';
@@ -33,6 +34,9 @@ class GroupDetailScreen extends ConsumerWidget {
     final membersAsync = ref.watch(membersProvider(groupId));
     final grantsAsync = ref.watch(grantsProvider(groupId));
     final friendsAsync = ref.watch(myFriendshipsProvider);
+    final effectiveTargets =
+        ref.watch(effectivePlanningTargetsProvider).value ??
+        const <PlannerGrant>[];
     final joinRequests =
         ref.watch(groupJoinRequestsProvider(groupId)).value ??
         const <GroupJoinRequest>[];
@@ -72,13 +76,17 @@ class GroupDetailScreen extends ConsumerWidget {
         onRetry: () => ref.invalidate(membersProvider(groupId)),
         builder: (context, members) {
           final grants = grantsAsync.value ?? const <PlannerGrant>[];
+          final friendUids = <String>{
+            for (final friendship in friendsAsync.value ?? const [])
+              friendship.otherUid(myUid ?? ''),
+          };
           bool grantsToMe(String plannerUid) => grants.any(
             (g) =>
                 g.plannerUid == plannerUid && g.targetUid == myUid && g.granted,
           );
           // The other direction: a grant *I* hold over them. Separate question,
           // separate answer — consent here is directed, never mutual.
-          bool iPlanFor(String targetUid) => grants.any(
+          bool iPlanFor(String targetUid) => effectiveTargets.any(
             (g) =>
                 g.plannerUid == myUid && g.targetUid == targetUid && g.granted,
           );
@@ -206,8 +214,8 @@ class GroupDetailScreen extends ConsumerWidget {
                   Space.sm,
                 ),
                 child: Text(
-                  'Turn on "can plan for me" to let a member build your schedule. '
-                  'Only you can grant this.',
+                  'For non-friend members, turn on "can plan for me" here. '
+                  'Friend permissions are managed permanently on profiles.',
                   style: context.text.bodySmall?.copyWith(
                     color: context.colors.onSurfaceVariant,
                   ),
@@ -239,30 +247,43 @@ class GroupDetailScreen extends ConsumerWidget {
                   // a mis-tap waiting to happen, and one of them is destructive.
                   subtitle: m.uid == myUid
                       ? null
-                      : const Text('can plan for me'),
+                      : Text(
+                          friendUids.contains(m.uid)
+                              ? 'Planning permission is managed on their profile'
+                              : 'can plan for me',
+                        ),
                   trailing: m.uid == myUid || myUid == null
                       ? null
                       : Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Switch(
-                              value: grantsToMe(m.uid),
-                              onChanged: (v) => ref
-                                  .read(groupRepositoryProvider)
-                                  .setPlannerGrant(
-                                    groupId: groupId,
-                                    plannerUid: m.uid,
-                                    targetUid: myUid,
-                                    granted: v,
-                                  ),
-                            ),
+                            if (groupPlanningPermissionApplies(
+                              m.uid,
+                              friendUids: friendUids,
+                            ))
+                              Switch(
+                                value: grantsToMe(m.uid),
+                                onChanged: (v) => ref
+                                    .read(groupRepositoryProvider)
+                                    .setPlannerGrant(
+                                      groupId: groupId,
+                                      plannerUid: m.uid,
+                                      targetUid: myUid,
+                                      granted: v,
+                                    ),
+                              ),
                             _memberMenu(
                               context,
                               ref,
                               member: m,
                               myUid: myUid,
                               iAmOwner: iAmOwner,
-                              iPlanForThem: iPlanFor(m.uid),
+                              iPlanForThem:
+                                  groupPlanningPermissionApplies(
+                                    m.uid,
+                                    friendUids: friendUids,
+                                  ) &&
+                                  iPlanFor(m.uid),
                             ),
                           ],
                         ),

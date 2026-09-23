@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../groups/application/group_providers.dart';
+import '../../social/application/social_providers.dart';
 import '../domain/schedule_item.dart';
 import 'schedule_providers.dart';
 
@@ -11,9 +11,9 @@ import 'schedule_providers.dart';
 /// updates under them. Existing plans remain visible as context, but never
 /// disable a time: schedule items are point alarms and carry no duration.
 ///
-/// Reading this requires `plannerAccess/{me}_{targetUid}` to exist — see
-/// `firestore.rules`. Without it the stream errors with `permission-denied`,
-/// which is the correct failure: no grant, no schedule.
+/// Group access requires `plannerAccess/{me}_{targetUid}`; friendship access is
+/// authorized directly by the profile grant. Without the effective grant the
+/// stream errors with `permission-denied`.
 ///
 /// **The RECORD stream, not the filtered view.** `myItemsAsTargetProvider`
 /// applies the viewer's own archive, and archiving is per-user — the planner's
@@ -38,7 +38,7 @@ final canViewTargetScheduleProvider = Provider.family<bool, String>((
   ref,
   targetUid,
 ) {
-  final grants = ref.watch(myPlanningTargetsProvider).value;
+  final grants = ref.watch(effectivePlanningTargetsProvider).value;
   if (grants == null) return false;
   return grants.any((g) => g.granted && g.targetUid == targetUid);
 });

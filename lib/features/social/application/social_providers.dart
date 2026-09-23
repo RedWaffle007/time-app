@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/application/auth_providers.dart';
 import '../../groups/application/group_providers.dart';
 import '../../groups/domain/planner_grant.dart';
+import '../../scheduling/application/planning_target_picker.dart';
 import '../data/avatar_uploader.dart';
 import '../data/block_repository.dart';
 import '../data/friend_repository.dart';
@@ -16,6 +19,7 @@ import '../domain/friendship.dart';
 import '../domain/planning_request.dart';
 import '../domain/profile_visibility.dart';
 import '../domain/user_block.dart';
+import 'planning_permission_migrator.dart';
 
 // ---------------------------------------------------------------------------
 // Repositories — plain providers, created once, exactly as the rest of the app
@@ -63,10 +67,71 @@ final myFriendshipsProvider = StreamProvider<List<Friendship>>((ref) {
 /// Just the uids, which is what most callers actually want.
 final myFriendUidsProvider = Provider<AsyncValue<List<String>>>((ref) {
   final uid = ref.watch(currentUidProvider);
-  return ref.watch(myFriendshipsProvider).whenData(
-        (friendships) =>
-            [for (final f in friendships) f.otherUid(uid ?? '')],
+  return ref
+      .watch(myFriendshipsProvider)
+      .whenData(
+        (friendships) => [for (final f in friendships) f.otherUid(uid ?? '')],
       );
+});
+
+/// Planning grants after enforcing their one valid relationship scope:
+/// friendship grants for friends, group grants for non-friend group members.
+final effectivePlanningTargetsProvider =
+    Provider<AsyncValue<List<PlannerGrant>>>((ref) {
+      final grants = ref.watch(myPlanningTargetsProvider);
+      final friends = ref.watch(myFriendUidsProvider);
+      if (grants.hasError) {
+        return AsyncError(grants.error!, grants.stackTrace ?? StackTrace.empty);
+      }
+      if (friends.hasError) {
+        return AsyncError(
+          friends.error!,
+          friends.stackTrace ?? StackTrace.empty,
+        );
+      }
+      final grantList = grants.value;
+      final friendList = friends.value;
+      if (grantList == null || friendList == null) return const AsyncLoading();
+      return AsyncData(
+        effectivePlanningTargets(grantList, friendUids: friendList.toSet()),
+      );
+    });
+
+final planningPermissionMigratorProvider = Provider<PlanningPermissionMigrator>(
+  (ref) {
+    return PlanningPermissionMigrator();
+  },
+);
+
+/// Moves legacy active group grants between friends onto the profile-owned
+/// friendship path, then revokes the duplicate group copy.
+final planningPermissionMigrationSyncProvider = Provider<void>((ref) {
+  final grants = ref.watch(grantsOverMeProvider).value;
+  final friends = ref.watch(myFriendUidsProvider).value;
+  if (grants == null || friends == null) return;
+  final migrator = ref.watch(planningPermissionMigratorProvider);
+  final friendRepo = ref.watch(planningPermissionRepositoryProvider);
+  final groupRepo = ref.watch(groupRepositoryProvider);
+  unawaited(
+    migrator
+        .migrate(
+          grantsOverTarget: grants,
+          friendUids: friends.toSet(),
+          ensureFriendshipGrant: (plannerUid, targetUid) => friendRepo.setGrant(
+            plannerUid: plannerUid,
+            targetUid: targetUid,
+            granted: true,
+          ),
+          revokeGroupGrant: (groupId, plannerUid, targetUid) =>
+              groupRepo.setPlannerGrant(
+                groupId: groupId,
+                plannerUid: plannerUid,
+                targetUid: targetUid,
+                granted: false,
+              ),
+        )
+        .catchError((_) {}),
+  );
 });
 
 /// How many friends the signed-in user has.
@@ -107,14 +172,12 @@ final outgoingRequestsProvider = StreamProvider<List<FriendRequest>>((ref) {
 /// never invent one. Counts BOTH friend requests and planning-permission
 /// requests — both live on the Requests screen and both wait on the user.
 final incomingRequestCountProvider = Provider<int>((ref) {
-  final friends = ref.watch(incomingRequestsProvider).maybeWhen(
-        data: (requests) => requests.length,
-        orElse: () => 0,
-      );
-  final planning = ref.watch(incomingPlanningRequestsProvider).maybeWhen(
-        data: (requests) => requests.length,
-        orElse: () => 0,
-      );
+  final friends = ref
+      .watch(incomingRequestsProvider)
+      .maybeWhen(data: (requests) => requests.length, orElse: () => 0);
+  final planning = ref
+      .watch(incomingPlanningRequestsProvider)
+      .maybeWhen(data: (requests) => requests.length, orElse: () => 0);
   return friends + planning;
 });
 
@@ -132,16 +195,18 @@ final myBlocksProvider = StreamProvider<List<UserBlock>>((ref) {
 /// Whether a block exists in either direction between the signed-in user and
 /// [otherUid].
 final blockPairProvider =
-    StreamProvider.family<({bool iBlocked, bool theyBlocked}), String>(
-        (ref, otherUid) {
-  final uid = ref.watch(currentUidProvider);
-  if (uid == null || uid == otherUid) {
-    return Stream.value((iBlocked: false, theyBlocked: false));
-  }
-  return ref
-      .watch(blockRepositoryProvider)
-      .watchBlockPair(viewerUid: uid, otherUid: otherUid);
-});
+    StreamProvider.family<({bool iBlocked, bool theyBlocked}), String>((
+      ref,
+      otherUid,
+    ) {
+      final uid = ref.watch(currentUidProvider);
+      if (uid == null || uid == otherUid) {
+        return Stream.value((iBlocked: false, theyBlocked: false));
+      }
+      return ref
+          .watch(blockRepositoryProvider)
+          .watchBlockPair(viewerUid: uid, otherUid: otherUid);
+    });
 
 /// Whether the signed-in user and [otherUid] are friends.
 ///
@@ -154,7 +219,10 @@ final blockPairProvider =
 /// stays live, so accepting a request flips this the instant the friendship
 /// lands. Same reasoning for the two request providers below. See DECISIONS.md
 /// "Friend-request reactivity + lifecycle (2026-08-24)".
-final isFriendProvider = Provider.family<AsyncValue<bool>, String>((ref, otherUid) {
+final isFriendProvider = Provider.family<AsyncValue<bool>, String>((
+  ref,
+  otherUid,
+) {
   final uid = ref.watch(currentUidProvider);
   if (uid == null || uid == otherUid) return const AsyncData(false);
   return ref
@@ -167,29 +235,29 @@ final isFriendProvider = Provider.family<AsyncValue<bool>, String>((ref, otherUi
 /// button reflects a just-sent request immediately — see [isFriendProvider].
 final outgoingRequestToProvider =
     Provider.family<AsyncValue<FriendRequest?>, String>((ref, otherUid) {
-  final uid = ref.watch(currentUidProvider);
-  if (uid == null || uid == otherUid) return const AsyncData(null);
-  return ref.watch(outgoingRequestsProvider).whenData((requests) {
-    for (final r in requests) {
-      if (r.toUid == otherUid) return r;
-    }
-    return null;
-  });
-});
+      final uid = ref.watch(currentUidProvider);
+      if (uid == null || uid == otherUid) return const AsyncData(null);
+      return ref.watch(outgoingRequestsProvider).whenData((requests) {
+        for (final r in requests) {
+          if (r.toUid == otherUid) return r;
+        }
+        return null;
+      });
+    });
 
 /// [otherUid]'s PENDING request to the signed-in user, if any. Derived from
 /// [incomingRequestsProvider] — see [isFriendProvider].
 final incomingRequestFromProvider =
     Provider.family<AsyncValue<FriendRequest?>, String>((ref, otherUid) {
-  final uid = ref.watch(currentUidProvider);
-  if (uid == null || uid == otherUid) return const AsyncData(null);
-  return ref.watch(incomingRequestsProvider).whenData((requests) {
-    for (final r in requests) {
-      if (r.fromUid == otherUid) return r;
-    }
-    return null;
-  });
-});
+      final uid = ref.watch(currentUidProvider);
+      if (uid == null || uid == otherUid) return const AsyncData(null);
+      return ref.watch(incomingRequestsProvider).whenData((requests) {
+        for (final r in requests) {
+          if (r.fromUid == otherUid) return r;
+        }
+        return null;
+      });
+    });
 
 /// **The profile screen's single source of truth for what to render.**
 ///
@@ -205,53 +273,53 @@ final incomingRequestFromProvider =
 /// closing it again, which is exactly the leak the block exists to prevent.
 final profileVisibilityProvider =
     Provider.family<AsyncValue<ProfileVisibility>, String>((ref, profileUid) {
-  final viewerUid = ref.watch(currentUidProvider);
-  if (viewerUid == null) return const AsyncLoading();
+      final viewerUid = ref.watch(currentUidProvider);
+      if (viewerUid == null) return const AsyncLoading();
 
-  if (viewerUid == profileUid) {
-    return AsyncData(
-      visibilityFor(relation: ProfileRelation.self, isPublic: true),
-    );
-  }
+      if (viewerUid == profileUid) {
+        return AsyncData(
+          visibilityFor(relation: ProfileRelation.self, isPublic: true),
+        );
+      }
 
-  final blocks = ref.watch(blockPairProvider(profileUid));
-  final friend = ref.watch(isFriendProvider(profileUid));
-  final outgoing = ref.watch(outgoingRequestToProvider(profileUid));
-  final incoming = ref.watch(incomingRequestFromProvider(profileUid));
-  final profile = ref.watch(profileByUidProvider(profileUid));
+      final blocks = ref.watch(blockPairProvider(profileUid));
+      final friend = ref.watch(isFriendProvider(profileUid));
+      final outgoing = ref.watch(outgoingRequestToProvider(profileUid));
+      final incoming = ref.watch(incomingRequestFromProvider(profileUid));
+      final profile = ref.watch(profileByUidProvider(profileUid));
 
-  // Any genuine error surfaces — a profile that cannot establish the
-  // relationship must say so rather than guess at one.
-  for (final async in [blocks, friend, outgoing, incoming, profile]) {
-    if (async.hasError) {
-      return AsyncError(async.error!, async.stackTrace ?? StackTrace.empty);
-    }
-  }
+      // Any genuine error surfaces — a profile that cannot establish the
+      // relationship must say so rather than guess at one.
+      for (final async in [blocks, friend, outgoing, incoming, profile]) {
+        if (async.hasError) {
+          return AsyncError(async.error!, async.stackTrace ?? StackTrace.empty);
+        }
+      }
 
-  final blockState = blocks.value;
-  final isFriend = friend.value;
-  if (blockState == null || isFriend == null) return const AsyncLoading();
+      final blockState = blocks.value;
+      final isFriend = friend.value;
+      if (blockState == null || isFriend == null) return const AsyncLoading();
 
-  final relation = relationBetween(
-    viewerUid: viewerUid,
-    profileUid: profileUid,
-    isFriend: isFriend,
-    viewerBlockedThem: blockState.iBlocked,
-    theyBlockedViewer: blockState.theyBlocked,
-    outgoingRequestPending: outgoing.value?.isPending ?? false,
-    incomingRequestPending: incoming.value?.isPending ?? false,
-  );
+      final relation = relationBetween(
+        viewerUid: viewerUid,
+        profileUid: profileUid,
+        isFriend: isFriend,
+        viewerBlockedThem: blockState.iBlocked,
+        theyBlockedViewer: blockState.theyBlocked,
+        outgoingRequestPending: outgoing.value?.isPending ?? false,
+        incomingRequestPending: incoming.value?.isPending ?? false,
+      );
 
-  return AsyncData(
-    visibilityFor(
-      relation: relation,
-      // A profile that has not loaded is treated as PRIVATE. Failing closed
-      // matters here: the opposite default would show a private user's numbers
-      // for the frame before their profile arrived.
-      isPublic: profile.value?.isPublic ?? false,
-    ),
-  );
-});
+      return AsyncData(
+        visibilityFor(
+          relation: relation,
+          // A profile that has not loaded is treated as PRIVATE. Failing closed
+          // matters here: the opposite default would show a private user's numbers
+          // for the frame before their profile arrived.
+          isPublic: profile.value?.isPublic ?? false,
+        ),
+      );
+    });
 
 /// Another user's friend count, which is deliberately **not available**.
 ///
@@ -278,8 +346,8 @@ final friendCountForProvider = Provider.family<int?, String>((ref, uid) {
 
 final planningPermissionRepositoryProvider =
     Provider<PlanningPermissionRepository>((ref) {
-  return PlanningPermissionRepository(FirebaseFirestore.instance);
-});
+      return PlanningPermissionRepository(FirebaseFirestore.instance);
+    });
 
 /// Whether [friendUid] may currently plan for the signed-in user — the state of
 /// the "Let them plan for me" toggle. Derived from the live `grantsOverMe`
@@ -287,47 +355,62 @@ final planningPermissionRepositoryProvider =
 /// absence-denial), and scoped to the FRIENDSHIP grant (`groupId == ''`) so the
 /// toggle reflects exactly what it writes — a coexisting group grant does not
 /// make it read "on".
-final canFriendPlanForMeProvider =
-    Provider.family<AsyncValue<bool>, String>((ref, friendUid) {
-  return ref.watch(grantsOverMeProvider).whenData((grants) => grants.any((g) =>
-      g.plannerUid == friendUid && g.granted && g.groupId.isEmpty));
+final canFriendPlanForMeProvider = Provider.family<AsyncValue<bool>, String>((
+  ref,
+  friendUid,
+) {
+  return ref
+      .watch(grantsOverMeProvider)
+      .whenData(
+        (grants) => grants.any(
+          (g) => g.plannerUid == friendUid && g.granted && g.groupId.isEmpty,
+        ),
+      );
 });
 
 /// Whether the signed-in user may currently plan for [friendUid] via a
 /// FRIENDSHIP grant — drives the "Ask to plan for them" control's resolved
 /// state. From the live, granted-filtered `myPlanningTargets` query.
-final iCanPlanForProvider =
-    Provider.family<AsyncValue<bool>, String>((ref, friendUid) {
-  return ref.watch(myPlanningTargetsProvider).whenData((grants) => grants.any(
-      (g) => g.targetUid == friendUid && g.granted && g.groupId.isEmpty));
+final iCanPlanForProvider = Provider.family<AsyncValue<bool>, String>((
+  ref,
+  friendUid,
+) {
+  return ref
+      .watch(myPlanningTargetsProvider)
+      .whenData(
+        (grants) => grants.any(
+          (g) => g.targetUid == friendUid && g.granted && g.groupId.isEmpty,
+        ),
+      );
 });
 
 /// My pending outgoing planning requests, live (caller-scoped `fromUid == me`).
 final myOutgoingPlanningRequestsProvider =
     StreamProvider<List<PlanningRequest>>((ref) {
-  final uid = ref.watch(currentUidProvider);
-  if (uid == null) return Stream.value(const []);
-  return ref
-      .watch(planningPermissionRepositoryProvider)
-      .watchOutgoingRequests(uid);
-});
+      final uid = ref.watch(currentUidProvider);
+      if (uid == null) return Stream.value(const []);
+      return ref
+          .watch(planningPermissionRepositoryProvider)
+          .watchOutgoingRequests(uid);
+    });
 
 /// The normal-kind planning request the signed-in user has sent to [friendUid],
 /// if one is pending — derived from the live outgoing query so a just-sent
 /// request shows immediately.
 final outgoingPlanningRequestProvider =
     Provider.family<AsyncValue<PlanningRequest?>, String>((ref, friendUid) {
-  return ref.watch(myOutgoingPlanningRequestsProvider).whenData((requests) {
-    for (final r in requests) {
-      if (r.toUid == friendUid && r.kind == PlanningKind.normal) return r;
-    }
-    return null;
-  });
-});
+      return ref.watch(myOutgoingPlanningRequestsProvider).whenData((requests) {
+        for (final r in requests) {
+          if (r.toUid == friendUid && r.kind == PlanningKind.normal) return r;
+        }
+        return null;
+      });
+    });
 
 /// Planning-permission requests waiting on the signed-in user to decide.
-final incomingPlanningRequestsProvider =
-    StreamProvider<List<PlanningRequest>>((ref) {
+final incomingPlanningRequestsProvider = StreamProvider<List<PlanningRequest>>((
+  ref,
+) {
   final uid = ref.watch(currentUidProvider);
   if (uid == null) return Stream.value(const []);
   return ref.watch(planningPermissionRepositoryProvider).watchIncoming(uid);
@@ -339,8 +422,7 @@ final incomingPlanningRequestsProvider =
 // ---------------------------------------------------------------------------
 
 /// Emergency grants OTHER people hold over me — who may emergency-plan for me.
-final emergencyGrantsOverMeProvider =
-    StreamProvider<List<PlannerGrant>>((ref) {
+final emergencyGrantsOverMeProvider = StreamProvider<List<PlannerGrant>>((ref) {
   final uid = ref.watch(currentUidProvider);
   if (uid == null) return Stream.value(const []);
   return ref
@@ -362,24 +444,35 @@ final myEmergencyTargetsProvider = StreamProvider<List<PlannerGrant>>((ref) {
 /// emergency alarms for me" toggle state.
 final canFriendEmergencyPlanForMeProvider =
     Provider.family<AsyncValue<bool>, String>((ref, friendUid) {
-  return ref.watch(emergencyGrantsOverMeProvider).whenData((grants) =>
-      grants.any((g) => g.plannerUid == friendUid && g.granted));
-});
+      return ref
+          .watch(emergencyGrantsOverMeProvider)
+          .whenData(
+            (grants) =>
+                grants.any((g) => g.plannerUid == friendUid && g.granted),
+          );
+    });
 
 /// Whether I may currently EMERGENCY-plan for [friendUid].
-final iCanEmergencyPlanForProvider =
-    Provider.family<AsyncValue<bool>, String>((ref, friendUid) {
-  return ref.watch(myEmergencyTargetsProvider).whenData(
-      (grants) => grants.any((g) => g.targetUid == friendUid && g.granted));
+final iCanEmergencyPlanForProvider = Provider.family<AsyncValue<bool>, String>((
+  ref,
+  friendUid,
+) {
+  return ref
+      .watch(myEmergencyTargetsProvider)
+      .whenData(
+        (grants) => grants.any((g) => g.targetUid == friendUid && g.granted),
+      );
 });
 
 /// My pending outgoing EMERGENCY request to [friendUid], if any.
 final outgoingEmergencyRequestProvider =
     Provider.family<AsyncValue<PlanningRequest?>, String>((ref, friendUid) {
-  return ref.watch(myOutgoingPlanningRequestsProvider).whenData((requests) {
-    for (final r in requests) {
-      if (r.toUid == friendUid && r.kind == PlanningKind.emergency) return r;
-    }
-    return null;
-  });
-});
+      return ref.watch(myOutgoingPlanningRequestsProvider).whenData((requests) {
+        for (final r in requests) {
+          if (r.toUid == friendUid && r.kind == PlanningKind.emergency) {
+            return r;
+          }
+        }
+        return null;
+      });
+    });

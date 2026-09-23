@@ -20,7 +20,6 @@ import '../../notifications/application/outcome_notifier.dart';
 import '../../social/application/social_providers.dart';
 import '../application/schedule_providers.dart';
 import '../application/target_schedule_providers.dart';
-import '../application/planning_target_picker.dart';
 import '../domain/schedule_item.dart';
 import 'target_schedule_modal.dart';
 
@@ -300,7 +299,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final targetsAsync = ref.watch(myPlanningTargetsProvider);
+    final targetsAsync = ref.watch(effectivePlanningTargetsProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Schedule Builder')),
@@ -308,8 +307,11 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       // always renders — a solo user with zero grants can still plan.
       body: AsyncView<List<PlannerGrant>>(
         value: targetsAsync,
-        onRetry: () => ref.invalidate(myPlanningTargetsProvider),
-        builder: (context, grants) => _buildForm(uniquePlanningTargets(grants)),
+        onRetry: () {
+          ref.invalidate(myPlanningTargetsProvider);
+          ref.invalidate(myFriendshipsProvider);
+        },
+        builder: (context, grants) => _buildForm(grants),
       ),
     );
   }

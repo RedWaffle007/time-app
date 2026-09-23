@@ -1,18 +1,31 @@
 import '../../groups/domain/planner_grant.dart';
 
-/// One target row per person, even when the planner holds grants through more
-/// than one relationship (for example, a friendship and a shared group).
+/// Whether the group-detail permission control belongs beside this member.
+/// Friends manage the same consent on their profile instead.
+bool groupPlanningPermissionApplies(
+  String memberUid, {
+  required Set<String> friendUids,
+}) => !friendUids.contains(memberUid);
+
+/// The currently effective targets after applying relationship scope.
 ///
-/// Prefer the direct friendship grant (`groupId == ''`) because it is the least
-/// ambiguous authorization path for a friend plan. Otherwise preserve the
-/// first live group grant returned by Firestore.
-List<PlannerGrant> uniquePlanningTargets(Iterable<PlannerGrant> grants) {
+/// A friendship grant is valid only while the pair are friends. A group grant
+/// is valid only while they are not friends: once friendship exists, planning
+/// consent lives permanently on the profile instead of having two independent
+/// switches. One target row is returned even while old duplicate documents are
+/// being migrated in the background.
+List<PlannerGrant> effectivePlanningTargets(
+  Iterable<PlannerGrant> grants, {
+  required Set<String> friendUids,
+}) {
   final byTarget = <String, PlannerGrant>{};
   for (final grant in grants) {
     if (!grant.granted || grant.targetUid.isEmpty) continue;
+    final isFriend = friendUids.contains(grant.targetUid);
+    final friendshipScoped = grant.groupId.isEmpty;
+    if (isFriend != friendshipScoped) continue;
     final existing = byTarget[grant.targetUid];
-    if (existing == null ||
-        (existing.groupId.isNotEmpty && grant.groupId.isEmpty)) {
+    if (existing == null) {
       byTarget[grant.targetUid] = grant;
     }
   }

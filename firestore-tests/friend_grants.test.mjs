@@ -31,6 +31,8 @@ const sorted = (x, y) => (x < y ? `${x}_${y}` : `${y}_${x}`);
 const PAIR = sorted(A, B); // friendship + grant subtree id
 const GRANT = `${B}_${A}`; // plannerUid_targetUid
 const grantPath = `friendships/${PAIR}/plannerGrants/${GRANT}`;
+const GROUP = 'shared_group';
+const groupGrantPath = `groups/${GROUP}/plannerGrants/${GRANT}`;
 const itemPath = `scheduleItems/${A}/items/i1`;
 
 let testEnv;
@@ -56,6 +58,12 @@ async function seed() {
     await setDoc(doc(db, 'friendships', PAIR), {
       uidA: A, uidB: B, participants: [A, B], createdAt: new Date(),
     });
+    await setDoc(doc(db, 'groups', GROUP), {
+      name: 'Shared group', ownerUid: A, joinCode: 'ABC234',
+      memberUids: [A, B],
+    });
+    await setDoc(doc(db, `groups/${GROUP}/members/${A}`), { name: A });
+    await setDoc(doc(db, `groups/${GROUP}/members/${B}`), { name: B });
     // A self-planned item under A (createdByUid A), so ONLY the friend-grant
     // read path can authorize B — not the "items I created" collection rule.
     await setDoc(doc(db, itemPath), {
@@ -74,6 +82,19 @@ async function seedGrant(granted = true) {
     await setDoc(doc(ctx.firestore(), grantPath), {
       plannerUid: B, targetUid: A, groupId: '', granted, grantedByUid: A,
       updatedAt: new Date(),
+    });
+  });
+}
+
+async function seedLegacyGroupGrant() {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, groupGrantPath), {
+      plannerUid: B, targetUid: A, groupId: GROUP, granted: true,
+      grantedByUid: A, updatedAt: new Date(),
+    });
+    await setDoc(doc(db, `plannerAccess/${B}_${A}`), {
+      plannerUid: B, targetUid: A, groupId: GROUP, updatedAt: new Date(),
     });
   });
 }
@@ -173,6 +194,27 @@ describe('friendship planning grant — what it authorizes', () => {
       targetUid: A, createdByUid: B, groupId: '', itemId: 'new1',
       createdAt: new Date(),
     }));
+  });
+});
+
+describe('friends use profile permission, never group permission', () => {
+  it('DENIES creating a group grant between friends', async () => {
+    await assertFails(setDoc(doc(as(A), groupGrantPath), {
+      plannerUid: B, targetUid: A, groupId: GROUP, granted: true,
+      grantedByUid: A, updatedAt: new Date(),
+    }));
+  });
+
+  it('a legacy group grant is inert once the pair are friends', async () => {
+    await seedLegacyGroupGrant();
+    await assertFails(getDoc(doc(as(B), itemPath)));
+  });
+
+  it('allows the target to revoke a legacy group grant during migration', async () => {
+    await seedLegacyGroupGrant();
+    await assertSucceeds(setDoc(doc(as(A), groupGrantPath), {
+      granted: false, updatedAt: new Date(),
+    }, { merge: true }));
   });
 });
 
