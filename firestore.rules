@@ -172,6 +172,14 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys();
     }
 
+    function sameUidSet(a, b) {
+      return a is list && b is list
+        && a.size() == b.size()
+        && a.toSet().size() == a.size()
+        && b.toSet().size() == b.size()
+        && a.hasAll(b);
+    }
+
     // ---- users/{uid} ----
     // Decision ①: a signed-in user may GET one profile by uid (name / avatar /
     // home tz) — the planner needs the target's name and home timezone, and the
@@ -455,18 +463,14 @@ service cloud.firestore {
     //        `where('memberUids', array-contains: me)` (watchMyGroups). Both
     //        forms can read `resource.data`, so neither needs a get().
     //
-    // THE COST, STATED PLAINLY: joinByCode() queries
-    // `where('joinCode', ==, CODE)` as a NON-MEMBER. That is exactly the
-    // operation being closed, and it will now be denied. There is no rules-only
-    // way to keep it — rules cannot see a query's where-clauses, so any rule
-    // permissive enough to pass that query also permits enumerating the
-    // collection. The join flow is restructured onto the `joinCodes/{code}`
-    // lookup below; see that block.
+    // A non-member resolves one exact `joinCodes/{code}` document instead of
+    // querying this collection. That lookup may create a join request, but can
+    // never add the caller to memberUids.
     //
-    // Anyone may still create a group as its owner + sole first member, and the
-    // only permitted UPDATE by a non-member is a self-join that adds ONLY
-    // themselves to memberUids. Note that self-join deliberately needs no read
-    // permission — that is what keeps joining possible at all.
+    // Anyone may still create a group as its owner + sole first member.
+    // Membership additions are possible only through a unanimously approved
+    // joinRequests document. Knowing a code creates a request; it is never a
+    // membership capability on its own.
     match /groups/{groupId} {
       allow get: if signedIn() && request.auth.uid in resource.data.memberUids;
       allow list: if signedIn() && request.auth.uid in resource.data.memberUids;
@@ -475,18 +479,24 @@ service cloud.firestore {
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.memberUids == [request.auth.uid];
 
-      // `memberUids` is the only field a client may ever touch, in either
-      // direction, and only in one of two exact shapes: a self-join (+1, the
-      // caller) or a single removal (-1, the caller leaving or the owner
-      // ejecting). Anything else — a bulk rewrite, adding someone else, two
-      // changes at once — is denied.
-
-      // Exactly one element, the caller, added; nothing removed.
-      function isSelfJoin() {
-        return !(request.auth.uid in resource.data.memberUids)
-          && request.auth.uid in request.resource.data.memberUids
+      // One approved request, its roster row, and the group array must commit
+      // in the same atomic write. `lastAdmittedUid` makes the candidate path
+      // explicit so rules never have to trust a caller-supplied document path.
+      function isUnanimousAdmission() {
+        let candidateUid = request.resource.data.lastAdmittedUid;
+        let admission = getAfter(/databases/$(database)/documents/groups/$(groupId)/joinRequests/$(candidateUid));
+        let roster = getAfter(/databases/$(database)/documents/groups/$(groupId)/members/$(candidateUid));
+        return request.auth.uid in resource.data.memberUids
+          && candidateUid is string
+          && !(candidateUid in resource.data.memberUids)
+          && candidateUid in request.resource.data.memberUids
           && request.resource.data.memberUids.hasAll(resource.data.memberUids)
-          && request.resource.data.memberUids.size() == resource.data.memberUids.size() + 1;
+          && request.resource.data.memberUids.size() == resource.data.memberUids.size() + 1
+          && admission.data.candidateUid == candidateUid
+          && admission.data.status == 'approved'
+          && sameUidSet(admission.data.requiredApproverUids, resource.data.memberUids)
+          && sameUidSet(admission.data.approvalUids, resource.data.memberUids)
+          && roster.data.name == admission.data.candidateName;
       }
 
       // The uids this write drops from memberUids.
@@ -507,18 +517,141 @@ service cloud.firestore {
       }
 
       allow update: if signedIn()
-        && changedKeys().hasOnly(['memberUids'])
-        && (isSelfJoin() || isMemberRemoval());
+        && (
+          (changedKeys().hasOnly(['memberUids']) && isMemberRemoval())
+          || (changedKeys().hasOnly(['memberUids', 'lastAdmittedUid'])
+              && isUnanimousAdmission())
+        );
 
       allow delete: if false;
 
+      // ---- joinRequests/{candidateUid} ----
+      // A code holder may ask; a member may invite one of THEIR friends. Both
+      // routes create the same pending record. The inviter's act counts only as
+      // their own approval, and every other current member still decides.
+      match /joinRequests/{candidateUid} {
+        function exactRequestKeys() {
+          return request.resource.data.keys().hasOnly([
+            'candidateUid', 'candidateName', 'requestedByUid', 'source',
+            'inviteCode', 'status', 'requiredApproverUids', 'approvalUids',
+            'rejectionUid', 'createdAt', 'updatedAt'
+          ]);
+        }
+
+        function candidateNameIsReal() {
+          return request.resource.data.candidateName is string
+            && exists(/databases/$(database)/documents/users/$(candidateUid))
+            && request.resource.data.candidateName ==
+               get(/databases/$(database)/documents/users/$(candidateUid)).data.name;
+        }
+
+        function isCodeRequest() {
+          let code = request.resource.data.inviteCode;
+          return request.auth.uid == candidateUid
+            && request.resource.data.requestedByUid == candidateUid
+            && request.resource.data.source == 'code'
+            && code is string
+            && exists(/databases/$(database)/documents/joinCodes/$(code))
+            && get(/databases/$(database)/documents/joinCodes/$(code)).data.groupId == groupId
+            && request.resource.data.requiredApproverUids == []
+            && request.resource.data.approvalUids == [];
+        }
+
+        function isFriendInvitation() {
+          return callerInGroup(groupId)
+            && request.resource.data.requestedByUid == request.auth.uid
+            && request.resource.data.source == 'friend'
+            && request.resource.data.inviteCode == null
+            && areFriends(request.auth.uid, candidateUid)
+            && sameUidSet(
+                 request.resource.data.requiredApproverUids,
+                 get(/databases/$(database)/documents/groups/$(groupId)).data.memberUids)
+            && request.resource.data.approvalUids == [request.auth.uid];
+        }
+
+        allow get: if signedIn()
+          && (request.auth.uid == candidateUid || callerInGroup(groupId));
+        allow list: if callerInGroup(groupId);
+
+        allow create: if signedIn()
+          && candidateUid == request.resource.data.candidateUid
+          && !(candidateUid in get(/databases/$(database)/documents/groups/$(groupId)).data.memberUids)
+          && exactRequestKeys()
+          && candidateNameIsReal()
+          && request.resource.data.status == 'pending'
+          && request.resource.data.rejectionUid == null
+          && (isCodeRequest() || isFriendInvitation());
+
+        function immutableRequestFields() {
+          return request.resource.data.candidateUid == resource.data.candidateUid
+            && request.resource.data.candidateName == resource.data.candidateName
+            && request.resource.data.requestedByUid == resource.data.requestedByUid
+            && request.resource.data.source == resource.data.source
+            && request.resource.data.inviteCode == resource.data.inviteCode
+            && request.resource.data.createdAt == resource.data.createdAt;
+        }
+
+        function isRejection() {
+          return request.resource.data.status == 'rejected'
+            && request.resource.data.rejectionUid == request.auth.uid
+            && changedKeys().hasOnly(['status', 'rejectionUid', 'updatedAt']);
+        }
+
+        function isApproval() {
+          let currentMembers = get(/databases/$(database)/documents/groups/$(groupId)).data.memberUids;
+          let oldCurrentApprovals = resource.data.approvalUids.toSet()
+            .intersection(currentMembers.toSet());
+          let newApprovals = request.resource.data.approvalUids;
+          let isUnanimous = sameUidSet(newApprovals, currentMembers);
+          return sameUidSet(request.resource.data.requiredApproverUids, currentMembers)
+            && newApprovals.size() == newApprovals.toSet().size()
+            && newApprovals.toSet().difference(currentMembers.toSet()).size() == 0
+            && newApprovals.toSet().hasAll(oldCurrentApprovals)
+            && newApprovals.toSet().difference(resource.data.approvalUids.toSet())
+                 .hasOnly([request.auth.uid])
+            && request.resource.data.rejectionUid == null
+            && request.resource.data.status == (isUnanimous ? 'approved' : 'pending')
+            && (
+              !isUnanimous
+              || (
+                getAfter(/databases/$(database)/documents/groups/$(groupId)).data.lastAdmittedUid == candidateUid
+                && candidateUid in getAfter(/databases/$(database)/documents/groups/$(groupId)).data.memberUids
+                && getAfter(/databases/$(database)/documents/groups/$(groupId)/members/$(candidateUid)).data.name
+                   == resource.data.candidateName
+              )
+            );
+        }
+
+        allow update: if signedIn()
+          && callerInGroup(groupId)
+          && resource.data.status == 'pending'
+          && exactRequestKeys()
+          && immutableRequestFields()
+          && (isRejection() || isApproval());
+
+        allow delete: if false;
+      }
+
       // ---- members/{memberUid} ----
       // Roster is relationship-gated: only group members may read it. A user may
-      // write only their OWN member doc, and only once they're in memberUids
-      // (join writes memberUids before the member doc, so this holds).
+      // write their own row once they are a member; the other permitted create
+      // is the atomic unanimous-admission batch validated above.
       match /members/{memberUid} {
         allow read: if callerInGroup(groupId);
-        allow create, update: if signedIn()
+        allow create: if signedIn()
+          && (
+            (memberUid == request.auth.uid && callerInGroup(groupId))
+            || (
+              callerInGroup(groupId)
+              && getAfter(/databases/$(database)/documents/groups/$(groupId)).data.lastAdmittedUid == memberUid
+              && memberUid in getAfter(/databases/$(database)/documents/groups/$(groupId)).data.memberUids
+              && getAfter(/databases/$(database)/documents/groups/$(groupId)/joinRequests/$(memberUid)).data.status == 'approved'
+              && request.resource.data.keys().hasOnly(['name', 'joinedAt'])
+              && request.resource.data.name ==
+                 getAfter(/databases/$(database)/documents/groups/$(groupId)/joinRequests/$(memberUid)).data.candidateName
+            )
+          );
+        allow update: if signedIn()
           && memberUid == request.auth.uid
           && callerInGroup(groupId);
 
@@ -982,18 +1115,14 @@ service cloud.firestore {
     //
     // get    — resolve one code you were given. A resolved code yields ONLY a
     //          group id, which grants nothing on its own: the group doc, its
-    //          roster and its grants are all member-gated. Joining still runs
-    //          through the self-join update on the group doc.
+    //          roster and its grants are all member-gated. It permits only a
+    //          pending join request, which every current member must approve.
     // list   — DENIED, so codes can never be swept in bulk. This is the whole
     //          point: brute-forcing 6 chars from a 32-char no-lookalike
     //          alphabet is ~10^9 single gets, versus one query before.
     // create — the group's OWNER registers their own code.
     // update/delete — never. A code must not be repointed at another group.
     //
-    // NOT YET WIRED UP: no client writes or reads this collection today
-    // (GroupRepository still queries groups by joinCode, which the rule above
-    // now denies). The server contract lands here first so the remaining work
-    // is client-only — see ARCHITECTURE.md §6.
     match /joinCodes/{code} {
       allow get: if signedIn();
       allow list: if false;

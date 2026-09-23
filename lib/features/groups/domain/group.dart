@@ -11,6 +11,7 @@ class Group {
     required this.ownerUid,
     required this.joinCode,
     required this.memberUids,
+    this.lastAdmittedUid,
   });
 
   final String id;
@@ -21,6 +22,10 @@ class Group {
   final String joinCode;
   final List<String> memberUids;
 
+  /// Audit pointer used by Firestore rules to bind a roster addition to its
+  /// unanimously approved request. It is not membership state.
+  final String? lastAdmittedUid;
+
   factory Group.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final d = doc.data() ?? const {};
     return Group(
@@ -29,6 +34,7 @@ class Group {
       ownerUid: (d['ownerUid'] ?? '') as String,
       joinCode: (d['joinCode'] ?? '') as String,
       memberUids: List<String>.from(d['memberUids'] ?? const []),
+      lastAdmittedUid: d['lastAdmittedUid'] as String?,
     );
   }
 }

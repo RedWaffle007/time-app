@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../domain/group.dart';
+import '../domain/group_join_request.dart';
 import '../domain/membership.dart';
 import '../domain/planner_grant.dart';
 
@@ -53,13 +54,15 @@ class GroupRepository {
       'ownerUid': ownerUid,
       'joinCode': code,
       'memberUids': [ownerUid],
+      'lastAdmittedUid': ownerUid,
       'createdAt': FieldValue.serverTimestamp(),
     });
     await ref.collection('members').doc(ownerUid).set({
       'name': ownerName,
       'joinedAt': FieldValue.serverTimestamp(),
     });
-    // Register the code so joinByCode can resolve it without reading `groups`.
+    // Register the code so a candidate can request admission without reading
+    // the members-only group document.
     // Written AFTER the group doc because the rule checks the caller owns that
     // group. Rules deny update/delete here, so a code collision (~1 in 10^9,
     // since _generateJoinCode doesn't check) now fails loudly at creation
@@ -71,38 +74,160 @@ class GroupRepository {
       ownerUid: ownerUid,
       joinCode: code,
       memberUids: [ownerUid],
+      lastAdmittedUid: ownerUid,
     );
   }
 
-  /// Join a group by its invite code. Returns the group, or null if no group
-  /// has that code.
+  /// Ask to join using a code. Knowing a code never changes membership: it only
+  /// creates a request that every current member must approve.
   ///
-  /// Resolves the code through `joinCodes/{CODE}` rather than by querying
-  /// `groups` — the group doc is readable by members only, and the caller isn't
-  /// one yet. The self-join update deliberately needs no read permission, which
-  /// is what makes this order work.
-  Future<Group?> joinByCode({
+  /// Returns false when the code does not exist. A candidate cannot read the
+  /// group itself yet, so the public `joinCodes` lookup remains the only fact
+  /// disclosed here.
+  Future<bool> requestJoinByCode({
     required String code,
     required String uid,
     required String name,
   }) async {
-    final lookup = await _joinCodes.doc(code.trim().toUpperCase()).get();
+    final normalizedCode = code.trim().toUpperCase();
+    final lookup = await _joinCodes.doc(normalizedCode).get();
     final groupId = lookup.data()?['groupId'] as String?;
-    if (groupId == null || groupId.isEmpty) return null;
+    if (groupId == null || groupId.isEmpty) return false;
 
-    final ref = _groups.doc(groupId);
-    await ref.update({
-      'memberUids': FieldValue.arrayUnion([uid]),
+    await _groups.doc(groupId).collection('joinRequests').doc(uid).set({
+      'candidateUid': uid,
+      'candidateName': name,
+      'requestedByUid': uid,
+      'source': 'code',
+      'inviteCode': normalizedCode,
+      'status': 'pending',
+      'requiredApproverUids': <String>[],
+      'approvalUids': <String>[],
+      'rejectionUid': null,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
     });
-    await ref.collection('members').doc(uid).set({
-      'name': name,
-      'joinedAt': FieldValue.serverTimestamp(),
+    return true;
+  }
+
+  /// Invite an existing friend. The invitation is the caller's own approval,
+  /// not an admission: all other current members must still approve it.
+  Future<void> inviteFriend({
+    required String groupId,
+    required String callerUid,
+    required String friendUid,
+    required String friendName,
+  }) async {
+    final groupRef = _groups.doc(groupId);
+    final requestRef = groupRef.collection('joinRequests').doc(friendUid);
+    await _db.runTransaction((transaction) async {
+      final group = await transaction.get(groupRef);
+      final memberUids = List<String>.from(
+        group.data()?['memberUids'] ?? const <String>[],
+      );
+      transaction.set(requestRef, {
+        'candidateUid': friendUid,
+        'candidateName': friendName,
+        'requestedByUid': callerUid,
+        'source': 'friend',
+        'inviteCode': null,
+        'status': 'pending',
+        'requiredApproverUids': memberUids,
+        'approvalUids': [callerUid],
+        'rejectionUid': null,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
     });
-    // Re-read AFTER joining: the caller is a member now, so the group doc is
-    // readable — and this snapshot has their own uid in memberUids. The old code
-    // returned the pre-join snapshot, whose memberUids was already stale.
-    final joined = await ref.get();
-    return joined.exists ? Group.fromDoc(joined) : null;
+    // Also completes a one-member group's unanimous decision immediately. For
+    // larger groups this is an idempotent normalization of the inviter's vote.
+    await decideJoinRequest(
+      groupId: groupId,
+      candidateUid: friendUid,
+      callerUid: callerUid,
+      approve: true,
+    );
+  }
+
+  Stream<List<GroupJoinRequest>> watchJoinRequests(String groupId) {
+    return _groups
+        .doc(groupId)
+        .collection('joinRequests')
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map(GroupJoinRequest.fromDoc)
+              .where((request) => request.isPending)
+              .toList(),
+        );
+  }
+
+  /// Record one current member's decision. The approving transaction refreshes
+  /// the required voter snapshot from the current roster. If this approval
+  /// completes that exact roster, the request, group array, and roster document
+  /// move together atomically; there is no partially joined state.
+  Future<void> decideJoinRequest({
+    required String groupId,
+    required String candidateUid,
+    required String callerUid,
+    required bool approve,
+  }) async {
+    final groupRef = _groups.doc(groupId);
+    final requestRef = groupRef.collection('joinRequests').doc(candidateUid);
+    final memberRef = groupRef.collection('members').doc(candidateUid);
+
+    await _db.runTransaction((transaction) async {
+      final groupSnapshot = await transaction.get(groupRef);
+      final requestSnapshot = await transaction.get(requestRef);
+      final groupData = groupSnapshot.data();
+      final requestData = requestSnapshot.data();
+      if (groupData == null || requestData == null) {
+        throw StateError('Group join request no longer exists.');
+      }
+      if (requestData['status'] != 'pending') {
+        throw StateError('Group join request has already been decided.');
+      }
+
+      if (!approve) {
+        transaction.update(requestRef, {
+          'status': 'rejected',
+          'rejectionUid': callerUid,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        return;
+      }
+
+      final currentMembers = List<String>.from(
+        groupData['memberUids'] ?? const <String>[],
+      );
+      final previousApprovals = List<String>.from(
+        requestData['approvalUids'] ?? const <String>[],
+      );
+      final approvals = <String>{
+        for (final uid in previousApprovals)
+          if (currentMembers.contains(uid)) uid,
+        callerUid,
+      }.toList();
+      final unanimous = currentMembers.every(approvals.contains);
+
+      transaction.update(requestRef, {
+        'requiredApproverUids': currentMembers,
+        'approvalUids': approvals,
+        'status': unanimous ? 'approved' : 'pending',
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (unanimous) {
+        transaction.update(groupRef, {
+          'memberUids': FieldValue.arrayUnion([candidateUid]),
+          'lastAdmittedUid': candidateUid,
+        });
+        transaction.set(memberRef, {
+          'name': requestData['candidateName'],
+          'joinedAt': FieldValue.serverTimestamp(),
+        });
+      }
+    });
   }
 
   // --- Planner consent grants ---
@@ -192,8 +317,8 @@ class GroupRepository {
   /// and the roster doc deleted FIRST, while the caller is still inside
   /// `memberUids` — `callerInGroup()` gates both writes, so dropping the array
   /// entry first would lock the caller out of the very cleanup they are doing.
-  /// It is the exact inverse of [joinByCode], which writes `memberUids` before
-  /// the member doc.
+  /// Admission writes the request, group array, and roster atomically; removal
+  /// cannot do that because its grant cleanup may span several documents.
   ///
   /// Not a transaction, and deliberately so: these are three documents under
   /// three different rules, so an atomic removal is not on offer. `memberUids`
@@ -215,8 +340,7 @@ class GroupRepository {
     //    the caller is neither side of that consent and the rules refuse it.
     //    They are inert, because creating an item additionally requires the
     //    planner to still be in the group.
-    final grants =
-        await _groups.doc(groupId).collection('plannerGrants').get();
+    final grants = await _groups.doc(groupId).collection('plannerGrants').get();
     for (final doc in grants.docs) {
       final d = doc.data();
       final planner = d['plannerUid'] as String?;

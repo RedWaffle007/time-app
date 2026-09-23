@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../auth/application/auth_providers.dart';
 import '../data/group_repository.dart';
 import '../domain/group.dart';
+import '../domain/group_join_request.dart';
 import '../domain/membership.dart';
 import '../domain/planner_grant.dart';
 
@@ -18,15 +19,24 @@ final myGroupsProvider = StreamProvider<List<Group>>((ref) {
   return ref.watch(groupRepositoryProvider).watchMyGroups(uid);
 });
 
-// These two take a groupId, so a family is genuinely warranted here (a plain
+// These take a groupId, so a family is genuinely warranted here (a plain
 // provider can't be parameterised).
-final membersProvider =
-    StreamProvider.family<List<Membership>, String>((ref, groupId) {
+final membersProvider = StreamProvider.family<List<Membership>, String>((
+  ref,
+  groupId,
+) {
   return ref.watch(groupRepositoryProvider).watchMembers(groupId);
 });
 
-final grantsProvider =
-    StreamProvider.family<List<PlannerGrant>, String>((ref, groupId) {
+final groupJoinRequestsProvider =
+    StreamProvider.family<List<GroupJoinRequest>, String>((ref, groupId) {
+      return ref.watch(groupRepositoryProvider).watchJoinRequests(groupId);
+    });
+
+final grantsProvider = StreamProvider.family<List<PlannerGrant>, String>((
+  ref,
+  groupId,
+) {
   return ref.watch(groupRepositoryProvider).watchGrants(groupId);
 });
 

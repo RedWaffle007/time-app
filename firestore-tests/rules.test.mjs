@@ -37,6 +37,7 @@ import {
   setDoc,
   Timestamp,
   where,
+  writeBatch,
 } from 'firebase/firestore';
 
 // --- fixtures -------------------------------------------------------------
@@ -128,6 +129,28 @@ async function seed() {
 
 const as = (uid) => testEnv.authenticatedContext(uid).firestore();
 const itemRef = (db, id) => doc(db, 'scheduleItems', ALICE, 'items', id);
+
+function codeJoinRequest() {
+  return {
+    candidateUid: MALLORY,
+    candidateName: MALLORY,
+    requestedByUid: MALLORY,
+    source: 'code',
+    inviteCode: JOIN_CODE,
+    status: 'pending',
+    requiredApproverUids: [],
+    approvalUids: [],
+    rejectionUid: null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+}
+
+async function submitCodeJoinRequest() {
+  const ref = doc(as(MALLORY), 'groups', GROUP, 'joinRequests', MALLORY);
+  await assertSucceeds(setDoc(ref, codeJoinRequest()));
+  return ref;
+}
 
 before(async () => {
   const host = process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080';
@@ -300,8 +323,7 @@ describe('issue 1 — groups are not enumerable', () => {
   });
 
   it('DENIES the join-by-code query, which is how invite codes leaked', async () => {
-    // This is ALSO the client breakage: GroupRepository.joinByCode runs exactly
-    // this query. The join flow moves onto joinCodes/{code} below.
+    // The client resolves one exact joinCodes/{code} document instead.
     await assertFails(
       getDocs(
         query(
@@ -345,8 +367,8 @@ describe('issue 1 — groups are not enumerable', () => {
     );
   });
 
-  it('ALLOWS a self-join update without any read on the group', async () => {
-    await assertSucceeds(
+  it('DENIES the former direct self-join path', async () => {
+    await assertFails(
       setDoc(
         doc(as(MALLORY), 'groups', GROUP),
         { memberUids: [ALICE, BOB, MALLORY] },
@@ -356,7 +378,7 @@ describe('issue 1 — groups are not enumerable', () => {
   });
 });
 
-describe('issue 1 — the joinCodes lookup replaces the group query', () => {
+describe('unanimous group admission', () => {
   it('ALLOWS resolving a code you were given', async () => {
     await assertSucceeds(getDoc(doc(as(MALLORY), 'joinCodes', JOIN_CODE)));
   });
@@ -383,38 +405,157 @@ describe('issue 1 — the joinCodes lookup replaces the group query', () => {
     );
   });
 
-  it('ALLOWS the whole join sequence, in the order the client runs it', async () => {
-    // GroupRepository.joinByCode, step by step, as a total outsider. Each step
-    // depends on the one before: the self-join update needs no read permission,
-    // the member doc needs memberUids to already contain the caller, and the
-    // final read needs the join to have happened. Get the order wrong and the
-    // flow dies at whichever step ran too early.
-    const db = as(MALLORY);
+  it('turns a valid code into a pending request, not membership', async () => {
+    await submitCodeJoinRequest();
+    await assertFails(getDoc(doc(as(MALLORY), 'groups', GROUP)));
+    await assertSucceeds(
+      getDoc(doc(as(MALLORY), 'groups', GROUP, 'joinRequests', MALLORY)),
+    );
+  });
 
-    // 1. resolve the code — the only thing a non-member may read here
-    const lookup = await assertSucceeds(getDoc(doc(db, 'joinCodes', JOIN_CODE)));
-    const groupId = lookup.data().groupId;
+  it('DENIES a code request aimed at a different group', async () => {
+    await assertFails(
+      setDoc(
+        doc(as(MALLORY), 'groups', 'forged_group', 'joinRequests', MALLORY),
+        codeJoinRequest(),
+      ),
+    );
+  });
 
-    // 2. self-join: add yourself to memberUids, touching nothing else
+  it('lets a member nominate their friend but not admit them directly', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'friendships', `${ALICE}_${MALLORY}`), {
+        uidA: ALICE,
+        uidB: MALLORY,
+        participants: [ALICE, MALLORY],
+      });
+    });
+    const db = as(ALICE);
+    await assertSucceeds(
+      setDoc(doc(db, 'groups', GROUP, 'joinRequests', MALLORY), {
+        candidateUid: MALLORY,
+        candidateName: MALLORY,
+        requestedByUid: ALICE,
+        source: 'friend',
+        inviteCode: null,
+        status: 'pending',
+        requiredApproverUids: [ALICE, BOB],
+        approvalUids: [ALICE],
+        rejectionUid: null,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }),
+    );
+    await assertFails(
+      setDoc(
+        doc(db, 'groups', GROUP),
+        {
+          memberUids: [ALICE, BOB, MALLORY],
+          lastAdmittedUid: MALLORY,
+        },
+        { merge: true },
+      ),
+    );
+  });
+
+  it('DENIES adding the candidate after only one of two approvals', async () => {
+    await submitCodeJoinRequest();
+    const db = as(ALICE);
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'groups', GROUP, 'joinRequests', MALLORY), {
+      requiredApproverUids: [ALICE, BOB],
+      approvalUids: [ALICE],
+      status: 'pending',
+      updatedAt: serverTimestamp(),
+    });
+    batch.update(doc(db, 'groups', GROUP), {
+      memberUids: [ALICE, BOB, MALLORY],
+      lastAdmittedUid: MALLORY,
+    });
+    batch.set(doc(db, 'groups', GROUP, 'members', MALLORY), {
+      name: MALLORY,
+      joinedAt: serverTimestamp(),
+    });
+    await assertFails(batch.commit());
+  });
+
+  it('DENIES forging another member approval', async () => {
+    await submitCodeJoinRequest();
+    await assertFails(
+      setDoc(
+        doc(as(ALICE), 'groups', GROUP, 'joinRequests', MALLORY),
+        {
+          requiredApproverUids: [ALICE, BOB],
+          approvalUids: [ALICE, BOB],
+          status: 'approved',
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      ),
+    );
+  });
+
+  it('admits atomically after every current member approves', async () => {
+    await submitCodeJoinRequest();
     await assertSucceeds(
       setDoc(
-        doc(db, 'groups', groupId),
-        { memberUids: [ALICE, BOB, MALLORY] },
+        doc(as(ALICE), 'groups', GROUP, 'joinRequests', MALLORY),
+        {
+          requiredApproverUids: [ALICE, BOB],
+          approvalUids: [ALICE],
+          status: 'pending',
+          updatedAt: serverTimestamp(),
+        },
         { merge: true },
       ),
     );
 
-    // 3. write your own member doc (passes only because step 2 landed first)
-    await assertSucceeds(
-      setDoc(doc(db, 'groups', groupId, 'members', MALLORY), {
-        name: 'Mallory',
-        joinedAt: serverTimestamp(),
-      }),
-    );
+    const db = as(BOB);
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'groups', GROUP, 'joinRequests', MALLORY), {
+      requiredApproverUids: [ALICE, BOB],
+      approvalUids: [ALICE, BOB],
+      status: 'approved',
+      updatedAt: serverTimestamp(),
+    });
+    batch.update(doc(db, 'groups', GROUP), {
+      memberUids: [ALICE, BOB, MALLORY],
+      lastAdmittedUid: MALLORY,
+    });
+    batch.set(doc(db, 'groups', GROUP, 'members', MALLORY), {
+      name: MALLORY,
+      joinedAt: serverTimestamp(),
+    });
+    await assertSucceeds(batch.commit());
+    await assertSucceeds(getDoc(doc(as(MALLORY), 'groups', GROUP)));
+  });
 
-    // 4. re-read the group, now as a member — this is the return value, and it
-    //    is why the stale-memberUids bug is gone
-    await assertSucceeds(getDoc(doc(db, 'groups', groupId)));
+  it('makes one member rejection terminal', async () => {
+    await submitCodeJoinRequest();
+    const request = doc(as(ALICE), 'groups', GROUP, 'joinRequests', MALLORY);
+    await assertSucceeds(
+      setDoc(
+        request,
+        {
+          status: 'rejected',
+          rejectionUid: ALICE,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(as(BOB), 'groups', GROUP, 'joinRequests', MALLORY),
+        {
+          requiredApproverUids: [ALICE, BOB],
+          approvalUids: [ALICE, BOB],
+          status: 'approved',
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      ),
+    );
   });
 });
 
