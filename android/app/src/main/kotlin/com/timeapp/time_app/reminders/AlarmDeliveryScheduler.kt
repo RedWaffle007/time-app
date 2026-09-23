@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import com.timeapp.time_app.MainActivity
 
 /** Arms the OS alarm whose receiver starts audio without launching Flutter. */
 object AlarmDeliveryScheduler {
@@ -33,6 +34,19 @@ object AlarmDeliveryScheduler {
         flags or PendingIntent.FLAG_IMMUTABLE,
     )
 
+    private fun showPending(context: Context, id: Int, itemId: String): PendingIntent =
+        PendingIntent.getActivity(
+            context,
+            AlarmDeliveryIdentity.requestCode(id),
+            Intent(context, MainActivity::class.java).apply {
+                action = "SELECT_NOTIFICATION"
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra("notificationId", id)
+                putExtra("payload", itemId)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
     /** Returns a short result for Dart diagnostics and never throws. */
     fun arm(
         context: Context,
@@ -51,14 +65,14 @@ object AlarmDeliveryScheduler {
         ) ?: return "no_pending_intent"
 
         when (alarmDeliveryMode(exact, Build.VERSION.SDK_INT)) {
-            AlarmDeliveryMode.EXACT_ALLOW_IDLE ->
-                manager.setExactAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    scheduledEpoch,
+            AlarmDeliveryMode.ALARM_CLOCK ->
+                manager.setAlarmClock(
+                    AlarmManager.AlarmClockInfo(
+                        scheduledEpoch,
+                        showPending(context, id, itemId),
+                    ),
                     operation,
                 )
-            AlarmDeliveryMode.EXACT ->
-                manager.setExact(AlarmManager.RTC_WAKEUP, scheduledEpoch, operation)
             AlarmDeliveryMode.INEXACT_ALLOW_IDLE ->
                 manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, scheduledEpoch, operation)
             AlarmDeliveryMode.INEXACT ->

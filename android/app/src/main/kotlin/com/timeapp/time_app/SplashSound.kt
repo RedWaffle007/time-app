@@ -10,7 +10,7 @@ import android.os.SystemClock
 
 internal object SplashSoundPolicy {
     const val MAX_PLAYBACK_MS = 1_500L
-    const val FADE_DURATION_MS = 300L
+    const val FADE_DURATION_MS = 750L
     const val FADE_STEP_MS = 30L
     const val FADE_START_MS = MAX_PLAYBACK_MS - FADE_DURATION_MS
 
@@ -20,8 +20,10 @@ internal object SplashSoundPolicy {
 
     fun volumeScale(elapsedMs: Long): Float {
         if (elapsedMs <= FADE_START_MS) return 1f
-        return ((MAX_PLAYBACK_MS - elapsedMs).toFloat() / FADE_DURATION_MS)
+        val remaining = ((MAX_PLAYBACK_MS - elapsedMs).toFloat() / FADE_DURATION_MS)
             .coerceIn(0f, 1f)
+        // Smoothstep: no audible corner when the fade starts or reaches zero.
+        return remaining * remaining * (3f - 2f * remaining)
     }
 }
 
@@ -29,7 +31,7 @@ internal object SplashSoundPolicy {
  * The cold-start pendulum-clock strike — ONE ring ("tunnn"), before the logo.
  *
  * A single synthesized wall-clock hour strike (`res/raw/tick.wav`, an original
- * sample, public domain), played ONCE at mount. Its final 300ms ramp smoothly
+ * sample, public domain), played ONCE at mount. Its final 750ms ramp smoothly
  * to silence while the unchanged 1.5-second loading surface fades away.
  *
  * Native because it owns the mute check and the preload. Constructed in

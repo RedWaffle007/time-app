@@ -811,8 +811,15 @@ with the tagline **“Mates Always Remember”**. It is a theme-independent pure
 black reveal with white wordmark and glow. The two fixed brand bars are green
 `#2FA35A` over burnt orange `#EA6A2E`, from `SplashTokens`.
 The complete reveal remains exactly 1.5 seconds. Its clock ting begins at mount
-and fades over the final 300ms of that same deadline; audio must never lengthen
-the reveal or end in an abrupt hard cut.
+and fades perceptually over the final 750ms of that same deadline; audio must
+never lengthen the reveal or end in an abrupt hard cut.
+
+### 6.15a Completion celebration
+
+Done produces one silent, full-viewport colored-paper celebration per task. It
+never plays background audio. Repeated live snapshots must not restart the same
+event, a slow acknowledgement must not block the next event, and pausing or
+locking the app pauses the current visual rather than replaying it from zero.
 
 ### 6.16 Missed-alarm review
 

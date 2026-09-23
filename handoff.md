@@ -2,13 +2,10 @@
 
 ## Baseline
 
-- Branch: `main`; latest verified local commit is `aa6b8fc` (durable missed
-  alarm handling).
-- The full local verification command passed through `aa6b8fc`; remote sync and
-  GitHub CI status were not re-checked in this handoff.
-- Items 28–29 (early native alarm wake/fallback Dismiss and splash-ting fade)
-  are implemented and fully verified in the working tree; their commit is
-  pending.
+- Branch: `main`; latest verified and pushed commit is `2474756` (Android alarm
+  wake/fallback Dismiss and splash-ting fade); GitHub CI was green.
+- The working tree contains the device-regression stabilization pass described
+  below. It has not yet been verified or committed.
 - Do not assume backend/rules deployment from a Git push. Confirm with the user
   before any deployment or other external state change.
 
@@ -43,8 +40,9 @@ Completed and committed:
 11. Require unanimous approval for all group joins, including friend invites.
 12–13. Move friend planning permission permanently to profiles; show the group
    permission control only for non-friend members, with migration and tests.
-14/20. WhatsApp-style colored-paper completion celebration with a 1.5-second
-   sound for the target and planner; queued durably for an offline planner.
+14/20. WhatsApp-style colored-paper completion celebration for the target and
+   planner; queued durably for an offline planner. Sound was removed after the
+   latest device round.
 15–16. Durable six-hour inactivity notification with 50 sequential variants and
    real-use timer reset (`0665a89`).
 17. Month/year buckets for sufficiently long histories, preserving day order,
@@ -124,8 +122,11 @@ You entry; confirm the desired prominence (app-bar versus visible tile/button)
 before changing navigation. Preserve the existing route, calendar create flow,
 Back behavior, bottom bar, and notification routing.
 
-26. Apply the completion confetti and 1.5-second celebration sound to every task
-type: self-planned items, items another person planned for the current user, and
+26. Apply silent completion confetti to every task type:
+
+  **Implemented in the current stabilization pass; verification pending.**
+
+Self-planned items, items another person planned for the current user, and
 items the current user planned for someone else. The existing durable event
 model may already cover one-participant self plans and both parties in delegated
 plans, so reproduce each path before changing it. Add explicit repository,
@@ -166,7 +167,7 @@ party sees duplicates; skipped/rejected/withdrawn items never celebrate.
 28. Wake the Android screen for an alarm and expose Dismiss as reliably as the
 platform permits:
 
-  **Implemented and verified in the working tree; commit pending.**
+  **Implemented and committed in `2474756`.**
 
 - This is feasible as a best-effort Android feature, not an all-device
   guarantee. `Activity.setTurnScreenOn(true)` plus `setShowWhenLocked(true)` is
@@ -201,7 +202,8 @@ platform permits:
 
 29. Fade the cold-start clock ting without changing the 1.5-second reveal:
 
-  **Implemented and verified in the working tree; commit pending.**
+  **Implemented and committed in `2474756`; fade length is being refined in the
+  current stabilization pass after an audible hard cut remained on-device.**
 
 - Keep `SplashOverlay.introDuration` at 1,150 ms and `outroDuration` at 350 ms;
   the existing exact-1,500-ms visual contract remains unchanged.
@@ -237,7 +239,8 @@ platform permits:
 
 ## Next session
 
-Commit items 28–29, then continue with item 22 (group and friend pictures).
-
-On-device feedback from the previously distributed APK may still arrive. Apply
-it to the relevant roadmap item without broadening unrelated work.
+Verify and commit the current device-regression stabilization pass. It fixes the
+unlocked alarm restart loop, foreground Volume Down handling, scheduled-time
+delivery (including the previously unregistered native arm channel) and
+priority, celebration duplication/coverage/continuation and sound, immutable
+outcomes, and the remaining splash hard cut. Then resume item 22.

@@ -8,8 +8,10 @@ void main() {
       LocalNotificationsReminderScheduler.channelId,
     );
 
-    expect(details.playSound, isTrue);
-    expect(details.fullScreenIntent, isTrue);
+    expect(details.playSound, isFalse);
+    expect(details.silent, isTrue);
+    expect(details.enableVibration, isFalse);
+    expect(details.fullScreenIntent, isFalse);
     expect(
       details.additionalFlags?.contains(flagInsistent) ?? false,
       isFalse,

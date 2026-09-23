@@ -6,7 +6,7 @@ import '../data/completion_celebration_repository.dart';
 import '../domain/completion_celebration.dart';
 
 final completionCelebrationRepositoryProvider =
-    Provider<CompletionCelebrationRepository>((ref) {
+    Provider<CompletionCelebrationStore>((ref) {
       return CompletionCelebrationRepository(FirebaseFirestore.instance);
     });
 

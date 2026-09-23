@@ -16,6 +16,65 @@ class AlarmWakePolicyTest {
     }
 
     @Test
+    fun `volume down is consumed once only while an alarm is ringing`() {
+        val volumeDown = 25
+        val volumeUp = 24
+        val keyDown = 0
+        val keyUp = 1
+
+        assertTrue(
+            AlarmHardwareKeyPolicy.shouldSilence(
+                volumeDown,
+                keyDown,
+                0,
+                true,
+                volumeDown,
+                keyDown,
+            ),
+        )
+        assertFalse(
+            AlarmHardwareKeyPolicy.shouldSilence(
+                volumeDown,
+                keyDown,
+                0,
+                false,
+                volumeDown,
+                keyDown,
+            ),
+        )
+        assertFalse(
+            AlarmHardwareKeyPolicy.shouldSilence(
+                volumeDown,
+                keyDown,
+                1,
+                true,
+                volumeDown,
+                keyDown,
+            ),
+        )
+        assertFalse(
+            AlarmHardwareKeyPolicy.shouldSilence(
+                volumeDown,
+                keyUp,
+                0,
+                true,
+                volumeDown,
+                keyDown,
+            ),
+        )
+        assertFalse(
+            AlarmHardwareKeyPolicy.shouldSilence(
+                volumeUp,
+                keyDown,
+                0,
+                true,
+                volumeDown,
+                keyDown,
+            ),
+        )
+    }
+
+    @Test
     fun `modern wake state enables and clears every window behavior`() {
         val host = RecordingWakeHost()
         val controller = AlarmWakeWindowController(35, host)

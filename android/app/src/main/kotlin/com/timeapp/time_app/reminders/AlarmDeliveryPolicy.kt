@@ -9,16 +9,14 @@ internal object AlarmDeliveryIdentity {
 
 /** The exact AlarmManager call selected for an arm request. */
 internal enum class AlarmDeliveryMode {
-    EXACT_ALLOW_IDLE,
-    EXACT,
+    ALARM_CLOCK,
     INEXACT_ALLOW_IDLE,
     INEXACT,
 }
 
 internal fun alarmDeliveryMode(exact: Boolean, sdkInt: Int): AlarmDeliveryMode =
     when {
-        exact && sdkInt >= 23 -> AlarmDeliveryMode.EXACT_ALLOW_IDLE
-        exact -> AlarmDeliveryMode.EXACT
+        exact -> AlarmDeliveryMode.ALARM_CLOCK
         sdkInt >= 23 -> AlarmDeliveryMode.INEXACT_ALLOW_IDLE
         else -> AlarmDeliveryMode.INEXACT
     }

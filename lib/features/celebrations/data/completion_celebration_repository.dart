@@ -2,7 +2,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../domain/completion_celebration.dart';
 
-class CompletionCelebrationRepository {
+abstract interface class CompletionCelebrationStore {
+  Stream<List<CompletionCelebration>> watchUnseen(String uid);
+  Future<void> acknowledge(CompletionCelebration event, String uid);
+}
+
+class CompletionCelebrationRepository implements CompletionCelebrationStore {
   CompletionCelebrationRepository(this._db);
 
   final FirebaseFirestore _db;
@@ -10,6 +15,7 @@ class CompletionCelebrationRepository {
   CollectionReference<Map<String, dynamic>> get _events =>
       _db.collection('completionCelebrations');
 
+  @override
   Stream<List<CompletionCelebration>> watchUnseen(String uid) {
     return _events.where('participantUids', arrayContains: uid).snapshots().map(
       (snapshot) {
@@ -29,6 +35,7 @@ class CompletionCelebrationRepository {
 
   /// Acknowledge only after the 1.5-second display finishes. The last unseen
   /// participant deletes the event atomically; otherwise this uid is appended.
+  @override
   Future<void> acknowledge(CompletionCelebration event, String uid) {
     final ref = _events.doc(event.id);
     return _db.runTransaction((transaction) async {

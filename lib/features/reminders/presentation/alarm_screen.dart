@@ -52,16 +52,20 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
   @override
   void initState() {
     super.initState();
-    // Claim the wake-lock-backed tone FIRST so there is no gap, then cancel the
-    // notification's one-shot fallback so the two do not overlap for more than
-    // an instant. Deferred a frame: `ref` must not be used during initState's
-    // synchronous build, and a platform call has no place there either.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Claim the wake-lock-backed tone FIRST, then cancel the redundant silent
+    // scheduled notification. Deferred a frame: `ref` must not be used during
+    // initState's synchronous build, and a platform call has no place there.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       final keyEvents = ref.read(alarmKeyEventsProvider);
       _keyEvents = keyEvents;
       keyEvents.listen(_leave);
-      ref.read(alarmSoundProvider).start(widget.itemId);
+      // The UI ownership claim must reach the native service before cancelling
+      // the scheduled notification releases its native-delivery owner. These
+      // used to race as two unawaited platform calls, briefly stopping and
+      // restarting playback on an unlocked/full-screen launch.
+      await ref.read(alarmSoundProvider).start(widget.itemId);
+      if (!mounted) return;
       final uid = ref.read(currentUidProvider);
       if (uid != null) {
         unawaited(
@@ -71,9 +75,10 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
         );
       }
       // `dismiss` here means "cancel the OS notification for this item" — it
-      // stops any remaining notification tone now that the service owns the
-      // sound. It does not navigate; that is `_leave`.
-      ref.read(reminderServiceProvider).dismiss(widget.itemId);
+      // removes the redundant scheduled surface now that the foreground
+      // service owns sound and its actionable notification. It does not
+      // navigate; that is `_leave`.
+      await ref.read(reminderServiceProvider).dismiss(widget.itemId);
     });
   }
 

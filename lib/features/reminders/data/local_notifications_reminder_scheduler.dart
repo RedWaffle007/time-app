@@ -16,11 +16,10 @@ import 'alarm_delivery.dart';
 import 'reminder_audit_log.dart';
 import 'reminder_scheduler.dart';
 
-/// Builds the visible alarm notification without asking Android's notification
-/// subsystem to repeat its sound. [AlarmSoundService] is the single repeating
-/// owner: its looping MediaPlayer reaches the end of the selected tone before
-/// starting it again. The notification remains audible once as a fallback if
-/// native delivery is delayed.
+/// Builds the visible alarm notification without a second audio owner.
+/// [AlarmSoundService] alone plays the tone and requests the full-screen UI;
+/// letting this scheduled notification play too produces overlapping restart
+/// cadences on an unlocked device even though each source is correct alone.
 @visibleForTesting
 AndroidNotificationDetails buildAlarmNotificationDetails(String channelId) =>
     AndroidNotificationDetails(
@@ -37,10 +36,13 @@ AndroidNotificationDetails buildAlarmNotificationDetails(String channelId) =>
       // handling: `alarm` is the treatment a clock alarm gets — allowed through
       // where an ordinary reminder is held back.
       category: AndroidNotificationCategory.alarm,
-      // A full-screen intent is not a suppressible notification: while another
-      // app is foreground it alerts over the top, and while the screen is
-      // locked/off it launches the app full-screen.
-      fullScreenIntent: true,
+      // Native AlarmDeliveryReceiver starts the foreground service, whose one
+      // high-priority notification owns the full-screen intent. One launch path
+      // prevents duplicate MainActivity intents and audio handoff races.
+      fullScreenIntent: false,
+      silent: true,
+      playSound: false,
+      enableVibration: false,
       // Deliberately no FLAG_INSISTENT (0x4). Several Android variants restart
       // notification audio on a short cadence instead of waiting for a long
       // tone to finish. AlarmSoundService owns whole-tone repetition instead.
@@ -49,18 +51,19 @@ AndroidNotificationDetails buildAlarmNotificationDetails(String channelId) =>
 /// The Android implementation, and the only file in the feature that knows what
 /// AlarmManager is.
 ///
-/// **Why `exactAllowWhileIdle`.** Measured, not assumed. `spikes/alarm_spike/`
+/// **Why two exact alarms.** Measured, not assumed. `spikes/alarm_spike/`
 /// armed four mechanisms at one instant on the Redmi (HyperOS, Android 16) and
 /// recorded, after a 4h39m screen-off window with battery optimisation waived:
 ///
 ///   ALARM_CLOCK +0.55s · EXACT_IDLE +0.62s · WORKMANAGER +0.68s · INEXACT +110s
 ///
-/// `AndroidScheduleMode.exactAllowWhileIdle` maps to `setExactAndAllowWhileIdle`
-/// — the EXACT_IDLE row. `alarmClock` (`setAlarmClock`) measured marginally
-/// better but plants a system-wide alarm icon in the status bar and lets any app
-/// read the next-alarm time; that is a claim on the device an accountability app
-/// has not earned, and 70ms does not buy it. The 110s figure is what
-/// DECISIONS.md's previous plan would have shipped.
+/// The plugin keeps `setExactAndAllowWhileIdle` for the quiet visible record.
+/// The native audio receiver uses `setAlarmClock`; the system next-alarm
+/// affordance is an intentional trade for delivering user-approved alarm audio
+/// at the promised instant. A prior build did not register that native channel
+/// at all, so the receiver was never armed and opening Checkmate triggered only
+/// the UI fallback. The 110s figure is what an inexact-only implementation
+/// would have shipped.
 ///
 /// The permission behind it is SCHEDULE_EXACT_ALARM (user prompt, no Play
 /// review), never USE_EXACT_ALARM — see the manifest.
@@ -108,15 +111,15 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
     channelId,
     'Reminders',
     description: 'Reminders for items on your schedule.',
-    // MAX = full heads-up priority. Combined with the alarm-stream routing
-    // below, this is an audible, insistent reminder rather than a quiet banner.
+    // MAX keeps the scheduled fallback visible. Individual alarm notifications
+    // are silent because AlarmSoundService is the sole audio owner.
     importance: Importance.max,
-    // The whole point: play on the ALARM stream, which the ringer mask and the
-    // OEM notification-suppression layer both leave alone.
+    // Retained for channel compatibility with existing installs. Per-notification
+    // `silent`/`playSound: false` suppresses it; the service uses USAGE_ALARM.
     audioAttributesUsage: AudioAttributesUsage.alarm,
     playSound: true,
-    // The device's own alarm tone — no bundled asset, and it is what the user
-    // already recognises as "an alarm".
+    // Frozen channel metadata for older installs; current scheduled records do
+    // not play it.
     sound: const UriAndroidNotificationSound(
       'content://settings/system/alarm_alert',
     ),
@@ -274,13 +277,15 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
       id: notificationId,
       fireAtUtc: request.fireAtUtc,
     );
-    // Sound is armed separately from notification presentation. Android may
+    // Sound and full-screen presentation are armed separately from this quiet
+    // schedule record. Android may
     // post a full-screen notification without launching its Activity while the
     // device is locked (observed on HyperOS); tying playback to AlarmScreen
     // would then postpone the sound until the user unlocks. The native delivery
     // receiver starts AlarmSoundService at the due instant with no Dart/UI
-    // dependency. Best-effort: the already-armed notification remains a usable
-    // fallback if the companion alarm is refused.
+    // dependency. The already-armed notification remains a visible, silent
+    // fallback if the companion alarm is refused; AUDIO_ARM_FAILED makes that
+    // degraded state explicit in diagnostics instead of pretending it rang.
     final delivery = await _delivery.arm(
       id: notificationId,
       itemId: request.itemId,

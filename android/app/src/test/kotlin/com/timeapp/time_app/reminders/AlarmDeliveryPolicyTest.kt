@@ -28,9 +28,9 @@ class AlarmDeliveryPolicyTest {
     }
 
     @Test
-    fun `modern Android uses idle-safe exact and fallback calls`() {
+    fun `exact delivery uses alarm-clock priority and fallback remains idle-safe`() {
         assertEquals(
-            AlarmDeliveryMode.EXACT_ALLOW_IDLE,
+            AlarmDeliveryMode.ALARM_CLOCK,
             alarmDeliveryMode(exact = true, sdkInt = 23),
         )
         assertEquals(
@@ -40,9 +40,9 @@ class AlarmDeliveryPolicyTest {
     }
 
     @Test
-    fun `pre-Marshmallow keeps the equivalent non-idle calls`() {
+    fun `pre-Marshmallow keeps alarm-clock exactness and basic fallback`() {
         assertEquals(
-            AlarmDeliveryMode.EXACT,
+            AlarmDeliveryMode.ALARM_CLOCK,
             alarmDeliveryMode(exact = true, sdkInt = 22),
         )
         assertEquals(

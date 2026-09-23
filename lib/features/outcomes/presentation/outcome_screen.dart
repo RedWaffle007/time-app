@@ -402,7 +402,7 @@ int _compareGroupKeys(_ScheduleGroupKey a, _ScheduleGroupKey b) {
       : a.day.compareTo(b.day);
 }
 
-class _OutcomeCard extends ConsumerWidget {
+class _OutcomeCard extends ConsumerStatefulWidget {
   const _OutcomeCard({
     required this.item,
     this.highlighted = false,
@@ -413,12 +413,20 @@ class _OutcomeCard extends ConsumerWidget {
   final bool highlighted;
   final Key? cardKey;
 
+  @override
+  ConsumerState<_OutcomeCard> createState() => _OutcomeCardState();
+}
+
+class _OutcomeCardState extends ConsumerState<_OutcomeCard> {
+  bool _writingOutcome = false;
+
   /// A self-planned item has the same person as creator and target — no planner
   /// on the other end to notify.
-  bool get _isSelfPlanned => item.createdByUid == item.targetUid;
+  bool get _isSelfPlanned => widget.item.createdByUid == widget.item.targetUid;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
+    final item = widget.item;
     final outcome = item.outcome;
     final plannerName = _isSelfPlanned
         ? 'you'
@@ -426,12 +434,12 @@ class _OutcomeCard extends ConsumerWidget {
               'someone';
 
     return Card(
-      key: cardKey,
+      key: widget.cardKey,
       // Line work, never a fill: an orange filled surface is reserved for "a
       // schedule item is waiting on you" (UI-RULES.md §2.7), and "you tapped a
       // reminder for this one" is a different, much weaker claim. A primary
       // outline says *this one* without spending that signal.
-      shape: highlighted
+      shape: widget.highlighted
           ? RoundedRectangleBorder(
               borderRadius: Radii.md,
               side: BorderSide(
@@ -476,13 +484,15 @@ class _OutcomeCard extends ConsumerWidget {
                   // Skipping is a legitimate outcome, so it gets the neutral
                   // secondary treatment — never red (UI-RULES.md §2.5).
                   OutlinedButton(
-                    onPressed: () => _skip(context, ref),
+                    onPressed: _writingOutcome ? null : () => _skip(context),
                     child: const Text('Skip'),
                   ),
                   const SizedBox(width: Space.sm),
                   FilledButton(
-                    onPressed: () => _markDone(context, ref),
-                    child: const Text('Done'),
+                    onPressed: _writingOutcome
+                        ? null
+                        : () => _markDone(context),
+                    child: Text(_writingOutcome ? 'Saving…' : 'Done'),
                   ),
                 ],
               )
@@ -503,7 +513,7 @@ class _OutcomeCard extends ConsumerWidget {
         StatusBadge.outcome(outcome.result, context),
         // Completed, but after its scheduled time — surfaced, never hidden. Line
         // work / muted text, not a doctrine fill: a late Done is still a Done.
-        if (item.completionDelay case final delay?) ...[
+        if (widget.item.completionDelay case final delay?) ...[
           const SizedBox(width: Space.sm),
           Text(
             '${formatDurationMinutes(context, delay.inMinutes)} late',
@@ -533,10 +543,19 @@ class _OutcomeCard extends ConsumerWidget {
   /// The reminder needs no cancelling here: recording an outcome makes the item
   /// undesired, the item stream re-emits, and the reconciler cancels it. That is
   /// the point of driving reminders off the stream rather than off transitions.
-  Future<void> _markDone(BuildContext context, WidgetRef ref) async {
-    await ref
-        .read(scheduleRepositoryProvider)
-        .markDone(item.targetUid, item.id, plannerUid: item.createdByUid);
+  Future<void> _markDone(BuildContext context) async {
+    if (_writingOutcome) return;
+    setState(() => _writingOutcome = true);
+    final item = widget.item;
+    bool recorded;
+    try {
+      recorded = await ref
+          .read(scheduleRepositoryProvider)
+          .markDone(item.targetUid, item.id, plannerUid: item.createdByUid);
+    } finally {
+      if (mounted) setState(() => _writingOutcome = false);
+    }
+    if (!recorded) return;
     // The planner push is skipped for a self-planned item (no one else to tell),
     // but the time-tracking prompt is NOT — self-planned items are exactly the
     // ones a user logs their own time against. So the early-out only guards the
@@ -560,15 +579,16 @@ class _OutcomeCard extends ConsumerWidget {
     );
   }
 
-  Future<void> _skip(BuildContext context, WidgetRef ref) async {
-    final controller = TextEditingController();
+  Future<void> _skip(BuildContext context) async {
+    if (_writingOutcome) return;
+    var reason = '';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         scrollable: true,
         title: const Text('Skip this?'),
         content: TextField(
-          controller: controller,
+          onChanged: (value) => reason = value,
           decoration: const InputDecoration(
             labelText: 'Reason (optional)',
             hintText: 'Your planner will see this',
@@ -587,9 +607,18 @@ class _OutcomeCard extends ConsumerWidget {
       ),
     );
     if (confirmed == true) {
-      await ref
-          .read(scheduleRepositoryProvider)
-          .markSkipped(item.targetUid, item.id, reason: controller.text);
+      if (!mounted) return;
+      setState(() => _writingOutcome = true);
+      final item = widget.item;
+      bool recorded;
+      try {
+        recorded = await ref
+            .read(scheduleRepositoryProvider)
+            .markSkipped(item.targetUid, item.id, reason: reason);
+      } finally {
+        if (mounted) setState(() => _writingOutcome = false);
+      }
+      if (!recorded) return;
       if (_isSelfPlanned) return; // no point notifying yourself
       await ref
           .read(notificationEventNotifierProvider)

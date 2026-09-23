@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -105,6 +107,28 @@ void main() {
     expect(scheduler.cancelled, contains(reminderNotificationId('a')));
   });
 
+  testWidgets('claims service playback before releasing notification owner', (
+    t,
+  ) async {
+    final claimReachedNative = Completer<void>();
+    final sound = _FakeAlarmSound(startGate: claimReachedNative);
+    final scheduler = _FakeScheduler();
+
+    await t.pumpWidget(harness(sound, scheduler));
+    await t.pump();
+
+    expect(sound.starts, 1);
+    expect(
+      scheduler.cancelled,
+      isEmpty,
+      reason: 'notification ownership must survive until UI ownership lands',
+    );
+
+    claimReachedNative.complete();
+    await t.pump();
+    expect(scheduler.cancelled, contains(reminderNotificationId('a')));
+  });
+
   testWidgets('Dismiss stops the sound and leaves for My Schedule', (t) async {
     final sound = _FakeAlarmSound();
     final timeline = _FakeAlarmTimelineRepository();
@@ -175,11 +199,17 @@ class _FakeAlarmTimelineRepository implements AlarmTimelineRepository {
 }
 
 class _FakeAlarmSound implements AlarmSound {
+  _FakeAlarmSound({this.startGate});
+
+  final Completer<void>? startGate;
   int starts = 0;
   int stops = 0;
 
   @override
-  Future<void> start(String itemId) async => starts++;
+  Future<void> start(String itemId) async {
+    starts++;
+    if (startGate != null) await startGate!.future;
+  }
 
   @override
   Future<void> stop(String itemId) async => stops++;

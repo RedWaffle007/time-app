@@ -207,45 +207,44 @@ class ScheduleRepository {
   }
 
   /// Target records completion — status stays `approved`, outcome is layered on.
-  Future<void> markDone(
+  Future<bool> markDone(
     String targetUid,
     String itemId, {
     required String plannerUid,
-  }) {
+  }) async {
     final itemRef = _items(targetUid).doc(itemId);
     final eventId = CompletionCelebration.eventId(targetUid, itemId);
     final eventRef = _db.collection('completionCelebrations').doc(eventId);
     final participants = <String>{targetUid, plannerUid}.toList();
-    final batch = _db.batch();
-    batch.set(itemRef, {
-      'outcome': {
-        'result': OutcomeResult.done.name,
-        'completedAt': FieldValue.serverTimestamp(),
-      },
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-    batch.set(eventRef, {
-      'itemId': itemId,
-      'targetUid': targetUid,
-      'plannerUid': plannerUid,
-      'participantUids': participants,
-      'seenByUids': <String>[],
-      'createdAt': FieldValue.serverTimestamp(),
+    return _db.runTransaction((transaction) async {
+      final snapshot = await transaction.get(itemRef);
+      final data = snapshot.data();
+      if (data == null ||
+          data['status'] != ScheduleItemStatus.approved.name ||
+          data['outcome'] != null) {
+        return false;
+      }
+      transaction.set(itemRef, {
+        'outcome': {
+          'result': OutcomeResult.done.name,
+          'completedAt': FieldValue.serverTimestamp(),
+        },
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      transaction.set(eventRef, {
+        'itemId': itemId,
+        'targetUid': targetUid,
+        'plannerUid': plannerUid,
+        'participantUids': participants,
+        'seenByUids': <String>[],
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      return true;
     });
-    return batch.commit();
   }
 
-  Future<void> markSkipped(String targetUid, String itemId, {String? reason}) {
-    return _items(targetUid).doc(itemId).set({
-      'outcome': {
-        'result': OutcomeResult.skipped.name,
-        'skippedAt': FieldValue.serverTimestamp(),
-        if (reason != null && reason.trim().isNotEmpty)
-          'skipReason': reason.trim(),
-      },
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-  }
+  Future<bool> markSkipped(String targetUid, String itemId, {String? reason}) =>
+      markSkippedIfUnsettled(targetUid, itemId, reason: reason?.trim() ?? '');
 
   /// Timeout-only outcome write. Unlike the interactive Skip action, this can
   /// race a person pressing Done, so it must prove `outcome` is still absent in
@@ -271,7 +270,7 @@ class ScheduleRepository {
           'skippedAt': atUtc == null
               ? FieldValue.serverTimestamp()
               : Timestamp.fromDate(atUtc),
-          'skipReason': reason,
+          if (reason.trim().isNotEmpty) 'skipReason': reason.trim(),
         },
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));

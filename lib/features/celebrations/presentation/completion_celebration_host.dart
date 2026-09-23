@@ -9,14 +9,9 @@ import '../../applock/application/app_lock_providers.dart';
 import '../../auth/application/auth_providers.dart';
 import '../application/celebration_providers.dart';
 import '../application/celebration_queue.dart';
-import '../data/celebration_sound.dart';
 import '../domain/completion_celebration.dart';
 
 const completionCelebrationDuration = Duration(milliseconds: 1500);
-
-final celebrationSoundProvider = Provider<CelebrationSound>((ref) {
-  return const PlatformCelebrationSound();
-});
 
 /// App-wide overlay host. Firestore is the delivery queue, so it covers the
 /// target immediately, an online planner live, and an offline planner on their
@@ -43,6 +38,7 @@ class _CompletionCelebrationHostState
   late final AnimationController _animation;
   Timer? _finishTimer;
   bool _playing = false;
+  bool _paused = false;
   bool _resumed = true;
   String? _sessionUid;
 
@@ -63,7 +59,7 @@ class _CompletionCelebrationHostState
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _resumed = state == AppLifecycleState.resumed;
     if (_resumed) {
-      _scheduleStart();
+      _resumeCurrent();
     } else {
       _pauseCurrent();
     }
@@ -73,7 +69,7 @@ class _CompletionCelebrationHostState
   void didUpdateWidget(CompletionCelebrationHost oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.enabled && !oldWidget.enabled) {
-      _scheduleStart();
+      _resumeCurrent();
     }
     if (!widget.enabled && oldWidget.enabled) {
       _pauseCurrent();
@@ -85,7 +81,6 @@ class _CompletionCelebrationHostState
     WidgetsBinding.instance.removeObserver(this);
     _finishTimer?.cancel();
     _animation.dispose();
-    unawaited(ref.read(celebrationSoundProvider).stop());
     super.dispose();
   }
 
@@ -116,42 +111,67 @@ class _CompletionCelebrationHostState
       return;
     }
     _playing = true;
+    _paused = false;
     _animation.forward(from: 0);
-    unawaited(ref.read(celebrationSoundProvider).play());
     setState(() {});
-    _finishTimer = Timer(completionCelebrationDuration, () async {
-      if (!mounted || !_playing) {
-        return;
-      }
-      _playing = false;
-      _animation.reset();
-      unawaited(ref.read(celebrationSoundProvider).stop());
-      setState(() {});
-      final uid = _sessionUid;
-      if (uid != null) {
-        try {
-          await ref
-              .read(completionCelebrationRepositoryProvider)
-              .acknowledge(event, uid);
-        } catch (_) {
-          // Leave the event unseen so the next app session retries it.
-        }
-      }
-      _queue.complete(event.id);
-      _scheduleStart();
-    });
+    _armFinish(event, completionCelebrationDuration);
   }
 
   void _pauseCurrent({bool notify = true}) {
-    if (!_playing) {
+    if (!_playing || _paused) {
       return;
     }
     _finishTimer?.cancel();
-    _playing = false;
-    _animation.reset();
-    unawaited(ref.read(celebrationSoundProvider).stop());
+    _animation.stop(canceled: false);
+    _paused = true;
     if (notify && mounted) {
       setState(() {});
+    }
+  }
+
+  void _resumeCurrent() {
+    final lock = ref.read(appLockControllerProvider);
+    if (!widget.enabled || !_resumed || lock.isLocked) return;
+    if (!_playing || !_paused) {
+      _scheduleStart();
+      return;
+    }
+    final event = _queue.current;
+    if (event == null) return;
+    _paused = false;
+    final remaining = Duration(
+      milliseconds:
+          (completionCelebrationDuration.inMilliseconds *
+                  (1 - _animation.value))
+              .round(),
+    );
+    _animation.forward();
+    _armFinish(event, remaining);
+  }
+
+  void _armFinish(CompletionCelebration event, Duration delay) {
+    _finishTimer?.cancel();
+    _finishTimer = Timer(delay, () => _finish(event));
+  }
+
+  void _finish(CompletionCelebration event) {
+    if (!mounted || !_playing || _queue.current?.id != event.id) return;
+    _playing = false;
+    _paused = false;
+    _animation.reset();
+    _queue.complete(event.id);
+    setState(() {});
+    _scheduleStart();
+
+    final uid = _sessionUid;
+    if (uid != null) {
+      // Delivery acknowledgement must not block the next queued visual.
+      unawaited(
+        ref
+            .read(completionCelebrationRepositoryProvider)
+            .acknowledge(event, uid)
+            .catchError((_) {}),
+      );
     }
   }
 
@@ -163,8 +183,8 @@ class _CompletionCelebrationHostState
       _queue.clear();
       _finishTimer?.cancel();
       _playing = false;
+      _paused = false;
       _animation.reset();
-      unawaited(ref.read(celebrationSoundProvider).stop());
     }
     ref.listen(unseenCompletionCelebrationsProvider, (_, next) {
       final events = next.value;
@@ -181,7 +201,9 @@ class _CompletionCelebrationHostState
             if (mounted) _pauseCurrent();
           });
         } else {
-          _scheduleStart();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _resumeCurrent();
+          });
         }
         return Stack(
           fit: StackFit.expand,
@@ -189,6 +211,7 @@ class _CompletionCelebrationHostState
             widget.child,
             if (_playing)
               Positioned.fill(
+                key: ValueKey('completion-celebration-${_queue.current?.id}'),
                 child: IgnorePointer(
                   child: AnimatedBuilder(
                     animation: _animation,
@@ -212,22 +235,20 @@ class _ColoredPaperPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final origin = Offset(size.width / 2, size.height * 0.38);
-    for (var i = 0; i < 72; i++) {
-      final delay = (i % 9) * 0.018;
+    for (var i = 0; i < 120; i++) {
+      final delay = (i % 12) * 0.012;
       final p = ((progress - delay) / (1 - delay)).clamp(0.0, 1.0);
       if (p <= 0) {
         continue;
       }
       final seed = (i * 37 % 101) / 101;
-      final angle = -math.pi * (0.08 + seed * 0.84);
-      final speed = 0.35 + ((i * 19 % 47) / 47) * 0.55;
-      final x = origin.dx + math.cos(angle) * speed * size.width * p;
+      final drift = ((i * 19 % 97) / 97) - 0.5;
+      final originX = size.width * (0.04 + seed * 0.92);
+      final x = originX + drift * size.width * 0.42 * p;
       final y =
-          origin.dy +
-          math.sin(angle) * speed * size.height * 0.62 * p +
-          size.height * 0.72 * p * p;
-      final opacity = ((1 - p) / 0.22).clamp(0.0, 1.0);
+          size.height * 1.04 -
+          size.height * (0.92 + seed * 0.48) * math.sin(math.pi * p);
+      final opacity = ((1 - p) / 0.18).clamp(0.0, 1.0);
       final paint = Paint()
         ..color = AppColors
             .completionCelebrationPaper[i %

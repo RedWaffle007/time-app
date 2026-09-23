@@ -8,10 +8,10 @@ class SplashSoundPolicyTest {
     @Test
     fun `clock ting fades within the unchanged one and a half second deadline`() {
         assertEquals(1_500L, SplashSoundPolicy.MAX_PLAYBACK_MS)
-        assertEquals(300L, SplashSoundPolicy.FADE_DURATION_MS)
-        assertEquals(1_200L, SplashSoundPolicy.FADE_START_MS)
-        assertEquals(1f, SplashSoundPolicy.volumeScale(1_200L))
-        assertEquals(0.5f, SplashSoundPolicy.volumeScale(1_350L))
+        assertEquals(750L, SplashSoundPolicy.FADE_DURATION_MS)
+        assertEquals(750L, SplashSoundPolicy.FADE_START_MS)
+        assertEquals(1f, SplashSoundPolicy.volumeScale(750L))
+        assertEquals(0.5f, SplashSoundPolicy.volumeScale(1_125L))
         assertEquals(0f, SplashSoundPolicy.volumeScale(1_500L))
     }
 

@@ -27,12 +27,12 @@ import com.timeapp.time_app.R
 /**
  * Owns the alarm SOUND so it is independent of the screen.
  *
- * The reminder's notification carries a one-shot fallback tone. Repetition is
- * deliberately owned here instead of by FLAG_INSISTENT: some Android variants
- * restart notification audio on a short cadence without waiting for the source
- * to finish. A foreground service holding a PARTIAL_WAKE_LOCK and playing a
- * looping [MediaPlayer] on USAGE_ALARM finishes the selected tone before each
- * replay and keeps ringing with the screen off until the user dismisses.
+ * Scheduled notifications are deliberately silent. Repetition is owned only
+ * here instead of by notification audio or FLAG_INSISTENT: some Android
+ * variants restart notification sound on a short cadence without waiting for
+ * the source to finish. A foreground service holding a PARTIAL_WAKE_LOCK and
+ * playing a looping [MediaPlayer] on USAGE_ALARM finishes the selected tone
+ * before each replay and keeps ringing with the screen off until dismissal.
  *
  * Lifecycle is driven from Dart over `time_app/alarm_sound` (start on mount, stop
  * on dismiss), with a one-minute cap so a missed dismiss cannot ring — or hold
@@ -63,12 +63,18 @@ class AlarmSoundService : Service() {
         private const val TAG = "AlarmSound"
         @Volatile private var ringing = false
 
-        fun start(context: Context, notificationId: Int, itemId: String) {
+        fun start(context: Context, notificationId: Int, itemId: String): Boolean {
             val intent = Intent(context, AlarmSoundService::class.java)
                 .setAction(ACTION_START)
                 .putExtra(EXTRA_NOTIFICATION_ID, notificationId)
                 .putExtra(EXTRA_ITEM_ID, itemId)
-            ContextCompat.startForegroundService(context, intent)
+            return try {
+                ContextCompat.startForegroundService(context, intent)
+                true
+            } catch (error: Throwable) {
+                Log.e(TAG, "failed to request alarm service start", error)
+                false
+            }
         }
 
         /** UI fallback when native delivery did not run first. */
@@ -106,12 +112,18 @@ class AlarmSoundService : Service() {
         fun isRinging(): Boolean = ringing
 
         /** Called only from the foreground Activity's hardware-key dispatch. */
-        fun silenceFromVolumeDown(context: Context) {
-            if (!ringing) return
-            context.startService(
-                Intent(context, AlarmSoundService::class.java)
-                    .setAction(ACTION_VOLUME_SILENCE),
-            )
+        fun silenceFromVolumeDown(context: Context): Boolean {
+            if (!ringing) return false
+            return try {
+                context.startService(
+                    Intent(context, AlarmSoundService::class.java)
+                        .setAction(ACTION_VOLUME_SILENCE),
+                )
+                true
+            } catch (error: Throwable) {
+                Log.e(TAG, "failed to request Volume Down silence", error)
+                false
+            }
         }
     }
 

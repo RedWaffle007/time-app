@@ -206,6 +206,12 @@ the optional `skipReason` means **completion timing and skip reasons survive** f
 later analysis (the core accountability signal: of what the planner approved, how
 much did the target complete, and when?).
 
+An outcome is first-write-wins. Once a person records Done or Skip, later taps
+cannot replace it or toggle it to another result. The sole refinement is between
+two automatic missed-item facts: `Skipped: Did not respond` may become the more
+specific `Skipped: User unavailable` when the native one-minute alarm timeout is
+reconciled. Firestore rules enforce the same transition policy as the client.
+
 **Re-approval rule (explicit):**
 - Editing a **commitment field** — `title`, `localWallTime`/`scheduledInstantUtc`
   (date or time) — on an `approved` item **resets it to `pending`** for fresh

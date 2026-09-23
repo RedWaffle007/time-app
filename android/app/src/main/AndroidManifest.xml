@@ -45,11 +45,11 @@
          alert — sound included — while another app holds the foreground, which is
          precisely why a reminder was silent while the user was in another app but
          loud when the screen was idle. A FULL-SCREEN INTENT is treated as a
-         genuine alarm interruption instead of a suppressible notification, so it
-         alerts unconditionally. On Android 14+ this permission is user-revocable
-         for a non-alarm app; `canUseFullScreenIntent()` (native channel) reports
-         the real state and the primer sends the user to grant it. Reminders are
-         the core of this product, which is the use case this permission names. -->
+         genuine alarm interruption instead of an ordinary notification. It is
+         still best effort: Android 14+ makes this permission user-revocable and
+         OEM policy may decline the Activity launch. `canUseFullScreenIntent()`
+         (native channel) reports the real state and the primer sends the user to
+         grant it; the ringing notification remains the actionable fallback. -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
 
     <!-- The alarm SOUND must survive the screen going dark. FLAG_INSISTENT on the

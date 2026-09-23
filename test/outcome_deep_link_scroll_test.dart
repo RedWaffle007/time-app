@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,10 +9,46 @@ import 'package:time_app/features/auth/application/auth_providers.dart';
 import 'package:time_app/features/auth/domain/user_profile.dart';
 import 'package:time_app/features/outcomes/presentation/outcome_screen.dart';
 import 'package:time_app/features/scheduling/application/schedule_providers.dart';
+import 'package:time_app/features/scheduling/data/schedule_repository.dart';
 import 'package:time_app/features/scheduling/domain/schedule_item.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 
 void main() {
+  testWidgets('rapid Done taps record one immutable outcome', (tester) async {
+    tz_data.initializeTimeZones();
+    final repository = _BlockingScheduleRepository();
+    final item = _item(
+      id: 'one-outcome',
+      title: 'One outcome',
+      instant: DateTime.now().toUtc().subtract(const Duration(minutes: 5)),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          myItemsAsTargetProvider.overrideWithValue(AsyncData([item])),
+          scheduleRepositoryProvider.overrideWithValue(repository),
+        ],
+        child: MaterialApp(theme: AppTheme.light, home: const OutcomeScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Done'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Done'));
+    await tester.pump();
+
+    expect(repository.markDoneCalls, 1);
+    final saving = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Saving…'),
+    );
+    expect(saving.onPressed, isNull);
+
+    repository.result.complete(false);
+    await tester.pump();
+    expect(find.widgetWithText(FilledButton, 'Done'), findsOneWidget);
+  });
+
   testWidgets('My Schedule identifies external and self planners', (
     tester,
   ) async {
@@ -152,3 +190,21 @@ ScheduleItem _item({
   scheduledInstantUtc: instant,
   status: ScheduleItemStatus.approved,
 );
+
+class _BlockingScheduleRepository implements ScheduleRepository {
+  final result = Completer<bool>();
+  var markDoneCalls = 0;
+
+  @override
+  Future<bool> markDone(
+    String targetUid,
+    String itemId, {
+    required String plannerUid,
+  }) {
+    markDoneCalls++;
+    return result.future;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}

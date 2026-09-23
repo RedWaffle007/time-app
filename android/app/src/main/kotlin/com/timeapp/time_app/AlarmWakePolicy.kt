@@ -8,6 +8,22 @@ internal object AlarmLaunchPolicy {
         action == SELECT_NOTIFICATION && !payload.isNullOrBlank()
 }
 
+/** Pure hardware-key gate used by MainActivity before consuming Volume Down. */
+internal object AlarmHardwareKeyPolicy {
+    fun shouldSilence(
+        keyCode: Int,
+        action: Int,
+        repeatCount: Int,
+        ringing: Boolean,
+        volumeDownKeyCode: Int,
+        actionDown: Int,
+    ): Boolean =
+        ringing &&
+            keyCode == volumeDownKeyCode &&
+            action == actionDown &&
+            repeatCount == 0
+}
+
 /** The window side effects needed to wake without unlocking the device. */
 internal interface AlarmWakeWindowHost {
     fun setModern(showWhenLocked: Boolean, turnScreenOn: Boolean)

@@ -925,6 +925,52 @@ describe('issue 2 — every legitimate write still works', () => {
     );
   });
 
+  it('DENIES replacing a settled outcome', async () => {
+    const ref = itemRef(as(ALICE), APPROVED_ITEM);
+    await assertSucceeds(setDoc(ref, {
+      outcome: {
+        result: 'skipped',
+        skippedAt: serverTimestamp(),
+        skipReason: 'Not today',
+      },
+      updatedAt: serverTimestamp(),
+    }, { merge: true }));
+
+    await assertFails(setDoc(ref, {
+      outcome: { result: 'done', completedAt: serverTimestamp() },
+      updatedAt: serverTimestamp(),
+    }, { merge: true }));
+    await assertFails(setDoc(ref, {
+      outcome: {
+        result: 'skipped',
+        skippedAt: serverTimestamp(),
+        skipReason: 'Changed my mind',
+      },
+      updatedAt: serverTimestamp(),
+    }, { merge: true }));
+  });
+
+  it('ALLOWS only the automatic lapse reason to refine to alarm timeout', async () => {
+    const ref = itemRef(as(ALICE), APPROVED_ITEM);
+    await assertSucceeds(setDoc(ref, {
+      outcome: {
+        result: 'skipped',
+        skippedAt: serverTimestamp(),
+        skipReason: 'Did not respond',
+      },
+      updatedAt: serverTimestamp(),
+    }, { merge: true }));
+
+    await assertSucceeds(setDoc(ref, {
+      outcome: {
+        result: 'skipped',
+        skippedAt: serverTimestamp(),
+        skipReason: 'User unavailable',
+      },
+      updatedAt: serverTimestamp(),
+    }, { merge: true }));
+  });
+
   it('ALLOWS the planner to withdraw a still-pending item', async () => {
     await assertSucceeds(
       setDoc(

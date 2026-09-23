@@ -1289,6 +1289,44 @@ service cloud.firestore {
           );
       }
 
+      function outcomeIsValid() {
+        return request.resource.data.outcome is map
+          && (
+            (request.resource.data.outcome.result == 'done'
+              && request.resource.data.outcome.keys().hasOnly(
+                   ['result', 'completedAt'])
+              && request.resource.data.outcome.completedAt is timestamp)
+            ||
+            (request.resource.data.outcome.result == 'skipped'
+              && request.resource.data.outcome.keys().hasOnly(
+                   ['result', 'skippedAt', 'skipReason'])
+              && request.resource.data.outcome.skippedAt is timestamp
+              && (!('skipReason' in request.resource.data.outcome)
+                  || request.resource.data.outcome.skipReason is string))
+          );
+      }
+
+      function outcomeTransitionIsValid() {
+        return !changedKeys().hasAny(['outcome'])
+          || (
+            request.resource.data.status == 'approved'
+            && outcomeIsValid()
+            && (
+              // Human Done/Skip and the generic lapse are first-write-wins.
+              resource.data.get('outcome', null) == null
+              // The one permitted refinement: a native one-minute timeout is
+              // more specific than the automatic end-of-day fallback.
+              || (
+                resource.data.outcome is map
+                && resource.data.outcome.result == 'skipped'
+                && resource.data.outcome.get('skipReason', '') == 'Did not respond'
+                && request.resource.data.outcome.result == 'skipped'
+                && request.resource.data.outcome.get('skipReason', '') == 'User unavailable'
+              )
+            )
+          );
+      }
+
       // The target always. A PLANNER holding access over them may also read —
       // that is the "view B's schedule before picking a time" modal, and it is
       // read-only: every write branch below still requires the caller to be the
@@ -1351,6 +1389,7 @@ service cloud.firestore {
                  ['status', 'decidedAt', 'rejectionReason', 'outcome', 'alarm',
                   'updatedAt'])
             && alarmTimelineIsValid()
+            && outcomeTransitionIsValid()
             && (!changedKeys().hasAny(['alarm'])
                 || request.resource.data.status == 'approved')
             // Changing `status` is a DECISION, and a decision is only ever made

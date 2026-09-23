@@ -15,6 +15,7 @@ import android.util.Log
 import android.view.KeyEvent
 import android.view.WindowManager
 import androidx.core.content.ContextCompat
+import com.timeapp.time_app.reminders.AlarmDeliveryChannel
 import com.timeapp.time_app.reminders.AlarmLifecycleChannel
 import com.timeapp.time_app.reminders.AlarmSoundService
 import com.timeapp.time_app.reminders.ReminderAuditChannel
@@ -67,7 +68,6 @@ class MainActivity : FlutterFragmentActivity() {
     // Preloaded once so tick #1 has no file-open latency. Created lazily on first
     // use (channel call), which is the cold-start reveal mounting.
     private var splashSound: SplashSound? = null
-    private var celebrationSound: CelebrationSound? = null
     private var alarmKeyChannel: MethodChannel? = null
     private var alarmEndedReceiverRegistered = false
     private val alarmWakeWindow by lazy {
@@ -124,7 +124,6 @@ class MainActivity : FlutterFragmentActivity() {
         // The cold-start reveal's clock ting. Fired once from Dart as the black
         // splash mounts; duration + the mute-switch check live in [SplashSound].
         const val SPLASH_SOUND_CHANNEL = "time_app/splash_sound"
-        const val CELEBRATION_SOUND_CHANNEL = "time_app/celebration_sound"
 
         // A reinstall boundary that Android Auto Backup cannot fake. Package
         // firstInstallTime survives updates but changes after uninstall, while
@@ -220,6 +219,11 @@ class MainActivity : FlutterFragmentActivity() {
         // activity by hours, and holding an Activity in a PendingIntent's
         // context is how a leak becomes a crash on a 6am delivery.
         ReminderAuditChannel(applicationContext).register(flutterEngine.dartExecutor.binaryMessenger)
+        // This is the due-time audio arm. Without registering the channel Dart
+        // receives MissingPluginException, records AUDIO_ARM_FAILED, and no
+        // native receiver exists until opening Flutter triggers the UI fallback.
+        AlarmDeliveryChannel(applicationContext)
+            .register(flutterEngine.dartExecutor.binaryMessenger)
         AlarmLifecycleChannel(applicationContext)
             .register(flutterEngine.dartExecutor.binaryMessenger)
         alarmKeyChannel = MethodChannel(
@@ -322,18 +326,6 @@ class MainActivity : FlutterFragmentActivity() {
                 }
             }
 
-        val celebration = CelebrationSound(applicationContext).also {
-            celebrationSound = it
-        }
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CELEBRATION_SOUND_CHANNEL)
-            .setMethodCallHandler { call, result ->
-                when (call.method) {
-                    "play" -> { celebration.play(); result.success(null) }
-                    "stop" -> { celebration.stop(); result.success(null) }
-                    else -> result.notImplemented()
-                }
-            }
-
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
                 // A name mismatch here would answer notImplemented(), which Dart
@@ -394,15 +386,20 @@ class MainActivity : FlutterFragmentActivity() {
      * that platform boundary.
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (
-            event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN &&
-            event.action == KeyEvent.ACTION_DOWN &&
-            event.repeatCount == 0 &&
-            AlarmSoundService.isRinging()
+        if (AlarmHardwareKeyPolicy.shouldSilence(
+                keyCode = event.keyCode,
+                action = event.action,
+                repeatCount = event.repeatCount,
+                ringing = AlarmSoundService.isRinging(),
+                volumeDownKeyCode = KeyEvent.KEYCODE_VOLUME_DOWN,
+                actionDown = KeyEvent.ACTION_DOWN,
+            )
         ) {
-            AlarmSoundService.silenceFromVolumeDown(this)
-            alarmKeyChannel?.invokeMethod("volumeSilenced", null)
-            return true
+            if (AlarmSoundService.silenceFromVolumeDown(this)) {
+                Log.i(TAG, "Volume Down silenced active alarm")
+                alarmKeyChannel?.invokeMethod("volumeSilenced", null)
+                return true
+            }
         }
         return super.dispatchKeyEvent(event)
     }

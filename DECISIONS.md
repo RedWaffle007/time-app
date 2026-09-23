@@ -5703,9 +5703,52 @@ a deprecated screen wake lock or any attempt to bypass user settings.
 ## Splash ting fades inside—not beyond—the 1.5-second reveal (2026-09-23)
 
 The visual timing is unchanged: 1,150ms intro plus 350ms outro. Native
-`SplashSound` now ramps its `SoundPool` stream to zero over the final 300ms and
+`SplashSound` now ramps its `SoundPool` stream to zero over the final 750ms and
 stops at the original 1,500ms deadline. The deadline is measured from the Dart
 play request, not from asynchronous sample-load completion; a late preload gets
 only the remaining window and an expired request never starts a stale sound.
 Replay cancels the previous fade callback, while the existing ringer-normal
 gate and one-shot playback remain unchanged.
+
+---
+
+## Device regression hardening: one alarm owner and alarm-clock delivery (2026-09-23)
+
+On-device testing exposed two gaps that unit-only policy checks did not cover.
+With Checkmate visible, the scheduled notification and native foreground
+service could both own audio, while `AlarmScreen` cancelled the notification
+before its asynchronous UI ownership claim reached the service. That produced a
+stop/restart cadence of roughly two seconds. The scheduled notification is now
+silent and non-full-screen; the due-time receiver and `AlarmSoundService` are
+the only audio/full-screen owners. `AlarmScreen` awaits its ownership claim
+before cancelling the redundant notification, preserving uninterrupted
+whole-tone looping on locked and unlocked paths.
+
+Another device run showed no alarm while Instagram was foreground; opening
+Checkmate near the end of the minute started the UI fallback. Code-path audit
+found the direct cause: `AlarmDeliveryChannel` existed but was never registered
+in `MainActivity`, so every native arm returned unavailable and no due-time
+receiver existed. The channel is now registered. Exact native audio delivery
+also uses `AlarmManager.setAlarmClock`, while the plugin retains a quiet visible
+schedule record. This intentionally accepts Android's system next-alarm
+affordance in exchange for the strongest public due-time primitive. It is still
+not a promise against revoked exact-alarm/full-screen permissions or hostile OEM
+policy; `AUDIO_ARM_FAILED` and `AUDIO_START_FAILED` remain explicit diagnostics.
+
+Volume Down remains scoped to the foreground `MainActivity`, but its dispatch
+gate and native stop request are now both checked: the key is consumed only for
+the first down event while playback is actually active and the stop request was
+accepted.
+
+## Completion and outcome regressions: silent, once, immutable (2026-09-23)
+
+The completion celebration has no audio. Its overlay covers the complete host,
+uses event-specific identity, pauses across lifecycle/lock interruptions, and
+advances the local queue before waiting for Firestore acknowledgement. Repeated
+snapshots therefore do not replay an event, a slow network acknowledgement does
+not block the next task, and subsequent completed tasks still celebrate.
+
+Done and Skip are now transactional first-write-wins operations. The UI disables
+both controls while a write is pending, and Firestore rules reject replacing an
+existing human outcome. The only allowed replacement remains the established
+automatic lapse refinement from `Did not respond` to `User unavailable`.
