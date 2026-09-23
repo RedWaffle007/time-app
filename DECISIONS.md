@@ -5557,3 +5557,21 @@ each feature lives and points at the `＋` FABs, and "How this app works" is
 restructured around the real bar (Plan/Track/⊕/Stats/You) with "in the You tab"
 tags on Friends, Calendar, Language practice and permissions. Walkthrough test's
 single-line-body contract kept.
+
+---
+
+## Durable six-hour inactivity prompts (2026-09-23)
+
+Inactivity is account state, not device-local alarm state. Real use means a
+signed-in launch/resume or pointer interaction; those signals are coalesced to
+one Firestore write per five minutes. Background FCM work does not count. State
+lives at private `inactivityStates/{uid}`, outside the broadly readable profile.
+
+The Worker cron runs every five minutes, conditionally leases due documents,
+re-checks activity after claiming, and sends one of 50 short messages in fixed
+sequence. The cursor advances only after a real FCM delivery and wraps only
+after message 50. No-token/transient runs retain the cursor. Continued
+inactivity schedules another prompt six hours later; any genuine app use resets
+that timer. Conditional claims prevent overlapping cron sends, while a final
+activity re-check prevents an app-open racing delivery from shortening the new
+six-hour window.

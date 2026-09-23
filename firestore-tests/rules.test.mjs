@@ -207,6 +207,65 @@ describe('issue 1 — users are not enumerable', () => {
   });
 });
 
+// --- six-hour inactivity state -------------------------------------------
+
+describe('inactivity state is private and client fields are constrained', () => {
+  const activityAt = Timestamp.fromDate(new Date('2026-09-23T06:00:00Z'));
+  const dueAt = Timestamp.fromDate(new Date('2026-09-23T12:00:00Z'));
+  const stateRef = (db, uid = ALICE) => doc(db, 'inactivityStates', uid);
+
+  it('allows the owner to create the exact six-hour timer', async () => {
+    await assertSucceeds(setDoc(stateRef(as(ALICE)), {
+      uid: ALICE,
+      lastActivityAt: activityAt,
+      nextNotificationAt: dueAt,
+    }));
+  });
+
+  it('denies another user and all collection enumeration', async () => {
+    await assertFails(setDoc(stateRef(as(BOB)), {
+      uid: ALICE,
+      lastActivityAt: activityAt,
+      nextNotificationAt: dueAt,
+    }));
+    await assertFails(getDoc(stateRef(as(BOB))));
+    await assertFails(getDocs(collection(as(ALICE), 'inactivityStates')));
+  });
+
+  it('denies forged due times and Worker-owned delivery fields', async () => {
+    await assertFails(setDoc(stateRef(as(ALICE)), {
+      uid: ALICE,
+      lastActivityAt: activityAt,
+      nextNotificationAt: Timestamp.fromDate(new Date('2027-01-01T00:00:00Z')),
+    }));
+    await assertFails(setDoc(stateRef(as(ALICE)), {
+      uid: ALICE,
+      lastActivityAt: activityAt,
+      nextNotificationAt: dueAt,
+      sequenceIndex: 49,
+    }));
+  });
+
+  it('preserves Worker fields while allowing a later owner activity update', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(stateRef(ctx.firestore()), {
+        uid: ALICE,
+        lastActivityAt: activityAt,
+        nextNotificationAt: dueAt,
+        sequenceIndex: 7,
+        lastNotifiedAt: Timestamp.fromDate(new Date('2026-09-22T12:00:00Z')),
+      });
+    });
+    await assertSucceeds(setDoc(stateRef(as(ALICE)), {
+      lastActivityAt: Timestamp.fromDate(new Date('2026-09-23T07:00:00Z')),
+      nextNotificationAt: Timestamp.fromDate(new Date('2026-09-23T13:00:00Z')),
+    }, { merge: true }));
+    await assertFails(setDoc(stateRef(as(ALICE)), {
+      sequenceIndex: 0,
+    }, { merge: true }));
+  });
+});
+
 // --- the profile name is required, server-side ----------------------------
 //
 // It used to be enforced only by two widget getters. These cases pin the rule

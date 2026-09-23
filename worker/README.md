@@ -1,8 +1,9 @@
 # time-app-notify (Cloudflare Worker)
 
-Client-triggered completion→planner push. The Flutter app POSTs here after the
-target writes a done/skip outcome; this Worker verifies the caller, resolves the
-entitled planner, and sends the FCM push.
+Authenticated app-event push plus the scheduled six-hour inactivity notifier.
+The Flutter app POSTs relationship/item events here; this Worker verifies the
+caller, resolves the entitled recipient, and sends the FCM push. A five-minute
+cron separately queries private per-user inactivity state and sends due prompts.
 
 **Why a Worker and not a Cloud Function:** no payment card yet, so no Firebase
 Blaze. This is the no-card transport. All notification *policy* lives in
@@ -14,6 +15,7 @@ transport swap, not a rewrite. See `DECISIONS.md` → "Completion→planner push
 | File | Role |
 | --- | --- |
 | `src/notify.js` | **Portable policy** — recipient resolution, payload, dedup guard, server-side outcome verify, token cleanup. Reused verbatim by a future Cloud Function. |
+| `src/inactivity.js` | **Portable scheduled policy** — 50-message cursor, due-time validation, lease/dedup, delivery, and token cleanup. |
 | `src/index.js` | Worker shell — POST-only, body cap, ID-token verify, caller==target authz, fail-closed. |
 | `src/verify-id-token.js` | Firebase ID token verification (Google JWK set). |
 | `src/google-auth.js` | Service-account → OAuth2 access token (WebCrypto RS256). |
@@ -34,6 +36,10 @@ wrangler secret put FIREBASE_SERVICE_ACCOUNT
 
 wrangler deploy      # prints the endpoint URL
 ```
+
+Deployment also installs the `*/5 * * * *` cron declared in `wrangler.toml`.
+The app/rules and Worker therefore need to be deployed together when enabling
+inactivity notifications; a Git push by itself changes neither backend.
 
 Then put the printed URL into the app at `lib/core/config/notify_config.dart`
 (`kNotifyEndpoint`). It is not a secret — auth is the ID-token check, not URL

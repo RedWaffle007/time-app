@@ -2,6 +2,9 @@ name = "time-app-notify"
 main = "src/index.js"
 compatibility_date = "2025-01-01"
 
+[triggers]
+crons = ["*/5 * * * *"]
+
 # Non-secret config. The project id is a public identifier.
 [vars]
 PROJECT_ID = "time-app-1e1c9"

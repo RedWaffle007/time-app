@@ -19,6 +19,7 @@ users/{uid}
 users/{uid}/fcmTokens/{token}
 users/{uid}/state/{doc}                   # per-user view state (archive)
 users/{uid}/profileStats/{doc}            # SOCIAL — privacy-gated stats
+inactivityStates/{uid}                    # private six-hour timer + delivery cursor
 groups/{groupId}
 groups/{groupId}/members/{uid}
 groups/{groupId}/plannerGrants/{grantId}
@@ -43,6 +44,15 @@ so "this data belongs to the target" is expressible as a simple ownership rule.
 The cross-document part (a planner may write here only if a grant exists) is the
 verbose-Firestore-rules cost we accepted in CLAUDE.md; privileged writes may go
 through a Cloud Function instead of client-side rules.
+
+## `inactivityStates/{uid}`
+
+Private operational state; only the owner may get it, and no client may list the
+collection. The app owns `uid`, `lastActivityAt`, and `nextNotificationAt`
+(exactly six hours later). The notification Worker exclusively owns
+`sequenceIndex`, `leaseUntil`, and `lastNotifiedAt`. Real foreground use resets
+the due time without resetting the message cursor; the cursor advances only
+after at least one FCM delivery and wraps after all 50 variants.
 
 ---
 

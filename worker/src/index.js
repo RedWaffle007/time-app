@@ -21,6 +21,7 @@ import {
   FRIEND_EVENTS,
 } from './notify.js';
 import { handleAvatarUpload, handleAvatarDelete } from './avatar.js';
+import { sendDueInactivityNotifications } from './inactivity.js';
 
 const MAX_BODY_BYTES = 2048;
 const EVENTS = new Set(['created', 'decided', 'outcome', 'withdrawn']);
@@ -169,7 +170,28 @@ export default {
       return json({ error: 'send-failed', detail: String(e && e.message) }, 500);
     }
   },
+  async scheduled(controller, env, ctx) {
+    const run = runInactivityCron(env, new Date(controller.scheduledTime));
+    ctx.waitUntil(run);
+  },
 };
+
+async function runInactivityCron(env, now) {
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
+  } catch {
+    throw new Error('server-misconfigured');
+  }
+  const accessToken = await getAccessToken(serviceAccount);
+  const context = {
+    projectId: env.PROJECT_ID,
+    db: makeFirestoreDb(env.PROJECT_ID, accessToken),
+    fcm: makeFcm(env.PROJECT_ID, accessToken),
+  };
+  const result = await sendDueInactivityNotifications(context, now);
+  console.log(JSON.stringify({ event: 'inactivity-cron', ...result }));
+}
 
 /**
  * Friend-request / friend-accept push. Same shell contract as the item path —

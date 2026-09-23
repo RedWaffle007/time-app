@@ -52,6 +52,8 @@ class NotificationRouter {
         router.go(Routes.friendRequests);
       case 'friendAccept':
         router.go(Routes.friends);
+      case 'inactivity':
+        router.go(Routes.plan);
       default:
         if (data['type'] == 'outcome') {
           _openPlanActivity();

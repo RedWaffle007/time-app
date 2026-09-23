@@ -183,6 +183,35 @@ service cloud.firestore {
         && a.hasAll(b);
     }
 
+    // ---- inactivityStates/{uid} ----
+    // Private operational state for the six-hour re-engagement timer. The app
+    // owns only the activity timestamp and derived due time; the privileged
+    // Worker adds/updates the delivery cursor, lease, and last-delivered time.
+    // Keeping this outside the broadly-gettable profile document prevents an
+    // acquaintance who knows a uid from learning when that person used the app.
+    match /inactivityStates/{uid} {
+      function activityFieldsAreValid() {
+        return request.resource.data.uid == uid
+          && request.resource.data.lastActivityAt is timestamp
+          && request.resource.data.nextNotificationAt is timestamp
+          && request.resource.data.nextNotificationAt
+             == request.resource.data.lastActivityAt + duration.value(6, 'h');
+      }
+
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list: if false;
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(
+             ['uid', 'lastActivityAt', 'nextNotificationAt'])
+        && activityFieldsAreValid();
+      allow update: if signedIn()
+        && request.auth.uid == uid
+        && changedKeys().hasOnly(['lastActivityAt', 'nextNotificationAt'])
+        && activityFieldsAreValid();
+      allow delete: if false;
+    }
+
     // ---- users/{uid} ----
     // Decision ①: a signed-in user may GET one profile by uid (name / avatar /
     // home tz) — the planner needs the target's name and home timezone, and the

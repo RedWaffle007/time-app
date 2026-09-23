@@ -6,6 +6,34 @@ import 'package:time_app/routing/app_router.dart';
 import 'package:time_app/routing/notification_routing.dart';
 
 void main() {
+  testWidgets('an inactivity push opens the landing Plan surface', (
+    tester,
+  ) async {
+    final router = GoRouter(
+      initialLocation: Routes.you,
+      routes: [
+        GoRoute(path: Routes.plan, builder: (_, _) => const Text('Plan')),
+        GoRoute(path: Routes.you, builder: (_, _) => const Text('You')),
+      ],
+    );
+    final container = ProviderContainer(
+      overrides: [routerProvider.overrideWithValue(router)],
+    );
+    addTearDown(container.dispose);
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+    await tester.pumpAndSettle();
+    expect(find.text('You'), findsOneWidget);
+
+    container.read(notificationRouterProvider).openForPushEvent({
+      'event': 'inactivity',
+    });
+    await tester.pumpAndSettle();
+
+    expect(find.text('Plan'), findsOneWidget);
+  });
+
   testWidgets(
     'friend acceptance opens Friends above You and Back returns to main tabs',
     (tester) async {

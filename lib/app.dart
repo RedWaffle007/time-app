@@ -12,6 +12,7 @@ import 'features/auth/application/auth_providers.dart';
 import 'features/celebrations/presentation/completion_celebration_host.dart';
 import 'features/notifications/application/messaging_service.dart';
 import 'features/notifications/application/fcm_failure_banner_policy.dart';
+import 'features/notifications/application/inactivity_tracker.dart';
 import 'features/onboarding/application/onboarding_providers.dart';
 import 'features/groups/application/group_providers.dart';
 import 'features/groups/application/group_stats_providers.dart';
@@ -62,6 +63,7 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
   /// flips; [SplashOverlay.skipReveal] handles both the initial and late signal.
   bool _openedFromNotification = false;
   bool _splashReady = false;
+  String? _activityUid;
 
   @override
   void initState() {
@@ -102,6 +104,7 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     final uid = ref.read(authStateProvider).value?.uid;
     if (uid != null) {
       ref.read(messagingServiceProvider).registerForUser(uid);
+      ref.read(inactivityTrackerProvider).record(uid);
     }
 
     // RECONCILE ON RESUME. The item stream alone is not enough, because the
@@ -345,6 +348,14 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     // MessagingService dedups per-uid internally, so calling it on rebuilds is
     // safe — the permission prompt + token write happen once per signed-in user.
     final uid = ref.watch(authStateProvider).value?.uid;
+    if (_activityUid != uid) {
+      _activityUid = uid;
+      if (uid == null) {
+        ref.read(inactivityTrackerProvider).clear();
+      } else {
+        ref.read(inactivityTrackerProvider).record(uid);
+      }
+    }
     if (uid != null) {
       ref.read(messagingServiceProvider).registerForUser(uid);
     }
@@ -450,19 +461,28 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
       // beneath. A notification launch bypasses it because the user explicitly
       // asked to see one destination now; a warm resume never re-runs `main()`.
       // See SplashOverlay for both paths.
-      builder: (context, child) => SplashOverlay(
-        skipReveal: _openedFromNotification,
-        onRevealComplete: () {
-          if (mounted && !_splashReady) {
-            setState(() => _splashReady = true);
+      builder: (context, child) => Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (_) {
+          final currentUid = _activityUid;
+          if (currentUid != null) {
+            ref.read(inactivityTrackerProvider).record(currentUid);
           }
         },
-        child: AppLockGate(
-          child: CompletionCelebrationHost(
-            enabled: _splashReady,
-            child: TimeBackdrop(
-              key: TimeBackdrop.backdropKey,
-              child: child ?? const SizedBox.shrink(),
+        child: SplashOverlay(
+          skipReveal: _openedFromNotification,
+          onRevealComplete: () {
+            if (mounted && !_splashReady) {
+              setState(() => _splashReady = true);
+            }
+          },
+          child: AppLockGate(
+            child: CompletionCelebrationHost(
+              enabled: _splashReady,
+              child: TimeBackdrop(
+                key: TimeBackdrop.backdropKey,
+                child: child ?? const SizedBox.shrink(),
+              ),
             ),
           ),
         ),
