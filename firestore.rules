@@ -1147,6 +1147,70 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // ---- completionCelebrations/{targetUid_itemId} ----
+    // Durable, per-participant delivery for the 1.5-second completion effect.
+    // The target creates it atomically with the DONE outcome. Each participant
+    // may acknowledge only themselves; the last unseen participant deletes it.
+    match /completionCelebrations/{celebrationId} {
+      function itemBefore() {
+        return get(/databases/$(database)/documents/scheduleItems/$(request.resource.data.targetUid)/items/$(request.resource.data.itemId));
+      }
+
+      function itemAfter() {
+        return getAfter(/databases/$(database)/documents/scheduleItems/$(request.resource.data.targetUid)/items/$(request.resource.data.itemId));
+      }
+
+      function exactKeys() {
+        return request.resource.data.keys().hasOnly([
+          'itemId', 'targetUid', 'plannerUid', 'participantUids',
+          'seenByUids', 'createdAt'
+        ]);
+      }
+
+      allow get: if signedIn()
+        && request.auth.uid in resource.data.participantUids;
+      allow list: if signedIn()
+        && request.auth.uid in resource.data.participantUids;
+
+      allow create: if signedIn()
+        && exactKeys()
+        && celebrationId == request.resource.data.targetUid + '_' + request.resource.data.itemId
+        && request.auth.uid == request.resource.data.targetUid
+        && request.resource.data.seenByUids == []
+        && request.resource.data.participantUids is list
+        && request.resource.data.participantUids.toSet().size()
+             == request.resource.data.participantUids.size()
+        && request.resource.data.targetUid in request.resource.data.participantUids
+        && request.resource.data.plannerUid in request.resource.data.participantUids
+        && request.resource.data.participantUids.size()
+             == (request.resource.data.targetUid == request.resource.data.plannerUid ? 1 : 2)
+        && itemBefore().data.get('outcome', null) == null
+        && itemAfter().data.targetUid == request.resource.data.targetUid
+        && itemAfter().data.createdByUid == request.resource.data.plannerUid
+        && itemAfter().data.outcome.result == 'done';
+
+      allow update: if signedIn()
+        && request.auth.uid in resource.data.participantUids
+        && changedKeys().hasOnly(['seenByUids'])
+        && request.resource.data.seenByUids is list
+        && request.resource.data.seenByUids.toSet().size()
+             == request.resource.data.seenByUids.size()
+        && request.resource.data.seenByUids.toSet()
+             .difference(resource.data.participantUids.toSet()).size() == 0
+        && request.resource.data.seenByUids.toSet()
+             .hasAll(resource.data.seenByUids.toSet())
+        && request.resource.data.seenByUids.toSet()
+             .difference(resource.data.seenByUids.toSet())
+             .hasOnly([request.auth.uid])
+        && request.auth.uid in request.resource.data.seenByUids;
+
+      allow delete: if signedIn()
+        && request.auth.uid in resource.data.participantUids
+        && resource.data.participantUids.toSet()
+             .difference(resource.data.seenByUids.toSet())
+             .hasOnly([request.auth.uid]);
+    }
+
     // ---- scheduleItems/{targetUid}/items/{itemId} ----
     // This SPECIFIC-path rule serves the TARGET's own subtree (their pending
     // queue / approved items) via direct, path-scoped reads, plus item writes.

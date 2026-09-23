@@ -535,7 +535,7 @@ class _OutcomeCard extends ConsumerWidget {
   Future<void> _markDone(BuildContext context, WidgetRef ref) async {
     await ref
         .read(scheduleRepositoryProvider)
-        .markDone(item.targetUid, item.id);
+        .markDone(item.targetUid, item.id, plannerUid: item.createdByUid);
     // The planner push is skipped for a self-planned item (no one else to tell),
     // but the time-tracking prompt is NOT — self-planned items are exactly the
     // ones a user logs their own time against. So the early-out only guards the

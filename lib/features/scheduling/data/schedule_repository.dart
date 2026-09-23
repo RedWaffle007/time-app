@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/timezone/tz_resolver.dart';
+import '../../celebrations/domain/completion_celebration.dart';
 import '../domain/schedule_item.dart';
 
 /// Creates schedule items and drives their status/outcome transitions.
@@ -206,14 +207,32 @@ class ScheduleRepository {
   }
 
   /// Target records completion — status stays `approved`, outcome is layered on.
-  Future<void> markDone(String targetUid, String itemId) {
-    return _items(targetUid).doc(itemId).set({
+  Future<void> markDone(
+    String targetUid,
+    String itemId, {
+    required String plannerUid,
+  }) {
+    final itemRef = _items(targetUid).doc(itemId);
+    final eventId = CompletionCelebration.eventId(targetUid, itemId);
+    final eventRef = _db.collection('completionCelebrations').doc(eventId);
+    final participants = <String>{targetUid, plannerUid}.toList();
+    final batch = _db.batch();
+    batch.set(itemRef, {
       'outcome': {
         'result': OutcomeResult.done.name,
         'completedAt': FieldValue.serverTimestamp(),
       },
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+    batch.set(eventRef, {
+      'itemId': itemId,
+      'targetUid': targetUid,
+      'plannerUid': plannerUid,
+      'participantUids': participants,
+      'seenByUids': <String>[],
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    return batch.commit();
   }
 
   Future<void> markSkipped(String targetUid, String itemId, {String? reason}) {

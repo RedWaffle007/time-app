@@ -61,6 +61,7 @@ class MainActivity : FlutterFragmentActivity() {
     // Preloaded once so tick #1 has no file-open latency. Created lazily on first
     // use (channel call), which is the cold-start reveal mounting.
     private var splashSound: SplashSound? = null
+    private var celebrationSound: CelebrationSound? = null
 
     private companion object {
         const val CHANNEL = "time_app/secure_window"
@@ -81,6 +82,7 @@ class MainActivity : FlutterFragmentActivity() {
         // The cold-start reveal's clock ting. Fired once from Dart as the black
         // splash mounts; duration + the mute-switch check live in [SplashSound].
         const val SPLASH_SOUND_CHANNEL = "time_app/splash_sound"
+        const val CELEBRATION_SOUND_CHANNEL = "time_app/celebration_sound"
 
         // A reinstall boundary that Android Auto Backup cannot fake. Package
         // firstInstallTime survives updates but changes after uninstall, while
@@ -242,6 +244,18 @@ class MainActivity : FlutterFragmentActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "play" -> { splash.play(); result.success(null) }
+                    else -> result.notImplemented()
+                }
+            }
+
+        val celebration = CelebrationSound(applicationContext).also {
+            celebrationSound = it
+        }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CELEBRATION_SOUND_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "play" -> { celebration.play(); result.success(null) }
+                    "stop" -> { celebration.stop(); result.success(null) }
                     else -> result.notImplemented()
                 }
             }

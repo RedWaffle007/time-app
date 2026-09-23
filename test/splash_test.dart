@@ -145,4 +145,28 @@ void main() {
       const Duration(milliseconds: 1500),
     );
   });
+
+  testWidgets('reports when covered app content is actually visible', (
+    tester,
+  ) async {
+    var ready = false;
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: SplashOverlay(
+          onRevealComplete: () => ready = true,
+          child: const Text('APP'),
+        ),
+      ),
+    );
+    expect(ready, isFalse);
+
+    await tester.pump(SplashOverlay.introDuration);
+    await tester.pump(SplashOverlay.outroDuration);
+    // The signal is deliberately post-frame so app-wide overlays cannot start
+    // while the splash frame is still covering the app.
+    await tester.pumpAndSettle();
+
+    expect(ready, isTrue);
+  });
 }

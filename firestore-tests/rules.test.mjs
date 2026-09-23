@@ -559,6 +559,61 @@ describe('unanimous group admission', () => {
   });
 });
 
+describe('durable completion celebrations', () => {
+  const celebrationId = `${ALICE}_${APPROVED_ITEM}`;
+  const celebrationPath = `completionCelebrations/${celebrationId}`;
+  const celebration = () => ({
+    itemId: APPROVED_ITEM,
+    targetUid: ALICE,
+    plannerUid: BOB,
+    participantUids: [ALICE, BOB],
+    seenByUids: [],
+    createdAt: serverTimestamp(),
+  });
+
+  it('DENIES creating an event without the matching done transition', async () => {
+    await assertFails(setDoc(doc(as(ALICE), celebrationPath), celebration()));
+  });
+
+  it('creates the done outcome and event atomically for both participants', async () => {
+    const db = as(ALICE);
+    const batch = writeBatch(db);
+    batch.set(itemRef(db, APPROVED_ITEM), {
+      outcome: { result: 'done', completedAt: serverTimestamp() },
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+    batch.set(doc(db, celebrationPath), celebration());
+    await assertSucceeds(batch.commit());
+
+    await assertSucceeds(getDoc(doc(as(BOB), celebrationPath)));
+    await assertFails(getDoc(doc(as(MALLORY), celebrationPath)));
+  });
+
+  it('allows each participant to acknowledge only themselves', async () => {
+    const db = as(ALICE);
+    const batch = writeBatch(db);
+    batch.set(itemRef(db, APPROVED_ITEM), {
+      outcome: { result: 'done', completedAt: serverTimestamp() },
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+    batch.set(doc(db, celebrationPath), celebration());
+    await assertSucceeds(batch.commit());
+
+    await assertSucceeds(setDoc(doc(as(ALICE), celebrationPath), {
+      seenByUids: [ALICE],
+    }, { merge: true }));
+    await assertFails(setDoc(doc(as(BOB), celebrationPath), {
+      seenByUids: [ALICE, MALLORY],
+    }, { merge: true }));
+    await assertSucceeds(deleteDoc(doc(as(BOB), celebrationPath)));
+    await assertFails(setDoc(doc(as(ALICE), celebrationPath), celebration()));
+  });
+
+  it('DENIES an outsider enumerating celebration events', async () => {
+    await assertFails(getDocs(collection(as(MALLORY), 'completionCelebrations')));
+  });
+});
+
 // --- ISSUE 2: notification suppression ------------------------------------
 
 describe('issue 2 — no client may write the Worker dedup fields', () => {

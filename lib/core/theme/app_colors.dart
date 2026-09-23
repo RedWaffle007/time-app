@@ -130,6 +130,18 @@ abstract final class AppColors {
   static const darkViolet = Color(0xFFB9A0F0);
   static const lightPink = Color(0xFFC03271);
   static const darkPink = Color(0xFFF08AB4);
+
+  /// Fixed paper palette for the completion celebration. These colors are
+  /// intentionally theme-independent because the particles briefly overlay
+  /// both light and dark app content as a categorical animation.
+  static const completionCelebrationPaper = <Color>[
+    Color(0xFF25D366),
+    Color(0xFF53BDEB),
+    Color(0xFFFFD166),
+    Color(0xFFFF5D8F),
+    Color(0xFF9B5DE5),
+    Color(0xFFFF8C42),
+  ];
 }
 
 /// The attention (orange) family, which Material's [ColorScheme] has no slot for.

@@ -9,6 +9,7 @@ import 'core/theme/app_theme.dart';
 import 'core/widgets/time_backdrop.dart';
 import 'features/applock/presentation/app_lock_gate.dart';
 import 'features/auth/application/auth_providers.dart';
+import 'features/celebrations/presentation/completion_celebration_host.dart';
 import 'features/notifications/application/messaging_service.dart';
 import 'features/notifications/application/fcm_failure_banner_policy.dart';
 import 'features/onboarding/application/onboarding_providers.dart';
@@ -60,6 +61,7 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
   /// report it asynchronously, so the splash may already be mounted when this
   /// flips; [SplashOverlay.skipReveal] handles both the initial and late signal.
   bool _openedFromNotification = false;
+  bool _splashReady = false;
 
   @override
   void initState() {
@@ -221,6 +223,13 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
 
   void _showForegroundBanner(RemoteMessage message) {
     debugPrint('FCM foreground: ${message.data}');
+    // A DONE event has a durable Firestore celebration. The app-wide host shows
+    // the colored-paper effect live and acknowledges it exactly once; stacking
+    // the ordinary snackbar over that effect would render the same event twice.
+    if (message.data['event'] == 'outcome' &&
+        message.data['subtype'] == 'done') {
+      return;
+    }
     // In the foreground the `notification` block is delivered but NOT rendered
     // by the OS; render it ourselves. Data-only messages have nothing to show.
     // Emergency-created messages are data-only so Android invokes the
@@ -443,10 +452,18 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
       // See SplashOverlay for both paths.
       builder: (context, child) => SplashOverlay(
         skipReveal: _openedFromNotification,
+        onRevealComplete: () {
+          if (mounted && !_splashReady) {
+            setState(() => _splashReady = true);
+          }
+        },
         child: AppLockGate(
-          child: TimeBackdrop(
-            key: TimeBackdrop.backdropKey,
-            child: child ?? const SizedBox.shrink(),
+          child: CompletionCelebrationHost(
+            enabled: _splashReady,
+            child: TimeBackdrop(
+              key: TimeBackdrop.backdropKey,
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
         ),
       ),

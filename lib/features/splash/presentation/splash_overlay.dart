@@ -32,6 +32,7 @@ class SplashOverlay extends StatefulWidget {
     super.key,
     required this.child,
     this.skipReveal = false,
+    this.onRevealComplete,
   });
 
   /// The whole app (the app-lock gate + router) rendered beneath the reveal.
@@ -41,6 +42,11 @@ class SplashOverlay extends StatefulWidget {
   /// start must reveal that destination immediately instead of holding it
   /// behind the normal launch animation and its readiness timeout.
   final bool skipReveal;
+
+  /// Signals that content above the app may begin presenting. This differs
+  /// from merely being mounted: during the 1.5-second cold reveal the app is
+  /// intentionally covered and must not consume an unseen celebration.
+  final VoidCallback? onRevealComplete;
 
   /// Process-scoped: has the reveal already played in THIS process? Reset only by
   /// a fresh isolate, i.e. a true cold start.
@@ -93,6 +99,19 @@ class _SplashOverlayState extends State<SplashOverlay>
 
   /// The reveal is finished and this widget is a pass-through to [widget.child].
   bool _done = false;
+  bool _reportedComplete = false;
+
+  void _reportComplete() {
+    if (_reportedComplete) {
+      return;
+    }
+    _reportedComplete = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        widget.onRevealComplete?.call();
+      }
+    });
+  }
 
   @override
   void initState() {
@@ -104,6 +123,7 @@ class _SplashOverlayState extends State<SplashOverlay>
       // launches take the same immediate path even on a fresh process.
       if (widget.skipReveal) SplashOverlay._revealPlayed = true;
       _done = true;
+      _reportComplete();
       // Late finals must still be initialised — disposed immediately below is
       // avoided by only creating them on the cold path.
       _intro = AnimationController(
@@ -117,26 +137,25 @@ class _SplashOverlayState extends State<SplashOverlay>
       return;
     }
 
-    _intro = AnimationController(
-      vsync: this,
-      duration: SplashOverlay.introDuration,
-    )
-      ..addStatusListener((status) {
-        if (status == AnimationStatus.completed) {
-          _outro.forward();
-        }
-      });
+    _intro =
+        AnimationController(vsync: this, duration: SplashOverlay.introDuration)
+          ..addStatusListener((status) {
+            if (status == AnimationStatus.completed) {
+              _outro.forward();
+            }
+          });
 
-    _outro = AnimationController(
-      vsync: this,
-      duration: SplashOverlay.outroDuration,
-    )
-      ..addStatusListener((status) {
-        if (status == AnimationStatus.completed) {
-          SplashOverlay._revealPlayed = true;
-          if (mounted) setState(() => _done = true);
-        }
-      });
+    _outro =
+        AnimationController(vsync: this, duration: SplashOverlay.outroDuration)
+          ..addStatusListener((status) {
+            if (status == AnimationStatus.completed) {
+              SplashOverlay._revealPlayed = true;
+              if (mounted) {
+                setState(() => _done = true);
+                _reportComplete();
+              }
+            }
+          });
 
     // Ring the pendulum strike once as the black reveal mounts — before the logo.
     // Native owns the one-shot + the mute check; fire-and-forget.
@@ -157,6 +176,7 @@ class _SplashOverlayState extends State<SplashOverlay>
       _intro.stop();
       _outro.stop();
       _done = true;
+      _reportComplete();
     }
   }
 
@@ -176,10 +196,7 @@ class _SplashOverlayState extends State<SplashOverlay>
         widget.child,
         Positioned.fill(
           child: IgnorePointer(
-            child: _RevealLayer(
-              intro: _intro,
-              outro: _outro,
-            ),
+            child: _RevealLayer(intro: _intro, outro: _outro),
           ),
         ),
       ],
@@ -195,10 +212,7 @@ class _SplashOverlayState extends State<SplashOverlay>
 /// properties around that retained layer. A black veil reveals it during the
 /// intro, which also lets the expensive glyph layer warm up while fully hidden.
 class _RevealLayer extends StatelessWidget {
-  const _RevealLayer({
-    required this.intro,
-    required this.outro,
-  });
+  const _RevealLayer({required this.intro, required this.outro});
 
   final Animation<double> intro;
 
