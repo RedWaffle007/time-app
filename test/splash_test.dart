@@ -1,33 +1,18 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:time_app/features/auth/application/auth_providers.dart';
 import 'package:time_app/features/splash/data/splash_sound.dart';
 import 'package:time_app/features/splash/presentation/splash_overlay.dart';
 
-/// Signed-out auth so `_appReady()` short-circuits to ready immediately (no
-/// profile stream to await) — the reveal plays its full timeline then fades.
-Widget _host() => ProviderScope(
-  overrides: [
-    authStateProvider.overrideWith((ref) => Stream<User?>.value(null)),
-  ],
-  child: const Directionality(
-    textDirection: TextDirection.ltr,
-    child: SplashOverlay(child: Text('APP')),
-  ),
+Widget _host() => const Directionality(
+  textDirection: TextDirection.ltr,
+  child: SplashOverlay(child: Text('APP')),
 );
 
-Widget _switchableHost({required bool skipReveal}) => ProviderScope(
-  overrides: [
-    authStateProvider.overrideWith((ref) => Stream<User?>.value(null)),
-  ],
-  child: Directionality(
-    textDirection: TextDirection.ltr,
-    child: SplashOverlay(skipReveal: skipReveal, child: const Text('APP')),
-  ),
+Widget _switchableHost({required bool skipReveal}) => Directionality(
+  textDirection: TextDirection.ltr,
+  child: SplashOverlay(skipReveal: skipReveal, child: const Text('APP')),
 );
 
 void main() {
@@ -56,9 +41,11 @@ void main() {
       expect(tester.renderObject(lockupBoundary), same(retainedLayer));
     }
 
-    // Let the intro + hold + outro run to completion.
-    await tester.pump(const Duration(milliseconds: 2680)); // rest of intro
-    await tester.pump(const Duration(milliseconds: 600)); // outro
+    // Let the rest of the 1.15s intro + 0.35s outro run to completion.
+    await tester.pump(
+      SplashOverlay.introDuration - const Duration(milliseconds: 320),
+    );
+    await tester.pump(SplashOverlay.outroDuration);
     await tester.pumpAndSettle();
 
     // Reveal gone, app shown.
@@ -124,8 +111,8 @@ void main() {
   ) async {
     // First overlay plays and completes → sets the process-scoped flag.
     await tester.pumpWidget(_host());
-    await tester.pump(const Duration(milliseconds: 3000));
-    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump(SplashOverlay.introDuration);
+    await tester.pump(SplashOverlay.outroDuration);
     await tester.pumpAndSettle();
     expect(find.text('CHECKMATE'), findsNothing);
 
@@ -151,4 +138,11 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  test('loading visual is exactly 1.5 seconds', () {
+    expect(
+      SplashOverlay.introDuration + SplashOverlay.outroDuration,
+      const Duration(milliseconds: 1500),
+    );
+  });
 }

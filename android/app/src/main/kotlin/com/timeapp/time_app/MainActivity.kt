@@ -78,8 +78,8 @@ class MainActivity : FlutterFragmentActivity() {
         // [AlarmSoundService] so it survives the screen going dark.
         const val ALARM_CHANNEL = "time_app/alarm_sound"
 
-        // The cold-start reveal's three tocks. Fired once from Dart as the black
-        // splash mounts; cadence + the mute-switch check live in [SplashSound].
+        // The cold-start reveal's clock ting. Fired once from Dart as the black
+        // splash mounts; duration + the mute-switch check live in [SplashSound].
         const val SPLASH_SOUND_CHANNEL = "time_app/splash_sound"
 
         // Battery / Doze exemption. `isIgnoring` reports the current state;
@@ -216,7 +216,7 @@ class MainActivity : FlutterFragmentActivity() {
                 }
             }
 
-        // The cold-start reveal's three tocks. Constructed HERE (engine config,
+        // The cold-start reveal's clock ting. Constructed HERE (engine config,
         // which runs before the Dart entrypoint) so the sample is preloaded well
         // before the splash mounts — otherwise the async SoundPool load would
         // race tick #1 and drop it.
