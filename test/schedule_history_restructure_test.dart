@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:time_app/core/theme/app_theme.dart';
 import 'package:time_app/core/theme/app_tokens.dart';
 import 'package:time_app/features/auth/application/auth_providers.dart';
@@ -12,6 +13,7 @@ import 'package:time_app/features/plan/presentation/plan_shell.dart';
 import 'package:time_app/features/scheduling/application/schedule_providers.dart';
 import 'package:time_app/features/scheduling/domain/schedule_item.dart';
 import 'package:time_app/features/social/application/social_providers.dart';
+import 'package:time_app/routing/app_router.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 
 void main() {
@@ -108,6 +110,72 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Calendar'), findsNothing);
   });
+
+  testWidgets(
+    'bold rounded PLAN button persists across all Plan tabs and routes',
+    (tester) async {
+      final router = GoRouter(
+        initialLocation: Routes.plan,
+        routes: [
+          GoRoute(
+            path: Routes.plan,
+            builder: (context, state) => const PlanShell(),
+            routes: [
+              GoRoute(
+                path: 'schedule-builder',
+                builder: (context, state) =>
+                    const Scaffold(body: Text('Schedule builder destination')),
+              ),
+            ],
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            myItemsAsTargetProvider.overrideWithValue(const AsyncData([])),
+            myItemsAsPlannerProvider.overrideWithValue(const AsyncData([])),
+            myGroupsProvider.overrideWithValue(const AsyncData([])),
+          ],
+          child: MaterialApp.router(
+            theme: AppTheme.light,
+            routerConfig: router,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      void expectPlanButton() {
+        expect(find.text('PLAN'), findsOneWidget);
+        expect(find.byTooltip('Plan an item'), findsOneWidget);
+        final fab = tester.widget<FloatingActionButton>(
+          find.byType(FloatingActionButton),
+        );
+        expect(fab.isExtended, isTrue);
+        expect(fab.heroTag, 'planCreateFab');
+        final label = tester.widget<Text>(find.text('PLAN'));
+        expect(label.style?.fontWeight, FontWeight.bold);
+        final shape = Theme.of(
+          tester.element(find.byType(FloatingActionButton)),
+        ).floatingActionButtonTheme.shape;
+        expect(shape, isA<RoundedRectangleBorder>());
+        expect((shape! as RoundedRectangleBorder).borderRadius, Radii.pill);
+      }
+
+      expectPlanButton();
+      await tester.tap(find.text('Activity'));
+      await tester.pumpAndSettle();
+      expectPlanButton();
+      await tester.tap(find.text('Groups'));
+      await tester.pumpAndSettle();
+      expectPlanButton();
+
+      await tester.tap(find.byType(FloatingActionButton));
+      await tester.pumpAndSettle();
+      expect(find.text('Schedule builder destination'), findsOneWidget);
+    },
+  );
 
   testWidgets('History becomes month-grouped at two distinct months', (
     tester,

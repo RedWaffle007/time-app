@@ -92,6 +92,9 @@ void main() {
       find.textContaining("You haven't logged any time yet."),
       findsOneWidget,
     );
+    expect(find.byTooltip('Log item'), findsOneWidget);
+    expect(find.byIcon(Icons.add), findsOneWidget);
+    expect(find.text('PLAN'), findsNothing);
   });
 
   testWidgets('Track uses month categories as soon as two months exist', (

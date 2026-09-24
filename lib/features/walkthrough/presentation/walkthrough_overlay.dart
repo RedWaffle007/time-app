@@ -21,8 +21,8 @@ class WalkthroughStepCopy {
 const kWalkthroughStepCopy = <WalkthroughStepCopy>[
   WalkthroughStepCopy(
     'Plan',
-    'Your schedule, in three tabs — My Schedule, Activity, Groups. Tap the ＋ '
-        'button (bottom-right) to plan an item, on any of them.',
+    'Your schedule, in three tabs — My Schedule, Activity, Groups. Tap PLAN '
+        '(bottom-right) to plan an item, on any of them.',
   ),
   WalkthroughStepCopy(
     'Track',

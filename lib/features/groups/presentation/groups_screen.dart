@@ -14,11 +14,10 @@ import 'group_avatar_image.dart';
 class GroupsScreen extends ConsumerWidget {
   const GroupsScreen({super.key, this.embedded = false});
 
-  /// When true, this screen is a sub-tab inside the Plan shell (slice S4): the
-  /// shell owns the app bar (with the Join / New-group / account actions) and
-  /// there is no FAB (the single-FAB rule is reserved for the S5 voice FAB), so
-  /// both are suppressed. Default false = the standalone old-bar screen, byte
-  /// for byte as before.
+  /// When true, this screen is a sub-tab inside the Plan shell: the shell owns
+  /// the app bar (with Join / New-group actions) and the persistent `PLAN`
+  /// button, so both are suppressed here. Default false retains this screen's
+  /// standalone presentation.
   final bool embedded;
 
   @override
@@ -78,8 +77,8 @@ class GroupsScreen extends ConsumerWidget {
   }
 }
 
-/// The "New group" dialog. Top-level so the Plan shell's app-bar `＋` action
-/// (slice S4) can invoke exactly the same flow the standalone screen's FAB does.
+/// The "New group" dialog. Top-level so the Plan shell's app-bar action can
+/// invoke exactly the same flow the standalone screen's FAB does.
 Future<void> showGroupCreateDialog(BuildContext context, WidgetRef ref) async {
   final controller = TextEditingController();
   final name = await showDialog<String>(

@@ -466,7 +466,7 @@ abstract final class AppIcons {
   static const IconData track = Icons.timer_outlined;
   static const IconData trackSelected = Icons.timer;
 
-  /// The "log time" create action (an app-bar +, per §6.12's single-FAB rule).
+  /// The Track pillar's bottom-right "log time" create action.
   static const IconData logTime = Icons.more_time_outlined;
 
   /// A logged entry's duration, and its optional time-of-day range.

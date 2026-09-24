@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_icons.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/status_style.dart';
 import '../../../routing/app_router.dart';
 import '../../groups/presentation/groups_screen.dart';
@@ -42,9 +43,9 @@ import '../application/plan_intent.dart';
 ///     never depended on the mount — the keep-alive is purely for widget state.
 ///
 /// Each sub-tab keeps its own actions, surfaced on the shell's ONE app bar and
-/// swapped by the active index (§6.12: manual-create is an app-bar `＋`, never a
-/// second FAB — the single-FAB rule is reserved for the S5 voice FAB). The
-/// sub-tabs render *embedded* (their own app bars and FABs suppressed).
+/// swapped by the active index. The manual-create action is the always-present
+/// bottom-right `PLAN` button; the sub-tabs render *embedded* (their own app
+/// bars and FABs suppressed).
 class PlanShell extends ConsumerStatefulWidget {
   const PlanShell({super.key});
 
@@ -159,18 +160,20 @@ class _PlanShellState extends ConsumerState<PlanShell>
           ],
         ),
       ),
-      // The one always-present create affordance for Plan — a bottom-right FAB,
-      // shown on ALL three sub-tabs (My Schedule / Activity / Groups) so
-      // "make a new item" is never hidden behind knowing to switch tabs. It
-      // sits above the system nav bar (inner Scaffold, so it clears the shell's
-      // bottom bar) and is distinct from the centre voice ⊕ (speak-to-create):
-      // this is the manual, WhatsApp-style "＋" create. Its own heroTag so it
-      // never collides with the shell's voice FAB during a route transition.
-      floatingActionButton: FloatingActionButton(
+      // The one always-present manual create affordance for Plan — a
+      // bottom-right text FAB, shown on ALL three sub-tabs (My Schedule /
+      // Activity / Groups). The explicit verb distinguishes it from the centre
+      // voice FAB and leaves Track's separate `＋` log-time action unchanged.
+      // Its own heroTag prevents a collision with the voice FAB during a route
+      // transition.
+      floatingActionButton: FloatingActionButton.extended(
         heroTag: 'planCreateFab',
         tooltip: 'Plan an item',
         onPressed: () => context.push('${Routes.plan}/schedule-builder'),
-        child: const Icon(AppIcons.add),
+        label: Text(
+          'PLAN',
+          style: context.text.labelLarge?.copyWith(fontWeight: FontWeight.bold),
+        ),
       ),
       body: TabBarView(
         controller: _tabController,
@@ -206,8 +209,8 @@ class _PlanShellState extends ConsumerState<PlanShell>
           icon: const Icon(AppIcons.approvals),
           onPressed: () => context.push('${Routes.plan}/approvals'),
         ),
-        // "Plan an item" now lives on the always-present bottom-right FAB, so it
-        // is no longer duplicated as an Activity app-bar action.
+        // Manual planning lives on the always-present bottom-right PLAN button,
+        // so it is not duplicated as an Activity app-bar action.
         _groups => IconButton(
           tooltip: 'New group',
           icon: const Icon(AppIcons.add),

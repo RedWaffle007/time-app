@@ -27,10 +27,9 @@ import 'planner_item_detail_sheet.dart';
 class PlannerActivityScreen extends ConsumerWidget {
   const PlannerActivityScreen({super.key, this.embedded = false});
 
-  /// When true, this is a sub-tab inside the Plan shell (slice S4): the shell
-  /// owns the app bar and surfaces "Plan an item" as an app-bar `＋` action (the
-  /// single-FAB rule is reserved for the S5 voice FAB), so both are suppressed
-  /// here. Default false = the standalone old-bar screen, unchanged.
+  /// When true, this is a sub-tab inside the Plan shell: the shell owns the app
+  /// bar and its persistent bottom-right `PLAN` action, so both are suppressed
+  /// here. Default false retains this screen's standalone presentation.
   final bool embedded;
 
   @override

@@ -748,13 +748,13 @@ A". Recipes so it stays Hearth:
   1. The docked centre **voice FAB** — a standard (56) circular `primary` (brand green)
      FAB, mic glyph, *gentle* floating shadow (`Elevations.floating`). Speak-to-
      create. Owned by `HomeShell` (the outer scaffold), present on every pillar.
-  2. A **manual-create FAB**, bottom-right (`endFloat`), circular `primary` with
-     the **`AppIcons.add` (`＋`)** glyph — the WhatsApp-style "new item" affordance.
-     Exactly one per creating pillar: **Plan** ("Plan an item", all three sub-tabs)
-     and **Track** ("Log item"). Owned by the pillar's own (inner) scaffold, so it
-     sits above the system nav bar and clears the bottom bar. Each carries its own
+  2. A **manual-create FAB**, bottom-right (`endFloat`), owned by the creating
+     pillar's own (inner) scaffold so it clears the bottom bar. **Plan** uses a
+     rounded, bold **`PLAN`** text FAB on all three sub-tabs; **Track** retains its
+     circular **`AppIcons.add` (`＋`)** "Log item" FAB. Each carries its own
      `heroTag` so it never collides with the voice FAB in a route transition.
-  The two never merge and never appear a third time: mic = voice, `＋` = manual.
+  The controls never merge or appear a third time: mic = voice, `PLAN` / `＋` =
+  the pillar-specific manual action.
   Manual create is **no longer** an app-bar `＋`. Detail/leaf pushed screens carry
   no FAB.
 - **Bottom edge respects the system nav bar.** Any full-screen **pushed** route

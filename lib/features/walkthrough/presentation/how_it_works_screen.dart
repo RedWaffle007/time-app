@@ -45,7 +45,7 @@ class HowItWorksScreen extends ConsumerWidget {
             body:
                 'Your schedule across three tabs — My Schedule (your day, next '
                 'task first), Activity (what you planned for others) and Groups. '
-                'Tap the ＋ button, bottom-right, to plan an item on any of them.',
+                'Tap PLAN, bottom-right, to plan an item on any of them.',
           ),
           const _Feature(
             icon: AppIcons.navTrack,
