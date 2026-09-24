@@ -43,6 +43,20 @@ class AlarmLifecycleChannel(private val appContext: Context) {
                         }
                         result.success(null)
                     }
+                    "markReviewChoice" -> {
+                        val choice = call.argument<String>("choice").orEmpty()
+                        require(choice == "done" || choice == "skipped")
+                        AlarmLifecycleStore.update(appContext, key) {
+                            it.copy(reviewed = true, reviewChoice = choice)
+                        }
+                        result.success(null)
+                    }
+                    "markReviewNotificationDelivered" -> {
+                        AlarmLifecycleStore.update(appContext, key) {
+                            it.copy(reviewNotificationDelivered = true)
+                        }
+                        result.success(null)
+                    }
                     "remove" -> {
                         AlarmLifecycleStore.remove(appContext, key)
                         result.success(null)
@@ -55,13 +69,19 @@ class AlarmLifecycleChannel(private val appContext: Context) {
         }
     }
 
-    private fun toMap(event: AlarmLifecycleStore.Event): Map<String, Any> = mapOf(
-        "key" to event.key,
-        "itemId" to event.itemId,
-        "occurredAtEpoch" to event.occurredAtEpoch,
-        "kind" to event.kind,
-        "outcomeRecorded" to event.outcomeRecorded,
-        "notificationDelivered" to event.notificationDelivered,
-        "reviewed" to event.reviewed,
-    )
+    private fun toMap(event: AlarmLifecycleStore.Event): Map<String, Any> {
+        val reviewChoice = event.reviewChoice
+        return mapOf(
+            "key" to event.key,
+            "itemId" to event.itemId,
+            "occurredAtEpoch" to event.occurredAtEpoch,
+            "kind" to event.kind,
+            "outcomeRecorded" to event.outcomeRecorded,
+            "notificationDelivered" to event.notificationDelivered,
+            "reviewed" to event.reviewed,
+            "reviewNotificationDelivered" to event.reviewNotificationDelivered,
+        ) + if (reviewChoice == null) emptyMap() else mapOf(
+            "reviewChoice" to reviewChoice,
+        )
+    }
 }

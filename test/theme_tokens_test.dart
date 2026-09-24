@@ -74,6 +74,59 @@ void main() {
           expect(find.text(label), findsOneWidget, reason: '$label badge');
         }
       });
+
+      testWidgets(
+        'missed-alarm Done derives a late label without a new outcome',
+        (tester) async {
+          ScheduleItem item({required bool unavailable}) => ScheduleItem(
+            id: unavailable ? 'late' : 'on-time',
+            targetUid: 'target',
+            createdByUid: 'planner',
+            groupId: '',
+            title: 'Task',
+            localWallTime: '',
+            timezone: 'Etc/UTC',
+            scheduledInstantUtc: DateTime.utc(2026, 9, 24, 9),
+            status: ScheduleItemStatus.approved,
+            outcome: ScheduleOutcome(
+              result: OutcomeResult.done,
+              completedAt: DateTime.utc(2026, 9, 24, 9, 2),
+            ),
+            alarm: unavailable
+                ? ScheduleAlarmTimeline(
+                    unavailableAt: DateTime.utc(2026, 9, 24, 9, 1),
+                  )
+                : null,
+          );
+
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: theme,
+              home: Scaffold(
+                body: Column(
+                  children: [
+                    Builder(
+                      builder: (context) => StatusBadge.itemOutcome(
+                        item(unavailable: false),
+                        context,
+                      ),
+                    ),
+                    Builder(
+                      builder: (context) => StatusBadge.itemOutcome(
+                        item(unavailable: true),
+                        context,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+
+          expect(find.text('Done'), findsOneWidget);
+          expect(find.text('Done (Late)'), findsOneWidget);
+        },
+      );
     });
   }
 

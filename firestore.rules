@@ -1220,6 +1220,17 @@ service cloud.firestore {
         ]);
       }
 
+      function priorItemAllowsDone() {
+        let before = itemBefore().data;
+        let outcome = before.get('outcome', {});
+        return !before.keys().hasAny(['outcome'])
+          || (
+            outcome is map
+            && outcome.get('result', '') == 'skipped'
+            && outcome.get('skipReason', '') == 'User unavailable'
+          );
+      }
+
       allow get: if signedIn()
         && request.auth.uid in resource.data.participantUids;
       allow list: if signedIn()
@@ -1237,7 +1248,7 @@ service cloud.firestore {
         && request.resource.data.plannerUid in request.resource.data.participantUids
         && request.resource.data.participantUids.size()
              == (request.resource.data.targetUid == request.resource.data.plannerUid ? 1 : 2)
-        && itemBefore().data.get('outcome', null) == null
+        && priorItemAllowsDone()
         && itemAfter().data.targetUid == request.resource.data.targetUid
         && itemAfter().data.createdByUid == request.resource.data.plannerUid
         && itemAfter().data.outcome.result == 'done';
@@ -1301,15 +1312,27 @@ service cloud.firestore {
     // `scheduledInstantUtc` or `createdByUid` after the fact.
     match /scheduleItems/{targetUid}/items/{itemId} {
       function alarmTimelineIsValid() {
-        return !('alarm' in request.resource.data)
+        let before = resource.data.get('alarm', {});
+        let after = request.resource.data.get('alarm', {});
+        return !changedKeys().hasAny(['alarm'])
           || (
-            request.resource.data.alarm is map
-            && request.resource.data.alarm.keys().hasOnly(
-                 ['rangAt', 'dismissedAt'])
-            && (!('rangAt' in request.resource.data.alarm)
-                || request.resource.data.alarm.rangAt is timestamp)
-            && (!('dismissedAt' in request.resource.data.alarm)
-                || request.resource.data.alarm.dismissedAt is timestamp)
+            before is map
+            && after is map
+            && after.keys().hasOnly(['rangAt', 'dismissedAt', 'unavailableAt'])
+            && (!after.keys().hasAny(['rangAt'])
+                || after.get('rangAt', null) is timestamp)
+            && (!after.keys().hasAny(['dismissedAt'])
+                || after.get('dismissedAt', null) is timestamp)
+            && (!after.keys().hasAny(['unavailableAt'])
+                || after.get('unavailableAt', null) is timestamp)
+            && (
+              !before.keys().hasAny(['unavailableAt'])
+              || (
+                after.keys().hasAny(['unavailableAt'])
+                && after.get('unavailableAt', null)
+                   == before.get('unavailableAt', null)
+              )
+            )
           );
       }
 
@@ -1400,6 +1423,27 @@ service cloud.firestore {
               && request.resource.data.tier == 'emergency'
               && request.resource.data.status == 'approved')
         );
+
+      // Missed-alarm review is the sole settled-outcome correction. Keep this
+      // separate from the generic target update predicate: every field and
+      // both sides of the transition are exact, and the independent alarm fact
+      // must already be present in the stored document.
+      allow update: if signedIn()
+        && request.auth.uid == targetUid
+        && changedKeys().hasOnly(['outcome', 'updatedAt'])
+        && resource.data.status == 'approved'
+        && request.resource.data.status == 'approved'
+        && resource.data.outcome is map
+        && resource.data.outcome.get('result', '') == 'skipped'
+        && resource.data.outcome.get('skipReason', '') == 'User unavailable'
+        && resource.data.get('alarm', {}) is map
+        && resource.data.get('alarm', {})
+             .get('unavailableAt', null) is timestamp
+        && request.resource.data.outcome is map
+        && request.resource.data.outcome.keys().hasOnly(
+             ['result', 'completedAt'])
+        && request.resource.data.outcome.result == 'done'
+        && request.resource.data.outcome.completedAt is timestamp;
 
       allow update: if signedIn()
         && (

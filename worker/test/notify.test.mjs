@@ -221,6 +221,44 @@ test('a group outcome notifies the planner and stamps only the outcome guard', a
   assert.equal(harness.patched[0].fields.notifiedCreated, undefined);
 });
 
+test('a missed alarm corrected to done sends an explicit late follow-up', () => {
+  const message = buildMessage('outcome', 'done', {
+    title: 'Morning walk',
+    alarm: { unavailableAt: '2026-09-24T09:01:00Z' },
+  }, 'target', 'item-1');
+
+  assert.deepEqual(message.notification, {
+    title: 'Task completed late',
+    body: 'Completed after missed alarm: Morning walk',
+  });
+});
+
+test('skipped notification guard does not suppress the later done follow-up', async () => {
+  const harness = context({
+    'scheduleItems/target/items/item-1': {
+      targetUid: 'target',
+      createdByUid: 'planner',
+      groupId: 'group-1',
+      title: 'Morning walk',
+      status: 'approved',
+      alarm: { unavailableAt: '2026-09-24T09:01:00Z' },
+      outcome: { result: 'done' },
+      notifiedOutcome: 'skipped',
+    },
+    'groups/group-1/plannerGrants/planner_target': { granted: true },
+  });
+
+  const result = await sendEventNotification(harness.ctx, {
+    event: 'outcome',
+    targetUid: 'target',
+    itemId: 'item-1',
+  });
+
+  assert.equal(result.reason, 'sent');
+  assert.equal(harness.sent[0].notification.title, 'Task completed late');
+  assert.equal(harness.patched[0].fields.notifiedOutcome, 'done');
+});
+
 test('created and withdrawn events notify the target, decisions notify the planner', async () => {
   const cases = [
     ['created', { status: 'pending' }, 'target', 'notifiedCreated', true],

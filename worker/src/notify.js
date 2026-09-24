@@ -187,7 +187,12 @@ export function buildMessage(event, subtype, item, targetUid, itemId) {
       break;
     case 'outcome':
       notification = subtype === 'done'
-        ? { title: 'Task completed', body: `Marked done: ${title}` }
+        ? item.alarm && item.alarm.unavailableAt
+          ? {
+              title: 'Task completed late',
+              body: `Completed after missed alarm: ${title}`,
+            }
+          : { title: 'Task completed', body: `Marked done: ${title}` }
         : { title: 'Task skipped', body: `Skipped: ${title}` };
       break;
   }

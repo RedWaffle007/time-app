@@ -224,13 +224,13 @@ class ScheduleRepository {
           data['outcome'] != null) {
         return false;
       }
-      transaction.set(itemRef, {
+      transaction.update(itemRef, {
         'outcome': {
           'result': OutcomeResult.done.name,
           'completedAt': FieldValue.serverTimestamp(),
         },
         'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      });
       transaction.set(eventRef, {
         'itemId': itemId,
         'targetUid': targetUid,
@@ -264,7 +264,7 @@ class ScheduleRepository {
           data['outcome'] != null) {
         return false;
       }
-      transaction.set(ref, {
+      transaction.update(ref, {
         'outcome': {
           'result': OutcomeResult.skipped.name,
           'skippedAt': atUtc == null
@@ -272,8 +272,12 @@ class ScheduleRepository {
               : Timestamp.fromDate(atUtc),
           if (reason.trim().isNotEmpty) 'skipReason': reason.trim(),
         },
+        if (reason.trim() == kUserUnavailableSkipReason)
+          'alarm.unavailableAt': atUtc == null
+              ? FieldValue.serverTimestamp()
+              : Timestamp.fromDate(atUtc.toUtc()),
         'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      });
       return true;
     });
   }
@@ -300,14 +304,62 @@ class ScheduleRepository {
           outcome['skipReason'] != expectedReason) {
         return false;
       }
-      transaction.set(ref, {
+      transaction.update(ref, {
         'outcome': {
           'result': OutcomeResult.skipped.name,
           'skippedAt': Timestamp.fromDate(atUtc),
           'skipReason': reason,
         },
+        if (reason == kUserUnavailableSkipReason)
+          'alarm.unavailableAt': Timestamp.fromDate(atUtc.toUtc()),
         'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      });
+      return true;
+    });
+  }
+
+  /// The one settled-outcome correction the missed-alarm review permits. The
+  /// task outcome becomes Done, while `alarm.unavailableAt` remains untouched
+  /// as the permanent response-time fact. A completion celebration is created
+  /// atomically, exactly as in the ordinary first-write Done path.
+  Future<bool> replaceMissedAlarmSkipWithDone(
+    String targetUid,
+    String itemId, {
+    required String plannerUid,
+  }) async {
+    final itemRef = _items(targetUid).doc(itemId);
+    final eventId = CompletionCelebration.eventId(targetUid, itemId);
+    final eventRef = _db.collection('completionCelebrations').doc(eventId);
+    final participants = <String>{targetUid, plannerUid}.toList();
+    return _db.runTransaction((transaction) async {
+      final snapshot = await transaction.get(itemRef);
+      final data = snapshot.data();
+      final outcome = data?['outcome'];
+      final alarm = data?['alarm'];
+      if (data == null ||
+          data['status'] != ScheduleItemStatus.approved.name ||
+          outcome is! Map ||
+          outcome['result'] != OutcomeResult.skipped.name ||
+          outcome['skipReason'] != kUserUnavailableSkipReason ||
+          alarm is! Map ||
+          alarm['unavailableAt'] is! Timestamp) {
+        return false;
+      }
+      transaction.update(itemRef, {
+        'outcome': {
+          'result': OutcomeResult.done.name,
+          'completedAt': FieldValue.serverTimestamp(),
+        },
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      transaction.set(eventRef, {
+        'itemId': itemId,
+        'targetUid': targetUid,
+        'plannerUid': plannerUid,
+        'participantUids': participants,
+        'seenByUids': <String>[],
+        'createdAt': FieldValue.serverTimestamp(),
+      });
       return true;
     });
   }

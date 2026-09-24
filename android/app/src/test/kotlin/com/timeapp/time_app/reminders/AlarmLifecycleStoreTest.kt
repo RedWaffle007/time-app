@@ -19,11 +19,37 @@ class AlarmLifecycleStoreTest {
     @Test
     fun `processing flags survive an upsert-free lifecycle`() {
         val event = AlarmLifecycleStore.Event("item-a", 1000L, "timeout")
-            .copy(outcomeRecorded = true, notificationDelivered = true, reviewed = true)
+            .copy(
+                outcomeRecorded = true,
+                notificationDelivered = true,
+                reviewed = true,
+                reviewChoice = "done",
+                reviewNotificationDelivered = true,
+            )
 
         assertTrue(event.outcomeRecorded)
         assertTrue(event.notificationDelivered)
         assertTrue(event.reviewed)
+        assertEquals("done", event.reviewChoice)
+        assertTrue(event.reviewNotificationDelivered)
         assertTrue(AlarmLifecycleStore.withoutKey(listOf(event), event.key).isEmpty())
+    }
+
+    @Test
+    fun `duplicate native record cannot erase review progress`() {
+        val reviewed = AlarmLifecycleStore.Event("item-a", 1000L, "timeout").copy(
+            outcomeRecorded = true,
+            notificationDelivered = true,
+            reviewed = true,
+            reviewChoice = "done",
+            reviewNotificationDelivered = true,
+        )
+
+        val replayed = AlarmLifecycleStore.upsert(
+            listOf(reviewed),
+            AlarmLifecycleStore.Event("item-a", 1000L, "timeout"),
+        ).single()
+
+        assertEquals(reviewed, replayed)
     }
 }

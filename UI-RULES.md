@@ -830,10 +830,14 @@ After the native one-minute ring cap expires, the next unlocked foreground
 session places one blocking review card over the current route. It uses the
 ordinary surface Card on the standard scrim, not an error-red takeover: a missed
 alarm is a neutral Skipped outcome, not app failure. The underlying route is
-`IgnorePointer` + `ExcludeSemantics` while visible. Multiple misses are one
-scrollable card with one row per task and one filled **Mark reviewed** action;
-the card appears only after the automatic outcome is durably recorded and never
-above the app lock or cold-start reveal.
+`IgnorePointer` + `ExcludeSemantics` while visible. Show one missed task at a
+time, with exactly two actions: neutral **Mark as Skipped** and primary
+**Mark as Done**. There is no generic acknowledgement or bulk outcome action.
+Additional misses advance through the same card. The card appears as soon as the
+automatic outcome is durably recorded—planner push delivery is not on its
+critical path—and never above the app lock or cold-start reveal. A later Done is
+shown as **Done (Late)** while the separate **User unavailable at alarm time**
+timeline fact remains visible.
 
 ### 6.17 Android alarm wake surface
 

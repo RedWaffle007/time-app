@@ -146,8 +146,8 @@ class _ActivityCard extends ConsumerWidget {
                   // ONE badge. Once an outcome exists it replaces the approval
                   // status, because "Done" strictly implies "Approved" — showing
                   // both states the same fact twice.
-                  if (item.outcome case final o?)
-                    StatusBadge.outcome(o.result, context)
+                  if (item.outcome != null)
+                    StatusBadge.itemOutcome(item, context)
                   else
                     StatusBadge.status(item.status, context),
                   // Done or skipped — the planner may clear it from their own
@@ -188,6 +188,15 @@ class _ActivityCard extends ConsumerWidget {
                 const SizedBox(height: Space.xs),
                 Text(
                   'Completed ${formatDurationMinutes(context, delay.inMinutes)} late',
+                  style: context.text.bodySmall?.copyWith(
+                    color: context.colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+              if (item.wasUnavailableAtAlarmTime) ...[
+                const SizedBox(height: Space.xs),
+                Text(
+                  'User unavailable at alarm time',
                   style: context.text.bodySmall?.copyWith(
                     color: context.colors.onSurfaceVariant,
                   ),

@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 
 enum AlarmLifecycleEventKind { timeout, dismissed }
 
+enum MissedAlarmReviewChoice { done, skipped }
+
 class AlarmLifecycleEvent {
   const AlarmLifecycleEvent({
     required this.key,
@@ -12,6 +14,8 @@ class AlarmLifecycleEvent {
     required this.outcomeRecorded,
     required this.notificationDelivered,
     required this.reviewed,
+    this.reviewChoice,
+    this.reviewNotificationDelivered = false,
   });
 
   final String key;
@@ -21,6 +25,8 @@ class AlarmLifecycleEvent {
   final bool outcomeRecorded;
   final bool notificationDelivered;
   final bool reviewed;
+  final MissedAlarmReviewChoice? reviewChoice;
+  final bool reviewNotificationDelivered;
 
   static AlarmLifecycleEvent? fromMap(Object? raw) {
     if (raw is! Map) return null;
@@ -43,6 +49,10 @@ class AlarmLifecycleEvent {
       outcomeRecorded: raw['outcomeRecorded'] == true,
       notificationDelivered: raw['notificationDelivered'] == true,
       reviewed: raw['reviewed'] == true,
+      reviewChoice: MissedAlarmReviewChoice.values
+          .where((choice) => choice.name == raw['reviewChoice'])
+          .firstOrNull,
+      reviewNotificationDelivered: raw['reviewNotificationDelivered'] == true,
     );
   }
 }
@@ -53,6 +63,8 @@ abstract interface class AlarmLifecycleStore {
   Future<void> markOutcomeRecorded(String key);
   Future<void> markNotificationDelivered(String key);
   Future<void> markReviewed(String key);
+  Future<void> markReviewChoice(String key, MissedAlarmReviewChoice choice);
+  Future<void> markReviewNotificationDelivered(String key);
   Future<void> remove(String key);
 }
 
@@ -97,11 +109,23 @@ class PlatformAlarmLifecycleStore implements AlarmLifecycleStore {
   Future<void> markReviewed(String key) => _update('markReviewed', key);
 
   @override
+  Future<void> markReviewChoice(String key, MissedAlarmReviewChoice choice) =>
+      _update('markReviewChoice', key, {'choice': choice.name});
+
+  @override
+  Future<void> markReviewNotificationDelivered(String key) =>
+      _update('markReviewNotificationDelivered', key);
+
+  @override
   Future<void> remove(String key) => _update('remove', key);
 
-  Future<void> _update(String method, String key) async {
+  Future<void> _update(
+    String method,
+    String key, [
+    Map<String, Object?> extra = const {},
+  ]) async {
     try {
-      await _channel.invokeMethod<void>(method, {'key': key});
+      await _channel.invokeMethod<void>(method, {'key': key, ...extra});
     } on MissingPluginException {
       // Expected outside Android.
     } on PlatformException catch (error) {

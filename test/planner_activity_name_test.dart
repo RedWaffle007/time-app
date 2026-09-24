@@ -37,6 +37,7 @@ void main() {
       alarm: ScheduleAlarmTimeline(
         rangAt: scheduled.add(const Duration(minutes: 1)),
         dismissedAt: scheduled.add(const Duration(minutes: 2)),
+        unavailableAt: scheduled.add(const Duration(minutes: 3)),
       ),
     );
     const target = UserProfile(
@@ -83,5 +84,12 @@ void main() {
     expect(find.text('Waiting for target'), findsOneWidget);
     expect(find.text('Rang'), findsOneWidget);
     expect(find.text('Dismissed'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.text('User unavailable at alarm time'),
+      ),
+      findsOneWidget,
+    );
   });
 }

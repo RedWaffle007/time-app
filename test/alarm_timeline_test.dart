@@ -63,6 +63,7 @@ bad,local,AUDIO_FIRED,item-b
       alarm: ScheduleAlarmTimeline(
         rangAt: DateTime.utc(2026, 9, 23, 9),
         dismissedAt: DateTime.utc(2026, 9, 23, 9, 1),
+        unavailableAt: DateTime.utc(2026, 9, 23, 9, 2),
       ),
     );
 
@@ -71,6 +72,7 @@ bad,local,AUDIO_FIRED,item-b
       PlannerTimelineEventKind.scheduled,
       PlannerTimelineEventKind.rang,
       PlannerTimelineEventKind.dismissed,
+      PlannerTimelineEventKind.unavailable,
       PlannerTimelineEventKind.pendingOutcome,
     ]);
     expect(events.last.isPending, isTrue);
@@ -148,6 +150,13 @@ class _RecordingRepository implements AlarmTimelineRepository {
 
   @override
   Future<void> recordDismissed(
+    String uid,
+    String itemId,
+    DateTime atUtc,
+  ) async {}
+
+  @override
+  Future<void> recordUnavailable(
     String uid,
     String itemId,
     DateTime atUtc,

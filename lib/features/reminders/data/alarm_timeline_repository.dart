@@ -4,6 +4,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 abstract interface class AlarmTimelineRepository {
   Future<void> recordRang(String targetUid, String itemId, DateTime atUtc);
   Future<void> recordDismissed(String targetUid, String itemId, DateTime atUtc);
+  Future<void> recordUnavailable(
+    String targetUid,
+    String itemId,
+    DateTime atUtc,
+  );
 }
 
 class FirestoreAlarmTimelineRepository implements AlarmTimelineRepository {
@@ -25,9 +30,15 @@ class FirestoreAlarmTimelineRepository implements AlarmTimelineRepository {
     DateTime atUtc,
   ) => _recordFirst(targetUid, itemId, 'dismissedAt', atUtc);
 
-  /// The first observation is authoritative. Re-reading the native audit log on
-  /// every resume is therefore idempotent, and a later UI fallback cannot move
-  /// an exact native fire timestamp forward.
+  @override
+  Future<void> recordUnavailable(
+    String targetUid,
+    String itemId,
+    DateTime atUtc,
+  ) => _recordFirst(targetUid, itemId, 'unavailableAt', atUtc);
+
+  /// The first unavailable observation is immutable. Rang/dismissed retain
+  /// their older earliest-observation repair behavior for audit-log backfills.
   Future<void> _recordFirst(
     String targetUid,
     String itemId,
@@ -41,7 +52,10 @@ class FirestoreAlarmTimelineRepository implements AlarmTimelineRepository {
       final alarm = snapshot.data()?['alarm'] as Map<String, dynamic>?;
       final previous = alarm?[field] as Timestamp?;
       final at = atUtc.toUtc();
-      if (previous != null && !at.isBefore(previous.toDate())) return;
+      if (previous != null &&
+          (field == 'unavailableAt' || !at.isBefore(previous.toDate()))) {
+        return;
+      }
       transaction.update(ref, {
         'alarm.$field': Timestamp.fromDate(at),
         'updatedAt': FieldValue.serverTimestamp(),

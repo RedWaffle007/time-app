@@ -178,6 +178,7 @@ class _FakeAlarmKeyEvents implements AlarmKeyEvents {
 class _FakeAlarmTimelineRepository implements AlarmTimelineRepository {
   final rang = <String>[];
   final dismissed = <String>[];
+  final unavailable = <String>[];
 
   @override
   Future<void> recordRang(
@@ -195,6 +196,15 @@ class _FakeAlarmTimelineRepository implements AlarmTimelineRepository {
     DateTime atUtc,
   ) async {
     dismissed.add(itemId);
+  }
+
+  @override
+  Future<void> recordUnavailable(
+    String targetUid,
+    String itemId,
+    DateTime atUtc,
+  ) async {
+    unavailable.add(itemId);
   }
 }
 

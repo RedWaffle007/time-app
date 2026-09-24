@@ -22,6 +22,8 @@ object AlarmLifecycleStore {
         val outcomeRecorded: Boolean = false,
         val notificationDelivered: Boolean = false,
         val reviewed: Boolean = false,
+        val reviewChoice: String? = null,
+        val reviewNotificationDelivered: Boolean = false,
     ) {
         val key: String get() = "$kind:$itemId:$occurredAtEpoch"
     }
@@ -43,6 +45,8 @@ object AlarmLifecycleStore {
                     outcomeRecorded = value.optBoolean("outcomeRecorded"),
                     notificationDelivered = value.optBoolean("notificationDelivered"),
                     reviewed = value.optBoolean("reviewed"),
+                    reviewChoice = value.optString("reviewChoice").ifEmpty { null },
+                    reviewNotificationDelivered = value.optBoolean("reviewNotificationDelivered"),
                 )
             }
         } catch (_: Throwable) {
@@ -60,9 +64,14 @@ object AlarmLifecycleStore {
                 put("outcomeRecorded", event.outcomeRecorded)
                 put("notificationDelivered", event.notificationDelivered)
                 put("reviewed", event.reviewed)
+                event.reviewChoice?.let { put("reviewChoice", it) }
+                put("reviewNotificationDelivered", event.reviewNotificationDelivered)
             })
         }
-        prefs(context).edit().putString(KEY, array.toString()).apply()
+        // These rows are the recovery source after process death. Commit the
+        // tiny local payload before returning so a review choice cannot be
+        // lost between dismissing the popup and starting Firestore work.
+        prefs(context).edit().putString(KEY, array.toString()).commit()
     }
 
     fun record(context: Context, itemId: String, kind: String, atEpoch: Long) {
@@ -78,8 +87,17 @@ object AlarmLifecycleStore {
         save(context, withoutKey(load(context), key))
     }
 
-    internal fun upsert(events: List<Event>, event: Event): List<Event> =
-        events.filterNot { it.key == event.key } + event
+    internal fun upsert(events: List<Event>, event: Event): List<Event> {
+        val previous = events.firstOrNull { it.key == event.key }
+        val durable = if (previous == null) event else event.copy(
+            outcomeRecorded = previous.outcomeRecorded,
+            notificationDelivered = previous.notificationDelivered,
+            reviewed = previous.reviewed,
+            reviewChoice = previous.reviewChoice,
+            reviewNotificationDelivered = previous.reviewNotificationDelivered,
+        )
+        return events.filterNot { it.key == event.key } + durable
+    }
 
     internal fun withoutKey(events: List<Event>, key: String): List<Event> =
         events.filterNot { it.key == key }

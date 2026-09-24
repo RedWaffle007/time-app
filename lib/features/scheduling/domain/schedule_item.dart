@@ -45,6 +45,11 @@ enum ItemTier { normal, emergency }
 
 enum OutcomeResult { done, skipped }
 
+/// The automatic outcome reason written when an alarm rings for its full
+/// one-minute cap without a response. Kept in the domain layer so persistence,
+/// rules-facing repositories, and presentation agree on the exact value.
+const kUserUnavailableSkipReason = 'User unavailable';
+
 /// The outcome layered on top of an approved item. Kept separate from status so
 /// approval and completion stay two distinct facts (the accountability signal).
 class ScheduleOutcome {
@@ -77,17 +82,32 @@ class ScheduleOutcome {
 /// Device-observed alarm lifecycle, synchronized into the shared item so the
 /// planner can see what actually happened without access to the target's phone.
 class ScheduleAlarmTimeline {
-  const ScheduleAlarmTimeline({this.rangAt, this.dismissedAt});
+  const ScheduleAlarmTimeline({
+    this.rangAt,
+    this.dismissedAt,
+    this.unavailableAt,
+  });
 
   final DateTime? rangAt;
   final DateTime? dismissedAt;
+
+  /// The alarm exhausted its one-minute cap without a response. Unlike the
+  /// mutable task outcome, this device-observed fact is permanent.
+  final DateTime? unavailableAt;
 
   static ScheduleAlarmTimeline? fromMap(Map<String, dynamic>? map) {
     if (map == null) return null;
     final rangAt = (map['rangAt'] as Timestamp?)?.toDate();
     final dismissedAt = (map['dismissedAt'] as Timestamp?)?.toDate();
-    if (rangAt == null && dismissedAt == null) return null;
-    return ScheduleAlarmTimeline(rangAt: rangAt, dismissedAt: dismissedAt);
+    final unavailableAt = (map['unavailableAt'] as Timestamp?)?.toDate();
+    if (rangAt == null && dismissedAt == null && unavailableAt == null) {
+      return null;
+    }
+    return ScheduleAlarmTimeline(
+      rangAt: rangAt,
+      dismissedAt: dismissedAt,
+      unavailableAt: unavailableAt,
+    );
   }
 }
 
@@ -214,6 +234,13 @@ class ScheduleItem {
   /// Completed, but after its scheduled time — honest data surfaced in the UI
   /// and in stats, never dropped. See [completionDelay].
   bool get wasCompletedLate => completionDelay != null;
+
+  /// Delivery/response-time fact, independent of the current completion
+  /// outcome. The skip-reason fallback keeps legacy timeout rows legible until
+  /// their separate alarm event is backfilled from the durable native queue.
+  bool get wasUnavailableAtAlarmTime =>
+      alarm?.unavailableAt != null ||
+      outcome?.skipReason == kUserUnavailableSkipReason;
 
   factory ScheduleItem.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final d = doc.data() ?? const {};

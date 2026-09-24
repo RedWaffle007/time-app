@@ -556,8 +556,18 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
                   ),
                 ],
               )
-            else
+            else ...[
               _outcomeLine(context, outcome),
+              if (item.wasUnavailableAtAlarmTime) ...[
+                const SizedBox(height: Space.xs),
+                Text(
+                  'User unavailable at alarm time',
+                  style: context.text.bodySmall?.copyWith(
+                    color: context.colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ],
           ],
         ),
       ),
@@ -570,7 +580,7 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
   Widget _outcomeLine(BuildContext context, ScheduleOutcome outcome) {
     return Row(
       children: [
-        StatusBadge.outcome(outcome.result, context),
+        StatusBadge.itemOutcome(widget.item, context),
         // Completed, but after its scheduled time — surfaced, never hidden. Line
         // work / muted text, not a doctrine fill: a late Done is still a Done.
         if (widget.item.completionDelay case final delay?) ...[

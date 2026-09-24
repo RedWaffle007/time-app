@@ -823,6 +823,7 @@ describe('alarm timeline writes', () => {
       alarm: {
         rangAt: Timestamp.fromDate(new Date('2026-08-11T13:30:01Z')),
         dismissedAt: Timestamp.fromDate(new Date('2026-08-11T13:30:10Z')),
+        unavailableAt: Timestamp.fromDate(new Date('2026-08-11T13:31:01Z')),
       },
       updatedAt: serverTimestamp(),
     }, { merge: true }));
@@ -849,6 +850,25 @@ describe('alarm timeline writes', () => {
       alarm: {
         rangAt: Timestamp.fromDate(new Date('2026-08-11T13:30:01Z')),
       },
+      updatedAt: serverTimestamp(),
+    }, { merge: true }));
+  });
+
+  it('keeps the recorded unavailable instant immutable', async () => {
+    const ref = itemRef(as(ALICE), APPROVED_ITEM);
+    const at = Timestamp.fromDate(new Date('2026-08-11T13:31:01Z'));
+    await assertSucceeds(setDoc(ref, {
+      alarm: { unavailableAt: at },
+      updatedAt: serverTimestamp(),
+    }, { merge: true }));
+    await assertFails(setDoc(ref, {
+      alarm: {
+        unavailableAt: Timestamp.fromDate(new Date('2026-08-11T13:32:01Z')),
+      },
+      updatedAt: serverTimestamp(),
+    }, { merge: true }));
+    await assertFails(setDoc(ref, {
+      alarm: deleteField(),
       updatedAt: serverTimestamp(),
     }, { merge: true }));
   });
@@ -1030,6 +1050,54 @@ describe('issue 2 — every legitimate write still works', () => {
         skippedAt: serverTimestamp(),
         skipReason: 'User unavailable',
       },
+      updatedAt: serverTimestamp(),
+    }, { merge: true }));
+  });
+
+  it('ALLOWS only a timed-out automatic skip to become done with a celebration', async () => {
+    const db = as(ALICE);
+    const ref = itemRef(db, APPROVED_ITEM);
+    const unavailableSkip = {
+      alarm: {
+        unavailableAt: Timestamp.fromDate(new Date('2026-08-11T13:31:01Z')),
+      },
+      outcome: {
+        result: 'skipped',
+        skippedAt: serverTimestamp(),
+        skipReason: 'User unavailable',
+      },
+      updatedAt: serverTimestamp(),
+    };
+    await assertSucceeds(setDoc(ref, unavailableSkip, { merge: true }));
+
+    const batch = writeBatch(db);
+    batch.update(ref, {
+      outcome: { result: 'done', completedAt: serverTimestamp() },
+      updatedAt: serverTimestamp(),
+    });
+    batch.set(doc(db, `completionCelebrations/${ALICE}_${APPROVED_ITEM}`), {
+      itemId: APPROVED_ITEM,
+      targetUid: ALICE,
+      plannerUid: BOB,
+      participantUids: [ALICE, BOB],
+      seenByUids: [],
+      createdAt: serverTimestamp(),
+    });
+    await assertSucceeds(batch.commit());
+  });
+
+  it('DENIES changing User unavailable to done without the permanent alarm fact', async () => {
+    const ref = itemRef(as(ALICE), APPROVED_ITEM);
+    await assertSucceeds(setDoc(ref, {
+      outcome: {
+        result: 'skipped',
+        skippedAt: serverTimestamp(),
+        skipReason: 'User unavailable',
+      },
+      updatedAt: serverTimestamp(),
+    }, { merge: true }));
+    await assertFails(setDoc(ref, {
+      outcome: { result: 'done', completedAt: serverTimestamp() },
       updatedAt: serverTimestamp(),
     }, { merge: true }));
   });

@@ -107,7 +107,29 @@ StatusStyle outcomeStyle(BuildContext context, OutcomeResult result) {
   }
 }
 
-StatusStyle _neutral(ColorScheme cs, String label, IconData icon) => StatusStyle(
+/// Outcome presentation with item-level context. `Done (Late)` is derived from
+/// the permanent alarm-time unavailability fact; it is never a third outcome.
+StatusStyle itemOutcomeStyle(BuildContext context, ScheduleItem item) {
+  final outcome = item.outcome;
+  if (outcome == null) {
+    throw ArgumentError.value(item, 'item', 'must have an outcome');
+  }
+  final base = outcomeStyle(context, outcome.result);
+  if (outcome.result != OutcomeResult.done || !item.wasUnavailableAtAlarmTime) {
+    return base;
+  }
+  return StatusStyle(
+    label: 'Done (Late)',
+    treatment: base.treatment,
+    foreground: base.foreground,
+    background: base.background,
+    border: base.border,
+    icon: base.icon,
+  );
+}
+
+StatusStyle _neutral(ColorScheme cs, String label, IconData icon) =>
+    StatusStyle(
       label: label,
       treatment: StatusTreatment.neutral,
       foreground: cs.onSurfaceVariant,
@@ -127,7 +149,11 @@ StatusStyle _neutral(ColorScheme cs, String label, IconData icon) => StatusStyle
 /// permanently-visible orange dot would be exactly the decorative orange the
 /// doctrine rations.
 class PendingCountBadge extends StatelessWidget {
-  const PendingCountBadge({super.key, required this.count, required this.child});
+  const PendingCountBadge({
+    super.key,
+    required this.count,
+    required this.child,
+  });
 
   final int count;
   final Widget child;
@@ -151,13 +177,21 @@ class PendingCountBadge extends StatelessWidget {
 class StatusBadge extends StatelessWidget {
   const StatusBadge({super.key, required this.style, this.showIcon = false});
 
-  StatusBadge.status(ScheduleItemStatus status, BuildContext context, {super.key})
-      : style = statusStyle(context, status),
-        showIcon = false;
+  StatusBadge.status(
+    ScheduleItemStatus status,
+    BuildContext context, {
+    super.key,
+  }) : style = statusStyle(context, status),
+       showIcon = false;
 
   StatusBadge.outcome(OutcomeResult result, BuildContext context, {super.key})
-      : style = outcomeStyle(context, result),
-        showIcon = true;
+    : style = outcomeStyle(context, result),
+      showIcon = true;
+
+  StatusBadge.itemOutcome(ScheduleItem item, BuildContext context, {super.key})
+    : assert(item.outcome != null),
+      style = itemOutcomeStyle(context, item),
+      showIcon = true;
 
   final StatusStyle style;
   final bool showIcon;

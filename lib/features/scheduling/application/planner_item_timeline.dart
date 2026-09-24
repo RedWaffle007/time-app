@@ -4,6 +4,7 @@ enum PlannerTimelineEventKind {
   scheduled,
   rang,
   dismissed,
+  unavailable,
   done,
   skipped,
   pendingOutcome,
@@ -35,6 +36,14 @@ List<PlannerTimelineEvent> plannerTimelineFor(ScheduleItem item) {
   if (item.alarm?.dismissedAt case final at?) {
     events.add(
       PlannerTimelineEvent(kind: PlannerTimelineEventKind.dismissed, atUtc: at),
+    );
+  }
+  if (item.alarm?.unavailableAt case final at?) {
+    events.add(
+      PlannerTimelineEvent(
+        kind: PlannerTimelineEventKind.unavailable,
+        atUtc: at,
+      ),
     );
   }
   switch (item.outcome) {

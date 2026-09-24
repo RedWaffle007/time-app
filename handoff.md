@@ -1,246 +1,172 @@
-# Checkmate handoff — 2026-09-23
+# Checkmate handoff — 2026-09-24
 
-## Verified baseline
+## Operating rules
 
-- Branch: `main`; latest pushed commit: `baa304e` (`Replace completion confetti
-  with ballistic burst`). Worktree was clean when this handoff was written.
-- Full local suite passed, GitHub CI was green, and a release APK was built,
-  installed, and checked on-device. No known regressions remain.
-- The 1.4-second silent completion burst was visually approved on-device.
-- Current release artifact:
-  `build/app/outputs/flutter-apk/app-release.apk` (generated file; a clean/build
-  may replace it).
-- Firestore rules changed in `01ff2b5`. A deployment command was provided, but
-  successful production deployment was not explicitly confirmed in chat.
-
-## Working agreement
-
-- Do not run tests, commit, push, deploy, or publish. The user performs those
-  actions after receiving exact commands.
-- Use `apply_patch` for edits. Preserve unrelated user changes.
-- Every change needs regression coverage proportional to its risk.
-- Full verification command:
+- Do not run tests, commit, push, deploy, or publish. The user does those after
+  receiving exact commands.
+- Edit with `apply_patch`; preserve unrelated worktree changes.
+- Every feature/fix needs proportional regression coverage.
+- Full verification:
 
   ```bash
   flutter analyze && flutter test && (cd firestore-tests && npm test) && node --test worker/test/*.test.mjs && (cd android && ./gradlew :app:testDebugUnitTest)
   ```
 
-- After a green run, provide one explicit `git add ... && git commit -m "..."`
-  command. A push alone does not deploy Firestore rules or other backend state.
+- After a green run, give one exact `git add ... && git commit -m "..."` line.
+  A push does not deploy Firestore rules or the Cloudflare Worker.
 
-## Status
+## Current state
 
-Items 1–22, 25, 26, 28, 29, and 30 are complete locally. Recent stability work includes native
-due-time alarm delivery, single-owner alarm audio, Volume Down dismissal,
-immutable outcomes, missed-alarm recovery, silent durable completion events,
-the approved ballistic confetti, the 1.5-second splash/audio fade, and shared
-two-month categorization plus persistent explainer cards for Activity and Track.
-Details and rationale live in `DECISIONS.md`; do not duplicate them here.
+- Branch: `main`; latest committed work: `deaac3a` (Item 31 Plan affordance).
+- Complete locally: Items **1–22, 25, 26, 28, 29, 30, 31, 34**.
+- Item 34 is implemented and fully verified in the current worktree; it needs
+  its commit.
+- Next implementation order: **23 → 27 → 32 → 24 → 33**.
+- Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
 
-Remaining feature work, in intended order: **31, 23, 27, 32, 24, 33**.
-Item 22 is implementation-complete and locally verified, but its backend
-deployment and real-device acceptance are intentionally deferred to the final
-combined release pass after the feature list is complete.
+## Deferred final release gate
 
-The newly requested schedule/history pass takes priority after the current
-picture work. Item 24 remains last because it is explicitly a product review of
-the completed product surface, and should not be performed against UI that is
-about to change.
+Batch deployment and real-device acceptance after feature work is finished:
+
+- Item 22: deploy `firestore.rules` and `worker/`; verify profile/group
+  GIF/WebP upload, animation, replacement, deletion, and non-owner denial.
+- Item 25: verify Upcoming/History/Calendar layout, Back/bottom-nav behavior,
+  and past-plan expansion, scroll, and highlight on-device.
+- Re-run the full suite, build/install release APK, and test alarm lifecycle on
+  supported devices. Do not call Item 22 production-complete before this gate.
+- Production deployment of Firestore rules from `01ff2b5` was never confirmed.
+
+## Recently completed — Item 25
+
+- My Schedule contains only approved, outcome-less plans whose UTC due instant
+  has not passed. Equality remains Upcoming; elapsed or outcome-bearing plans
+  appear only in History. The partition is disjoint and DST/timezone-safe.
+- Added `Upcoming Plans` with rounded bold `CALENDAR` and `HISTORY` controls.
+- Added Plan sub-route History with `Past Plans`, newest-first cards/days,
+  localized month grouping at two distinct months, lazy collapse state, and
+  empty/error handling.
+- Past target-side Calendar items open History, force the month/day open,
+  auto-scroll, and highlight. Pending → Approvals, current/future → My Schedule,
+  planner-side → Activity.
+- Removed the Plan app-bar Calendar icon and You-tab Calendar entry; updated help.
+- Coverage includes boundary/DST partitioning, no duplication, one/two-month
+  behavior, short/long histories, cold/warm/far highlights, routing ownership,
+  empty states, and existing Done/Skip behavior.
+
+## Recently completed — Item 31
+
+- Replace Plan's bottom-right `+` FAB with a bold rounded `PLAN` text button.
+- Preserve schedule-builder destination, tooltip/semantics, placement, all three
+  Plan sub-tabs, and separation from the center voice FAB.
+- Update coach/help copy and tests. Do not rename Track's log-time action.
 
 ## Remaining roadmap
 
-### 22. Friend and group pictures — implementation complete; release gate deferred
+### 34 — Missed-alarm review actions (complete locally)
 
-- Fix full-screen friend-photo opening through the real Friends/Profile
-  surfaces; the isolated `AvatarImage` test is insufficient.
-- Add optional group avatars with owner-only upload, replacement, and deletion;
-  storage authorization; list/detail rendering; and the shared viewer.
-- Preserve legacy fallbacks. Test real gesture routing, ownership/rules,
-  metadata validation, broken URLs, deletion, and animated formats.
-- As part of this work, verify the complete profile-picture path for animated
-  GIF and WebP files: picker, validation, upload, storage response, rendering,
-  animation, replacement, and deletion on a real supported device. The current
-  Flutter SDK explicitly supports animated GIF/WebP decoding and tests both
-  codecs' loop counts, so JPEG, PNG, GIF, and WebP remain enabled pending the
-  deployed real-device check. The Edit Profile helper text must list only
-  formats that pass end-to-end. Remove a format everywhere if the deployed path
-  cannot preserve and display it correctly.
-- Implemented shared friend/group rendering and full-screen viewing, shared
-  JPEG/PNG/GIF/WebP selection, owner-only group upload/replacement/deletion,
-  Firestore metadata validation, Worker storage authorization, legacy/broken
-  image fallbacks, exact helper copy, and regression coverage. The targeted
-  Flutter suite, Firestore rules suite, Worker suite, and analyzer passed on
-  2026-09-24.
-- Deferred release gate: deploy `firestore.rules` and the Cloudflare Worker,
-  then verify profile and group GIF/WebP upload, visible animation in list,
-  detail, and full-screen surfaces, replacement, deletion, and non-owner denial
-  on supported real devices. Batch this with the final feature-list acceptance
-  pass as requested; do not mark Item 22 production-complete before it passes.
+- Treat the current few-second popup lag as a separate bug within this item.
+  Show the review promptly on the next unlocked foreground after reconciliation;
+  do not keep it behind planner-notification delivery, unrelated async work, or
+  an arbitrary UI delay. Measure and test this independently of outcome actions.
+- Preserve two independent facts. A one-minute no-response permanently records
+  `User unavailable` at the alarm-time instant in the item timeline; `Done` or
+  `Skipped` remains the mutable task outcome. Never erase or relabel the
+  alarm-time fact when the later outcome changes.
+- Keep the Item 20 default: after the one-minute auto-stop, transactionally set
+  an otherwise-unsettled task to `Skipped: User unavailable`. Persist the
+  unavailability event separately so changing that default outcome cannot
+  destroy the delivery/response-time evidence.
+- Replace `Mark reviewed` with item-specific `Mark as Done` and
+  `Mark as Skipped` actions. `Mark as Done` may replace only that exact automatic
+  skip; it must never overwrite a manual/concurrent outcome. `Mark as Skipped`
+  retains the default. Either action completes review for that item; there is no
+  outcome-free acknowledgement or bulk outcome mutation. Add no third or fourth
+  popup button; keep the decision surface to these two actions.
+- Present both facts to target and planner. Keep the canonical outcome as
+  `Done`/`Skipped`, but derive a nuanced display label such as `Done (Late)` when
+  the immutable `User unavailable at alarm time` event is also present; a normal
+  on-time completion remains plain `Done`. This is presentation, not a third
+  stored outcome, and the fixed timeline event remains independently visible.
+- The planner already receives the automatic unavailable/Skipped notification.
+  If the target later changes that exact default to Done, send an idempotent
+  follow-up update so the planner is not left with the stale belief that the task
+  remained skipped. The live item remains authoritative if either push is lost.
+- Define multi-miss behavior one item at a time, notification/idempotency rules
+  for the automatic Skip → later Done transition, and safe legacy handling for
+  existing `Skipped: User unavailable` records that predate the separate event.
+- Test popup latency separately, app-lock gating, single/multiple misses, exactly
+  two actions, Done/Skip behavior, plain Done versus derived `Done (Late)`,
+  immutable unavailability display, concurrent manual outcomes, process death,
+  offline/retry behavior, rules, planner timeline, follow-up delivery, dedupe,
+  and notification replay.
 
-### 23. Request a plan
+### 23 — Request a plan
 
-- Create a distinct request model; do not reuse the existing permanent
-  `PlanningRequest` permission model.
+- New request model; never reuse the permanent `PlanningRequest` grant.
 - Require active friendship plus an existing normal planning grant, rechecked
-  when each resulting item is created. Requests grant no authority and can
-  never create emergency/auto-approved items.
-- Support one-plan and flexible-window modes, optional messages, multi-friend
-  batches, timezone-safe start/end bounds, and non-overlapping results.
-- Add durations without rewriting legacy instant-only items. Enforce bounds,
-  overlap, lifecycle, and replay safety transactionally and in rules—not only UI.
-- Test grants/revocation, DST, adjacency and concurrent overlap, multi-item
-  fulfillment, legacy compatibility, notifications, routing, and all creation
-  modes.
+  transactionally when each item is created. Never create emergency/auto-approved
+  items or let a request grant authority.
+- Support one-plan and flexible-window requests, optional message, multi-friend
+  batches, durations, timezone-safe bounds, non-overlap, lifecycle/replay safety,
+  legacy instant-item compatibility, notifications, and routing.
+- Test grant/revocation, DST, adjacency/concurrency, multi-item fulfillment, and
+  every creation mode in rules and application layers.
 
-### 24. Stats and product review
+### 27 — Conditional conflict disclosure
 
-- Do this after the preceding product work. Audit existing profile/group stats
-  before extending them; avoid parallel calculations.
-- Prefer useful shared signals over surveillance or vanity metrics. Cover
-  privacy, minimum samples, asymmetric permissions, relationship changes,
-  timezone ranges, trends, empty states, and humane streak behavior.
-- Decide whether standalone Log Time earns its friction through meaningful
-  planned-vs-actual insight; research before changing or removing it.
+- Replace the always-visible timetable with a day-scoped warning shown only when
+  the selected target has live pending/approved outcome-less items that day.
+- Reveal localized time/date only—never title/note. Group flow uses one
+  consolidated name-grouped popup. It informs; it does not block saving.
+- Re-evaluate on target/date/feed changes, suppress identical repeats, and show
+  read errors explicitly. Reuse authorized streams and live-item policy.
+- Test DST/timezones, state filtering, ordering/fingerprints, mixed-zone groups,
+  errors, removed old entry points, and successful save after acknowledgement.
 
-### 25. My Schedule, History, and Calendar restructure — complete locally
+### 32 — Custom voice-note alarms
 
-- Keep My Schedule focused on scheduled upcoming plans only. Move elapsed and
-  completed plans into a dedicated History surface; do not duplicate a plan
-  between Upcoming and History. Use one explicit, timezone-safe boundary so a
-  plan cannot jump into the wrong surface around midnight or DST.
-- Replace the current `Today` / time-section heading on My Schedule with
-  `Upcoming Plans`. Put two rounded text buttons in that same row: bold,
-  all-caps `CALENDAR` in the middle and bold, all-caps `HISTORY` at the far
-  right. Remove the calendar glyph from this affordance.
-- History retains the current past-plan card and collapsible day UI, remains
-  latest-to-oldest, shows the `Past Plans` heading, and adds localized month
-  grouping the moment entries span two distinct calendar months. A feed confined
-  to one month remains day-grouped, regardless of its number of entries. Preserve
-  lazy building, expansion state, and empty/error behavior.
-- Calendar remains a projection of existing streams. Opening a past plan from
-  Calendar must route to History, expand its month/day as necessary, auto-scroll
-  to the exact plan, and retain the existing temporary highlight treatment.
-  Current/future plans must continue to route to My Schedule; pending items must
-  continue to route to Approvals.
-- Remove the old Calendar app-bar icon and the duplicate Calendar entry under
-  You after the new row control is working. Preserve the existing calendar
-  route, Back behavior, bottom navigation, creation flows, and notification
-  routing.
-- Implement in this internal order: define/test the Upcoming-versus-History
-  partition; extract the History surface and route/intent; add the row controls;
-  update Calendar ownership routing and deep-link scrolling; then remove the
-  superseded entry points.
-- Cover boundary-time and timezone/DST partitioning, latest-first month/day
-  order, short and long histories, cold/warm navigation, a far-away highlighted
-  plan, collapsed month/day expansion, pending-plan routing, empty states, and
-  regression of the existing Upcoming outcome actions.
-- Implemented with one UTC-instant partition: an approved, outcome-less plan is
-  Upcoming through its exact due instant; elapsed or outcome-bearing plans are
-  History. History is a Plan sub-route with `Past Plans`, lazy day/month groups,
-  two-distinct-month activation, and cold/warm forced highlight scrolling.
-  Calendar routes past target-side plans there while preserving Approvals,
-  My Schedule, and Activity ownership. The old Plan app-bar glyph and You entry
-  are removed. Full local verification passed on 2026-09-24; final device
-  acceptance is batched with the remaining feature list.
+- Planning for another person may attach a per-alarm voice-note override; max
+  20 seconds with preview, discard/re-record, and optional library save.
+- At fire time, play exactly three loops, then end—no fallback/minimum duration.
+  Existing Dismiss/Snooze interrupts immediately; each snoozed occurrence gets
+  its own three loops.
+- Deliver an immutable recipient-side offline snapshot. Sender rename/deletion
+  must not affect scheduled alarms. Define safe lifecycle cleanup.
+- Saved Voice Notes tab: listen/rename/delete, localized timestamp default name,
+  newest-first, month grouping immediately at two distinct months.
+- Keep audio out of Firestore/notifications. Add authenticated storage,
+  server-side MIME/duration/size/ownership checks, idempotent delivery/download,
+  native alarm/reboot/process-death integration, and exhaustive regression plus
+  device audio/lifecycle acceptance.
 
-### 27. Conditional conflict disclosure
+### 24 — Stats and product review
 
-- Replace the always-visible timetable with a day-scoped warning. Show nothing
-  when the selected target has no live items that day; otherwise show one popup
-  listing every conflict by localized time/date, never title or note.
-- Include pending/approved outcome-less items only, using each target's timezone.
-  Apply to self, individual, prefilled, and group flows; group warnings are one
-  consolidated name-grouped popup. This is context, not a collision block.
-- Re-evaluate when target/date/live conflicts change; suppress identical popup
-  repeats. Read errors must be explicit, never treated as an empty schedule.
-- Reuse authorized schedule streams and the existing live-item policy. This is
-  UI minimization, not a new backend free/busy boundary.
-- Test timezone/DST filtering, state exclusions, ordering/fingerprints, empty /
-  one / many conflicts, mixed-zone groups, read failures, removal of the old
-  timetable entry points, and successful save after acknowledgement.
+- Last product-surface change: audit/reuse existing stats; prioritize useful,
+  privacy-safe signals over surveillance/vanity metrics.
+- Cover minimum samples, permission/relationship changes, timezone ranges,
+  trends, empty states, and humane streaks.
+- Research whether standalone Log Time provides enough planned-vs-actual value
+  before changing or removing it.
 
-### 31. Rename the manual Plan affordance
+### 33 — Competitor review (last)
 
-- Replace the Plan shell's bottom-right plus-icon FAB with a bold `PLAN` label.
-  Keep its existing schedule-builder destination, tooltip/semantics, placement,
-  availability across all three Plan sub-tabs, and separation from the center
-  voice FAB.
-- Use an extended or equivalently accessible rounded button sized for text, and
-  update coach marks, help copy, screenshots, and tests that refer to `+` as the
-  manual planning entry point. Do not rename Track's separate log-time action.
+- Competitors recorded: **PingPal** and **SnoozeSquad**.
+- Research only after all preceding tasks. Use current first-party store/site
+  evidence; compare positioning, planning/alarm flows, permissions, custom
+  audio, pricing, privacy, reliability, and genuine gaps without copying.
 
-### 32. Custom voice-note alarms
+## Invariants
 
-- Allow a planner scheduling for another person to record or select a custom
-  voice note as a per-alarm override of that recipient's default alarm tone.
-  Do not offer the override for unrelated audio surfaces or silently change the
-  recipient's account-level default.
-- Limit every recording to 20 seconds. Before confirmation, support playback,
-  discard, and re-record. The planner may attach the one-off recording directly
-  and may optionally save it to their personal voice-note library for reuse.
-- When the alarm fires on the recipient's device, play the attached recording
-  exactly three times, independent of clip length. End the alarm completely
-  after the third playback: no default-tone fallback and no minimum alarm-cycle
-  duration. Existing Dismiss and Snooze actions must interrupt playback
-  immediately; a snoozed occurrence retains the same attached recording and
-  receives its own three-play limit when it fires again.
-- Treat the scheduled attachment as an immutable delivered snapshot, not a
-  live reference to the planner's library entry. Once scheduling succeeds, the
-  recipient must retain everything needed to fire it independently and offline.
-  Renaming or deleting the planner's saved source must not alter any existing
-  scheduled alarm. Define cleanup for withdrawn, rejected, completed, skipped,
-  and permanently expired alarms without deleting bytes still referenced by a
-  live recipient alarm.
-- Add a dedicated Saved Voice Notes tab. The owner can listen to, rename, and
-  delete recordings. Sort newest-to-oldest by save date. If no custom name is
-  supplied, use a localized timestamp-derived name such as
-  `Voice Note – Sep 24, 2026`.
-- Activate localized month dropdowns as soon as saved recordings span two
-  distinct calendar months. Keep a single-month library unwrapped and order
-  both month headers and recordings newest-to-oldest.
-- Keep audio bytes out of notification payloads and Firestore documents. Design
-  authenticated storage, server-validated MIME/duration/size limits, planner
-  ownership, recipient-scoped delivery access, retry/idempotency, and local
-  durable download before considering the alarm scheduled. A notification URL
-  alone is not sufficient for an offline due-time alarm.
-- Integrate with the native due-alarm lifecycle and its single-owner audio
-  policy. Preserve full-screen delivery, hardware Volume Down dismissal,
-  missed-alarm recovery, process death/reboot recovery, and the existing
-  immutable outcome rules.
-- Test recording limits and permissions, preview/re-record, one-off versus
-  saved selection, naming/rename/delete, two-month activation, attachment
-  snapshot independence, sender deletion, recipient authorization, upload and
-  download failures, offline/process-death/reboot delivery, exact three-loop
-  completion for short and long clips, Dismiss/Snooze during every loop,
-  concurrency/replay safety, cleanup, and default-tone regression for alarms
-  without an override. Finish with real-device audio and lifecycle acceptance.
-
-### 33. Competitor review — last
-
-- Direct competitors identified by the user: **PingPal** and **SnoozeSquad**.
-- Return to these only after every preceding roadmap task is complete. At that
-  point, compare positioning, planning/alarm flows, social permissions, custom
-  audio, pricing, privacy, reliability expectations, and meaningful product
-  gaps using current first-party store/site evidence. Do not copy branding or
-  interaction details merely for parity.
-
-## Constraints worth carrying forward
-
-- Schedule items are under `scheduleItems/{targetUid}/items/{itemId}` and are
-  currently point alarms. Item 23 must preserve legacy records.
-- Friendship planning grants live under the sorted friendship document; group
-  membership never implies planning permission.
-- Calendar is a projection of existing streams, not a separate datastore.
-- The Worker re-reads Firestore and validates actors/recipients/state; never
-  trust notification or storage request payloads.
+- Items live at `scheduleItems/{targetUid}/items/{itemId}`; Item 23 must preserve
+  legacy point alarms.
+- Planning grants live on the sorted friendship document; group membership is
+  never permission.
+- Calendar is a projection of existing streams, not a datastore.
+- Worker authorization re-reads Firestore; never trust request/notification data.
 - Firestore rules and Worker policy tests are security boundaries.
-- Android alarm/full-screen behavior remains OEM and permission dependent;
-  automated tests cover policy/lifecycle, while device acceptance covers actual
-  wake, audio, hardware keys, and visual/audio quality.
+- Android alarm/full-screen delivery is permission/OEM dependent; automated
+  policy tests do not replace device wake/audio/hardware-key acceptance.
 
-## Next session
+## Immediate next action
 
-Commit the locally verified Item 25 implementation, then proceed to Item 31
-(rename the manual Plan affordance). Keep Item 22's Firestore/Worker deployment
-and GIF/WebP device acceptance, plus Item 25 navigation/layout acceptance, on
-the final combined release checklist after all feature work is complete.
+Commit Item 34, then implement Item 23.

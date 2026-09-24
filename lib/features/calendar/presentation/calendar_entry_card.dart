@@ -49,8 +49,9 @@ class CalendarEntryCard extends ConsumerWidget {
               // cell the row is filed under — both come from `itemWallTime()`.
               Text(
                 formatWallTimeOfDay(context, entry.wallTime),
-                style: context.text.labelSmall
-                    ?.copyWith(color: context.colors.onSurfaceVariant),
+                style: context.text.labelSmall?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
               ),
               const SizedBox(width: Space.md),
               Expanded(
@@ -64,8 +65,9 @@ class CalendarEntryCard extends ConsumerWidget {
                       // tiebreaker, the same call the Activity card makes.
                       Text(
                         'for $forName · ${item.timezone}, their local time',
-                        style: context.text.bodySmall
-                            ?.copyWith(color: context.colors.onSurfaceVariant),
+                        style: context.text.bodySmall?.copyWith(
+                          color: context.colors.onSurfaceVariant,
+                        ),
                       ),
                     ],
                   ],
@@ -73,8 +75,8 @@ class CalendarEntryCard extends ConsumerWidget {
               ),
               const SizedBox(width: Space.sm),
               // ONE badge: the outcome replaces the status once there is one.
-              if (item.outcome case final outcome?)
-                StatusBadge.outcome(outcome.result, context)
+              if (item.outcome != null)
+                StatusBadge.itemOutcome(item, context)
               else
                 StatusBadge.status(item.status, context),
             ],

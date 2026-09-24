@@ -5794,3 +5794,34 @@ scroll/highlight behavior runs.
 The visible entry points are now the bold rounded `CALENDAR` and `HISTORY`
 controls beside `Upcoming Plans`. The superseded Plan app-bar calendar glyph
 and You-hub Calendar row were removed so there is one discoverable path.
+
+---
+
+## Missed-alarm review separates availability from completion (2026-09-24)
+
+A one-minute alarm timeout now records two deliberately independent facts. The
+default outcome remains `Skipped: User unavailable`, but the same transaction
+also writes immutable `alarm.unavailableAt`. The former is the task's current
+completion result; the latter is permanent device-observed evidence that the
+target did not respond while the alarm was active. Firestore rules permit only
+the exact automatic unavailable Skip to become Done and never permit the
+unavailability timestamp to be moved or erased.
+
+The next-unlocked-foreground review shows one missed task at a time with exactly
+two actions: Mark as Skipped retains the automatic default, while Mark as Done
+performs that narrow transaction. A corrected completion is still stored as the
+ordinary `done` enum and rendered as `Done (Late)` from item context; it is not a
+third outcome. Both parties continue to see `User unavailable at alarm time` in
+the task history.
+
+Review choice and follow-up delivery are retained in the device-protected native
+lifecycle row. This makes a process death between the tap, Firestore write, and
+planner notification retryable. The Worker's existing subtype guard treats
+`notifiedOutcome: skipped` followed by `done` as a new event, sends an explicit
+late-completion follow-up, and deduplicates repeated Done retries.
+
+Planner notification delivery is no longer on the popup's critical path. Once
+the automatic outcome is durable, the local review becomes visible immediately;
+the potentially slow token/HTTP path proceeds independently and remains backed
+by the durable native row. The app lock and cold-start reveal still remain above
+the review surface.

@@ -150,7 +150,7 @@ Split into **commitment fields** (changing these re-triggers consent) and
 | `groupId` | string | Group context the planning happened in. |
 | `status` | enum | See state machine. |
 | `outcome` | map? | See below. Target-recorded completion or skip. |
-| `alarm` | map? | Target-device observations: optional `rangAt` and `dismissedAt` timestamps. See below. |
+| `alarm` | map? | Target-device observations: optional `rangAt`, `dismissedAt`, and `unavailableAt` timestamps. See below. |
 | `rejectionReason` / `withdrawnReason` / `cancellationReason` | string? | Optional, per terminal transition. |
 | `createdAt` / `decidedAt` / `updatedAt` | Timestamp | `decidedAt` = when the target approved/rejected. |
 
@@ -208,10 +208,11 @@ later analysis (the core accountability signal: of what the planner approved, ho
 much did the target complete, and when?).
 
 An outcome is first-write-wins. Once a person records Done or Skip, later taps
-cannot replace it or toggle it to another result. The sole refinement is between
-two automatic missed-item facts: `Skipped: Did not respond` may become the more
-specific `Skipped: User unavailable` when the native one-minute alarm timeout is
-reconciled. Firestore rules enforce the same transition policy as the client.
+cannot replace it or toggle it to another result. Two narrowly checked automatic
+transitions exist: `Skipped: Did not respond` may become the more specific
+`Skipped: User unavailable` when the native one-minute timeout is reconciled;
+then the missed-alarm review may change only that exact default to `Done` while
+retaining `alarm.unavailableAt`. Firestore rules enforce both transitions.
 
 **Re-approval rule (explicit):**
 - Editing a **commitment field** — `title`, `localWallTime`/`scheduledInstantUtc`
@@ -237,18 +238,21 @@ target device:
 
 ```
 alarm: {
-  rangAt:       Timestamp?,  // native AUDIO_FIRED observation
-  dismissedAt: Timestamp?,  // target dismissed the full-screen alarm
+  rangAt:        Timestamp?,  // native AUDIO_FIRED observation
+  dismissedAt:  Timestamp?,  // target dismissed the full-screen alarm
+  unavailableAt: Timestamp?, // one-minute cap expired without a response
 }
 ```
 
-Only the target may write this map, only on an approved item, and only these two
-timestamp keys are valid. Writes preserve the earliest observation, making
-resume-time audit reconciliation idempotent. `rangAt` comes from the native
+Only the target may write this map, only on an approved item, and only these
+timestamp keys are valid. `unavailableAt` is immutable once present; the other
+observations preserve the earliest time, making resume-time reconciliation
+idempotent. `rangAt` comes from the native
 `AUDIO_FIRED` audit row when available; opening the alarm screen supplies a
 best-effort fallback. `dismissedAt` means the target silenced the alarm, not that
-they completed or skipped the item. The outcome therefore remains visibly
-pending until the target explicitly records Done or Skip.
+they completed or skipped the item. `unavailableAt` is likewise independent of
+completion: the user may later record Done, displayed as `Done (Late)`, without
+erasing that they were unavailable when the alarm rang.
 
 The planner reads this data from the existing schedule-item stream; there is no
 separate timeline collection and no fabricated timestamp for legacy outcomes.
@@ -258,10 +262,12 @@ that can occur while Dart and Firebase are unavailable: the one-minute ring cap
 expired, or the foreground alarm was dismissed natively (Volume Down or the
 lock-screen notification action). Timeout rows are retained through process
 death/reboot until the authenticated target app records
-`outcome.result = skipped`, `skipReason = "User unavailable"`, attempts the
-planner notification, and the target reviews the missed-alarm summary. This
-queue is device state, not a Firestore collection. Native-dismissal rows only
-add the shared `alarm.dismissedAt` observation; silencing is not an outcome.
+`outcome.result = skipped`, `skipReason = "User unavailable"`, persists
+`alarm.unavailableAt`, attempts the planner notification, and the target chooses
+Done or Skipped in the missed-alarm review. The queue also retains that choice
+and follow-up-notification delivery through process death. This queue is device
+state, not a Firestore collection. Native-dismissal rows only add the shared
+`alarm.dismissedAt` observation; silencing is not an outcome.
 
 ## Future alarm record — DESIGN-ONLY, NOT BUILT
 
