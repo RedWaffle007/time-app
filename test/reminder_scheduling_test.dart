@@ -156,11 +156,11 @@ void main() {
         ],
         uid: 'me',
         now: now,
-        plannerNames: const {'planner': 'Amina'},
+        plannerNames: const {'planner': '{planner}'},
       );
       expect(
         {for (final r in d) r.itemId: r.title},
-        {'friend': 'Amina planned Run for you', 'self': 'You planned Stretch'},
+        {'friend': '{planner} planned Run for you', 'self': 'You planned Stretch'},
       );
     });
 
@@ -171,13 +171,13 @@ void main() {
         items: [item(id: 'a')],
         uid: 'me',
         now: now,
-        plannerNames: const {'planner': 'Amina'},
+        plannerNames: const {'planner': '{planner}'},
       );
       final again = desiredReminders(
         items: [item(id: 'a')],
         uid: 'me',
         now: now,
-        plannerNames: const {'planner': 'Amina'},
+        plannerNames: const {'planner': '{planner}'},
       );
       expect(after.single.fingerprint, isNot(before.single.fingerprint));
       expect(again.single.fingerprint, after.single.fingerprint);

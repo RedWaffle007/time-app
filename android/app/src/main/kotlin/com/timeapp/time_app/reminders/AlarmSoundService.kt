@@ -66,7 +66,7 @@ class AlarmSoundService : Service() {
         @Volatile private var ringing = false
 
         /**
-         * itemId → "Amina planned Walk for you". Delivered with the alarm itself,
+         * itemId → "{planner} planned {task} for you". Delivered with the alarm itself,
          * so the heads-up, the lock-screen AlarmScreen and the missed notice all
          * name who and what from the first frame — no item/profile read needed.
          */
@@ -235,6 +235,7 @@ class AlarmSoundService : Service() {
                     if (notificationId >= 0) {
                         Log.i(TAG, "claim notification owner $notificationId")
                         ownership.claimNotification(notificationId, itemId)
+                        suppressScheduledDuplicate(notificationId)
                     } else {
                         // AlarmScreen owns playback independently from the fired
                         // notification. It immediately cancels that notification
@@ -388,6 +389,29 @@ class AlarmSoundService : Service() {
             nm.notify(("missed:$itemId").hashCode(), notification)
         } catch (e: Exception) {
             Log.e(TAG, "failed to post missed-alarm notification: $e")
+        }
+    }
+
+    /**
+     * ONE notification per alarm (device report 2026-09-25). The scheduled
+     * reminder notification shares [notificationId] and fires from a separate
+     * OS alarm at the same instant; once this service rings, its own
+     * notification says everything, so the scheduled one is removed — now and
+     * again shortly after, because the two alarms can land in either order.
+     * Cancelled on the NotificationManager directly: going through Dart's
+     * cancel path would release the notification owner and stop the ring.
+     * If native delivery never runs, nothing cancels it and it stays as the
+     * fallback.
+     */
+    private fun suppressScheduledDuplicate(notificationId: Int) {
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.cancel(notificationId)
+        AlarmSoundPolicy.DUPLICATE_RECHECK_MS.forEach { delay ->
+            handler.postDelayed({
+                if (ringing && notificationId in ownership.notificationIds()) {
+                    nm.cancel(notificationId)
+                }
+            }, delay)
         }
     }
 

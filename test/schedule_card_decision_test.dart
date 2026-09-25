@@ -5,7 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_app/core/theme/app_theme.dart';
 import 'package:time_app/features/auth/application/auth_providers.dart';
+import 'package:time_app/features/auth/domain/user_profile.dart';
 import 'package:time_app/features/celebrations/application/celebration_providers.dart';
+import 'package:time_app/features/outcomes/application/outcome_feedback.dart';
 import 'package:time_app/features/notifications/application/outcome_notifier.dart';
 import 'package:time_app/features/outcomes/presentation/history_screen.dart';
 import 'package:time_app/features/outcomes/presentation/outcome_screen.dart';
@@ -96,11 +98,81 @@ void main() {
 
     repository.result!.complete(true);
     await tester.pump();
+    // Saved, but "Updating your schedule…" holds for 1.5 s first (directed
+    // 2026-09-25); the celebration follows it immediately.
+    expect(find.text('Updating your schedule…'), findsOneWidget);
+    expect(container.read(committedCelebrationProvider), isNull);
+    await tester.pump(kPlannerUpdateDuration);
+    await tester.pump();
+    expect(find.text('Updating your schedule…'), findsNothing);
     final event = container.read(committedCelebrationProvider);
     expect(event?.itemId, 'missed');
     expect(event?.id, 'me_missed', reason: 'same id as the durable event');
     expect(event?.participantUids, ['me']);
   });
+
+  testWidgets('Done on a friend\'s plan shows "Updating <planner>…"', (
+    tester,
+  ) async {
+    final repository = _FakeScheduleRepository();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          myItemsAsTargetProvider.overrideWithValue(
+            AsyncData([_missed(createdByUid: 'planner')]),
+          ),
+          profileByUidProvider.overrideWith(
+            (ref, uid) => Stream.value(
+              const UserProfile(
+                uid: 'planner',
+                name: '{planner}',
+                homeTimezone: 'Etc/UTC',
+              ),
+            ),
+          ),
+          scheduleRepositoryProvider.overrideWithValue(repository),
+          notificationEventNotifierProvider.overrideWithValue(
+            _CountingNotifier(),
+          ),
+        ],
+        child: MaterialApp(theme: AppTheme.light, home: const OutcomeScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _expandIfCollapsed(tester, 'Missed plan');
+
+    await tester.tap(done);
+    await tester.pump();
+    expect(find.text('Updating {planner}…'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 1400));
+    expect(find.text('Updating {planner}…'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump();
+    expect(find.text('Updating {planner}…'), findsNothing);
+  });
+
+  testWidgets(
+    'Skip shows "Updating …" for 1.5 s, then returns, no celebration',
+    (tester) async {
+      final repository = _FakeScheduleRepository();
+      await _pumpSchedule(tester, [_missed()], repository: repository);
+      final container = ProviderScope.containerOf(tester.element(skip));
+
+      await tester.tap(skip);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Skip'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400)); // reason dialog out
+
+      expect(find.text('Skip this?'), findsNothing);
+      expect(find.text('Updating your schedule…'), findsOneWidget);
+      await tester.pump(kPlannerUpdateDuration);
+      await tester.pump();
+      expect(find.text('Updating your schedule…'), findsNothing);
+      expect(repository.markSkippedCalls, 1);
+      expect(container.read(committedCelebrationProvider), isNull);
+    },
+  );
 
   testWidgets('a Done that lost the race does not celebrate', (tester) async {
     final repository = _FakeScheduleRepository(
@@ -153,12 +225,13 @@ Widget _host(
 );
 
 /// An alarm that rang three minutes ago and auto-stopped unanswered.
-ScheduleItem _missed({ScheduleOutcome? outcome}) {
+ScheduleItem _missed({ScheduleOutcome? outcome, String createdByUid = 'me'}) {
   final instant = DateTime.now().toUtc().subtract(const Duration(minutes: 3));
   return _item(
     instant,
     id: 'missed',
     title: 'Missed plan',
+    createdByUid: createdByUid,
     outcome: outcome,
     alarm: ScheduleAlarmTimeline(
       rangAt: instant,
@@ -171,12 +244,13 @@ ScheduleItem _item(
   DateTime instant, {
   String id = 'plain',
   String title = 'Plain plan',
+  String createdByUid = 'me',
   ScheduleOutcome? outcome,
   ScheduleAlarmTimeline? alarm,
 }) => ScheduleItem(
   id: id,
   targetUid: 'me',
-  createdByUid: 'me',
+  createdByUid: createdByUid,
   groupId: '',
   title: title,
   localWallTime: '',
@@ -192,6 +266,17 @@ class _FakeScheduleRepository implements ScheduleRepository {
 
   final Completer<bool>? result;
   var markDoneCalls = 0;
+  var markSkippedCalls = 0;
+
+  @override
+  Future<bool> markSkipped(
+    String targetUid,
+    String itemId, {
+    String? reason,
+  }) async {
+    markSkippedCalls++;
+    return true;
+  }
 
   @override
   Future<bool> markDone(
@@ -202,6 +287,20 @@ class _FakeScheduleRepository implements ScheduleRepository {
     markDoneCalls++;
     return result?.future ?? Future.value(true);
   }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _CountingNotifier implements NotificationEventNotifier {
+  var calls = 0;
+
+  @override
+  Future<void> notify({
+    required NotifyEvent event,
+    required String targetUid,
+    required String itemId,
+  }) async => calls++;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

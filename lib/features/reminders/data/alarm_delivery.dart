@@ -27,7 +27,7 @@ class AlarmDelivery {
             'itemId': itemId,
             'fireAtMillis': fireAtUtc.millisecondsSinceEpoch,
             'exact': exact,
-            // "Amina planned Walk for you" travels WITH the alarm, so the
+            // "{planner} planned {task} for you" travels WITH the alarm, so the
             // native heads-up and missed notice need no Dart at fire time.
             'headline': headline,
           }) ??

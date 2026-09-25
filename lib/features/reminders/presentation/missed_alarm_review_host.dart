@@ -10,6 +10,8 @@ import '../../../core/theme/app_tokens.dart';
 import '../../applock/application/app_lock_providers.dart';
 import '../../celebrations/application/celebration_providers.dart';
 import '../../celebrations/domain/completion_celebration.dart';
+import '../../auth/application/auth_providers.dart';
+import '../../outcomes/application/outcome_feedback.dart';
 import '../application/missed_alarm_providers.dart';
 import '../application/missed_alarm_service.dart';
 
@@ -32,16 +34,24 @@ class MissedAlarmReviewHost extends ConsumerStatefulWidget {
 class _MissedAlarmReviewHostState extends ConsumerState<MissedAlarmReviewHost> {
   bool _acting = false;
 
+  /// The review being answered. The service drops it from its list at once,
+  /// so it is held here to keep "Updating {planner}…" on screen for the full
+  /// [kPlannerUpdateDuration] (directed 2026-09-25).
+  MissedAlarmReview? _answering;
+
   Future<void> _act(
     MissedAlarmService service,
     MissedAlarmReview review, {
     required bool done,
   }) async {
     if (_acting) return;
-    setState(() => _acting = true);
+    setState(() {
+      _acting = true;
+      _answering = review;
+    });
     try {
       if (done) {
-        final committed = await service.markDone(review);
+        final committed = await atLeast(service.markDone(review));
         if (committed) {
           ref
               .read(committedCelebrationProvider.notifier)
@@ -54,7 +64,7 @@ class _MissedAlarmReviewHostState extends ConsumerState<MissedAlarmReviewHost> {
               );
         }
       } else {
-        await service.markSkipped(review);
+        await atLeast(service.markSkipped(review));
       }
     } catch (_) {
       unawaited(service.resync());
@@ -66,7 +76,12 @@ class _MissedAlarmReviewHostState extends ConsumerState<MissedAlarmReviewHost> {
         );
       }
     } finally {
-      if (mounted) setState(() => _acting = false);
+      if (mounted) {
+        setState(() {
+          _acting = false;
+          _answering = null;
+        });
+      }
     }
   }
 
@@ -78,8 +93,17 @@ class _MissedAlarmReviewHostState extends ConsumerState<MissedAlarmReviewHost> {
       listenable: Listenable.merge([service, lock]),
       builder: (context, _) {
         final reviews = service.reviews;
-        final visible = widget.enabled && !lock.isLocked && reviews.isNotEmpty;
-        final review = reviews.firstOrNull;
+        final review = _answering ?? reviews.firstOrNull;
+        final visible = widget.enabled && !lock.isLocked && review != null;
+        final updatingLabel = review == null
+            ? ''
+            : updatingPlannerLabel(
+                selfPlanned: review.item.createdByUid == review.item.targetUid,
+                plannerName: ref
+                    .watch(profileByUidProvider(review.item.createdByUid))
+                    .value
+                    ?.name,
+              );
         return Stack(
           fit: StackFit.expand,
           children: [
@@ -120,10 +144,11 @@ class _MissedAlarmReviewHostState extends ConsumerState<MissedAlarmReviewHost> {
                                     textAlign: TextAlign.center,
                                   ),
                                   const SizedBox(height: Space.sm),
+                                  // The "permanently recorded" line was
+                                  // removed on request (2026-09-25).
                                   Text(
                                     'This alarm rang for one minute with no '
-                                    'response. User unavailable at alarm time is '
-                                    'permanently recorded.',
+                                    'response.',
                                     style: context.text.bodyMedium,
                                     textAlign: TextAlign.center,
                                   ),
@@ -139,57 +164,64 @@ class _MissedAlarmReviewHostState extends ConsumerState<MissedAlarmReviewHost> {
                                     ),
                                   ],
                                   const SizedBox(height: Space.lg),
-                                  if (review != null)
-                                    ListTile(
-                                      contentPadding: EdgeInsets.zero,
-                                      leading: const Icon(AppIcons.reminders),
-                                      title: Text(review.item.title),
-                                      subtitle: Text(
-                                        formatInstant(
-                                          context,
-                                          review.event.occurredAtUtc,
-                                          review.item.timezone,
-                                        ),
+                                  ListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    leading: const Icon(AppIcons.reminders),
+                                    title: Text(review.item.title),
+                                    subtitle: Text(
+                                      formatInstant(
+                                        context,
+                                        review.event.occurredAtUtc,
+                                        review.item.timezone,
                                       ),
                                     ),
+                                  ),
                                   const SizedBox(height: Space.lg),
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: OutlinedButton(
-                                          onPressed: _acting || review == null
-                                              ? null
-                                              : () => unawaited(
-                                                  _act(
-                                                    service,
-                                                    review,
-                                                    done: false,
-                                                  ),
-                                                ),
-                                          child: const Text('Mark as Skipped'),
-                                        ),
+                                  if (_acting)
+                                    Text(
+                                      updatingLabel,
+                                      key: const ValueKey(
+                                        'missed-alarm-updating',
                                       ),
-                                      const SizedBox(width: Space.sm),
-                                      Expanded(
-                                        child: FilledButton(
-                                          onPressed: _acting || review == null
-                                              ? null
-                                              : () => unawaited(
-                                                  _act(
-                                                    service,
-                                                    review,
-                                                    done: true,
+                                      style: context.text.titleMedium,
+                                      textAlign: TextAlign.center,
+                                    )
+                                  else
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: OutlinedButton(
+                                            onPressed: _acting
+                                                ? null
+                                                : () => unawaited(
+                                                    _act(
+                                                      service,
+                                                      review,
+                                                      done: false,
+                                                    ),
                                                   ),
-                                                ),
-                                          child: Text(
-                                            _acting
-                                                ? 'Saving…'
-                                                : 'Mark as Done',
+                                            child: const Text(
+                                              'Mark as Skipped',
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                    ],
-                                  ),
+                                        const SizedBox(width: Space.sm),
+                                        Expanded(
+                                          child: FilledButton(
+                                            onPressed: _acting
+                                                ? null
+                                                : () => unawaited(
+                                                    _act(
+                                                      service,
+                                                      review,
+                                                      done: true,
+                                                    ),
+                                                  ),
+                                            child: const Text('Mark as Done'),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                 ],
                               ),
                             ),

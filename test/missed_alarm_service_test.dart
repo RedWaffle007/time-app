@@ -11,7 +11,10 @@ import 'package:time_app/features/applock/application/app_lock_providers.dart';
 import 'package:time_app/features/applock/data/app_lock_store.dart';
 import 'package:time_app/features/applock/data/device_auth.dart';
 import 'package:time_app/features/applock/data/secure_window.dart';
+import 'package:time_app/features/auth/application/auth_providers.dart';
+import 'package:time_app/features/auth/domain/user_profile.dart';
 import 'package:time_app/features/celebrations/application/celebration_providers.dart';
+import 'package:time_app/features/outcomes/application/outcome_feedback.dart';
 import 'package:time_app/features/notifications/application/outcome_notifier.dart';
 import 'package:time_app/features/reminders/application/missed_alarm_providers.dart';
 import 'package:time_app/features/reminders/application/missed_alarm_service.dart';
@@ -101,6 +104,100 @@ void main() {
     expect(timeline.unavailable, hasLength(1));
     expect(service.reviews, hasLength(1));
   });
+
+  test(
+    'the popup does not wait for the Firestore fact write (was a multi-second delay)',
+    () async {
+      final gate = Completer<void>();
+      final timeline = _RecordingTimeline(gate: gate.future);
+      final store = _MemoryLifecycleStore([_event()]);
+      final service = MissedAlarmService(
+        store: store,
+        outcomes: _RecordingOutcomes(),
+        timeline: timeline,
+        notifier: _RecordingNotifier(),
+      );
+
+      await service.sync([_item()], 'target');
+
+      expect(service.reviews, hasLength(1), reason: 'shown before the write');
+      expect(store.events.single.outcomeRecorded, isFalse);
+
+      gate.complete();
+      await _settle();
+      expect(store.events.single.outcomeRecorded, isTrue);
+      expect(timeline.unavailable, hasLength(1));
+    },
+  );
+
+  test('an in-flight fact write is not duplicated by the next sync', () async {
+    final gate = Completer<void>();
+    final timeline = _RecordingTimeline(gate: gate.future);
+    final service = MissedAlarmService(
+      store: _MemoryLifecycleStore([_event()]),
+      outcomes: _RecordingOutcomes(),
+      timeline: timeline,
+      notifier: _RecordingNotifier(),
+    );
+
+    await service.sync([_item()], 'target');
+    await service.sync([_item()], 'target');
+    gate.complete();
+    await _settle();
+
+    expect(timeline.unavailable, hasLength(1));
+  });
+
+  test(
+    'Done persists the fact before the outcome (so it reads Done (Late))',
+    () async {
+      final order = <String>[];
+      final timeline = _RecordingTimeline(
+        onUnavailable: () => order.add('fact'),
+      );
+      final outcomes = _RecordingOutcomes(onWrite: () => order.add('outcome'));
+      final service = MissedAlarmService(
+        store: _MemoryLifecycleStore([_event()]),
+        outcomes: outcomes,
+        timeline: timeline,
+        notifier: _RecordingNotifier(),
+      );
+      await service.sync([_item()], 'target');
+      order.clear(); // the background write may still be pending — irrelevant
+
+      await service.markDone(service.reviews.single);
+
+      expect(order, contains('fact'));
+      expect(order.indexOf('fact'), lessThan(order.indexOf('outcome')));
+    },
+  );
+
+  test(
+    'KEEP: an unanswered popup re-appears after the app is closed and reopened',
+    () async {
+      // Directed to preserve 2026-09-25: clearing the app without choosing
+      // Done/Skip must not lose the question.
+      final store = _MemoryLifecycleStore([_event()]);
+      MissedAlarmService freshProcess() => MissedAlarmService(
+        store: store,
+        outcomes: _RecordingOutcomes(),
+        timeline: _RecordingTimeline(),
+        notifier: _RecordingNotifier(),
+      );
+
+      final first = freshProcess();
+      await first.sync([_item()], 'target');
+      await _settle();
+      expect(first.reviews, hasLength(1));
+
+      // Process killed; a new one reads the same durable native row.
+      for (var launch = 0; launch < 3; launch++) {
+        final next = freshProcess();
+        await next.sync([_item(unavailableAt: _occurred)], 'target');
+        expect(next.reviews, hasLength(1), reason: 'launch $launch');
+      }
+    },
+  );
 
   test('review is visible without waiting for any network push', () async {
     final gate = Completer<void>();
@@ -497,6 +594,15 @@ void main() {
         overrides: [
           missedAlarmServiceProvider.overrideWithValue(service),
           appLockControllerProvider.overrideWithValue(lock),
+          profileByUidProvider.overrideWith(
+            (ref, uid) => Stream.value(
+              const UserProfile(
+                uid: 'planner',
+                name: '{planner}',
+                homeTimezone: 'Etc/UTC',
+              ),
+            ),
+          ),
         ],
         child: MaterialApp(
           theme: AppTheme.light,
@@ -519,22 +625,40 @@ void main() {
     expect(find.text('Mark reviewed'), findsNothing);
     expect(find.text('Mark as Skipped'), findsOneWidget);
     expect(find.text('Mark as Done'), findsOneWidget);
+    // Removed on request (2026-09-25).
+    expect(find.textContaining('permanently recorded'), findsNothing);
 
     await tester.tap(find.text('Mark as Skipped'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    // "Updating {planner}…" holds the answered review on screen for 1.5 s.
+    expect(find.text('Updating {planner}…'), findsOneWidget);
+    expect(find.text('Morning walk'), findsOneWidget);
+    expect(find.text('Mark as Done'), findsNothing);
+    await tester.pump(const Duration(milliseconds: 1400));
+    expect(find.text('Updating {planner}…'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump();
     expect(find.text('Morning walk'), findsNothing);
     expect(find.text('Medicine'), findsOneWidget);
 
     await tester.tap(find.text('Mark as Done'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    final container = ProviderScope.containerOf(
+      tester.element(find.text('Schedule')),
+    );
+    expect(find.text('Updating {planner}…'), findsOneWidget);
+    expect(
+      container.read(committedCelebrationProvider),
+      isNull,
+      reason: 'the celebration follows the Updating message',
+    );
+    await tester.pump(kPlannerUpdateDuration);
+    await tester.pump();
     expect(find.text('Missed alarm'), findsNothing);
     expect(find.text('Schedule'), findsOneWidget);
     expect(store.events.every((event) => event.reviewed), isTrue);
 
-    // Only the popup's own committed Done celebrates, and it does so on save.
-    final container = ProviderScope.containerOf(
-      tester.element(find.text('Schedule')),
-    );
+    // Only the popup's own committed Done celebrates — right after Updating.
     expect(container.read(committedCelebrationProvider)?.itemId, 'item-2');
   });
 
@@ -699,15 +823,19 @@ class _MemoryLifecycleStore implements AlarmLifecycleStore {
 /// First-write-wins like the real transactions: once an item has an outcome,
 /// later writes report `false`.
 class _RecordingOutcomes implements MissedAlarmOutcomeRepository {
-  _RecordingOutcomes({this.recorded = true});
+  _RecordingOutcomes({this.recorded = true, this.onWrite});
 
   final bool recorded;
+  final void Function()? onWrite;
   final _decided = <String>{};
   final skipped = <(String, String, String)>[];
   final done = <(String, String, String)>[];
   final legacyDone = <(String, String, String)>[];
 
-  bool _firstWrite(String itemId) => recorded && _decided.add(itemId);
+  bool _firstWrite(String itemId) {
+    onWrite?.call();
+    return recorded && _decided.add(itemId);
+  }
 
   @override
   Future<bool> markDoneIfUnsettled(
@@ -744,6 +872,10 @@ class _RecordingOutcomes implements MissedAlarmOutcomeRepository {
 }
 
 class _RecordingTimeline implements AlarmTimelineRepository {
+  _RecordingTimeline({this.gate, this.onUnavailable});
+
+  final Future<void>? gate;
+  final void Function()? onUnavailable;
   final dismissed = <(String, String)>[];
   final unavailable = <(String, String)>[];
   final unavailableTimes = <DateTime>[];
@@ -770,6 +902,10 @@ class _RecordingTimeline implements AlarmTimelineRepository {
     String itemId,
     DateTime atUtc,
   ) async {
+    if (gate != null) await gate;
+    onUnavailable?.call();
+    // Immutable once written, like the real transaction.
+    if (unavailable.contains((targetUid, itemId))) return;
     unavailable.add((targetUid, itemId));
     unavailableTimes.add(atUtc);
   }

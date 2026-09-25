@@ -196,7 +196,7 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
                   color: context.attention,
                 ),
                 const SizedBox(height: Space.xl),
-                // ONE sentence, centered and bold: "Amina planned Walk for
+                // ONE sentence, centered and bold: "{planner} planned {task} for
                 // you" (device-directed copy, 2026-09-25). Nothing — not a
                 // placeholder — until a trustworthy sentence is known.
                 Text(

@@ -23,7 +23,7 @@ void main() {
   );
   const profile = UserProfile(
     uid: 'friend',
-    name: 'Amina',
+    name: '{planner}',
     homeTimezone: 'Etc/UTC',
     username: 'amina',
     avatar: avatar,

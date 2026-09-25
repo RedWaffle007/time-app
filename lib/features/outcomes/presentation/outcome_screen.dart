@@ -25,9 +25,11 @@ import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
 import '../../scheduling/presentation/planner_item_detail_sheet.dart';
 import '../application/history_intent.dart';
+import '../application/outcome_feedback.dart';
 import '../application/schedule_partition.dart';
 import '../application/schedule_time_section.dart';
 import 'hero_band.dart';
+import 'updating_planner_dialog.dart';
 
 /// The target's approved items — where they mark Done or Skip, and where a
 /// tapped reminder lands.
@@ -621,47 +623,71 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
     );
   }
 
-  /// Record completion, then fire the (best-effort) planner push. The write is
-  /// the source of truth; the push is additive (see DECISIONS.md).
-  ///
-  /// The reminder needs no cancelling here: recording an outcome makes the item
-  /// undesired, the item stream re-emits, and the reconciler cancels it. That is
-  /// the point of driving reminders off the stream rather than off transitions.
-  Future<void> _markDone() async {
-    if (_writingOutcome) return;
-    setState(() => _writingOutcome = true);
-    final item = widget.item;
-    bool recorded;
-    try {
-      recorded = await ref
-          .read(scheduleRepositoryProvider)
-          .markDone(item.targetUid, item.id, plannerUid: item.createdByUid);
-    } finally {
-      if (mounted) setState(() => _writingOutcome = false);
-    }
-    if (!recorded) return;
-    // Celebrate on save: the Done transaction just committed, so the burst
-    // starts now rather than after Firestore echoes the event back.
-    ref
-        .read(committedCelebrationProvider.notifier)
-        .celebrate(
-          CompletionCelebration.committed(
-            targetUid: item.targetUid,
-            itemId: item.id,
-            plannerUid: item.createdByUid,
-          ),
-        );
-    // No post-Done prompt: Done is the whole action (the Log Time pop-up was
-    // removed 2026-09-25). Time is still logged from Track.
-    if (!_isSelfPlanned) {
-      await ref
+  // Record completion, then fire the (best-effort) planner push. The write is
+  // the source of truth; the push is additive (see DECISIONS.md). No reminder
+  // cancelling here: the outcome makes the item undesired, the item stream
+  // re-emits, and the reconciler cancels it.
+  /// "Updating {planner}…" for this card's planner — a self-plan and an unloaded
+  /// name each have their own wording; never a uid.
+  String _updatingLabel() => updatingPlannerLabel(
+    selfPlanned: _isSelfPlanned,
+    plannerName: _isSelfPlanned
+        ? null
+        : ref.read(profileByUidProvider(widget.item.createdByUid)).value?.name,
+  );
+
+  /// Tell the planner. Fire-and-forget: it runs inside the "Updating" window,
+  /// but a slow push must never hold the screen.
+  void _notifyPlanner(ScheduleItem item) {
+    if (_isSelfPlanned) return; // no point notifying yourself
+    unawaited(
+      ref
           .read(notificationEventNotifierProvider)
           .notify(
             event: NotifyEvent.outcome,
             targetUid: item.targetUid,
             itemId: item.id,
+          ),
+    );
+  }
+
+  Future<void> _markDone() async {
+    if (_writingOutcome) return;
+    setState(() => _writingOutcome = true);
+    final item = widget.item;
+    final repository = ref.read(scheduleRepositoryProvider);
+    final celebrations = ref.read(committedCelebrationProvider.notifier);
+    bool recorded;
+    try {
+      // "Updating {planner}…" for 1.5 s (directed 2026-09-25), then the
+      // celebration — the wait is explained instead of feeling like lag.
+      recorded = await showUpdatingPlanner(
+        context,
+        label: _updatingLabel(),
+        work: () async {
+          final ok = await repository.markDone(
+            item.targetUid,
+            item.id,
+            plannerUid: item.createdByUid,
           );
+          if (ok) _notifyPlanner(item);
+          return ok;
+        },
+      );
+    } finally {
+      if (mounted) setState(() => _writingOutcome = false);
     }
+    if (!recorded) return;
+    // Celebrate the committed Done without waiting for Firestore to echo the
+    // event back (the echo is de-duplicated by id). No post-Done prompt: the
+    // Log Time pop-up was removed 2026-09-25.
+    celebrations.celebrate(
+      CompletionCelebration.committed(
+        targetUid: item.targetUid,
+        itemId: item.id,
+        plannerUid: item.createdByUid,
+      ),
+    );
   }
 
   Future<void> _skip(BuildContext context) async {
@@ -691,27 +717,28 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
         ],
       ),
     );
-    if (confirmed == true) {
-      if (!mounted) return;
-      setState(() => _writingOutcome = true);
-      final item = widget.item;
-      bool recorded;
-      try {
-        recorded = await ref
-            .read(scheduleRepositoryProvider)
-            .markSkipped(item.targetUid, item.id, reason: reason);
-      } finally {
-        if (mounted) setState(() => _writingOutcome = false);
-      }
-      if (!recorded) return;
-      if (_isSelfPlanned) return; // no point notifying yourself
-      await ref
-          .read(notificationEventNotifierProvider)
-          .notify(
-            event: NotifyEvent.outcome,
-            targetUid: item.targetUid,
-            itemId: item.id,
+    if (confirmed != true || !mounted || !context.mounted) return;
+    setState(() => _writingOutcome = true);
+    final item = widget.item;
+    final repository = ref.read(scheduleRepositoryProvider);
+    try {
+      // Same 1.5 s "Updating {planner}…" as Done, then back to the list — no
+      // celebration for a skip.
+      await showUpdatingPlanner(
+        context,
+        label: _updatingLabel(),
+        work: () async {
+          final ok = await repository.markSkipped(
+            item.targetUid,
+            item.id,
+            reason: reason,
           );
+          if (ok) _notifyPlanner(item);
+          return ok;
+        },
+      );
+    } finally {
+      if (mounted) setState(() => _writingOutcome = false);
     }
   }
 }

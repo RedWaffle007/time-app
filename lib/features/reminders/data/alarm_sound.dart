@@ -17,7 +17,7 @@ abstract interface class AlarmSound {
   Future<void> start(String itemId, {String headline = ''});
   Future<void> stop(String itemId);
 
-  /// The sentence the native alarm was delivered with ("Amina planned Walk for
+  /// The sentence the native alarm was delivered with ("{planner} planned {task} for
   /// you"), or null when this process did not receive one.
   Future<String?> headline(String itemId);
 }

@@ -294,7 +294,7 @@ class MainActivity : FlutterFragmentActivity() {
                         result.success(null)
                     }
                     // The sentence delivered with the alarm, so AlarmScreen can
-                    // render "Amina planned Walk for you" on its first frames
+                    // render "{planner} planned {task} for you" on its first frames
                     // instead of placeholders while the item stream loads.
                     "headline" -> result.success(
                         AlarmSoundService.headlineFor(

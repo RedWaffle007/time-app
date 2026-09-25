@@ -43,9 +43,11 @@ import {
 
 // --- fixtures -------------------------------------------------------------
 
-const ALICE = 'uid_alice'; // the TARGET — items live under her subtree
-const BOB = 'uid_bob'; // the PLANNER — holds an active grant over Alice
-const MALLORY = 'uid_mallory'; // signed in, in no group with anyone
+// The a/b/m prefixes keep the uids' SORT ORDER from the original fixtures:
+// friendship ids are the sorted pair, and some tests spell them out.
+const TARGET = 'uid_a_target'; // the target — items live under their subtree
+const PLANNER = 'uid_b_planner'; // the planner — holds an active grant over the target
+const OUTSIDER = 'uid_m_outsider'; // signed in, in no group with anyone
 
 const GROUP = 'group_1';
 const JOIN_CODE = 'HJK234';
@@ -57,8 +59,8 @@ let testEnv;
 /** The exact field set ScheduleRepository.createItem writes. */
 function newItemFields(overrides = {}) {
   return {
-    targetUid: ALICE,
-    createdByUid: BOB,
+    targetUid: TARGET,
+    createdByUid: PLANNER,
     groupId: GROUP,
     title: 'Morning run',
     note: 'bring water',
@@ -78,7 +80,7 @@ async function seed() {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
 
-    for (const uid of [ALICE, BOB, MALLORY]) {
+    for (const uid of [TARGET, PLANNER, OUTSIDER]) {
       await setDoc(doc(db, 'users', uid), {
         name: uid,
         homeTimezone: 'Asia/Kolkata',
@@ -89,25 +91,25 @@ async function seed() {
 
     await setDoc(doc(db, 'groups', GROUP), {
       name: 'The group',
-      ownerUid: ALICE,
+      ownerUid: TARGET,
       joinCode: JOIN_CODE,
-      memberUids: [ALICE, BOB],
+      memberUids: [TARGET, PLANNER],
     });
-    await setDoc(doc(db, 'groups', GROUP, 'members', ALICE), { name: 'Alice' });
-    await setDoc(doc(db, 'groups', GROUP, 'members', BOB), { name: 'Bob' });
-    await setDoc(doc(db, 'groups', GROUP, 'plannerGrants', `${BOB}_${ALICE}`), {
-      plannerUid: BOB,
-      targetUid: ALICE,
+    await setDoc(doc(db, 'groups', GROUP, 'members', TARGET), { name: 'Target' });
+    await setDoc(doc(db, 'groups', GROUP, 'members', PLANNER), { name: 'Planner' });
+    await setDoc(doc(db, 'groups', GROUP, 'plannerGrants', `${PLANNER}_${TARGET}`), {
+      plannerUid: PLANNER,
+      targetUid: TARGET,
       groupId: GROUP,
       granted: true,
-      grantedByUid: ALICE,
+      grantedByUid: TARGET,
     });
     await setDoc(doc(db, 'joinCodes', JOIN_CODE), { groupId: GROUP });
 
-    const items = collection(db, 'scheduleItems', ALICE, 'items');
+    const items = collection(db, 'scheduleItems', TARGET, 'items');
     await setDoc(doc(items, PENDING_ITEM), {
-      targetUid: ALICE,
-      createdByUid: BOB,
+      targetUid: TARGET,
+      createdByUid: PLANNER,
       groupId: GROUP,
       title: 'Morning run',
       localWallTime: '2026-08-11 07:00',
@@ -116,8 +118,8 @@ async function seed() {
       status: 'pending',
     });
     await setDoc(doc(items, APPROVED_ITEM), {
-      targetUid: ALICE,
-      createdByUid: BOB,
+      targetUid: TARGET,
+      createdByUid: PLANNER,
       groupId: GROUP,
       title: 'Evening study',
       localWallTime: '2026-08-11 19:00',
@@ -129,13 +131,13 @@ async function seed() {
 }
 
 const as = (uid) => testEnv.authenticatedContext(uid).firestore();
-const itemRef = (db, id) => doc(db, 'scheduleItems', ALICE, 'items', id);
+const itemRef = (db, id) => doc(db, 'scheduleItems', TARGET, 'items', id);
 
 function codeJoinRequest() {
   return {
-    candidateUid: MALLORY,
-    candidateName: MALLORY,
-    requestedByUid: MALLORY,
+    candidateUid: OUTSIDER,
+    candidateName: OUTSIDER,
+    requestedByUid: OUTSIDER,
     source: 'code',
     inviteCode: JOIN_CODE,
     status: 'pending',
@@ -148,7 +150,7 @@ function codeJoinRequest() {
 }
 
 async function submitCodeJoinRequest() {
-  const ref = doc(as(MALLORY), 'groups', GROUP, 'joinRequests', MALLORY);
+  const ref = doc(as(OUTSIDER), 'groups', GROUP, 'joinRequests', OUTSIDER);
   await assertSucceeds(setDoc(ref, codeJoinRequest()));
   return ref;
 }
@@ -177,19 +179,19 @@ beforeEach(seed);
 describe('issue 1 — users are not enumerable', () => {
   it('DENIES a non-member listing the users collection', async () => {
     // The finding itself: this used to return every profile in the project.
-    await assertFails(getDocs(collection(as(MALLORY), 'users')));
+    await assertFails(getDocs(collection(as(OUTSIDER), 'users')));
   });
 
   it('DENIES listing users even to a legitimate member', async () => {
     // `list` is off for everyone — no client path queries this collection.
-    await assertFails(getDocs(collection(as(BOB), 'users')));
+    await assertFails(getDocs(collection(as(PLANNER), 'users')));
   });
 
   it('DENIES a filtered query that tries to sweep quiet-hours windows', async () => {
     await assertFails(
       getDocs(
         query(
-          collection(as(MALLORY), 'users'),
+          collection(as(OUTSIDER), 'users'),
           where('homeTimezone', '==', 'Asia/Kolkata'),
         ),
       ),
@@ -197,14 +199,14 @@ describe('issue 1 — users are not enumerable', () => {
   });
 
   it('ALLOWS reading one profile by uid (the planner needs name + timezone)', async () => {
-    await assertSucceeds(getDoc(doc(as(BOB), 'users', ALICE)));
+    await assertSucceeds(getDoc(doc(as(PLANNER), 'users', TARGET)));
   });
 
   it('documents the ACCEPTED RESIDUAL: a known uid can still be read', async () => {
     // Not a bug being asserted as correct — a limit being pinned down. Strict
     // shared-group scoping needs a denormalized index (see the rules comment).
     // It holds only because no uid leaks to a stranger any more.
-    await assertSucceeds(getDoc(doc(as(MALLORY), 'users', ALICE)));
+    await assertSucceeds(getDoc(doc(as(OUTSIDER), 'users', TARGET)));
   });
 });
 
@@ -213,34 +215,34 @@ describe('issue 1 — users are not enumerable', () => {
 describe('inactivity state is private and client fields are constrained', () => {
   const activityAt = Timestamp.fromDate(new Date('2026-09-23T06:00:00Z'));
   const dueAt = Timestamp.fromDate(new Date('2026-09-23T12:00:00Z'));
-  const stateRef = (db, uid = ALICE) => doc(db, 'inactivityStates', uid);
+  const stateRef = (db, uid = TARGET) => doc(db, 'inactivityStates', uid);
 
   it('allows the owner to create the exact six-hour timer', async () => {
-    await assertSucceeds(setDoc(stateRef(as(ALICE)), {
-      uid: ALICE,
+    await assertSucceeds(setDoc(stateRef(as(TARGET)), {
+      uid: TARGET,
       lastActivityAt: activityAt,
       nextNotificationAt: dueAt,
     }));
   });
 
   it('denies another user and all collection enumeration', async () => {
-    await assertFails(setDoc(stateRef(as(BOB)), {
-      uid: ALICE,
+    await assertFails(setDoc(stateRef(as(PLANNER)), {
+      uid: TARGET,
       lastActivityAt: activityAt,
       nextNotificationAt: dueAt,
     }));
-    await assertFails(getDoc(stateRef(as(BOB))));
-    await assertFails(getDocs(collection(as(ALICE), 'inactivityStates')));
+    await assertFails(getDoc(stateRef(as(PLANNER))));
+    await assertFails(getDocs(collection(as(TARGET), 'inactivityStates')));
   });
 
   it('denies forged due times and Worker-owned delivery fields', async () => {
-    await assertFails(setDoc(stateRef(as(ALICE)), {
-      uid: ALICE,
+    await assertFails(setDoc(stateRef(as(TARGET)), {
+      uid: TARGET,
       lastActivityAt: activityAt,
       nextNotificationAt: Timestamp.fromDate(new Date('2027-01-01T00:00:00Z')),
     }));
-    await assertFails(setDoc(stateRef(as(ALICE)), {
-      uid: ALICE,
+    await assertFails(setDoc(stateRef(as(TARGET)), {
+      uid: TARGET,
       lastActivityAt: activityAt,
       nextNotificationAt: dueAt,
       sequenceIndex: 49,
@@ -250,18 +252,18 @@ describe('inactivity state is private and client fields are constrained', () => 
   it('preserves Worker fields while allowing a later owner activity update', async () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(stateRef(ctx.firestore()), {
-        uid: ALICE,
+        uid: TARGET,
         lastActivityAt: activityAt,
         nextNotificationAt: dueAt,
         sequenceIndex: 7,
         lastNotifiedAt: Timestamp.fromDate(new Date('2026-09-22T12:00:00Z')),
       });
     });
-    await assertSucceeds(setDoc(stateRef(as(ALICE)), {
+    await assertSucceeds(setDoc(stateRef(as(TARGET)), {
       lastActivityAt: Timestamp.fromDate(new Date('2026-09-23T07:00:00Z')),
       nextNotificationAt: Timestamp.fromDate(new Date('2026-09-23T13:00:00Z')),
     }, { merge: true }));
-    await assertFails(setDoc(stateRef(as(ALICE)), {
+    await assertFails(setDoc(stateRef(as(TARGET)), {
       sequenceIndex: 0,
     }, { merge: true }));
   });
@@ -324,7 +326,7 @@ describe('the profile name is required', () => {
 
   it('ALLOWS update to a new name', async () => {
     await assertSucceeds(
-      setDoc(doc(as(ALICE), 'users', ALICE), { name: 'Alice A.' }, { merge: true }),
+      setDoc(doc(as(TARGET), 'users', TARGET), { name: 'Target A.' }, { merge: true }),
     );
   });
 
@@ -332,15 +334,15 @@ describe('the profile name is required', () => {
     // The case the whole design turns on. `request.resource.data` is the
     // post-write document, so the corrective write satisfies the rule by
     // construction and nobody is locked out of their own profile.
-    await withStoredName(ALICE, '');
+    await withStoredName(TARGET, '');
     await assertSucceeds(
-      setDoc(doc(as(ALICE), 'users', ALICE), { name: 'Alice' }, { merge: true }),
+      setDoc(doc(as(TARGET), 'users', TARGET), { name: 'Target' }, { merge: true }),
     );
   });
 
   it('DENIES an update that blanks an existing name', async () => {
     await assertFails(
-      setDoc(doc(as(ALICE), 'users', ALICE), { name: '' }, { merge: true }),
+      setDoc(doc(as(TARGET), 'users', TARGET), { name: '' }, { merge: true }),
     );
   });
 
@@ -349,7 +351,7 @@ describe('the profile name is required', () => {
     // inherits the stored name, which is already valid.
     await assertSucceeds(
       setDoc(
-        doc(as(ALICE), 'users', ALICE),
+        doc(as(TARGET), 'users', TARGET),
         { quietHoursStartMinutes: 1320 },
         { merge: true },
       ),
@@ -362,10 +364,10 @@ describe('the profile name is required', () => {
     // carry `name` inherits the empty stored one and is denied by a field it
     // never touched. Retired in practice by verifying no such document exists
     // (2026-08-15); this is what would happen if one did.
-    await withStoredName(ALICE, '');
+    await withStoredName(TARGET, '');
     await assertFails(
       setDoc(
-        doc(as(ALICE), 'users', ALICE),
+        doc(as(TARGET), 'users', TARGET),
         { quietHoursStartMinutes: 1320 },
         { merge: true },
       ),
@@ -375,11 +377,11 @@ describe('the profile name is required', () => {
 
 describe('issue 1 — groups are not enumerable', () => {
   it('DENIES a non-member reading a group document', async () => {
-    await assertFails(getDoc(doc(as(MALLORY), 'groups', GROUP)));
+    await assertFails(getDoc(doc(as(OUTSIDER), 'groups', GROUP)));
   });
 
   it('DENIES a non-member listing every group', async () => {
-    await assertFails(getDocs(collection(as(MALLORY), 'groups')));
+    await assertFails(getDocs(collection(as(OUTSIDER), 'groups')));
   });
 
   it('DENIES the join-by-code query, which is how invite codes leaked', async () => {
@@ -387,7 +389,7 @@ describe('issue 1 — groups are not enumerable', () => {
     await assertFails(
       getDocs(
         query(
-          collection(as(MALLORY), 'groups'),
+          collection(as(OUTSIDER), 'groups'),
           where('joinCode', '==', JOIN_CODE),
         ),
       ),
@@ -396,20 +398,20 @@ describe('issue 1 — groups are not enumerable', () => {
 
   it('DENIES a non-member reading the member roster', async () => {
     await assertFails(
-      getDocs(collection(as(MALLORY), 'groups', GROUP, 'members')),
+      getDocs(collection(as(OUTSIDER), 'groups', GROUP, 'members')),
     );
   });
 
   it('ALLOWS a member to read their own group', async () => {
-    await assertSucceeds(getDoc(doc(as(BOB), 'groups', GROUP)));
+    await assertSucceeds(getDoc(doc(as(PLANNER), 'groups', GROUP)));
   });
 
   it('ALLOWS watchMyGroups (array-contains on memberUids)', async () => {
     await assertSucceeds(
       getDocs(
         query(
-          collection(as(BOB), 'groups'),
-          where('memberUids', 'array-contains', BOB),
+          collection(as(PLANNER), 'groups'),
+          where('memberUids', 'array-contains', PLANNER),
         ),
       ),
     );
@@ -417,11 +419,11 @@ describe('issue 1 — groups are not enumerable', () => {
 
   it('ALLOWS creating a group as its owner and sole member', async () => {
     await assertSucceeds(
-      setDoc(doc(as(MALLORY), 'groups', 'group_new'), {
-        name: 'Mallory only',
-        ownerUid: MALLORY,
+      setDoc(doc(as(OUTSIDER), 'groups', 'group_new'), {
+        name: 'Outsider only',
+        ownerUid: OUTSIDER,
         joinCode: 'ZZZ999',
-        memberUids: [MALLORY],
+        memberUids: [OUTSIDER],
         createdAt: serverTimestamp(),
       }),
     );
@@ -429,11 +431,11 @@ describe('issue 1 — groups are not enumerable', () => {
 
   it('DENIES creating a group with malformed avatar metadata', async () => {
     await assertFails(
-      setDoc(doc(as(MALLORY), 'groups', 'group_bad_avatar'), {
+      setDoc(doc(as(OUTSIDER), 'groups', 'group_bad_avatar'), {
         name: 'Bad picture',
-        ownerUid: MALLORY,
+        ownerUid: OUTSIDER,
         joinCode: 'BAD999',
-        memberUids: [MALLORY],
+        memberUids: [OUTSIDER],
         avatar: {
           url: 'https://storage.example/not-an-image.svg',
           storageKey: 'group-avatars/group_bad_avatar/file.svg',
@@ -456,21 +458,21 @@ describe('issue 1 — groups are not enumerable', () => {
       updatedAt: serverTimestamp(),
     };
     await assertSucceeds(
-      setDoc(doc(as(ALICE), 'groups', GROUP), { avatar }, { merge: true }),
+      setDoc(doc(as(TARGET), 'groups', GROUP), { avatar }, { merge: true }),
     );
     await assertFails(
-      setDoc(doc(as(BOB), 'groups', GROUP), { avatar }, { merge: true }),
+      setDoc(doc(as(PLANNER), 'groups', GROUP), { avatar }, { merge: true }),
     );
     await assertFails(
       setDoc(
-        doc(as(ALICE), 'groups', GROUP),
+        doc(as(TARGET), 'groups', GROUP),
         { avatar: { ...avatar, mime: 'image/svg+xml' } },
         { merge: true },
       ),
     );
     await assertFails(
       setDoc(
-        doc(as(ALICE), 'groups', GROUP),
+        doc(as(TARGET), 'groups', GROUP),
         {
           avatar: {
             ...avatar,
@@ -482,7 +484,7 @@ describe('issue 1 — groups are not enumerable', () => {
     );
     await assertSucceeds(
       setDoc(
-        doc(as(ALICE), 'groups', GROUP),
+        doc(as(TARGET), 'groups', GROUP),
         { avatar: deleteField() },
         { merge: true },
       ),
@@ -492,8 +494,8 @@ describe('issue 1 — groups are not enumerable', () => {
   it('DENIES the former direct self-join path', async () => {
     await assertFails(
       setDoc(
-        doc(as(MALLORY), 'groups', GROUP),
-        { memberUids: [ALICE, BOB, MALLORY] },
+        doc(as(OUTSIDER), 'groups', GROUP),
+        { memberUids: [TARGET, PLANNER, OUTSIDER] },
         { merge: true },
       ),
     );
@@ -502,43 +504,43 @@ describe('issue 1 — groups are not enumerable', () => {
 
 describe('unanimous group admission', () => {
   it('ALLOWS resolving a code you were given', async () => {
-    await assertSucceeds(getDoc(doc(as(MALLORY), 'joinCodes', JOIN_CODE)));
+    await assertSucceeds(getDoc(doc(as(OUTSIDER), 'joinCodes', JOIN_CODE)));
   });
 
   it('DENIES listing codes, so they cannot be swept in bulk', async () => {
-    await assertFails(getDocs(collection(as(MALLORY), 'joinCodes')));
+    await assertFails(getDocs(collection(as(OUTSIDER), 'joinCodes')));
   });
 
   it('ALLOWS the group owner to register their code', async () => {
     await assertSucceeds(
-      setDoc(doc(as(ALICE), 'joinCodes', 'NEWCODE'), { groupId: GROUP }),
+      setDoc(doc(as(TARGET), 'joinCodes', 'NEWCODE'), { groupId: GROUP }),
     );
   });
 
   it('DENIES a non-owner registering a code for that group', async () => {
     await assertFails(
-      setDoc(doc(as(BOB), 'joinCodes', 'NEWCODE'), { groupId: GROUP }),
+      setDoc(doc(as(PLANNER), 'joinCodes', 'NEWCODE'), { groupId: GROUP }),
     );
   });
 
   it('DENIES repointing an existing code at another group', async () => {
     await assertFails(
-      setDoc(doc(as(ALICE), 'joinCodes', JOIN_CODE), { groupId: 'group_other' }),
+      setDoc(doc(as(TARGET), 'joinCodes', JOIN_CODE), { groupId: 'group_other' }),
     );
   });
 
   it('turns a valid code into a pending request, not membership', async () => {
     await submitCodeJoinRequest();
-    await assertFails(getDoc(doc(as(MALLORY), 'groups', GROUP)));
+    await assertFails(getDoc(doc(as(OUTSIDER), 'groups', GROUP)));
     await assertSucceeds(
-      getDoc(doc(as(MALLORY), 'groups', GROUP, 'joinRequests', MALLORY)),
+      getDoc(doc(as(OUTSIDER), 'groups', GROUP, 'joinRequests', OUTSIDER)),
     );
   });
 
   it('DENIES a code request aimed at a different group', async () => {
     await assertFails(
       setDoc(
-        doc(as(MALLORY), 'groups', 'forged_group', 'joinRequests', MALLORY),
+        doc(as(OUTSIDER), 'groups', 'forged_group', 'joinRequests', OUTSIDER),
         codeJoinRequest(),
       ),
     );
@@ -546,23 +548,23 @@ describe('unanimous group admission', () => {
 
   it('lets a member nominate their friend but not admit them directly', async () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'friendships', `${ALICE}_${MALLORY}`), {
-        uidA: ALICE,
-        uidB: MALLORY,
-        participants: [ALICE, MALLORY],
+      await setDoc(doc(ctx.firestore(), 'friendships', `${TARGET}_${OUTSIDER}`), {
+        uidA: TARGET,
+        uidB: OUTSIDER,
+        participants: [TARGET, OUTSIDER],
       });
     });
-    const db = as(ALICE);
+    const db = as(TARGET);
     await assertSucceeds(
-      setDoc(doc(db, 'groups', GROUP, 'joinRequests', MALLORY), {
-        candidateUid: MALLORY,
-        candidateName: MALLORY,
-        requestedByUid: ALICE,
+      setDoc(doc(db, 'groups', GROUP, 'joinRequests', OUTSIDER), {
+        candidateUid: OUTSIDER,
+        candidateName: OUTSIDER,
+        requestedByUid: TARGET,
         source: 'friend',
         inviteCode: null,
         status: 'pending',
-        requiredApproverUids: [ALICE, BOB],
-        approvalUids: [ALICE],
+        requiredApproverUids: [TARGET, PLANNER],
+        approvalUids: [TARGET],
         rejectionUid: null,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -572,8 +574,8 @@ describe('unanimous group admission', () => {
       setDoc(
         doc(db, 'groups', GROUP),
         {
-          memberUids: [ALICE, BOB, MALLORY],
-          lastAdmittedUid: MALLORY,
+          memberUids: [TARGET, PLANNER, OUTSIDER],
+          lastAdmittedUid: OUTSIDER,
         },
         { merge: true },
       ),
@@ -582,20 +584,20 @@ describe('unanimous group admission', () => {
 
   it('DENIES adding the candidate after only one of two approvals', async () => {
     await submitCodeJoinRequest();
-    const db = as(ALICE);
+    const db = as(TARGET);
     const batch = writeBatch(db);
-    batch.update(doc(db, 'groups', GROUP, 'joinRequests', MALLORY), {
-      requiredApproverUids: [ALICE, BOB],
-      approvalUids: [ALICE],
+    batch.update(doc(db, 'groups', GROUP, 'joinRequests', OUTSIDER), {
+      requiredApproverUids: [TARGET, PLANNER],
+      approvalUids: [TARGET],
       status: 'pending',
       updatedAt: serverTimestamp(),
     });
     batch.update(doc(db, 'groups', GROUP), {
-      memberUids: [ALICE, BOB, MALLORY],
-      lastAdmittedUid: MALLORY,
+      memberUids: [TARGET, PLANNER, OUTSIDER],
+      lastAdmittedUid: OUTSIDER,
     });
-    batch.set(doc(db, 'groups', GROUP, 'members', MALLORY), {
-      name: MALLORY,
+    batch.set(doc(db, 'groups', GROUP, 'members', OUTSIDER), {
+      name: OUTSIDER,
       joinedAt: serverTimestamp(),
     });
     await assertFails(batch.commit());
@@ -605,10 +607,10 @@ describe('unanimous group admission', () => {
     await submitCodeJoinRequest();
     await assertFails(
       setDoc(
-        doc(as(ALICE), 'groups', GROUP, 'joinRequests', MALLORY),
+        doc(as(TARGET), 'groups', GROUP, 'joinRequests', OUTSIDER),
         {
-          requiredApproverUids: [ALICE, BOB],
-          approvalUids: [ALICE, BOB],
+          requiredApproverUids: [TARGET, PLANNER],
+          approvalUids: [TARGET, PLANNER],
           status: 'approved',
           updatedAt: serverTimestamp(),
         },
@@ -621,10 +623,10 @@ describe('unanimous group admission', () => {
     await submitCodeJoinRequest();
     await assertSucceeds(
       setDoc(
-        doc(as(ALICE), 'groups', GROUP, 'joinRequests', MALLORY),
+        doc(as(TARGET), 'groups', GROUP, 'joinRequests', OUTSIDER),
         {
-          requiredApproverUids: [ALICE, BOB],
-          approvalUids: [ALICE],
+          requiredApproverUids: [TARGET, PLANNER],
+          approvalUids: [TARGET],
           status: 'pending',
           updatedAt: serverTimestamp(),
         },
@@ -632,35 +634,35 @@ describe('unanimous group admission', () => {
       ),
     );
 
-    const db = as(BOB);
+    const db = as(PLANNER);
     const batch = writeBatch(db);
-    batch.update(doc(db, 'groups', GROUP, 'joinRequests', MALLORY), {
-      requiredApproverUids: [ALICE, BOB],
-      approvalUids: [ALICE, BOB],
+    batch.update(doc(db, 'groups', GROUP, 'joinRequests', OUTSIDER), {
+      requiredApproverUids: [TARGET, PLANNER],
+      approvalUids: [TARGET, PLANNER],
       status: 'approved',
       updatedAt: serverTimestamp(),
     });
     batch.update(doc(db, 'groups', GROUP), {
-      memberUids: [ALICE, BOB, MALLORY],
-      lastAdmittedUid: MALLORY,
+      memberUids: [TARGET, PLANNER, OUTSIDER],
+      lastAdmittedUid: OUTSIDER,
     });
-    batch.set(doc(db, 'groups', GROUP, 'members', MALLORY), {
-      name: MALLORY,
+    batch.set(doc(db, 'groups', GROUP, 'members', OUTSIDER), {
+      name: OUTSIDER,
       joinedAt: serverTimestamp(),
     });
     await assertSucceeds(batch.commit());
-    await assertSucceeds(getDoc(doc(as(MALLORY), 'groups', GROUP)));
+    await assertSucceeds(getDoc(doc(as(OUTSIDER), 'groups', GROUP)));
   });
 
   it('makes one member rejection terminal', async () => {
     await submitCodeJoinRequest();
-    const request = doc(as(ALICE), 'groups', GROUP, 'joinRequests', MALLORY);
+    const request = doc(as(TARGET), 'groups', GROUP, 'joinRequests', OUTSIDER);
     await assertSucceeds(
       setDoc(
         request,
         {
           status: 'rejected',
-          rejectionUid: ALICE,
+          rejectionUid: TARGET,
           updatedAt: serverTimestamp(),
         },
         { merge: true },
@@ -668,10 +670,10 @@ describe('unanimous group admission', () => {
     );
     await assertFails(
       setDoc(
-        doc(as(BOB), 'groups', GROUP, 'joinRequests', MALLORY),
+        doc(as(PLANNER), 'groups', GROUP, 'joinRequests', OUTSIDER),
         {
-          requiredApproverUids: [ALICE, BOB],
-          approvalUids: [ALICE, BOB],
+          requiredApproverUids: [TARGET, PLANNER],
+          approvalUids: [TARGET, PLANNER],
           status: 'approved',
           updatedAt: serverTimestamp(),
         },
@@ -682,23 +684,23 @@ describe('unanimous group admission', () => {
 });
 
 describe('durable completion celebrations', () => {
-  const celebrationId = `${ALICE}_${APPROVED_ITEM}`;
+  const celebrationId = `${TARGET}_${APPROVED_ITEM}`;
   const celebrationPath = `completionCelebrations/${celebrationId}`;
   const celebration = () => ({
     itemId: APPROVED_ITEM,
-    targetUid: ALICE,
-    plannerUid: BOB,
-    participantUids: [ALICE, BOB],
+    targetUid: TARGET,
+    plannerUid: PLANNER,
+    participantUids: [TARGET, PLANNER],
     seenByUids: [],
     createdAt: serverTimestamp(),
   });
 
   it('DENIES creating an event without the matching done transition', async () => {
-    await assertFails(setDoc(doc(as(ALICE), celebrationPath), celebration()));
+    await assertFails(setDoc(doc(as(TARGET), celebrationPath), celebration()));
   });
 
   it('creates the done outcome and event atomically for both participants', async () => {
-    const db = as(ALICE);
+    const db = as(TARGET);
     const batch = writeBatch(db);
     batch.set(itemRef(db, APPROVED_ITEM), {
       outcome: { result: 'done', completedAt: serverTimestamp() },
@@ -707,12 +709,12 @@ describe('durable completion celebrations', () => {
     batch.set(doc(db, celebrationPath), celebration());
     await assertSucceeds(batch.commit());
 
-    await assertSucceeds(getDoc(doc(as(BOB), celebrationPath)));
-    await assertFails(getDoc(doc(as(MALLORY), celebrationPath)));
+    await assertSucceeds(getDoc(doc(as(PLANNER), celebrationPath)));
+    await assertFails(getDoc(doc(as(OUTSIDER), celebrationPath)));
   });
 
   it('allows each participant to acknowledge only themselves', async () => {
-    const db = as(ALICE);
+    const db = as(TARGET);
     const batch = writeBatch(db);
     batch.set(itemRef(db, APPROVED_ITEM), {
       outcome: { result: 'done', completedAt: serverTimestamp() },
@@ -721,18 +723,18 @@ describe('durable completion celebrations', () => {
     batch.set(doc(db, celebrationPath), celebration());
     await assertSucceeds(batch.commit());
 
-    await assertSucceeds(setDoc(doc(as(ALICE), celebrationPath), {
-      seenByUids: [ALICE],
+    await assertSucceeds(setDoc(doc(as(TARGET), celebrationPath), {
+      seenByUids: [TARGET],
     }, { merge: true }));
-    await assertFails(setDoc(doc(as(BOB), celebrationPath), {
-      seenByUids: [ALICE, MALLORY],
+    await assertFails(setDoc(doc(as(PLANNER), celebrationPath), {
+      seenByUids: [TARGET, OUTSIDER],
     }, { merge: true }));
-    await assertSucceeds(deleteDoc(doc(as(BOB), celebrationPath)));
-    await assertFails(setDoc(doc(as(ALICE), celebrationPath), celebration()));
+    await assertSucceeds(deleteDoc(doc(as(PLANNER), celebrationPath)));
+    await assertFails(setDoc(doc(as(TARGET), celebrationPath), celebration()));
   });
 
   it('DENIES an outsider enumerating celebration events', async () => {
-    await assertFails(getDocs(collection(as(MALLORY), 'completionCelebrations')));
+    await assertFails(getDocs(collection(as(OUTSIDER), 'completionCelebrations')));
   });
 });
 
@@ -744,7 +746,7 @@ describe('issue 2 — no client may write the Worker dedup fields', () => {
     // `already-notified` and the planner never hears that the item was done.
     await assertFails(
       setDoc(
-        itemRef(as(ALICE), APPROVED_ITEM),
+        itemRef(as(TARGET), APPROVED_ITEM),
         {
           outcome: { result: 'done', completedAt: serverTimestamp() },
           notifiedOutcome: 'done',
@@ -758,7 +760,7 @@ describe('issue 2 — no client may write the Worker dedup fields', () => {
   it('DENIES the target writing notifiedOutcome on its own', async () => {
     await assertFails(
       setDoc(
-        itemRef(as(ALICE), APPROVED_ITEM),
+        itemRef(as(TARGET), APPROVED_ITEM),
         { notifiedOutcome: 'done' },
         { merge: true },
       ),
@@ -768,7 +770,7 @@ describe('issue 2 — no client may write the Worker dedup fields', () => {
   it('DENIES the target writing notifiedDecided', async () => {
     await assertFails(
       setDoc(
-        itemRef(as(ALICE), PENDING_ITEM),
+        itemRef(as(TARGET), PENDING_ITEM),
         {
           status: 'approved',
           decidedAt: serverTimestamp(),
@@ -783,7 +785,7 @@ describe('issue 2 — no client may write the Worker dedup fields', () => {
   it('DENIES the target writing notifiedCreated or notifiedAt', async () => {
     await assertFails(
       setDoc(
-        itemRef(as(ALICE), PENDING_ITEM),
+        itemRef(as(TARGET), PENDING_ITEM),
         { notifiedCreated: true, notifiedAt: 'now', updatedAt: serverTimestamp() },
         { merge: true },
       ),
@@ -795,7 +797,7 @@ describe('issue 2 — no client may write the Worker dedup fields', () => {
     // never fire its `created` push.
     await assertFails(
       addDoc(
-        collection(as(BOB), 'scheduleItems', ALICE, 'items'),
+        collection(as(PLANNER), 'scheduleItems', TARGET, 'items'),
         newItemFields({ notifiedCreated: true }),
       ),
     );
@@ -804,7 +806,7 @@ describe('issue 2 — no client may write the Worker dedup fields', () => {
   it('DENIES the planner writing notifiedWithdrawn while withdrawing', async () => {
     await assertFails(
       setDoc(
-        itemRef(as(BOB), PENDING_ITEM),
+        itemRef(as(PLANNER), PENDING_ITEM),
         {
           status: 'withdrawn',
           withdrawnAt: serverTimestamp(),
@@ -819,7 +821,7 @@ describe('issue 2 — no client may write the Worker dedup fields', () => {
 
 describe('alarm timeline writes', () => {
   it('allows the target to record reached alarm events', async () => {
-    await assertSucceeds(setDoc(itemRef(as(ALICE), APPROVED_ITEM), {
+    await assertSucceeds(setDoc(itemRef(as(TARGET), APPROVED_ITEM), {
       alarm: {
         rangAt: Timestamp.fromDate(new Date('2026-08-11T13:30:01Z')),
         dismissedAt: Timestamp.fromDate(new Date('2026-08-11T13:30:10Z')),
@@ -833,20 +835,20 @@ describe('alarm timeline writes', () => {
     const alarm = {
       rangAt: Timestamp.fromDate(new Date('2026-08-11T13:30:01Z')),
     };
-    await assertFails(setDoc(itemRef(as(BOB), APPROVED_ITEM), {
+    await assertFails(setDoc(itemRef(as(PLANNER), APPROVED_ITEM), {
       alarm, updatedAt: serverTimestamp(),
     }, { merge: true }));
-    await assertFails(setDoc(itemRef(as(MALLORY), APPROVED_ITEM), {
+    await assertFails(setDoc(itemRef(as(OUTSIDER), APPROVED_ITEM), {
       alarm, updatedAt: serverTimestamp(),
     }, { merge: true }));
-    await assertFails(setDoc(itemRef(as(ALICE), APPROVED_ITEM), {
+    await assertFails(setDoc(itemRef(as(TARGET), APPROVED_ITEM), {
       alarm: { ...alarm, forged: true },
       updatedAt: serverTimestamp(),
     }, { merge: true }));
   });
 
   it('denies alarm events on an unapproved item', async () => {
-    await assertFails(setDoc(itemRef(as(ALICE), PENDING_ITEM), {
+    await assertFails(setDoc(itemRef(as(TARGET), PENDING_ITEM), {
       alarm: {
         rangAt: Timestamp.fromDate(new Date('2026-08-11T13:30:01Z')),
       },
@@ -855,7 +857,7 @@ describe('alarm timeline writes', () => {
   });
 
   it('keeps the recorded unavailable instant immutable', async () => {
-    const ref = itemRef(as(ALICE), APPROVED_ITEM);
+    const ref = itemRef(as(TARGET), APPROVED_ITEM);
     const at = Timestamp.fromDate(new Date('2026-08-11T13:31:01Z'));
     await assertSucceeds(setDoc(ref, {
       alarm: { unavailableAt: at },
@@ -878,7 +880,7 @@ describe('issue 2 — the target cannot rewrite the plan itself', () => {
   it('DENIES the target editing the title', async () => {
     await assertFails(
       setDoc(
-        itemRef(as(ALICE), PENDING_ITEM),
+        itemRef(as(TARGET), PENDING_ITEM),
         { title: 'something else', updatedAt: serverTimestamp() },
         { merge: true },
       ),
@@ -888,7 +890,7 @@ describe('issue 2 — the target cannot rewrite the plan itself', () => {
   it('DENIES the target moving scheduledInstantUtc', async () => {
     await assertFails(
       setDoc(
-        itemRef(as(ALICE), PENDING_ITEM),
+        itemRef(as(TARGET), PENDING_ITEM),
         {
           scheduledInstantUtc: Timestamp.fromDate(new Date('2027-01-01T00:00:00Z')),
           updatedAt: serverTimestamp(),
@@ -901,8 +903,8 @@ describe('issue 2 — the target cannot rewrite the plan itself', () => {
   it('DENIES the target reassigning createdByUid', async () => {
     await assertFails(
       setDoc(
-        itemRef(as(ALICE), PENDING_ITEM),
-        { createdByUid: ALICE, updatedAt: serverTimestamp() },
+        itemRef(as(TARGET), PENDING_ITEM),
+        { createdByUid: TARGET, updatedAt: serverTimestamp() },
         { merge: true },
       ),
     );
@@ -911,7 +913,7 @@ describe('issue 2 — the target cannot rewrite the plan itself', () => {
   it('DENIES the target reviving an approved item back to pending', async () => {
     await assertFails(
       setDoc(
-        itemRef(as(ALICE), APPROVED_ITEM),
+        itemRef(as(TARGET), APPROVED_ITEM),
         { status: 'pending', updatedAt: serverTimestamp() },
         { merge: true },
       ),
@@ -921,7 +923,7 @@ describe('issue 2 — the target cannot rewrite the plan itself', () => {
   it('DENIES the target faking a planner withdrawal', async () => {
     await assertFails(
       setDoc(
-        itemRef(as(ALICE), PENDING_ITEM),
+        itemRef(as(TARGET), PENDING_ITEM),
         { status: 'withdrawn', updatedAt: serverTimestamp() },
         { merge: true },
       ),
@@ -933,7 +935,7 @@ describe('issue 2 — every legitimate write still works', () => {
   it('ALLOWS the planner to create a pending item under an active grant', async () => {
     await assertSucceeds(
       addDoc(
-        collection(as(BOB), 'scheduleItems', ALICE, 'items'),
+        collection(as(PLANNER), 'scheduleItems', TARGET, 'items'),
         newItemFields(),
       ),
     );
@@ -942,9 +944,9 @@ describe('issue 2 — every legitimate write still works', () => {
   it('ALLOWS a self-planned approved item', async () => {
     await assertSucceeds(
       addDoc(
-        collection(as(ALICE), 'scheduleItems', ALICE, 'items'),
+        collection(as(TARGET), 'scheduleItems', TARGET, 'items'),
         newItemFields({
-          createdByUid: ALICE,
+          createdByUid: TARGET,
           groupId: '',
           status: 'approved',
           decidedAt: serverTimestamp(),
@@ -956,7 +958,7 @@ describe('issue 2 — every legitimate write still works', () => {
   it('ALLOWS the target to approve', async () => {
     await assertSucceeds(
       setDoc(
-        itemRef(as(ALICE), PENDING_ITEM),
+        itemRef(as(TARGET), PENDING_ITEM),
         { status: 'approved', decidedAt: serverTimestamp(), updatedAt: serverTimestamp() },
         { merge: true },
       ),
@@ -966,7 +968,7 @@ describe('issue 2 — every legitimate write still works', () => {
   it('ALLOWS the target to reject with a reason', async () => {
     await assertSucceeds(
       setDoc(
-        itemRef(as(ALICE), PENDING_ITEM),
+        itemRef(as(TARGET), PENDING_ITEM),
         {
           status: 'rejected',
           decidedAt: serverTimestamp(),
@@ -981,7 +983,7 @@ describe('issue 2 — every legitimate write still works', () => {
   it('ALLOWS the target to mark done', async () => {
     await assertSucceeds(
       setDoc(
-        itemRef(as(ALICE), APPROVED_ITEM),
+        itemRef(as(TARGET), APPROVED_ITEM),
         {
           outcome: { result: 'done', completedAt: serverTimestamp() },
           updatedAt: serverTimestamp(),
@@ -994,7 +996,7 @@ describe('issue 2 — every legitimate write still works', () => {
   it('ALLOWS the target to mark skipped with a reason', async () => {
     await assertSucceeds(
       setDoc(
-        itemRef(as(ALICE), APPROVED_ITEM),
+        itemRef(as(TARGET), APPROVED_ITEM),
         {
           outcome: {
             result: 'skipped',
@@ -1009,7 +1011,7 @@ describe('issue 2 — every legitimate write still works', () => {
   });
 
   it('DENIES replacing a settled outcome', async () => {
-    const ref = itemRef(as(ALICE), APPROVED_ITEM);
+    const ref = itemRef(as(TARGET), APPROVED_ITEM);
     await assertSucceeds(setDoc(ref, {
       outcome: {
         result: 'skipped',
@@ -1034,7 +1036,7 @@ describe('issue 2 — every legitimate write still works', () => {
   });
 
   it('ALLOWS only the automatic lapse reason to refine to alarm timeout', async () => {
-    const ref = itemRef(as(ALICE), APPROVED_ITEM);
+    const ref = itemRef(as(TARGET), APPROVED_ITEM);
     await assertSucceeds(setDoc(ref, {
       outcome: {
         result: 'skipped',
@@ -1055,7 +1057,7 @@ describe('issue 2 — every legitimate write still works', () => {
   });
 
   it('ALLOWS only a timed-out automatic skip to become done with a celebration', async () => {
-    const db = as(ALICE);
+    const db = as(TARGET);
     const ref = itemRef(db, APPROVED_ITEM);
     const unavailableSkip = {
       alarm: {
@@ -1075,11 +1077,11 @@ describe('issue 2 — every legitimate write still works', () => {
       outcome: { result: 'done', completedAt: serverTimestamp() },
       updatedAt: serverTimestamp(),
     });
-    batch.set(doc(db, `completionCelebrations/${ALICE}_${APPROVED_ITEM}`), {
+    batch.set(doc(db, `completionCelebrations/${TARGET}_${APPROVED_ITEM}`), {
       itemId: APPROVED_ITEM,
-      targetUid: ALICE,
-      plannerUid: BOB,
-      participantUids: [ALICE, BOB],
+      targetUid: TARGET,
+      plannerUid: PLANNER,
+      participantUids: [TARGET, PLANNER],
       seenByUids: [],
       createdAt: serverTimestamp(),
     });
@@ -1087,7 +1089,7 @@ describe('issue 2 — every legitimate write still works', () => {
   });
 
   it('DENIES changing User unavailable to done without the permanent alarm fact', async () => {
-    const ref = itemRef(as(ALICE), APPROVED_ITEM);
+    const ref = itemRef(as(TARGET), APPROVED_ITEM);
     await assertSucceeds(setDoc(ref, {
       outcome: {
         result: 'skipped',
@@ -1105,7 +1107,7 @@ describe('issue 2 — every legitimate write still works', () => {
   it('ALLOWS the planner to withdraw a still-pending item', async () => {
     await assertSucceeds(
       setDoc(
-        itemRef(as(BOB), PENDING_ITEM),
+        itemRef(as(PLANNER), PENDING_ITEM),
         {
           status: 'withdrawn',
           withdrawnAt: serverTimestamp(),
@@ -1121,15 +1123,15 @@ describe('issue 2 — every legitimate write still works', () => {
     await assertSucceeds(
       getDocs(
         query(
-          collectionGroup(as(BOB), 'items'),
-          where('createdByUid', '==', BOB),
+          collectionGroup(as(PLANNER), 'items'),
+          where('createdByUid', '==', PLANNER),
         ),
       ),
     );
   });
 
   it('DENIES an outsider the same collection-group read', async () => {
-    await assertFails(getDocs(collectionGroup(as(MALLORY), 'items')));
+    await assertFails(getDocs(collectionGroup(as(OUTSIDER), 'items')));
   });
 });
 
@@ -1140,39 +1142,39 @@ describe('issue 2 — every legitimate write still works', () => {
 describe('group memberStats — publish own, read as a member', () => {
   const statPath = (uid) => `groups/${GROUP}/memberStats/${uid}`;
   const stats = (o = {}) => ({
-    name: 'Alice', tasksCompleted: 5, currentStreak: 3, followThrough: 80,
+    name: 'Target', tasksCompleted: 5, currentStreak: 3, followThrough: 80,
     updatedAt: serverTimestamp(), ...o,
   });
 
   it('a member publishes their OWN stats', async () => {
-    await assertSucceeds(setDoc(doc(as(ALICE), statPath(ALICE)), stats()));
+    await assertSucceeds(setDoc(doc(as(TARGET), statPath(TARGET)), stats()));
   });
 
   it('a member cannot forge ANOTHER member\'s stats', async () => {
-    await assertFails(setDoc(doc(as(BOB), statPath(ALICE)), stats()));
+    await assertFails(setDoc(doc(as(PLANNER), statPath(TARGET)), stats()));
   });
 
   it('a non-member cannot publish', async () => {
-    await assertFails(setDoc(doc(as(MALLORY), statPath(MALLORY)), stats()));
+    await assertFails(setDoc(doc(as(OUTSIDER), statPath(OUTSIDER)), stats()));
   });
 
   it('a member reads a fellow member\'s stats', async () => {
-    await setDoc(doc(as(ALICE), statPath(ALICE)), stats());
-    await assertSucceeds(getDoc(doc(as(BOB), statPath(ALICE))));
+    await setDoc(doc(as(TARGET), statPath(TARGET)), stats());
+    await assertSucceeds(getDoc(doc(as(PLANNER), statPath(TARGET))));
   });
 
   it('a non-member cannot read', async () => {
-    await setDoc(doc(as(ALICE), statPath(ALICE)), stats());
-    await assertFails(getDoc(doc(as(MALLORY), statPath(ALICE))));
+    await setDoc(doc(as(TARGET), statPath(TARGET)), stats());
+    await assertFails(getDoc(doc(as(OUTSIDER), statPath(TARGET))));
   });
 
   it('an unknown field is rejected', async () => {
     await assertFails(
-      setDoc(doc(as(ALICE), statPath(ALICE)), stats({ secretRank: 1 })));
+      setDoc(doc(as(TARGET), statPath(TARGET)), stats({ secretRank: 1 })));
   });
 
   it('a member may delete their own stats', async () => {
-    await setDoc(doc(as(ALICE), statPath(ALICE)), stats());
-    await assertSucceeds(deleteDoc(doc(as(ALICE), statPath(ALICE))));
+    await setDoc(doc(as(TARGET), statPath(TARGET)), stats());
+    await assertSucceeds(deleteDoc(doc(as(TARGET), statPath(TARGET))));
   });
 });

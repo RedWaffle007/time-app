@@ -104,13 +104,13 @@ void main() {
     final day = DateTime(2026, 8, 25);
     final a = ConflictDisclosureGroup(
       uid: 'a',
-      name: 'Alice',
+      name: 'Person A',
       timezone: 'Asia/Kolkata',
       instantsUtc: [DateTime.utc(2026, 8, 25, 4)],
     );
     final b = ConflictDisclosureGroup(
       uid: 'b',
-      name: 'Bob',
+      name: 'Person B',
       timezone: 'America/Chicago',
       instantsUtc: [DateTime.utc(2026, 8, 25, 14)],
     );

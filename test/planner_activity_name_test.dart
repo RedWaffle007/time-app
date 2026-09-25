@@ -42,7 +42,7 @@ void main() {
     );
     const target = UserProfile(
       uid: 'target',
-      name: 'Amina',
+      name: '{planner}',
       homeTimezone: 'Asia/Kolkata',
     );
 
@@ -66,13 +66,13 @@ void main() {
       find.byWidgetPredicate(
         (widget) =>
             widget is Text &&
-            widget.textSpan?.toPlainText().startsWith('for Amina ·') == true,
+            widget.textSpan?.toPlainText().startsWith('for {planner} ·') == true,
       ),
     );
     final root = metadata.textSpan! as TextSpan;
     final name = root.children![1] as TextSpan;
 
-    expect(name.text, 'Amina');
+    expect(name.text, '{planner}');
     expect(name.style?.fontWeight, FontWeight.w700);
     expect(tester.takeException(), isNull);
 

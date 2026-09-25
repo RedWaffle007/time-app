@@ -7,6 +7,7 @@ import 'package:time_app/features/auth/application/auth_providers.dart';
 import 'package:time_app/features/auth/domain/user_profile.dart';
 import 'package:time_app/features/groups/application/group_providers.dart';
 import 'package:time_app/features/groups/domain/planner_grant.dart';
+import 'package:time_app/features/outcomes/application/outcome_feedback.dart';
 import 'package:time_app/features/outcomes/presentation/history_screen.dart';
 import 'package:time_app/features/outcomes/presentation/outcome_screen.dart';
 import 'package:time_app/features/plan/application/plan_intent.dart';
@@ -41,7 +42,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Timeline'), findsOneWidget);
-      expect(find.text('Planned by Amina · Etc/UTC'), findsOneWidget);
+      expect(find.text('Planned by {planner} · Etc/UTC'), findsOneWidget);
     });
 
     testWidgets('a past plan in History shows its status timeline too', (
@@ -231,6 +232,24 @@ void main() {
     });
   });
 
+  group('"Updating <planner>…" after Done/Skip', () {
+    test('names the planner, never a uid', () {
+      expect(
+        updatingPlannerLabel(selfPlanned: false, plannerName: '{planner}'),
+        'Updating {planner}…',
+      );
+      expect(
+        updatingPlannerLabel(selfPlanned: false, plannerName: '  '),
+        'Updating your planner…',
+      );
+      expect(
+        updatingPlannerLabel(selfPlanned: true, plannerName: '{planner}'),
+        'Updating your schedule…',
+      );
+      expect(kPlannerUpdateDuration, const Duration(milliseconds: 1500));
+    });
+  });
+
   group('alarm cold start', () {
     test('an alarm initial route opens the alarm directly', () {
       expect(
@@ -266,7 +285,7 @@ Widget _host(Widget screen, List<ScheduleItem> items) => ProviderScope(
         uid == 'planner'
             ? const UserProfile(
                 uid: 'planner',
-                name: 'Amina',
+                name: '{planner}',
                 homeTimezone: 'Etc/UTC',
               )
             : null,

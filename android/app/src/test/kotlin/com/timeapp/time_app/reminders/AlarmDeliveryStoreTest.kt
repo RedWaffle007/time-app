@@ -30,12 +30,12 @@ class AlarmDeliveryStoreTest {
             "item-a",
             2_000L,
             true,
-            "Amina planned Walk for you",
+            "Test Planner planned Walk for you",
         )
 
         val restored = AlarmDeliveryStore.futureOnly(listOf(armed), nowEpoch = 1_000L)
 
-        assertEquals("Amina planned Walk for you", restored.single().headline)
+        assertEquals("Test Planner planned Walk for you", restored.single().headline)
         // Rows written before the sentence existed still restore.
         assertEquals("", pending(8, "legacy", 2_000L).headline)
     }

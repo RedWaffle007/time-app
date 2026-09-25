@@ -94,7 +94,7 @@ void main() {
                 uid == 'planner'
                     ? const UserProfile(
                         uid: 'planner',
-                        name: 'Amina',
+                        name: '{planner}',
                         homeTimezone: 'Asia/Kolkata',
                       )
                     : null,
@@ -115,7 +115,7 @@ void main() {
     await t.pump();
     expect(sound.starts, 1);
     expect(sound.stops, 0);
-    expect(headlineText(t), 'Amina planned Morning run for you');
+    expect(headlineText(t), '{planner} planned Morning run for you');
   });
 
   testWidgets('reads as ONE centered bold sentence (directed 2026-09-25)', (
@@ -127,7 +127,7 @@ void main() {
     final headline = t.widget<Text>(
       find.byKey(const ValueKey('alarm-headline')),
     );
-    expect(headline.data, 'Amina planned Morning run for you');
+    expect(headline.data, '{planner} planned Morning run for you');
     expect(headline.textAlign, TextAlign.center);
     expect(headline.style?.fontWeight, FontWeight.bold);
     // The old two-line layout is gone.
@@ -156,7 +156,7 @@ void main() {
       final items = StreamController<List<ScheduleItem>>();
       addTearDown(items.close);
       final sound = _FakeAlarmSound(
-        delivered: 'Amina planned Morning run for you',
+        delivered: '{planner} planned Morning run for you',
       );
       await t.pumpWidget(harness(sound, _FakeScheduler(), items: items.stream));
 
@@ -167,11 +167,11 @@ void main() {
 
       await t.pump(); // post-frame: the delivered sentence arrives
       await t.pump();
-      expect(headlineText(t), 'Amina planned Morning run for you');
+      expect(headlineText(t), '{planner} planned Morning run for you');
 
       items.add([item()]);
       await t.pumpAndSettle();
-      expect(headlineText(t), 'Amina planned Morning run for you');
+      expect(headlineText(t), '{planner} planned Morning run for you');
       expect(find.text('Reminder'), findsNothing);
     },
   );
@@ -183,7 +183,7 @@ void main() {
     addTearDown(profiles.close);
     await t.pumpWidget(
       harness(
-        _FakeAlarmSound(delivered: 'Amina planned Morning run for you'),
+        _FakeAlarmSound(delivered: '{planner} planned Morning run for you'),
         _FakeScheduler(),
         profiles: (_) => profiles.stream,
       ),
@@ -192,7 +192,7 @@ void main() {
     await t.pump();
 
     // Item loaded, planner profile still loading: keep the delivered sentence.
-    expect(headlineText(t), 'Amina planned Morning run for you');
+    expect(headlineText(t), '{planner} planned Morning run for you');
     expect(find.textContaining('Planner'), findsNothing);
   });
 
@@ -200,12 +200,12 @@ void main() {
     t,
   ) async {
     final sound = _FakeAlarmSound(
-      delivered: 'Amina planned Morning run for you',
+      delivered: '{planner} planned Morning run for you',
     );
     await t.pumpWidget(harness(sound, _FakeScheduler()));
     await t.pumpAndSettle();
 
-    expect(sound.startHeadlines.single, 'Amina planned Morning run for you');
+    expect(sound.startHeadlines.single, '{planner} planned Morning run for you');
   });
 
   testWidgets('cancels the fired notification on mount (no double tone)', (

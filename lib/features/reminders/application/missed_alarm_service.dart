@@ -113,6 +113,7 @@ class MissedAlarmService extends ChangeNotifier {
   final NotificationEventNotifier _notifier;
 
   Future<void> _queue = Future.value();
+  final _persistingFacts = <String>{};
   List<MissedAlarmReview> _reviews = const [];
   List<ScheduleItem> _lastItems = const [];
   String? _lastUid;
@@ -156,29 +157,31 @@ class MissedAlarmService extends ChangeNotifier {
         continue;
       }
 
-      // 1. The alarm-time fact, whatever the outcome. It is immutable once
-      //    written, so a replay is a no-op.
-      if (!event.outcomeRecorded || item.alarm?.unavailableAt == null) {
-        await _timeline.recordUnavailable(uid, item.id, event.occurredAtUtc);
-        if (!event.outcomeRecorded) {
-          await _store.markOutcomeRecorded(event.key);
-        }
-      }
-
       final outcome = item.outcome;
       final choice = event.reviewChoice;
+      final factMissing =
+          !event.outcomeRecorded || item.alarm?.unavailableAt == null;
 
-      // 2. Undecided: offer the review, or finish a choice whose write has
-      //    not landed yet (offline, process death).
+      // 1. Undecided and unanswered: show the popup NOW. The alarm-time fact
+      //    is a Firestore transaction (a server round trip, impossible
+      //    offline), so it is persisted in the BACKGROUND — waiting on it was
+      //    the multi-second popup delay reported 2026-09-25. A choice made
+      //    before it lands persists it first (see [_applyChoice]).
+      if (outcome == null && choice == null) {
+        if (factMissing) _persistFactInBackground(event, uid, item.id);
+        reviews.add(MissedAlarmReview(event: event, item: item));
+        _setReviews(reviews);
+        continue;
+      }
+
+      // Every other path may drop the native row below, so the fact is made
+      // durable first. Immutable once written: a replay is a no-op.
+      if (factMissing) await _persistFact(event, uid, item.id);
+
+      // 2. A choice whose outcome write has not landed yet (offline, process
+      //    death): finish it.
       if (outcome == null) {
-        if (choice == null) {
-          reviews.add(MissedAlarmReview(event: event, item: item));
-          // Publish as soon as the fact exists; nothing else is on the
-          // popup's critical path.
-          _setReviews(reviews);
-        } else {
-          _retryInBackground(_applyChoice(event, item, choice));
-        }
+        _retryInBackground(_applyChoice(event, item, choice!));
         continue;
       }
 
@@ -236,6 +239,30 @@ class MissedAlarmService extends ChangeNotifier {
     return changed;
   }
 
+  void _persistFactInBackground(
+    AlarmLifecycleEvent event,
+    String uid,
+    String itemId,
+  ) {
+    if (!_persistingFacts.add(event.key)) return; // already in flight
+    _retryInBackground(
+      _persistFact(
+        event,
+        uid,
+        itemId,
+      ).whenComplete(() => _persistingFacts.remove(event.key)),
+    );
+  }
+
+  Future<void> _persistFact(
+    AlarmLifecycleEvent event,
+    String uid,
+    String itemId,
+  ) async {
+    await _timeline.recordUnavailable(uid, itemId, event.occurredAtUtc);
+    if (!event.outcomeRecorded) await _store.markOutcomeRecorded(event.key);
+  }
+
   /// Background retries are driven by the next item-stream emission, never by
   /// resyncing from here: a write that lost a race would otherwise spin until
   /// the stream caught up.
@@ -255,6 +282,9 @@ class MissedAlarmService extends ChangeNotifier {
     MissedAlarmReviewChoice choice,
   ) async {
     final uid = item.targetUid;
+    // The fact goes first, so a Done reads "Done (Late)" everywhere. Idempotent
+    // when the background write already landed.
+    await _timeline.recordUnavailable(uid, item.id, event.occurredAtUtc);
     final bool changed;
     if (choice == MissedAlarmReviewChoice.done) {
       changed = _isLegacyAutomaticSkip(item.outcome)

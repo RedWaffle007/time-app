@@ -86,7 +86,7 @@ final reminderServiceProvider = Provider<ReminderService>((ref) {
 /// Both are safe because the reconcile is idempotent — the overwhelmingly common
 /// pass computes an empty plan and touches no plugin at all.
 /// uid → display name for the planners of items about to be reminded, so the
-/// alarm can say "Amina planned Walk for you" even when it fires with the app
+/// alarm can say "{planner} planned {task} for you" even when it fires with the app
 /// dead. Only those planners are listened to.
 final reminderPlannerNamesProvider = Provider<Map<String, String>>((ref) {
   final items = ref.watch(allItemsAsTargetProvider).value ?? const [];

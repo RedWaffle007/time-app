@@ -26,7 +26,7 @@ void main() {
     );
     const members = [
       Membership(uid: 'me', name: 'Me'),
-      Membership(uid: 'friend', name: 'Amina'),
+      Membership(uid: 'friend', name: '{planner}'),
     ];
     const friendship = Friendship(id: 'friend_me', uidA: 'friend', uidB: 'me');
     const friendshipGrant = PlannerGrant(

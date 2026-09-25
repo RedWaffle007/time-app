@@ -5992,7 +5992,7 @@ Schedule/History cards never had one — they now open the same sheet. Calendar'
 "Open in Activity" only ever switched tabs (since at least 38929e5); it now
 reveals and outlines the item like My Schedule.
 
-**Alarm copy is one sentence** — `alarmHeadline()`: "Amina planned Walk for
+**Alarm copy is one sentence** — `alarmHeadline()`: "{planner} planned {task} for
 you", "You planned Walk" for a self-plan, "Someone …" while a name is unknown,
 never a uid. It is the reminder request's title, so it rides the existing
 fingerprint (a name arriving re-arms once) and is passed to the native alarm
@@ -6018,3 +6018,29 @@ show "Loading…" instead of a uid, and planning-target profiles are prefetched
 from sign-in so Plan opens with names. Remaining planning-flow lag is judged on
 a **profile** build (debug is JIT and janky by design); a profile APK shares the
 debug signature, so `adb install -r` keeps app data.
+
+---
+
+## Third device pass: "Updating {planner}…", instant popup, one notification (2026-09-25)
+
+- **Missed-alarm popup no longer waits on Firestore.** The review is published
+  first; the `alarm.unavailableAt` transaction runs in the background (it is a
+  server round trip and impossible offline, and waiting on it was the reported
+  multi-second delay). A Done/Skip chosen before it lands persists it first, so
+  "Done (Late)" still holds. Paths that drop the native row still await it. The
+  only remaining wait is the ~1.5 s cold-start reveal, which deliberately sits
+  above the popup. **Preserved on request:** an unanswered popup re-appears on
+  every launch until Done/Skip (durable native row; pinned by a test).
+- **"Updating {planner}…" for 1.5 s** after Done or Skip (card and popup),
+  then the celebration (Done only). It is a non-dismissible dialog on the card
+  path because the card leaves My Schedule the moment the outcome lands. The
+  planner push runs inside that window, fire-and-forget. Self-plans read
+  "Updating your schedule…"; an unloaded name "Updating your planner…".
+- **The "permanently recorded" line is removed** from the popup.
+- **One notification per ringing alarm.** When the native service starts it
+  cancels the scheduled reminder notification (same id) directly on the
+  NotificationManager — at once and at 0.5/2/5 s, since the two OS alarms land
+  in either order. If native delivery never runs, the scheduled one remains as
+  the fallback.
+- **No personal names in the codebase.** Examples use `{planner}`/`{task}`;
+  test fixtures use role names (`Test Planner`, `TARGET`/`PLANNER`/`OUTSIDER`).

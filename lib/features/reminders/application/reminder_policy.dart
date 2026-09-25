@@ -62,7 +62,7 @@ List<ReminderRequest> desiredReminders({
 }
 
 /// **The one sentence an alarm says** — on the full-screen alarm, the unlocked
-/// heads-up and the missed-alarm notice: "Amina planned Walk for you", or "You
+/// heads-up and the missed-alarm notice: "{planner} planned {task} for you", or "You
 /// planned Walk" for a self-plan. A name that is not known yet reads
 /// "Someone"; never a uid.
 String alarmHeadline(ScheduleItem item, {String? plannerName}) {

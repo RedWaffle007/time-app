@@ -75,11 +75,18 @@ internal object AlarmSoundPolicy {
     fun ringtoneDelayMs(tingStarted: Boolean): Long =
         if (tingStarted) TING_LEAD_MS else 0L
 
-    /** "Amina planned Walk for you" — the heads-up must say who and what. */
+    /** "{planner} planned {task} for you" — the heads-up must say who and what. */
     fun ringingTitle(headline: String?): String =
         headline?.trim()?.takeIf { it.isNotEmpty() } ?: "Alarm"
 
     const val RINGING_TEXT = "Tap to open · Dismiss to stop"
+
+    /**
+     * When the ringing service re-removes a late-arriving scheduled duplicate.
+     * Both fire at the same instant from separate OS alarms; these cover the
+     * observed spread without leaving a duplicate up for long.
+     */
+    val DUPLICATE_RECHECK_MS = listOf(500L, 2_000L, 5_000L)
 
     const val MISSED_TITLE = "Missed alarm"
 

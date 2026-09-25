@@ -49,6 +49,9 @@ void main() {
     expect(saving.onPressed, isNull);
 
     repository.result.complete(false);
+    // The "Updating …" message holds for its full 1.5 s even when the write
+    // loses a race; then the card is actionable again.
+    await tester.pump(const Duration(milliseconds: 1500));
     await tester.pump();
     expect(find.widgetWithText(FilledButton, 'Done'), findsOneWidget);
   });
@@ -79,7 +82,7 @@ void main() {
     ];
     const planner = UserProfile(
       uid: 'planner',
-      name: 'Amina',
+      name: '{planner}',
       homeTimezone: 'Asia/Kolkata',
     );
 
@@ -98,7 +101,7 @@ void main() {
     await tester.tap(find.textContaining('· 2 items').first);
     await tester.pumpAndSettle();
 
-    expect(find.text('Planned by Amina'), findsOneWidget);
+    expect(find.text('Planned by {planner}'), findsOneWidget);
     expect(find.text('Planned by you'), findsOneWidget);
     final selfCardTitle = find.descendant(
       of: find.byType(Card),
