@@ -13,7 +13,7 @@ import 'package:timezone/data/latest.dart' as tz_data;
 void main() {
   setUpAll(tz_data.initializeTimeZones);
 
-  testWidgets('a past Calendar plan routes to History and highlights it', (
+  testWidgets('a decided Calendar plan routes to History and highlights it', (
     tester,
   ) async {
     final item = ScheduleItem(
@@ -26,6 +26,7 @@ void main() {
       timezone: 'Etc/UTC',
       scheduledInstantUtc: DateTime.utc(2020, 1, 10, 9),
       status: ScheduleItemStatus.approved,
+      outcome: const ScheduleOutcome(result: OutcomeResult.done),
     );
     final router = GoRouter(
       initialLocation: '/calendar',
@@ -100,6 +101,14 @@ void main() {
       (
         CalendarEntry(
           item: _item('future', now.add(const Duration(days: 1))),
+          side: CalendarSide.mine,
+        ),
+        'Open in My Schedule',
+      ),
+      // Elapsed but undecided: its Done/Skip controls live in My Schedule.
+      (
+        CalendarEntry(
+          item: _item('undecided', now.subtract(const Duration(minutes: 3))),
           side: CalendarSide.mine,
         ),
         'Open in My Schedule',

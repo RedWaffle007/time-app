@@ -23,6 +23,13 @@
 - Item 34 is committed and fully verified.
 - Item 23 is committed and fully verified.
 - Items 27 and 35 are committed and fully verified.
+- **Device-pass corrections (2026-09-25) — IMPLEMENTED, NOT YET RUN.** Five
+  fixes from the Redmi pass (see DECISIONS.md "Device-pass corrections: only a
+  decision moves a plan to History"): builder list collapses after a pick;
+  History = decided plans only; timeout records `User unavailable` without an
+  outcome (tag + Done/Skip on the card); Log Time pop-up removed; celebration
+  starts on save. Needs the full verification run, then a device re-check,
+  before Item 32.
 - Next implementation order: **32 → 24 → 33**.
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
 
@@ -40,9 +47,9 @@ Batch deployment and real-device acceptance after feature work is finished:
 
 ## Recently completed — Item 25
 
-- My Schedule contains only approved, outcome-less plans whose UTC due instant
-  has not passed. Equality remains Upcoming; elapsed or outcome-bearing plans
-  appear only in History. The partition is disjoint and DST/timezone-safe.
+- ~~My Schedule contains only approved, outcome-less plans whose UTC due instant
+  has not passed.~~ SUPERSEDED 2026-09-25: My Schedule holds every approved,
+  outcome-less plan; only an outcome moves a plan to History. The partition is disjoint and DST/timezone-safe.
 - Added `Upcoming Plans` with rounded bold `CALENDAR` and `HISTORY` controls.
 - Added Plan sub-route History with `Past Plans`, newest-first cards/days,
   localized month grouping at two distinct months, lazy collapse state, and
@@ -72,7 +79,9 @@ Batch deployment and real-device acceptance after feature work is finished:
   `User unavailable` at the alarm-time instant in the item timeline; `Done` or
   `Skipped` remains the mutable task outcome. Never erase or relabel the
   alarm-time fact when the later outcome changes.
-- Keep the Item 20 default: after the one-minute auto-stop, transactionally set
+- ~~Keep the Item 20 default~~ — SUPERSEDED 2026-09-25: the auto-stop now
+  records only `alarm.unavailableAt`; the task stays undecided. Original text:
+  after the one-minute auto-stop, transactionally set
   an otherwise-unsettled task to `Skipped: User unavailable`. Persist the
   unavailability event separately so changing that default outcome cannot
   destroy the delivery/response-time evidence.
@@ -182,5 +191,6 @@ Batch deployment and real-device acceptance after feature work is finished:
 
 ## Immediate next action
 
-Implement Item 32. Keep Firestore rules and Worker deployment deferred until the
+Run full verification on the 2026-09-25 device-pass corrections, re-check them
+on the Redmi (debug build), then implement Item 32. Keep Firestore rules and Worker deployment deferred until the
 final release gate.

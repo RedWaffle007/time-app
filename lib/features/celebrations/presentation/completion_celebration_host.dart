@@ -92,6 +92,9 @@ class _CompletionCelebrationHostState
         _startIfPossible();
       }
     });
+    // A post-frame callback does not request a frame. A celebration arriving
+    // on an idle screen would otherwise wait for some unrelated repaint.
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   void _startIfPossible() {
@@ -181,6 +184,13 @@ class _CompletionCelebrationHostState
       final events = next.value;
       if (events != null) {
         _eventsChanged(events);
+      }
+    });
+    // Start on save, not on the Firestore echo (a second network trip). The
+    // queue de-duplicates by id, so the echo never replays it.
+    ref.listen(committedCelebrationProvider, (_, next) {
+      if (next != null && next.isUnseenBy(uid ?? '')) {
+        _eventsChanged([next]);
       }
     });
     final lock = ref.watch(appLockControllerProvider);

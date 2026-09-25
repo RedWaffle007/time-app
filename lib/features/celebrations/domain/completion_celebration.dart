@@ -30,6 +30,22 @@ class CompletionCelebration {
   static String eventId(String targetUid, String itemId) =>
       '${targetUid}_$itemId';
 
+  /// The event this device just committed with a Done, built locally so the
+  /// burst starts on save instead of after Firestore echoes it back. It shares
+  /// the durable document's id, so the echo is de-duplicated, not replayed.
+  factory CompletionCelebration.committed({
+    required String targetUid,
+    required String itemId,
+    required String plannerUid,
+  }) => CompletionCelebration(
+    id: eventId(targetUid, itemId),
+    itemId: itemId,
+    targetUid: targetUid,
+    plannerUid: plannerUid,
+    participantUids: <String>{targetUid, plannerUid}.toList(),
+    seenByUids: const [],
+  );
+
   factory CompletionCelebration.fromDoc(
     DocumentSnapshot<Map<String, dynamic>> doc,
   ) {

@@ -19,12 +19,12 @@ import 'package:timezone/data/latest.dart' as tz_data;
 void main() {
   setUpAll(tz_data.initializeTimeZones);
 
-  testWidgets('My Schedule shows only Upcoming with Calendar and History', (
+  testWidgets('My Schedule shows undecided plans, Calendar and History', (
     tester,
   ) async {
     final now = DateTime.now().toUtc();
     final upcoming = _item('upcoming', now.add(const Duration(days: 1)));
-    final elapsed = _item('elapsed', now.subtract(const Duration(days: 1)));
+    final elapsed = _decided('elapsed', now.subtract(const Duration(days: 1)));
 
     await tester.pumpWidget(_host(const OutcomeScreen(), [upcoming, elapsed]));
     await tester.pumpAndSettle();
@@ -66,7 +66,10 @@ void main() {
   ) async {
     await tester.pumpWidget(
       _host(const OutcomeScreen(), [
-        _item('old', DateTime.now().toUtc().subtract(const Duration(days: 1))),
+        _decided(
+          'old',
+          DateTime.now().toUtc().subtract(const Duration(days: 1)),
+        ),
       ]),
     );
     await tester.pumpAndSettle();
@@ -181,8 +184,8 @@ void main() {
     tester,
   ) async {
     final items = [
-      _item('February plan', DateTime.utc(2020, 2, 20, 9)),
-      _item('January plan', DateTime.utc(2020, 1, 10, 9)),
+      _decided('February plan', DateTime.utc(2020, 2, 20, 9)),
+      _decided('January plan', DateTime.utc(2020, 1, 10, 9)),
       _item(
         'Completed future plan',
         DateTime.now().toUtc().add(const Duration(days: 30)),
@@ -211,8 +214,8 @@ void main() {
   testWidgets('one-month History remains directly day-grouped', (tester) async {
     await tester.pumpWidget(
       _host(const HistoryScreen(), [
-        _item('First', DateTime.utc(2020, 2, 20, 9)),
-        _item('Second', DateTime.utc(2020, 2, 10, 9)),
+        _decided('First', DateTime.utc(2020, 2, 20, 9)),
+        _decided('Second', DateTime.utc(2020, 2, 10, 9)),
       ]),
     );
     await tester.pumpAndSettle();
@@ -229,7 +232,7 @@ void main() {
     const targetTitle = 'Far history target';
     final items = [
       for (var index = 0; index < 70; index++)
-        _item(
+        _decided(
           index == 10 ? targetTitle : 'Old plan $index',
           DateTime.utc(2020, 1, 1).add(Duration(days: index)),
           id: index == 10 ? targetId : 'old-$index',
@@ -258,7 +261,10 @@ void main() {
   testWidgets('warm History highlight expands a previously collapsed day', (
     tester,
   ) async {
-    final target = _item('Warm history target', DateTime.utc(2020, 2, 20, 9));
+    final target = _decided(
+      'Warm history target',
+      DateTime.utc(2020, 2, 20, 9),
+    );
     String? highlight;
     var token = 0;
     late StateSetter updateHost;
@@ -292,7 +298,62 @@ void main() {
     expect(find.text('Warm history target'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'an elapsed undecided plan stays in My Schedule with Done/Skip, not History',
+    (tester) async {
+      // Regression (2026-09-25): an alarm dismissed with the power button left
+      // the plan in Past Plans, where it could no longer be marked Done/Skip.
+      final dismissed = _item(
+        'Dismissed alarm',
+        DateTime.now().toUtc().subtract(const Duration(minutes: 3)),
+      );
+
+      await tester.pumpWidget(_host(const OutcomeScreen(), [dismissed]));
+      await tester.pumpAndSettle();
+      if (find.text('Dismissed alarm').evaluate().isEmpty) {
+        await tester.tap(find.textContaining('· 1 item').first);
+        await tester.pumpAndSettle();
+      }
+
+      expect(find.text('No upcoming plans.'), findsNothing);
+      expect(find.text('Dismissed alarm'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, 'Done'), findsOneWidget);
+      expect(find.widgetWithText(OutlinedButton, 'Skip'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      await tester.pumpWidget(_host(const HistoryScreen(), [dismissed]));
+      await tester.pumpAndSettle();
+      expect(find.text('Dismissed alarm'), findsNothing);
+    },
+  );
+
+  testWidgets('a decision moves the same plan from My Schedule to History', (
+    tester,
+  ) async {
+    final instant = DateTime.now().toUtc().subtract(const Duration(minutes: 3));
+    final decided = _item(
+      'Decided plan',
+      instant,
+      outcome: const ScheduleOutcome(result: OutcomeResult.skipped),
+    );
+
+    await tester.pumpWidget(_host(const OutcomeScreen(), [decided]));
+    await tester.pumpAndSettle();
+    expect(find.text('No upcoming plans.'), findsOneWidget);
+    expect(find.text('Decided plan'), findsNothing);
+  });
 }
+
+/// History holds DECIDED plans only (2026-09-25): elapsed time alone never
+/// moves a plan there.
+ScheduleItem _decided(String title, DateTime instant, {String? id}) => _item(
+  title,
+  instant,
+  id: id,
+  outcome: const ScheduleOutcome(result: OutcomeResult.done),
+);
 
 Widget _host(Widget screen, List<ScheduleItem> items) => ProviderScope(
   overrides: [

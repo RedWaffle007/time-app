@@ -16,12 +16,13 @@ import '../../../routing/app_router.dart';
 import '../../archive/presentation/archive_menu_button.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../calendar/application/calendar_grouping.dart';
+import '../../celebrations/application/celebration_providers.dart';
+import '../../celebrations/domain/completion_celebration.dart';
 import '../../notifications/application/outcome_notifier.dart';
 import '../../reminders/presentation/reminder_primer.dart';
 import '../../scheduling/application/schedule_item_order.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
-import '../../time_tracking/presentation/log_from_done_prompt.dart';
 import '../application/history_intent.dart';
 import '../application/schedule_partition.dart';
 import '../application/schedule_time_section.dart';
@@ -537,6 +538,12 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
               ),
             ),
             const SizedBox(height: Space.md),
+            // Undecided after an unanswered alarm: the permanent fact is shown
+            // ABOVE the still-open decision, for transparency.
+            if (outcome == null && item.wasUnavailableAtAlarmTime) ...[
+              const _UnavailableTag(),
+              const SizedBox(height: Space.sm),
+            ],
             if (outcome == null)
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
@@ -549,9 +556,7 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
                   ),
                   const SizedBox(width: Space.sm),
                   FilledButton(
-                    onPressed: _writingOutcome
-                        ? null
-                        : () => _markDone(context),
+                    onPressed: _writingOutcome ? null : _markDone,
                     child: Text(_writingOutcome ? 'Saving…' : 'Done'),
                   ),
                 ],
@@ -560,12 +565,7 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
               _outcomeLine(context, outcome),
               if (item.wasUnavailableAtAlarmTime) ...[
                 const SizedBox(height: Space.xs),
-                Text(
-                  'User unavailable at alarm time',
-                  style: context.text.bodySmall?.copyWith(
-                    color: context.colors.onSurfaceVariant,
-                  ),
-                ),
+                const _UnavailableTag(),
               ],
             ],
           ],
@@ -613,7 +613,7 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
   /// The reminder needs no cancelling here: recording an outcome makes the item
   /// undesired, the item stream re-emits, and the reconciler cancels it. That is
   /// the point of driving reminders off the stream rather than off transitions.
-  Future<void> _markDone(BuildContext context) async {
+  Future<void> _markDone() async {
     if (_writingOutcome) return;
     setState(() => _writingOutcome = true);
     final item = widget.item;
@@ -626,10 +626,19 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
       if (mounted) setState(() => _writingOutcome = false);
     }
     if (!recorded) return;
-    // The planner push is skipped for a self-planned item (no one else to tell),
-    // but the time-tracking prompt is NOT — self-planned items are exactly the
-    // ones a user logs their own time against. So the early-out only guards the
-    // notify; the Done→track hook below runs for every completed item.
+    // Celebrate on save: the Done transaction just committed, so the burst
+    // starts now rather than after Firestore echoes the event back.
+    ref
+        .read(committedCelebrationProvider.notifier)
+        .celebrate(
+          CompletionCelebration.committed(
+            targetUid: item.targetUid,
+            itemId: item.id,
+            plannerUid: item.createdByUid,
+          ),
+        );
+    // No post-Done prompt: Done is the whole action (the Log Time pop-up was
+    // removed 2026-09-25). Time is still logged from Track.
     if (!_isSelfPlanned) {
       await ref
           .read(notificationEventNotifierProvider)
@@ -639,14 +648,6 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
             itemId: item.id,
           );
     }
-    if (!context.mounted) return;
-    await promptLogFromDone(
-      context,
-      ref,
-      taskName: item.title,
-      sourceItemId: item.id,
-      timezone: item.timezone,
-    );
   }
 
   Future<void> _skip(BuildContext context) async {
@@ -699,4 +700,19 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
           );
     }
   }
+}
+
+/// The permanent alarm-time fact. Muted line work, never a doctrine fill: it
+/// explains what happened, it is not something waiting on you (UI-RULES §2.7).
+class _UnavailableTag extends StatelessWidget {
+  const _UnavailableTag();
+
+  @override
+  Widget build(BuildContext context) => Text(
+    'User unavailable at alarm time',
+    key: const ValueKey('user-unavailable-tag'),
+    style: context.text.bodySmall?.copyWith(
+      color: context.colors.onSurfaceVariant,
+    ),
+  );
 }

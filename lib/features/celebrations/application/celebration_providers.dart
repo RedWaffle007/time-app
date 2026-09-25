@@ -18,3 +18,18 @@ final unseenCompletionCelebrationsProvider =
           .watch(completionCelebrationRepositoryProvider)
           .watchUnseen(uid);
     });
+
+/// Celebrations this device has just committed. The host plays one the moment
+/// the Done transaction succeeds; the Firestore stream above remains the
+/// delivery path for the other participant and for missed sessions.
+class CommittedCelebrationNotifier extends Notifier<CompletionCelebration?> {
+  @override
+  CompletionCelebration? build() => null;
+
+  void celebrate(CompletionCelebration event) => state = event;
+}
+
+final committedCelebrationProvider =
+    NotifierProvider<CommittedCelebrationNotifier, CompletionCelebration?>(
+      CommittedCelebrationNotifier.new,
+    );

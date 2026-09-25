@@ -276,46 +276,13 @@ class ScheduleRepository {
               : Timestamp.fromDate(atUtc),
           if (reason.trim().isNotEmpty) 'skipReason': reason.trim(),
         },
-        if (reason.trim() == kUserUnavailableSkipReason)
+        // The alarm-time fact is immutable once present (rules compare it);
+        // stamp it only when this skip is the first evidence of it.
+        if (reason.trim() == kUserUnavailableSkipReason &&
+            (data['alarm'] as Map?)?['unavailableAt'] == null)
           'alarm.unavailableAt': atUtc == null
               ? FieldValue.serverTimestamp()
               : Timestamp.fromDate(atUtc.toUtc()),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      return true;
-    });
-  }
-
-  /// Reclassifies only the automatic end-of-day fallback. A one-minute alarm
-  /// timeout is more specific evidence than the later generic lapse pass, but
-  /// neither automatic path may replace an outcome chosen by the person.
-  Future<bool> replaceAutomaticSkipIfMatches(
-    String targetUid,
-    String itemId, {
-    required String expectedReason,
-    required String reason,
-    required DateTime atUtc,
-  }) async {
-    final ref = _items(targetUid).doc(itemId);
-    return _db.runTransaction((transaction) async {
-      final snapshot = await transaction.get(ref);
-      final data = snapshot.data();
-      final outcome = data?['outcome'];
-      if (data == null ||
-          data['status'] != ScheduleItemStatus.approved.name ||
-          outcome is! Map ||
-          outcome['result'] != OutcomeResult.skipped.name ||
-          outcome['skipReason'] != expectedReason) {
-        return false;
-      }
-      transaction.update(ref, {
-        'outcome': {
-          'result': OutcomeResult.skipped.name,
-          'skippedAt': Timestamp.fromDate(atUtc),
-          'skipReason': reason,
-        },
-        if (reason == kUserUnavailableSkipReason)
-          'alarm.unavailableAt': Timestamp.fromDate(atUtc.toUtc()),
         'updatedAt': FieldValue.serverTimestamp(),
       });
       return true;

@@ -8,6 +8,8 @@ import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../applock/application/app_lock_providers.dart';
+import '../../celebrations/application/celebration_providers.dart';
+import '../../celebrations/domain/completion_celebration.dart';
 import '../application/missed_alarm_providers.dart';
 import '../application/missed_alarm_service.dart';
 
@@ -39,7 +41,18 @@ class _MissedAlarmReviewHostState extends ConsumerState<MissedAlarmReviewHost> {
     setState(() => _acting = true);
     try {
       if (done) {
-        await service.markDone(review);
+        final committed = await service.markDone(review);
+        if (committed) {
+          ref
+              .read(committedCelebrationProvider.notifier)
+              .celebrate(
+                CompletionCelebration.committed(
+                  targetUid: review.item.targetUid,
+                  itemId: review.item.id,
+                  plannerUid: review.item.createdByUid,
+                ),
+              );
+        }
       } else {
         await service.markSkipped(review);
       }

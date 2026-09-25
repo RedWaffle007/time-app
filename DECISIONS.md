@@ -5919,3 +5919,53 @@ is not duplicated into alarm or schedule storage. This keeps profile renames
 consistent across the product and avoids a new stale-name migration. While a
 cold profile read is settling, the screen uses the neutral `Planner` label and
 continues ringing instead of blocking the alarm UI.
+
+---
+
+## Device-pass corrections: only a decision moves a plan to History (2026-09-25)
+
+Directed by the user after installing the post-Item-35 debug build on the Redmi.
+Five fixes; the first two **supersede parts of the 2026-09-24 entries above**.
+
+**1. History holds decided plans only.** The 2026-09-24 partition moved an
+approved plan to History as soon as its instant passed. An alarm dismissed with
+the power button therefore landed in Past Plans with no outcome and no Done/Skip
+controls anywhere. The partition is now `outcome != null → History`, otherwise
+My Schedule, whatever the clock says. An undecided plan cannot linger forever:
+the existing end-of-day lapse settles it (`Skipped: Did not respond`) at its own
+local midnight. Calendar routing follows the same rule.
+
+**2. A one-minute timeout records the fact, not an outcome.** This reverses the
+Item 20 default kept by "Missed-alarm review separates availability from
+completion". The timeout now writes only the immutable `alarm.unavailableAt`;
+the task stays undecided in My Schedule, where the card shows `User unavailable
+at alarm time` above Done/Skip. The review popup is unchanged in shape (two
+actions) but now makes the first outcome write itself — Done is an ordinary
+first-write Done (still rendered `Done (Late)` from the fact), Skip records
+`Skipped: User unavailable`. The planner is told when the person decides (or at
+the lapse), no longer at the one-minute mark — the user accepted that cost. A
+Done/Skip on the card or on another device closes the review. No rules change:
+recording the fact alone was already permitted, and the rules-level
+Skip(User unavailable) → Done correction stays for legacy rows written by
+earlier builds, which are still offered for review. The now-unused
+`replaceAutomaticSkipIfMatches` (Did not respond → User unavailable refinement)
+was removed from the client; its rules branch is left in place, harmlessly.
+`markSkippedIfUnsettled` stamps `alarm.unavailableAt` only when absent, so it
+can never trip the rules' immutability check.
+
+**3. The plan builder collapses its person list after a pick** to one row with a
+Change button, and jumps to the top, so the planning fields need no scrolling.
+A pre-selected target (voice flow) opens collapsed.
+
+**4. The Log Time pop-up after Done is removed**, with its now-dead
+`log_from_done_prompt.dart`. Time is still logged from Track; existing entries
+that carry `sourceItemId` are untouched.
+
+**5. The celebration starts on save.** The burst used to wait for the Done
+transaction AND for Firestore to echo the celebration document back. The device
+that committed the Done now enqueues the event locally the moment its
+transaction succeeds (`committedCelebrationProvider`); the echo shares the id
+and is de-duplicated, and acknowledgement is unchanged. The user chose "on save"
+over "on tap" so a Done that loses a race never celebrates. The host also
+requests a frame when an event arrives, because a post-frame callback on an idle
+screen otherwise waits for an unrelated repaint.

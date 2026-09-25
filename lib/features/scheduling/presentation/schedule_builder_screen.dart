@@ -13,6 +13,7 @@ import '../../../core/widgets/async_view.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/warning_panel.dart';
 import '../../auth/application/auth_providers.dart';
+import '../../auth/domain/user_profile.dart';
 import '../../groups/application/group_providers.dart';
 import '../../groups/domain/planner_grant.dart';
 import '../../notifications/application/outcome_notifier.dart';
@@ -72,6 +73,13 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
   String? _groupId; // group the grant came from (null when planning for self)
   bool _isSelf = false; // selected target is me → skip queue, no group
 
+  /// The person list is shown only until someone is picked (or while the
+  /// planner is changing their pick). Once chosen it collapses to one row, so
+  /// the planning fields start at the top instead of below a long list.
+  bool _changingTarget = false;
+  bool get _showTargetList => _targetUid == null || _changingTarget;
+  final _scrollController = ScrollController();
+
   final _shownConflictFingerprints = <String>{};
   String? _queuedConflictFingerprint;
   String? _activeConflictFingerprint;
@@ -106,6 +114,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _titleController.dispose();
     _noteController.dispose();
     super.dispose();
@@ -367,12 +376,17 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     final isEmergency = canEmergency && _emergency;
 
     return ListView(
+      controller: _scrollController,
       padding: Space.screenListSafe(context),
       children: [
         // Target picker. "Myself" is always first, then anyone who granted you.
+        // After a pick it collapses to the chosen person + Change.
         const SectionHeader('Plan for'),
-        _selfTile(),
-        for (final grant in grants) _targetTile(grant),
+        if (_showTargetList) ...[
+          _selfTile(),
+          for (final grant in grants) _targetTile(grant),
+        ] else
+          _chosenTargetTile(selectedProfile),
         const Divider(height: Space.xxl),
 
         if (_targetUid != null) ...[
@@ -507,7 +521,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
         title: Text(profile == null ? 'Myself' : '${profile.name} (myself)'),
         subtitle: profile == null ? null : Text(profile.homeTimezone),
         trailing: selected ? const Icon(AppIcons.selected) : null,
-        onTap: () => setState(() {
+        onTap: () => _choose(() {
           _isSelf = true;
           _targetUid = me.uid;
           _groupId = null;
@@ -527,12 +541,49 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
         title: Text(profile?.name ?? grant.targetUid),
         subtitle: profile == null ? null : Text(profile.homeTimezone),
         trailing: selected ? const Icon(AppIcons.selected) : null,
-        onTap: () => setState(() {
+        onTap: () => _choose(() {
           _isSelf = false;
           _targetUid = grant.targetUid;
           _groupId = grant.groupId;
           _emergency = false;
         }),
+      ),
+    );
+  }
+
+  /// Apply a pick, collapse the list, and bring the planning fields to the
+  /// top — the planner may have scrolled down a long list to reach the person.
+  void _choose(VoidCallback pick) {
+    setState(() {
+      pick();
+      _changingTarget = false;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _scrollController.hasClients) {
+        _scrollController.jumpTo(0);
+      }
+    });
+  }
+
+  /// The collapsed picker: who this plan is for, and the way back to the list.
+  Widget _chosenTargetTile(UserProfile? profile) {
+    final name = profile == null
+        ? (_isSelf ? 'Myself' : _targetUid ?? '')
+        : _isSelf
+        ? '${profile.name} (myself)'
+        : profile.name;
+    return Card(
+      key: const ValueKey('plan-target-chosen'),
+      color: Theme.of(context).colorScheme.primaryContainer,
+      child: ListTile(
+        leading: const Icon(AppIcons.person),
+        title: Text(name),
+        subtitle: profile == null ? null : Text(profile.homeTimezone),
+        trailing: TextButton(
+          key: const ValueKey('plan-target-change'),
+          onPressed: () => setState(() => _changingTarget = true),
+          child: const Text('Change'),
+        ),
       ),
     );
   }

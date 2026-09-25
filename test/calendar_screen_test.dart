@@ -273,11 +273,11 @@ void main() {
     // The sheet names the zone the item was built against, so a cross-timezone
     // plan can never read as the viewer's own local time.
     expect(find.text(kolkata), findsOneWidget);
-    // Its one action ROUTES to the screen that owns the real controls.
-    final expectedDestination = nineAmOn(today).isBefore(DateTime.now().toUtc())
-        ? 'Open in History'
-        : 'Open in My Schedule';
-    expect(find.text(expectedDestination), findsOneWidget);
+    // Its one action ROUTES to the screen that owns the real controls. An
+    // undecided item belongs to My Schedule even once its time has passed —
+    // only a Done/Skip moves it to History (2026-09-25).
+    expect(find.text('Open in My Schedule'), findsOneWidget);
+    expect(find.text('Open in History'), findsNothing);
 
     // No edit affordance, disabled or otherwise. The deployed rules make
     // `title` and `scheduledInstantUtc` immutable after create, and a greyed

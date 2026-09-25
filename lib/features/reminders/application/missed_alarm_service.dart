@@ -7,30 +7,32 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../notifications/application/outcome_notifier.dart';
-import '../../scheduling/application/item_lapse_policy.dart';
 import '../../scheduling/data/schedule_repository.dart';
 import '../../scheduling/domain/schedule_item.dart';
 import '../data/alarm_lifecycle_store.dart';
 import '../data/alarm_timeline_repository.dart';
 
+/// The skip reason a person's own "Mark as Skipped" review choice records.
 const kMissedAlarmSkipReason = kUserUnavailableSkipReason;
 
 abstract interface class MissedAlarmOutcomeRepository {
+  /// First-write-wins Done, chosen by the person in the review.
+  Future<bool> markDoneIfUnsettled(
+    String targetUid,
+    String itemId, {
+    required String plannerUid,
+  });
+
+  /// First-write-wins Skip, chosen by the person in the review.
   Future<bool> markSkippedIfUnsettled(
     String targetUid,
     String itemId, {
     required String reason,
-    required DateTime atUtc,
   });
 
-  Future<bool> replaceAutomaticSkipIfMatches(
-    String targetUid,
-    String itemId, {
-    required String expectedReason,
-    required String reason,
-    required DateTime atUtc,
-  });
-
+  /// Legacy correction: builds before 2026-09-25 wrote an automatic
+  /// `Skipped: User unavailable` at the timeout; the review may still turn
+  /// exactly that record into Done.
   Future<bool> replaceMissedAlarmSkipWithDone(
     String targetUid,
     String itemId, {
@@ -45,32 +47,18 @@ class ScheduleMissedAlarmOutcomeRepository
   final ScheduleRepository _repository;
 
   @override
+  Future<bool> markDoneIfUnsettled(
+    String targetUid,
+    String itemId, {
+    required String plannerUid,
+  }) => _repository.markDone(targetUid, itemId, plannerUid: plannerUid);
+
+  @override
   Future<bool> markSkippedIfUnsettled(
     String targetUid,
     String itemId, {
     required String reason,
-    required DateTime atUtc,
-  }) => _repository.markSkippedIfUnsettled(
-    targetUid,
-    itemId,
-    reason: reason,
-    atUtc: atUtc,
-  );
-
-  @override
-  Future<bool> replaceAutomaticSkipIfMatches(
-    String targetUid,
-    String itemId, {
-    required String expectedReason,
-    required String reason,
-    required DateTime atUtc,
-  }) => _repository.replaceAutomaticSkipIfMatches(
-    targetUid,
-    itemId,
-    expectedReason: expectedReason,
-    reason: reason,
-    atUtc: atUtc,
-  );
+  }) => _repository.markSkippedIfUnsettled(targetUid, itemId, reason: reason);
 
   @override
   Future<bool> replaceMissedAlarmSkipWithDone(
@@ -91,7 +79,23 @@ class MissedAlarmReview {
   final ScheduleItem item;
 }
 
-/// Reconciles native one-minute timeouts into shared outcomes and review UI.
+/// Whether [outcome] is the automatic skip an older build wrote at timeout.
+bool _isLegacyAutomaticSkip(ScheduleOutcome? outcome) =>
+    outcome?.result == OutcomeResult.skipped &&
+    outcome?.skipReason == kMissedAlarmSkipReason;
+
+/// Reconciles native one-minute timeouts into the shared alarm-time fact and
+/// the review UI.
+///
+/// A timeout records ONLY `alarm.unavailableAt` — the permanent "User
+/// unavailable at alarm time" fact. It never writes a task outcome: the task
+/// stays undecided in My Schedule until the person chooses Done or Skipped
+/// (here, on the card, on another device) or the end-of-day lapse settles it.
+/// (DECISIONS.md "Missed alarm — tag only, decision stays with the person".)
+///
+/// The native event's `outcomeRecorded` flag means "the unavailable fact is
+/// persisted". Rows written by older builds carry an automatic Skipped outcome;
+/// they are still offered for review and may be corrected to Done.
 class MissedAlarmService extends ChangeNotifier {
   MissedAlarmService({
     required AlarmLifecycleStore store,
@@ -152,108 +156,56 @@ class MissedAlarmService extends ChangeNotifier {
         continue;
       }
 
-      var outcomeRecorded = event.outcomeRecorded;
-      final existingOutcome = item.outcome;
-      if (existingOutcome == null && !outcomeRecorded) {
-        final recorded = await _outcomes.markSkippedIfUnsettled(
-          uid,
-          item.id,
-          reason: kMissedAlarmSkipReason,
-          atUtc: event.occurredAtUtc,
-        );
-        // A concurrent manual outcome won. Wait for the item stream to reveal
-        // which outcome it was; never guess and overwrite it.
-        if (!recorded) continue;
-        await _store.markOutcomeRecorded(event.key);
-        outcomeRecorded = true;
-      } else if (existingOutcome != null && !outcomeRecorded) {
-        if (existingOutcome.result == OutcomeResult.skipped &&
-            existingOutcome.skipReason == kLapsedSkipReason) {
-          final replaced = await _outcomes.replaceAutomaticSkipIfMatches(
-            uid,
-            item.id,
-            expectedReason: kLapsedSkipReason,
-            reason: kMissedAlarmSkipReason,
-            atUtc: event.occurredAtUtc,
-          );
-          if (!replaced) continue;
+      // 1. The alarm-time fact, whatever the outcome. It is immutable once
+      //    written, so a replay is a no-op.
+      if (!event.outcomeRecorded || item.alarm?.unavailableAt == null) {
+        await _timeline.recordUnavailable(uid, item.id, event.occurredAtUtc);
+        if (!event.outcomeRecorded) {
           await _store.markOutcomeRecorded(event.key);
-          outcomeRecorded = true;
-        } else if (existingOutcome.result == OutcomeResult.done &&
-            event.reviewChoice == MissedAlarmReviewChoice.done) {
-          outcomeRecorded = true;
-        } else if (existingOutcome.result != OutcomeResult.skipped ||
-            existingOutcome.skipReason != kMissedAlarmSkipReason) {
-          // A manual Done/Skip won the race. Never overwrite the person's
-          // outcome, but the independent timeout fact still happened and must
-          // survive before the native row is removed.
-          await _timeline.recordUnavailable(uid, item.id, event.occurredAtUtc);
-          await _store.remove(event.key);
-          continue;
+        }
+      }
+
+      final outcome = item.outcome;
+      final choice = event.reviewChoice;
+
+      // 2. Undecided: offer the review, or finish a choice whose write has
+      //    not landed yet (offline, process death).
+      if (outcome == null) {
+        if (choice == null) {
+          reviews.add(MissedAlarmReview(event: event, item: item));
+          // Publish as soon as the fact exists; nothing else is on the
+          // popup's critical path.
+          _setReviews(reviews);
         } else {
-          await _store.markOutcomeRecorded(event.key);
-          outcomeRecorded = true;
+          _retryInBackground(_applyChoice(event, item, choice));
         }
+        continue;
       }
 
-      if (event.reviewChoice == MissedAlarmReviewChoice.done &&
-          existingOutcome?.result != OutcomeResult.done) {
-        if (existingOutcome == null) {
-          // The local item stream can briefly lag both the automatic Skip and
-          // the subsequent Done transaction. Wait for its authoritative state
-          // instead of issuing the correction twice against stale input.
-          continue;
-        }
-        if (existingOutcome.result != OutcomeResult.skipped ||
-            existingOutcome.skipReason != kMissedAlarmSkipReason) {
-          // A different manual outcome won on another client. Preserve the
-          // independent alarm-time fact, but never overwrite that choice.
-          await _timeline.recordUnavailable(uid, item.id, event.occurredAtUtc);
-          await _store.remove(event.key);
-          continue;
-        }
-        // Legacy rows may have the automatic skip but not the independent
-        // timeline fact yet. Persist that fact before the rules permit the
-        // correction to Done.
-        await _timeline.recordUnavailable(uid, item.id, event.occurredAtUtc);
-        final changed = await _outcomes.replaceMissedAlarmSkipWithDone(
-          uid,
-          item.id,
-          plannerUid: item.createdByUid,
-        );
-        if (!changed) continue;
-      }
-
-      if (!event.reviewed && outcomeRecorded) {
-        reviews.add(MissedAlarmReview(event: event, item: item));
-        // The popup is a local review surface. Publish it as soon as the
-        // durable outcome exists; planner push delivery must not sit on its
-        // critical path (it can take two independent 10-second timeouts).
-        _setReviews(reviews);
-      }
-
-      if (existingOutcome?.result == OutcomeResult.skipped &&
-          existingOutcome?.skipReason == kMissedAlarmSkipReason &&
-          item.alarm?.unavailableAt == null) {
-        // Compatibility for timeout rows created before unavailableAt became a
-        // separate shared fact. The review is already visible above, so this
-        // repair does not reintroduce the popup delay.
-        await _timeline.recordUnavailable(uid, item.id, event.occurredAtUtc);
-      }
-
-      if (outcomeRecorded) {
-        if (event.reviewChoice == MissedAlarmReviewChoice.done) {
-          if (!event.reviewNotificationDelivered) {
-            unawaited(_deliverDoneFollowUp(event, item, uid));
-          } else if (event.notificationDelivered) {
-            await _store.remove(event.key);
+      // 3. Legacy: an older build auto-skipped. Its planner push may still be
+      //    owed, and the person may still turn it into Done.
+      if (_isLegacyAutomaticSkip(outcome)) {
+        if (choice == null) {
+          reviews.add(MissedAlarmReview(event: event, item: item));
+          _setReviews(reviews);
+          if (!event.notificationDelivered) {
+            _retryInBackground(_deliverLegacyAutomaticSkip(event, item, uid));
           }
-        } else if (!event.notificationDelivered) {
-          unawaited(_deliverAutomaticOutcome(event, item, uid));
-        } else if (event.reviewed) {
-          await _store.remove(event.key);
+          continue;
+        }
+        if (choice == MissedAlarmReviewChoice.done) {
+          _retryInBackground(_applyChoice(event, item, choice));
+          continue;
         }
       }
+
+      // 4. Settled. A choice made in the review still owes the planner one
+      //    push; an outcome decided anywhere else was already announced there.
+      if (choice != null && !event.reviewNotificationDelivered) {
+        _retryInBackground(_deliverChoice(event, item, uid));
+        continue;
+      }
+      await _store.remove(event.key);
     }
     reviews.sort(
       (a, b) => a.event.occurredAtUtc.compareTo(b.event.occurredAtUtc),
@@ -261,69 +213,75 @@ class MissedAlarmService extends ChangeNotifier {
     _setReviews(reviews);
   }
 
-  Future<void> markDone(MissedAlarmReview review) async {
-    await _store.markReviewChoice(
-      review.event.key,
-      MissedAlarmReviewChoice.done,
-    );
+  /// Returns whether THIS call committed the outcome (false when another
+  /// client decided first) — the caller celebrates only its own Done.
+  Future<bool> markDone(MissedAlarmReview review) =>
+      _choose(review, MissedAlarmReviewChoice.done);
+
+  Future<bool> markSkipped(MissedAlarmReview review) =>
+      _choose(review, MissedAlarmReviewChoice.skipped);
+
+  Future<bool> _choose(
+    MissedAlarmReview review,
+    MissedAlarmReviewChoice choice,
+  ) async {
+    // Durable intent first, so a crash mid-write is finished on next sync.
+    await _store.markReviewChoice(review.event.key, choice);
     _setReviews([
       for (final candidate in _reviews)
         if (candidate.event.key != review.event.key) candidate,
     ]);
-    await _timeline.recordUnavailable(
-      review.item.targetUid,
-      review.item.id,
-      review.event.occurredAtUtc,
-    );
-    final changed = await _outcomes.replaceMissedAlarmSkipWithDone(
-      review.item.targetUid,
-      review.item.id,
-      plannerUid: review.item.createdByUid,
-    );
-    if (changed) {
-      await _deliverDoneFollowUp(
-        review.event,
-        review.item,
-        review.item.targetUid,
-      );
-    }
+    final changed = await _applyChoice(review.event, review.item, choice);
     await resync();
+    return changed;
   }
 
-  Future<void> markSkipped(MissedAlarmReview review) async {
-    await _store.markReviewChoice(
-      review.event.key,
-      MissedAlarmReviewChoice.skipped,
+  /// Background retries are driven by the next item-stream emission, never by
+  /// resyncing from here: a write that lost a race would otherwise spin until
+  /// the stream caught up.
+  void _retryInBackground(Future<void> work) {
+    unawaited(
+      work.catchError((Object error) {
+        debugPrint('MissedAlarmService: background retry failed: $error');
+      }),
     );
-    _setReviews([
-      for (final candidate in _reviews)
-        if (candidate.event.key != review.event.key) candidate,
-    ]);
-    await resync();
   }
 
-  Future<void> _deliverAutomaticOutcome(
+  /// Writes the chosen outcome. First-write-wins: a Done/Skip recorded
+  /// elsewhere in the meantime is never overwritten.
+  Future<bool> _applyChoice(
     AlarmLifecycleEvent event,
     ScheduleItem item,
-    String uid,
+    MissedAlarmReviewChoice choice,
   ) async {
-    if (item.createdByUid == uid) {
-      await _store.markNotificationDelivered(event.key);
-      await resync();
-      return;
+    final uid = item.targetUid;
+    final bool changed;
+    if (choice == MissedAlarmReviewChoice.done) {
+      changed = _isLegacyAutomaticSkip(item.outcome)
+          ? await _outcomes.replaceMissedAlarmSkipWithDone(
+              uid,
+              item.id,
+              plannerUid: item.createdByUid,
+            )
+          : await _outcomes.markDoneIfUnsettled(
+              uid,
+              item.id,
+              plannerUid: item.createdByUid,
+            );
+    } else {
+      changed = await _outcomes.markSkippedIfUnsettled(
+        uid,
+        item.id,
+        reason: kMissedAlarmSkipReason,
+      );
     }
-    final result = await _notifier.notifyConfirmed(
-      event: NotifyEvent.outcome,
-      targetUid: uid,
-      itemId: item.id,
-    );
-    if (result.delivered || result.reason == 'already-notified') {
-      await _store.markNotificationDelivered(event.key);
-      await resync();
-    }
+    // The planner push can take two 10-second timeouts; it must not hold the
+    // popup's buttons disabled for the next review.
+    if (changed) _retryInBackground(_deliverChoice(event, item, uid));
+    return changed;
   }
 
-  Future<void> _deliverDoneFollowUp(
+  Future<void> _deliverChoice(
     AlarmLifecycleEvent event,
     ScheduleItem item,
     String uid,
@@ -339,6 +297,22 @@ class MissedAlarmService extends ChangeNotifier {
     await _store.markNotificationDelivered(event.key);
     await _store.markReviewNotificationDelivered(event.key);
     await resync();
+  }
+
+  Future<void> _deliverLegacyAutomaticSkip(
+    AlarmLifecycleEvent event,
+    ScheduleItem item,
+    String uid,
+  ) async {
+    if (item.createdByUid != uid) {
+      final result = await _notifier.notifyConfirmed(
+        event: NotifyEvent.outcome,
+        targetUid: uid,
+        itemId: item.id,
+      );
+      if (!result.delivered && result.reason != 'already-notified') return;
+    }
+    await _store.markNotificationDelivered(event.key);
   }
 
   void _setReviews(List<MissedAlarmReview> value) {

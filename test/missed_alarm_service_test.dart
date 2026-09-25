@@ -11,6 +11,7 @@ import 'package:time_app/features/applock/application/app_lock_providers.dart';
 import 'package:time_app/features/applock/data/app_lock_store.dart';
 import 'package:time_app/features/applock/data/device_auth.dart';
 import 'package:time_app/features/applock/data/secure_window.dart';
+import 'package:time_app/features/celebrations/application/celebration_providers.dart';
 import 'package:time_app/features/notifications/application/outcome_notifier.dart';
 import 'package:time_app/features/reminders/application/missed_alarm_providers.dart';
 import 'package:time_app/features/reminders/application/missed_alarm_service.dart';
@@ -52,7 +53,105 @@ void main() {
   });
 
   test(
-    'timeout records skipped outcome, notifies planner, and awaits review',
+    'timeout records ONLY the unavailable fact — no outcome, no push — and awaits review',
+    () async {
+      // Regression (2026-09-25): an auto-stopped alarm used to write
+      // Skipped: User unavailable, moving the task to History before the
+      // person decided anything.
+      final store = _MemoryLifecycleStore([_event()]);
+      final outcomes = _RecordingOutcomes();
+      final timeline = _RecordingTimeline();
+      final notifier = _RecordingNotifier();
+      final service = MissedAlarmService(
+        store: store,
+        outcomes: outcomes,
+        timeline: timeline,
+        notifier: notifier,
+      );
+
+      await service.sync([_item()], 'target');
+      await _settle();
+
+      expect(timeline.unavailable, [('target', 'item')]);
+      expect(timeline.unavailableTimes, [
+        DateTime.fromMillisecondsSinceEpoch(1000, isUtc: true),
+      ]);
+      expect(outcomes.skipped, isEmpty);
+      expect(outcomes.done, isEmpty);
+      expect(notifier.calls, isEmpty);
+      expect(service.reviews.single.item.id, 'item');
+      expect(store.events.single.outcomeRecorded, isTrue);
+    },
+  );
+
+  test('the unavailable fact is written once, not on every sync', () async {
+    final store = _MemoryLifecycleStore([_event()]);
+    final timeline = _RecordingTimeline();
+    final service = MissedAlarmService(
+      store: store,
+      outcomes: _RecordingOutcomes(),
+      timeline: timeline,
+      notifier: _RecordingNotifier(),
+    );
+
+    await service.sync([_item()], 'target');
+    await service.sync([_item(unavailableAt: _occurred)], 'target');
+    await service.sync([_item(unavailableAt: _occurred)], 'target');
+
+    expect(timeline.unavailable, hasLength(1));
+    expect(service.reviews, hasLength(1));
+  });
+
+  test('review is visible without waiting for any network push', () async {
+    final gate = Completer<void>();
+    final service = MissedAlarmService(
+      store: _MemoryLifecycleStore([_event()]),
+      outcomes: _RecordingOutcomes(),
+      timeline: _RecordingTimeline(),
+      notifier: _BlockingNotifier(gate.future),
+    );
+
+    await service.sync([_item()], 'target');
+
+    expect(service.reviews, hasLength(1));
+    gate.complete();
+  });
+
+  test('Mark as Done records Done and tells the planner once', () async {
+    final store = _MemoryLifecycleStore([_event()]);
+    final outcomes = _RecordingOutcomes();
+    final notifier = _RecordingNotifier();
+    final service = MissedAlarmService(
+      store: store,
+      outcomes: outcomes,
+      timeline: _RecordingTimeline(),
+      notifier: notifier,
+    );
+    await service.sync([_item()], 'target');
+
+    final committed = await service.markDone(service.reviews.single);
+    await _settle();
+
+    expect(committed, isTrue);
+    expect(outcomes.done, [('target', 'item', 'planner')]);
+    expect(outcomes.legacyDone, isEmpty);
+    expect(outcomes.skipped, isEmpty);
+    expect(notifier.calls, [('target', 'item')]);
+    expect(service.reviews, isEmpty);
+
+    // The stream catches up with the Done: the row is finished and removed.
+    await service.sync([
+      _item(
+        unavailableAt: _occurred,
+        outcome: const ScheduleOutcome(result: OutcomeResult.done),
+      ),
+    ], 'target');
+    expect(store.events, isEmpty);
+    expect(notifier.calls, hasLength(1));
+  });
+
+  test(
+    'Mark as Skipped records Skipped: User unavailable and tells the planner',
     () async {
       final store = _MemoryLifecycleStore([_event()]);
       final outcomes = _RecordingOutcomes();
@@ -63,21 +162,102 @@ void main() {
         timeline: _RecordingTimeline(),
         notifier: notifier,
       );
-
       await service.sync([_item()], 'target');
-      await Future<void>.delayed(Duration.zero);
 
-      expect(outcomes.skipped, [('target', 'item', kMissedAlarmSkipReason)]);
-      expect(outcomes.skipTimes, [
-        DateTime.fromMillisecondsSinceEpoch(1000, isUtc: true),
+      await service.markSkipped(service.reviews.single);
+      await _settle();
+
+      expect(outcomes.skipped, [
+        ('target', 'item', kUserUnavailableSkipReason),
       ]);
+      expect(outcomes.done, isEmpty);
       expect(notifier.calls, [('target', 'item')]);
-      expect(service.reviews.single.item.id, 'item');
-      expect(store.events.single.outcomeRecorded, isTrue);
+
+      await service.sync([
+        _item(
+          unavailableAt: _occurred,
+          outcome: const ScheduleOutcome(
+            result: OutcomeResult.skipped,
+            skipReason: kUserUnavailableSkipReason,
+          ),
+        ),
+      ], 'target');
+      expect(store.events, isEmpty);
+      expect(service.reviews, isEmpty);
     },
   );
 
-  test('manual outcome wins a timeout race and is never overwritten', () async {
+  test('a self-planned review choice sends no push', () async {
+    final store = _MemoryLifecycleStore([_event()]);
+    final notifier = _RecordingNotifier();
+    final service = MissedAlarmService(
+      store: store,
+      outcomes: _RecordingOutcomes(),
+      timeline: _RecordingTimeline(),
+      notifier: notifier,
+    );
+    await service.sync([_item(createdByUid: 'target')], 'target');
+
+    await service.markDone(service.reviews.single);
+    await _settle();
+
+    expect(notifier.calls, isEmpty);
+    expect(store.events.single.reviewNotificationDelivered, isTrue);
+  });
+
+  test(
+    'a choice that lost the race reports no commit and never overwrites',
+    () async {
+      final store = _MemoryLifecycleStore([_event()]);
+      final outcomes = _RecordingOutcomes(recorded: false);
+      final notifier = _RecordingNotifier();
+      final service = MissedAlarmService(
+        store: store,
+        outcomes: outcomes,
+        timeline: _RecordingTimeline(),
+        notifier: notifier,
+      );
+      await service.sync([_item()], 'target');
+
+      final committed = await service.markDone(service.reviews.single);
+      await _settle();
+
+      expect(committed, isFalse);
+      expect(notifier.calls, isEmpty);
+    },
+  );
+
+  test(
+    'a Done/Skip made on the card (or another device) closes the review',
+    () async {
+      final store = _MemoryLifecycleStore([_event()]);
+      final outcomes = _RecordingOutcomes();
+      final notifier = _RecordingNotifier();
+      final service = MissedAlarmService(
+        store: store,
+        outcomes: outcomes,
+        timeline: _RecordingTimeline(),
+        notifier: notifier,
+      );
+      await service.sync([_item()], 'target');
+      expect(service.reviews, hasLength(1));
+
+      await service.sync([
+        _item(
+          unavailableAt: _occurred,
+          outcome: const ScheduleOutcome(result: OutcomeResult.done),
+        ),
+      ], 'target');
+      await _settle();
+
+      expect(service.reviews, isEmpty);
+      expect(store.events, isEmpty);
+      expect(outcomes.done, isEmpty, reason: 'never rewrite a card outcome');
+      expect(notifier.calls, isEmpty, reason: 'the card already notified');
+    },
+  );
+
+  test('manual outcome that beat the timeout still gets the fact', () async {
     final store = _MemoryLifecycleStore([_event()]);
     final outcomes = _RecordingOutcomes();
     final timeline = _RecordingTimeline();
@@ -98,80 +278,53 @@ void main() {
     ], 'target');
 
     expect(outcomes.skipped, isEmpty);
+    expect(outcomes.done, isEmpty);
     expect(timeline.unavailable, [('target', 'item')]);
     expect(store.events, isEmpty);
     expect(service.reviews, isEmpty);
   });
 
-  test('alarm timeout supersedes only the automatic end-of-day skip', () async {
-    final store = _MemoryLifecycleStore([_event()]);
-    final outcomes = _RecordingOutcomes();
-    final service = MissedAlarmService(
-      store: store,
-      outcomes: outcomes,
-      timeline: _RecordingTimeline(),
-      notifier: _RecordingNotifier(),
-    );
-
-    await service.sync([
-      _item(
-        outcome: const ScheduleOutcome(
-          result: OutcomeResult.skipped,
-          skipReason: kLapsedSkipReason,
-        ),
-      ),
-    ], 'target');
-
-    expect(outcomes.replaced, [
-      ('target', 'item', kLapsedSkipReason, kMissedAlarmSkipReason),
-    ]);
-    expect(store.events.single.outcomeRecorded, isTrue);
-    expect(service.reviews, hasLength(1));
-  });
-
   test(
-    'legacy unavailable skips backfill the independent timeline fact',
+    'the end-of-day lapse settles an undecided miss without rewriting it',
     () async {
-      final timeline = _RecordingTimeline();
+      final store = _MemoryLifecycleStore([_event()]);
+      final outcomes = _RecordingOutcomes();
       final service = MissedAlarmService(
-        store: _MemoryLifecycleStore([
-          AlarmLifecycleEvent(
-            key: 'timeout:item:1000',
-            itemId: 'item',
-            occurredAtUtc: DateTime.fromMillisecondsSinceEpoch(
-              1000,
-              isUtc: true,
-            ),
-            kind: AlarmLifecycleEventKind.timeout,
-            outcomeRecorded: true,
-            notificationDelivered: true,
-            reviewed: false,
-          ),
-        ]),
-        outcomes: _RecordingOutcomes(),
-        timeline: timeline,
+        store: store,
+        outcomes: outcomes,
+        timeline: _RecordingTimeline(),
         notifier: _RecordingNotifier(),
       );
+      await service.sync([_item()], 'target');
 
       await service.sync([
         _item(
+          unavailableAt: _occurred,
           outcome: const ScheduleOutcome(
             result: OutcomeResult.skipped,
-            skipReason: kMissedAlarmSkipReason,
+            skipReason: kLapsedSkipReason,
           ),
         ),
       ], 'target');
 
-      expect(timeline.unavailable, [('target', 'item')]);
-      expect(service.reviews, hasLength(1));
+      expect(outcomes.skipped, isEmpty);
+      expect(outcomes.done, isEmpty);
+      expect(store.events, isEmpty);
+      expect(service.reviews, isEmpty);
     },
   );
 
   test(
-    'a concurrent outcome makes the automatic transaction back off',
+    'a persisted choice whose write never landed is finished on next sync',
     () async {
-      final store = _MemoryLifecycleStore([_event()]);
-      final outcomes = _RecordingOutcomes(recorded: false);
+      // Process death between markReviewChoice and the Firestore write.
+      final store = _MemoryLifecycleStore([
+        _event(
+          outcomeRecorded: true,
+          reviewChoice: MissedAlarmReviewChoice.skipped,
+        ),
+      ]);
+      final outcomes = _RecordingOutcomes();
       final notifier = _RecordingNotifier();
       final service = MissedAlarmService(
         store: store,
@@ -180,14 +333,114 @@ void main() {
         notifier: notifier,
       );
 
-      await service.sync([_item()], 'target');
+      await service.sync([_item(unavailableAt: _occurred)], 'target');
+      await _settle();
 
-      expect(outcomes.skipped, hasLength(1));
-      expect(store.events.single.outcomeRecorded, isFalse);
-      expect(notifier.calls, isEmpty);
-      expect(service.reviews, isEmpty);
+      expect(service.reviews, isEmpty, reason: 'no second popup');
+      expect(outcomes.skipped, [
+        ('target', 'item', kUserUnavailableSkipReason),
+      ]);
+      expect(notifier.calls, [('target', 'item')]);
     },
   );
+
+  test('a failed planner push stays durable and retries', () async {
+    final store = _MemoryLifecycleStore([_event()]);
+    final notifier = _RecordingNotifier(results: [false, true]);
+    final service = MissedAlarmService(
+      store: store,
+      outcomes: _RecordingOutcomes(),
+      timeline: _RecordingTimeline(),
+      notifier: notifier,
+    );
+    await service.sync([_item()], 'target');
+    await service.markSkipped(service.reviews.single);
+    await _settle();
+    expect(store.events.single.reviewNotificationDelivered, isFalse);
+
+    final skipped = _item(
+      unavailableAt: _occurred,
+      outcome: const ScheduleOutcome(
+        result: OutcomeResult.skipped,
+        skipReason: kUserUnavailableSkipReason,
+      ),
+    );
+    await service.sync([skipped], 'target');
+    await _settle();
+
+    expect(notifier.calls, hasLength(2));
+    expect(store.events, isEmpty);
+  });
+
+  group('legacy rows from builds that auto-skipped at timeout', () {
+    AlarmLifecycleEvent legacyEvent({bool notificationDelivered = true}) =>
+        _event(
+          outcomeRecorded: true,
+          notificationDelivered: notificationDelivered,
+        );
+    ScheduleItem legacyItem({ScheduleAlarmTimeline? alarm}) => _item(
+      unavailableAt: alarm?.unavailableAt,
+      outcome: const ScheduleOutcome(
+        result: OutcomeResult.skipped,
+        skipReason: kUserUnavailableSkipReason,
+      ),
+    );
+
+    test('are still offered for review and backfill the fact', () async {
+      final timeline = _RecordingTimeline();
+      final service = MissedAlarmService(
+        store: _MemoryLifecycleStore([legacyEvent()]),
+        outcomes: _RecordingOutcomes(),
+        timeline: timeline,
+        notifier: _RecordingNotifier(),
+      );
+
+      await service.sync([legacyItem()], 'target');
+
+      expect(timeline.unavailable, [('target', 'item')]);
+      expect(service.reviews, hasLength(1));
+    });
+
+    test('deliver their owed automatic-skip push', () async {
+      final store = _MemoryLifecycleStore([
+        legacyEvent(notificationDelivered: false),
+      ]);
+      final notifier = _RecordingNotifier();
+      final service = MissedAlarmService(
+        store: store,
+        outcomes: _RecordingOutcomes(),
+        timeline: _RecordingTimeline(),
+        notifier: notifier,
+      );
+
+      await service.sync([
+        legacyItem(alarm: ScheduleAlarmTimeline(unavailableAt: _occurred)),
+      ], 'target');
+      await _settle();
+
+      expect(notifier.calls, [('target', 'item')]);
+      expect(store.events.single.notificationDelivered, isTrue);
+    });
+
+    test('Done corrects exactly the automatic skip', () async {
+      final outcomes = _RecordingOutcomes();
+      final service = MissedAlarmService(
+        store: _MemoryLifecycleStore([legacyEvent()]),
+        outcomes: outcomes,
+        timeline: _RecordingTimeline(),
+        notifier: _RecordingNotifier(),
+      );
+      await service.sync([
+        legacyItem(alarm: ScheduleAlarmTimeline(unavailableAt: _occurred)),
+      ], 'target');
+
+      final committed = await service.markDone(service.reviews.single);
+
+      expect(committed, isTrue);
+      expect(outcomes.legacyDone, [('target', 'item', 'planner')]);
+      expect(outcomes.done, isEmpty);
+    });
+  });
 
   test('volume silence is reconciled as dismissal without skipping', () async {
     final store = _MemoryLifecycleStore([
@@ -205,85 +458,11 @@ void main() {
     await service.sync([_item()], 'target');
 
     expect(timeline.dismissed, [('target', 'item')]);
+    expect(timeline.unavailable, isEmpty);
     expect(outcomes.skipped, isEmpty);
     expect(store.events, isEmpty);
+    expect(service.reviews, isEmpty);
   });
-
-  test(
-    'failed planner notification remains durable and retries after review',
-    () async {
-      final store = _MemoryLifecycleStore([_event()]);
-      final notifier = _RecordingNotifier(results: [false, false, true]);
-      final service = MissedAlarmService(
-        store: store,
-        outcomes: _RecordingOutcomes(),
-        timeline: _RecordingTimeline(),
-        notifier: notifier,
-      );
-
-      await service.sync([_item()], 'target');
-      await Future<void>.delayed(Duration.zero);
-      await service.markSkipped(service.reviews.single);
-      expect(store.events.single.reviewed, isTrue);
-
-      await service.sync([
-        _item(
-          outcome: const ScheduleOutcome(
-            result: OutcomeResult.skipped,
-            skipReason: kMissedAlarmSkipReason,
-          ),
-        ),
-      ], 'target');
-      await Future<void>.delayed(Duration.zero);
-
-      expect(notifier.calls, [
-        ('target', 'item'),
-        ('target', 'item'),
-        ('target', 'item'),
-      ]);
-      expect(store.events, isEmpty);
-      expect(service.reviews, isEmpty);
-    },
-  );
-
-  test('review is visible without waiting for planner notification', () async {
-    final gate = Completer<void>();
-    final service = MissedAlarmService(
-      store: _MemoryLifecycleStore([_event()]),
-      outcomes: _RecordingOutcomes(),
-      timeline: _RecordingTimeline(),
-      notifier: _BlockingNotifier(gate.future),
-    );
-
-    await service.sync([_item()], 'target');
-
-    expect(service.reviews, hasLength(1));
-    expect(gate.isCompleted, isFalse);
-    gate.complete();
-  });
-
-  test(
-    'Done preserves unavailability and queues the planner follow-up',
-    () async {
-      final store = _MemoryLifecycleStore([_event()]);
-      final outcomes = _RecordingOutcomes();
-      final timeline = _RecordingTimeline();
-      final service = MissedAlarmService(
-        store: store,
-        outcomes: outcomes,
-        timeline: timeline,
-        notifier: _RecordingNotifier(results: [false, false]),
-      );
-      await service.sync([_item()], 'target');
-
-      await service.markDone(service.reviews.single);
-
-      expect(outcomes.done, [('target', 'item', 'planner')]);
-      expect(timeline.unavailable, [('target', 'item')]);
-      expect(store.events.single.reviewChoice, MissedAlarmReviewChoice.done);
-      expect(service.reviews, isEmpty);
-    },
-  );
 
   testWidgets('multiple misses are reviewed one at a time with two actions', (
     tester,
@@ -351,6 +530,12 @@ void main() {
     expect(find.text('Missed alarm'), findsNothing);
     expect(find.text('Schedule'), findsOneWidget);
     expect(store.events.every((event) => event.reviewed), isTrue);
+
+    // Only the popup's own committed Done celebrates, and it does so on save.
+    final container = ProviderScope.containerOf(
+      tester.element(find.text('Schedule')),
+    );
+    expect(container.read(committedCelebrationProvider)?.itemId, 'item-2');
   });
 
   testWidgets('review remains hidden while app lock is active', (tester) async {
@@ -390,26 +575,44 @@ void main() {
   });
 }
 
+final _occurred = DateTime.fromMillisecondsSinceEpoch(1000, isUtc: true);
+
+/// Lets fire-and-forget pushes and their follow-up resyncs finish.
+Future<void> _settle() async {
+  for (var i = 0; i < 20; i++) {
+    await Future<void>.delayed(Duration.zero);
+  }
+}
+
 AlarmLifecycleEvent _event({
   AlarmLifecycleEventKind kind = AlarmLifecycleEventKind.timeout,
+  bool outcomeRecorded = false,
+  bool notificationDelivered = false,
+  MissedAlarmReviewChoice? reviewChoice,
 }) => AlarmLifecycleEvent(
   key: '${kind.name}:item:1000',
   itemId: 'item',
-  occurredAtUtc: DateTime.fromMillisecondsSinceEpoch(1000, isUtc: true),
+  occurredAtUtc: _occurred,
   kind: kind,
-  outcomeRecorded: false,
-  notificationDelivered: false,
-  reviewed: false,
+  outcomeRecorded: outcomeRecorded,
+  notificationDelivered: notificationDelivered,
+  reviewed: reviewChoice != null,
+  reviewChoice: reviewChoice,
 );
 
 ScheduleItem _item({
   String id = 'item',
   String title = 'Morning walk',
+  String createdByUid = 'planner',
+  DateTime? unavailableAt,
   ScheduleOutcome? outcome,
 }) => ScheduleItem(
   id: id,
   targetUid: 'target',
-  createdByUid: 'planner',
+  createdByUid: createdByUid,
+  alarm: unavailableAt == null
+      ? null
+      : ScheduleAlarmTimeline(unavailableAt: unavailableAt),
   groupId: '',
   title: title,
   localWallTime: '',
@@ -493,37 +696,39 @@ class _MemoryLifecycleStore implements AlarmLifecycleStore {
   }
 }
 
+/// First-write-wins like the real transactions: once an item has an outcome,
+/// later writes report `false`.
 class _RecordingOutcomes implements MissedAlarmOutcomeRepository {
   _RecordingOutcomes({this.recorded = true});
 
   final bool recorded;
-  final skipped = <(String, String, String?)>[];
-  final skipTimes = <DateTime>[];
-  final replaced = <(String, String, String, String)>[];
+  final _decided = <String>{};
+  final skipped = <(String, String, String)>[];
   final done = <(String, String, String)>[];
+  final legacyDone = <(String, String, String)>[];
+
+  bool _firstWrite(String itemId) => recorded && _decided.add(itemId);
+
+  @override
+  Future<bool> markDoneIfUnsettled(
+    String targetUid,
+    String itemId, {
+    required String plannerUid,
+  }) async {
+    if (!_firstWrite(itemId)) return false;
+    done.add((targetUid, itemId, plannerUid));
+    return true;
+  }
 
   @override
   Future<bool> markSkippedIfUnsettled(
     String targetUid,
     String itemId, {
     required String reason,
-    required DateTime atUtc,
   }) async {
+    if (!_firstWrite(itemId)) return false;
     skipped.add((targetUid, itemId, reason));
-    skipTimes.add(atUtc);
-    return recorded;
-  }
-
-  @override
-  Future<bool> replaceAutomaticSkipIfMatches(
-    String targetUid,
-    String itemId, {
-    required String expectedReason,
-    required String reason,
-    required DateTime atUtc,
-  }) async {
-    replaced.add((targetUid, itemId, expectedReason, reason));
-    return recorded;
+    return true;
   }
 
   @override
@@ -532,14 +737,16 @@ class _RecordingOutcomes implements MissedAlarmOutcomeRepository {
     String itemId, {
     required String plannerUid,
   }) async {
-    done.add((targetUid, itemId, plannerUid));
-    return recorded;
+    if (!_firstWrite(itemId)) return false;
+    legacyDone.add((targetUid, itemId, plannerUid));
+    return true;
   }
 }
 
 class _RecordingTimeline implements AlarmTimelineRepository {
   final dismissed = <(String, String)>[];
   final unavailable = <(String, String)>[];
+  final unavailableTimes = <DateTime>[];
 
   @override
   Future<void> recordDismissed(
@@ -564,6 +771,7 @@ class _RecordingTimeline implements AlarmTimelineRepository {
     DateTime atUtc,
   ) async {
     unavailable.add((targetUid, itemId));
+    unavailableTimes.add(atUtc);
   }
 }
 

@@ -27,6 +27,8 @@ CompletionCelebration event(String id) => CompletionCelebration(
 );
 
 void main() {
+  _committedCelebrationTests();
+
   test('visual contract matches the 42-frame reference at 30 fps', () {
     expect(completionCelebrationDuration, const Duration(milliseconds: 1400));
   });
@@ -239,6 +241,125 @@ void main() {
     },
   );
 }
+
+/// Regression (2026-09-25): the burst waited for the Firestore echo — a second
+/// network round trip after the Done had already committed.
+void _committedCelebrationTests() {
+  testWidgets(
+    'a committed Done plays on the next frame with no Firestore echo',
+    (tester) async {
+      final events = StreamController<List<CompletionCelebration>>.broadcast();
+      addTearDown(events.close);
+      final store = _RecordingCelebrationStore(events.stream);
+      await tester.pumpWidget(_celebrationHost(store));
+      final container = ProviderScope.containerOf(
+        tester.element(find.text('APP')),
+      );
+
+      container
+          .read(committedCelebrationProvider.notifier)
+          .celebrate(
+            CompletionCelebration.committed(
+              targetUid: 'target',
+              itemId: 'item-one',
+              plannerUid: 'planner',
+            ),
+          );
+      // Frame 1 runs the host's post-frame start; frame 2 paints the overlay.
+      // No stream emission is involved.
+      await tester.pump();
+      await tester.pump();
+
+      final burst = find.byKey(
+        const ValueKey('completion-celebration-target_item-one'),
+      );
+      expect(burst, findsOneWidget);
+
+      // The durable echo arrives mid-burst and must not replay it.
+      await tester.pump(const Duration(milliseconds: 600));
+      events.add([
+        CompletionCelebration(
+          id: 'target_item-one',
+          itemId: 'item-one',
+          targetUid: 'target',
+          plannerUid: 'planner',
+          participantUids: const ['target', 'planner'],
+          seenByUids: const [],
+        ),
+      ]);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 900));
+      expect(burst, findsNothing);
+      await tester.pump(const Duration(seconds: 2));
+      expect(burst, findsNothing, reason: 'the echo never replays');
+      expect(store.acknowledged, ['target_item-one']);
+    },
+  );
+
+  testWidgets('another account\'s committed event is ignored', (tester) async {
+    final events = StreamController<List<CompletionCelebration>>.broadcast();
+    addTearDown(events.close);
+    await tester.pumpWidget(
+      _celebrationHost(_RecordingCelebrationStore(events.stream)),
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.text('APP')),
+    );
+
+    container
+        .read(committedCelebrationProvider.notifier)
+        .celebrate(
+          CompletionCelebration.committed(
+            targetUid: 'someone-else',
+            itemId: 'x',
+            plannerUid: 'someone-else',
+          ),
+        );
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('completion-celebration-someone-else_x')),
+      findsNothing,
+    );
+  });
+
+  test('a committed event mirrors the durable document identity', () {
+    final self = CompletionCelebration.committed(
+      targetUid: 'me',
+      itemId: 'item',
+      plannerUid: 'me',
+    );
+    final shared = CompletionCelebration.committed(
+      targetUid: 'me',
+      itemId: 'item',
+      plannerUid: 'friend',
+    );
+
+    expect(self.id, CompletionCelebration.eventId('me', 'item'));
+    expect(self.participantUids, ['me']);
+    expect(shared.participantUids, ['me', 'friend']);
+    expect(shared.isUnseenBy('me'), isTrue);
+  });
+}
+
+Widget _celebrationHost(CompletionCelebrationStore store) => ProviderScope(
+  overrides: [
+    currentUidProvider.overrideWithValue('target'),
+    completionCelebrationRepositoryProvider.overrideWithValue(store),
+    appLockControllerProvider.overrideWithValue(
+      AppLockController(
+        store: _NoopLockStore(),
+        auth: _NoopDeviceAuth(),
+        secureWindow: _NoopSecureWindow(),
+        initiallyEnabled: false,
+      ),
+    ),
+  ],
+  child: const MaterialApp(
+    home: CompletionCelebrationHost(child: Scaffold(body: Text('APP'))),
+  ),
+);
 
 class _RecordingCelebrationStore implements CompletionCelebrationStore {
   _RecordingCelebrationStore(this.stream);

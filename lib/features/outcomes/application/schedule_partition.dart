@@ -5,14 +5,17 @@ enum ScheduleSurface { upcoming, history }
 
 /// Decides where an approved plan belongs at [nowUtc].
 ///
-/// This boundary compares absolute instants, never device-local dates. It is
-/// therefore stable across midnight, timezone changes, and DST transitions.
-/// Equality remains upcoming: the plan becomes elapsed only after its due
-/// instant. An outcome always wins and moves the plan to History immediately,
-/// even if it was recorded before the scheduled instant.
+/// **Only a decision moves a plan to History.** An outcome — Done or Skipped,
+/// by the person, on another device, or by the end-of-day lapse — moves it
+/// immediately, even if recorded before the scheduled instant. Time passing
+/// does NOT: a plan whose alarm was dismissed or ignored stays in My Schedule,
+/// where its Done/Skip controls live, until it is decided. (It cannot linger
+/// forever: the end-of-day lapse settles it at its own local midnight.)
+///
+/// [nowUtc] is kept so callers stay clock-driven; it asserts a UTC clock.
 ScheduleSurface scheduleSurfaceFor(ScheduleItem item, DateTime nowUtc) {
   assert(nowUtc.isUtc, 'The schedule partition clock must be UTC.');
-  if (item.outcome != null || item.scheduledInstantUtc.isBefore(nowUtc)) {
+  if (item.outcome != null) {
     return ScheduleSurface.history;
   }
   return ScheduleSurface.upcoming;
