@@ -1,4 +1,4 @@
-# Checkmate handoff — 2026-09-25
+# Checkmate handoff — 2026-09-25 (end of day)
 
 ## Operating rules
 
@@ -8,6 +8,14 @@
   `scripts/check-deployed-rules.sh` (read-only). Device passes against stale
   rules produced false "regressions" on 2026-09-25.
 - Edit with `apply_patch`; preserve unrelated worktree changes.
+- **Never run `dart format` on a directory.** Several files are not
+  formatter-clean; formatting them reflows unrelated code. Format only files you
+  created, or check a file is already clean first.
+- **No personal names anywhere** (code, comments, tests, docs). Use `{planner}` /
+  `{task}` in prose and role names in fixtures (`Test Planner`,
+  `TARGET`/`PLANNER`/`OUTSIDER`). Rules-test uids keep the `uid_a_…`, `uid_b_…`,
+  `uid_m_…` prefixes: friendship ids are the sorted pair, and some tests spell
+  them out.
 - Every feature/fix needs proportional regression coverage.
 - Full verification:
 
@@ -17,144 +25,75 @@
 
 - After a green run, give one exact `git add ... && git commit -m "..."` line.
   A push does not deploy Firestore rules or the Cloudflare Worker.
+- Device builds: **profile** to judge smoothness/lag (debug is JIT-janky);
+  **debug** for alarm diagnostics (dev menu, reminder audit CSV). Both share the
+  debug signature, so `adb install -r` keeps data. Never release on the Redmi.
 
 ## Current state
 
-- Branch: `main`; latest committed work: `f4662fb` (Items 27 and 35 conflict
-  warnings and alarm planner attribution).
-- Completed: Items **1–23, 25, 26, 27, 28, 29, 30, 31, 34, 35**.
-- Item 34 is committed and fully verified.
-- Item 23 is committed and fully verified.
-- Items 27 and 35 are committed and fully verified.
-- **Device-pass corrections (2026-09-25) — IMPLEMENTED, NOT YET RUN.** Five
-  fixes from the Redmi pass (see DECISIONS.md "Device-pass corrections: only a
-  decision moves a plan to History"): builder list collapses after a pick;
-  History = decided plans only; timeout records `User unavailable` without an
-  outcome (tag + Done/Skip on the card); Log Time pop-up removed; celebration
-  starts on save. Needs the full verification run, then a device re-check,
-  before Item 32.
-- **Second device pass (2026-09-25) — IMPLEMENTED, NOT YET RUN.** See
-  DECISIONS.md "Second device pass". **Live Firestore rules are stale
-  (match `01ff2b5`)** — deploy before re-testing; check with
-  `scripts/check-deployed-rules.sh`. Alarm sentence + ting→ring order +
-  missed-alarm notice + heads-up copy (native), timelines on My Schedule /
-  History, Calendar→Activity highlight, PLAN bottom-left, no uid flash.
+- Branch `main`, clean. Latest commits: `489c922`, `09ea496`, `a3d7e3d` — three
+  device-pass correction rounds, all verified green by the full suite.
+- Completed: Items **1–23, 25–31, 34, 35**, plus the three 2026-09-25 device
+  passes (DECISIONS.md: "Device-pass corrections…", "Second device pass…",
+  "Third device pass…").
+- **Firestore rules deployed 2026-09-25 and byte-verified** with
+  `scripts/check-deployed-rules.sh` (they had been stale at `01ff2b5`).
+- **Cloudflare Worker deploy state is UNKNOWN.** Items 23/34 changed it
+  (plan-request pushes, late-Done follow-up). If planner pushes misbehave,
+  redeploy (`wrangler deploy` then `wrangler versions deploy <id>@100%`).
+- Latest profile build installed on the Redmi; the third-pass fixes await the
+  user's device check.
 - Next implementation order: **32 → 24 → 33**.
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
 
+## Behaviour that must not regress (all test-pinned)
+
+- **History = decided plans only.** An approved plan leaves My Schedule only when
+  it has an outcome; elapsed time never moves it. The end-of-day lapse
+  (`Did not respond`) still settles undecided plans.
+- **Missed alarm = fact, not outcome.** The one-minute auto-stop records only
+  immutable `alarm.unavailableAt` (in the background — the popup never waits on
+  Firestore). The card shows the "User unavailable at alarm time" tag above
+  Done/Skip. The popup (two actions only) writes the first outcome itself;
+  Done renders as `Done (Late)`. **An unanswered popup re-appears on every
+  launch until Done/Skip — user-directed, keep it.** Legacy auto-skip rows are
+  still offered for review.
+- **Done/Skip show "Updating {planner}…" for 1.5 s** (card: non-dismissible
+  dialog; popup: in place), then the celebration (Done only). The celebration
+  fires from the committed save (`committedCelebrationProvider`), de-duplicated
+  with the Firestore echo by id. No Log Time pop-up after Done.
+- **Alarm copy is one sentence** from `alarmHeadline()`: "{planner} planned
+  {task} for you" / "You planned {task}". It is carried natively with the armed
+  alarm (survives reboot) and used for the lock-screen AlarmScreen (no
+  placeholder flash), the unlocked heads-up (Android shows full-screen only when
+  locked; user chose a rich heads-up over "display over other apps"), and the
+  native missed-alarm notification.
+- **Ting then ring, owned by `AlarmSoundService`**: strike on the alarm stream,
+  ringtone exactly 1.5 s later. The splash ting is suppressed while ringing; an
+  alarm cold start opens directly on `/alarm?item=` (`getInitialRoute`).
+- **One notification per ringing alarm**: the service cancels the scheduled
+  reminder notification (same id) directly on NotificationManager, at once and
+  at 0.5/2/5 s. Never via Dart's cancel path (it releases the owner and stops
+  the ring).
+- Plan builder: person list collapses to one row + Change after a pick; rows
+  show `Loading…`, never a uid; planning-target profiles are prefetched from
+  sign-in. PLAN button is bottom-left.
+- My Schedule and History cards open the status timeline; Calendar → "Open in
+  Activity" reveals and outlines the exact item.
+
 ## Deferred final release gate
 
-Batch deployment and real-device acceptance after feature work is finished:
-
-- Item 22: deploy `firestore.rules` and `worker/`; verify profile/group
-  GIF/WebP upload, animation, replacement, deletion, and non-owner denial.
-- Item 25: verify Upcoming/History/Calendar layout, Back/bottom-nav behavior,
-  and past-plan expansion, scroll, and highlight on-device.
-- Re-run the full suite, build/install release APK, and test alarm lifecycle on
-  supported devices. Do not call Item 22 production-complete before this gate.
-- Production deployment of Firestore rules from `01ff2b5` was never confirmed.
-
-## Recently completed — Item 25
-
-- ~~My Schedule contains only approved, outcome-less plans whose UTC due instant
-  has not passed.~~ SUPERSEDED 2026-09-25: My Schedule holds every approved,
-  outcome-less plan; only an outcome moves a plan to History. The partition is disjoint and DST/timezone-safe.
-- Added `Upcoming Plans` with rounded bold `CALENDAR` and `HISTORY` controls.
-- Added Plan sub-route History with `Past Plans`, newest-first cards/days,
-  localized month grouping at two distinct months, lazy collapse state, and
-  empty/error handling.
-- Past target-side Calendar items open History, force the month/day open,
-  auto-scroll, and highlight. Pending → Approvals, current/future → My Schedule,
-  planner-side → Activity.
-- Removed the Plan app-bar Calendar icon and You-tab Calendar entry; updated help.
-- Coverage includes boundary/DST partitioning, no duplication, one/two-month
-  behavior, short/long histories, cold/warm/far highlights, routing ownership,
-  empty states, and existing Done/Skip behavior.
-
-## Recently completed — Item 31
-
-- Replace Plan's bottom-right `+` FAB with a bold rounded `PLAN` text button.
-- Preserve schedule-builder destination, tooltip/semantics, placement, all three
-  Plan sub-tabs, and separation from the center voice FAB.
-- Update coach/help copy and tests. Do not rename Track's log-time action.
-
-## Recently completed — Item 34
-
-- Treat the current few-second popup lag as a separate bug within this item.
-  Show the review promptly on the next unlocked foreground after reconciliation;
-  do not keep it behind planner-notification delivery, unrelated async work, or
-  an arbitrary UI delay. Measure and test this independently of outcome actions.
-- Preserve two independent facts. A one-minute no-response permanently records
-  `User unavailable` at the alarm-time instant in the item timeline; `Done` or
-  `Skipped` remains the mutable task outcome. Never erase or relabel the
-  alarm-time fact when the later outcome changes.
-- ~~Keep the Item 20 default~~ — SUPERSEDED 2026-09-25: the auto-stop now
-  records only `alarm.unavailableAt`; the task stays undecided. Original text:
-  after the one-minute auto-stop, transactionally set
-  an otherwise-unsettled task to `Skipped: User unavailable`. Persist the
-  unavailability event separately so changing that default outcome cannot
-  destroy the delivery/response-time evidence.
-- Replace `Mark reviewed` with item-specific `Mark as Done` and
-  `Mark as Skipped` actions. `Mark as Done` may replace only that exact automatic
-  skip; it must never overwrite a manual/concurrent outcome. `Mark as Skipped`
-  retains the default. Either action completes review for that item; there is no
-  outcome-free acknowledgement or bulk outcome mutation. Add no third or fourth
-  popup button; keep the decision surface to these two actions.
-- Present both facts to target and planner. Keep the canonical outcome as
-  `Done`/`Skipped`, but derive a nuanced display label such as `Done (Late)` when
-  the immutable `User unavailable at alarm time` event is also present; a normal
-  on-time completion remains plain `Done`. This is presentation, not a third
-  stored outcome, and the fixed timeline event remains independently visible.
-- The planner already receives the automatic unavailable/Skipped notification.
-  If the target later changes that exact default to Done, send an idempotent
-  follow-up update so the planner is not left with the stale belief that the task
-  remained skipped. The live item remains authoritative if either push is lost.
-- Define multi-miss behavior one item at a time, notification/idempotency rules
-  for the automatic Skip → later Done transition, and safe legacy handling for
-  existing `Skipped: User unavailable` records that predate the separate event.
-- Test popup latency separately, app-lock gating, single/multiple misses, exactly
-  two actions, Done/Skip behavior, plain Done versus derived `Done (Late)`,
-  immutable unavailability display, concurrent manual outcomes, process death,
-  offline/retry behavior, rules, planner timeline, follow-up delivery, dedupe,
-  and notification replay.
-
-## Recently completed — Item 23
-
-- New request model; never reuse the permanent `PlanningRequest` grant.
-- Require active friendship plus an existing normal planning grant, rechecked
-  transactionally when each item is created. Never create emergency/auto-approved
-  items or let a request grant authority.
-- Support one-plan and flexible-window requests, optional message, multi-friend
-  batches, durations, timezone-safe bounds, non-overlap, lifecycle/replay safety,
-  legacy instant-item compatibility, notifications, and routing.
-- Test grant/revocation, DST, adjacency/concurrency, multi-item fulfillment, and
-  every creation mode in rules and application layers.
-
-## Recently completed — Items 27 and 35
-
-### 27 — Conditional conflict disclosure
-
-- Replace the always-visible timetable with a day-scoped warning shown only when
-  the selected target has live pending/approved outcome-less items that day.
-- Reveal localized time/date only—never title/note. Group flow uses one
-  consolidated name-grouped popup. It informs; it does not block saving.
-- Re-evaluate on target/date/feed changes, suppress identical repeats, and show
-  read errors explicitly. Reuse authorized streams and live-item policy.
-- Test DST/timezones, state filtering, ordering/fingerprints, mixed-zone groups,
-  errors, removed old entry points, and successful save after acknowledgement.
-
-### 35 — Alarm planner attribution
-
-- Show the planner's resolved profile name above the task title on the ringing
-  alarm screen so the receiver can identify who created the task at a glance.
-- Keep both the planner name and task title centered and explicitly bold, while
-  retaining a safe generic planner label until the profile stream resolves.
-- Cover the displayed name, visual emphasis, centering, and vertical order in a
-  focused alarm-screen regression test.
+- Item 22: deploy `worker/`; verify profile/group GIF/WebP upload, animation,
+  replacement, deletion, and non-owner denial.
+- Re-run the full suite, build/install a release APK, and test the alarm
+  lifecycle on supported devices. Do not call Item 22 production-complete
+  before this gate.
+- Still unproven on device: reboot re-arm, and killed-app delivery after an OEM
+  cleaner (see CLAUDE.md "Parked & unverified").
 
 ## Remaining roadmap
 
-### 32 — Custom voice-note alarms
+### 32 — Custom voice-note alarms (NEXT)
 
 - Planning for another person may attach a per-alarm voice-note override; max
   20 seconds with preview, discard/re-record, and optional library save.
@@ -169,6 +108,11 @@ Batch deployment and real-device acceptance after feature work is finished:
   server-side MIME/duration/size/ownership checks, idempotent delivery/download,
   native alarm/reboot/process-death integration, and exhaustive regression plus
   device audio/lifecycle acceptance.
+- **Integration points from 2026-09-25:** playback belongs in
+  `AlarmSoundService` (after the ting, replacing the ringtone loop; it already
+  owns the ting→ring order and the one-minute cap). The voice note must travel
+  with the native arm call the way the headline does (`AlarmDelivery.arm` →
+  `AlarmDeliveryScheduler` extras → `AlarmDeliveryStore` for reboot).
 
 ### 24 — Stats and product review
 
@@ -177,7 +121,7 @@ Batch deployment and real-device acceptance after feature work is finished:
 - Cover minimum samples, permission/relationship changes, timezone ranges,
   trends, empty states, and humane streaks.
 - Research whether standalone Log Time provides enough planned-vs-actual value
-  before changing or removing it.
+  before changing or removing it (the post-Done Log Time prompt is already gone).
 
 ### 33 — Competitor review (last)
 
@@ -200,6 +144,8 @@ Batch deployment and real-device acceptance after feature work is finished:
 
 ## Immediate next action
 
-Run full verification on the 2026-09-25 device-pass corrections, re-check them
-on the Redmi (debug build), then implement Item 32. Keep Firestore rules and Worker deployment deferred until the
-final release gate.
+1. Get the user's device result for the third-pass fixes (profile build
+   installed). Fix anything reported before new work.
+2. Then plan Item 32 — state the plan and wait for sign-off before code (it
+   needs storage, rules and Worker decisions; deploy rules before its device
+   pass and re-run `scripts/check-deployed-rules.sh`).
