@@ -197,6 +197,20 @@ class MainActivity : FlutterFragmentActivity() {
         syncAlarmWake(intent)
     }
 
+    /**
+     * A cold start from an alarm opens Flutter directly on the alarm route
+     * (Dart reads it as `defaultRouteName`), so neither the start-up reveal nor
+     * the home screen flashes before the alarm screen.
+     */
+    override fun getInitialRoute(): String? {
+        val payload = intent?.getStringExtra("payload")
+        return if (AlarmLaunchPolicy.isAlarmLaunch(intent?.action, payload)) {
+            AlarmLaunchPolicy.initialRoute(payload!!)
+        } else {
+            super.getInitialRoute()
+        }
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         syncAlarmWake(intent)
@@ -275,9 +289,18 @@ class MainActivity : FlutterFragmentActivity() {
                         AlarmSoundService.startForItem(
                             this,
                             call.argument<String>("itemId") ?: "",
+                            call.argument<String>("headline") ?: "",
                         )
                         result.success(null)
                     }
+                    // The sentence delivered with the alarm, so AlarmScreen can
+                    // render "Amina planned Walk for you" on its first frames
+                    // instead of placeholders while the item stream loads.
+                    "headline" -> result.success(
+                        AlarmSoundService.headlineFor(
+                            call.argument<String>("itemId") ?: "",
+                        ),
+                    )
                     "stop" -> {
                         AlarmSoundService.stopForItem(
                             this,
@@ -321,7 +344,12 @@ class MainActivity : FlutterFragmentActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SPLASH_SOUND_CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-                    "play" -> { splash.play(); result.success(null) }
+                    // Never over a ringing alarm: the alarm service plays its own
+                    // ting before the ringtone, in a fixed order.
+                    "play" -> {
+                        if (!AlarmSoundService.isRinging()) splash.play()
+                        result.success(null)
+                    }
                     else -> result.notImplemented()
                 }
             }

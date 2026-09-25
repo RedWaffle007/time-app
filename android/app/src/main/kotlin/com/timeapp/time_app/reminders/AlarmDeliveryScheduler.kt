@@ -12,13 +12,21 @@ object AlarmDeliveryScheduler {
     private const val EXTRA_ID = "delivery_id"
     private const val EXTRA_ITEM = "delivery_item_id"
     private const val EXTRA_SCHEDULED = "delivery_scheduled_epoch"
+    private const val EXTRA_HEADLINE = "delivery_headline"
 
-    private fun intent(context: Context, id: Int, itemId: String, scheduledEpoch: Long) =
+    private fun intent(
+        context: Context,
+        id: Int,
+        itemId: String,
+        scheduledEpoch: Long,
+        headline: String,
+    ) =
         Intent(context, AlarmDeliveryReceiver::class.java).apply {
             action = AlarmDeliveryIdentity.action(id)
             putExtra(EXTRA_ID, id)
             putExtra(EXTRA_ITEM, itemId)
             putExtra(EXTRA_SCHEDULED, scheduledEpoch)
+            putExtra(EXTRA_HEADLINE, headline)
         }
 
     private fun pending(
@@ -27,10 +35,11 @@ object AlarmDeliveryScheduler {
         itemId: String,
         scheduledEpoch: Long,
         flags: Int,
+        headline: String = "",
     ): PendingIntent? = PendingIntent.getBroadcast(
         context,
         AlarmDeliveryIdentity.requestCode(id),
-        intent(context, id, itemId, scheduledEpoch),
+        intent(context, id, itemId, scheduledEpoch, headline),
         flags or PendingIntent.FLAG_IMMUTABLE,
     )
 
@@ -54,14 +63,18 @@ object AlarmDeliveryScheduler {
         itemId: String,
         scheduledEpoch: Long,
         exact: Boolean,
+        headline: String = "",
     ): String = try {
         val manager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        // FLAG_UPDATE_CURRENT replaces the extras, so a changed headline (e.g.
+        // the planner's name resolving) reaches the already-armed alarm.
         val operation = pending(
             context,
             id,
             itemId,
             scheduledEpoch,
             PendingIntent.FLAG_UPDATE_CURRENT,
+            headline,
         ) ?: return "no_pending_intent"
 
         when (alarmDeliveryMode(exact, Build.VERSION.SDK_INT)) {
@@ -80,7 +93,7 @@ object AlarmDeliveryScheduler {
         }
         AlarmDeliveryStore.put(
             context,
-            AlarmDeliveryStore.Pending(id, itemId, scheduledEpoch, exact),
+            AlarmDeliveryStore.Pending(id, itemId, scheduledEpoch, exact, headline),
         )
         "ok"
     } catch (_: SecurityException) {
@@ -119,4 +132,7 @@ object AlarmDeliveryScheduler {
         intent.getStringExtra(EXTRA_ITEM) ?: "",
         intent.getLongExtra(EXTRA_SCHEDULED, 0L),
     )
+
+    fun readHeadline(intent: Intent): String =
+        intent.getStringExtra(EXTRA_HEADLINE) ?: ""
 }

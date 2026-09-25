@@ -191,7 +191,8 @@ class _CalendarItemSheet extends ConsumerWidget {
         context.go(Routes.plan);
       }
     } else {
-      ref.read(planIntentProvider.notifier).openTab(PlanTab.activity);
+      // Land on the exact plan, not just the tab (restored 2026-09-25).
+      ref.read(planIntentProvider.notifier).highlightActivityItem(item.id);
       context.go(Routes.plan);
     }
   }

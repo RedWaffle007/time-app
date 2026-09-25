@@ -71,6 +71,9 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    // An alarm cold start skips the reveal (and its ting) from frame one: the
+    // alarm service owns the ting→ring order, and nothing may flash first.
+    _openedFromNotification = alarmLaunchLocation() != null;
     _setupNotificationTaps();
     _setupReminderLaunchTap();
 
@@ -121,7 +124,12 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     if (items != null) {
       ref
           .read(reminderServiceProvider)
-          .sync(items: items, uid: uid, reason: 'resume');
+          .sync(
+            items: items,
+            uid: uid,
+            reason: 'resume',
+            plannerNames: ref.read(reminderPlannerNamesProvider),
+          );
       ref.read(alarmTimelineServiceProvider).sync(items, uid);
       ref.read(missedAlarmServiceProvider).sync(items, uid);
     }
@@ -376,6 +384,10 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     // item so its planner-facing timeline can display reached events.
     ref.watch(alarmTimelineSyncProvider);
     ref.watch(missedAlarmSyncProvider);
+
+    // Names ready before Plan is tapped (no uid/placeholder flash, no per-row
+    // cold read while the builder opens).
+    ref.watch(planningTargetProfilesPrefetchProvider);
 
     // THE PLANNER-ACCESS MIRROR'S ONE WIRE — same shape again, and here the
     // argument is sharper than for either of its neighbours. `plannerAccess` is

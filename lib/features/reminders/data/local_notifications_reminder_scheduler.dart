@@ -291,6 +291,7 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
       itemId: request.itemId,
       fireAtUtc: request.fireAtUtc,
       exact: exact,
+      headline: request.title,
     );
     if (delivery != 'ok') {
       _audit.note(

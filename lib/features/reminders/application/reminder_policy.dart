@@ -32,10 +32,15 @@ import '../domain/reminder.dart';
 /// **No quiet-hours filtering.** Quiet hours are still warnings-only, and
 /// enforcement is explicitly parked to a later part (CLAUDE.md). Applying them
 /// here would silently drop reminders the user approved.
+///
+/// [plannerNames] (uid → display name) feeds the alarm sentence; a name not
+/// yet loaded falls back to "Someone" and re-arms once it arrives (the title is
+/// part of the fingerprint).
 List<ReminderRequest> desiredReminders({
   required List<ScheduleItem> items,
   required String? uid,
   required DateTime now,
+  Map<String, String> plannerNames = const {},
 }) {
   if (uid == null) return const [];
   return [
@@ -47,11 +52,39 @@ List<ReminderRequest> desiredReminders({
         ReminderRequest(
           itemId: item.id,
           fireAtUtc: item.scheduledInstantUtc,
-          title: item.title,
+          title: alarmHeadline(
+            item,
+            plannerName: plannerNames[item.createdByUid],
+          ),
           body: reminderBody(item),
         ),
   ];
 }
+
+/// **The one sentence an alarm says** — on the full-screen alarm, the unlocked
+/// heads-up and the missed-alarm notice: "Amina planned Walk for you", or "You
+/// planned Walk" for a self-plan. A name that is not known yet reads
+/// "Someone"; never a uid.
+String alarmHeadline(ScheduleItem item, {String? plannerName}) {
+  final title = item.title.trim();
+  if (item.createdByUid == item.targetUid) return 'You planned $title';
+  final name = plannerName?.trim();
+  final who = name == null || name.isEmpty ? 'Someone' : name;
+  return '$who planned $title for you';
+}
+
+/// The uids whose names the alarm sentence needs: the planners of items that
+/// will be reminded (other people only — a self-plan needs no name).
+Set<String> reminderPlannerUids(
+  List<ScheduleItem> items, {
+  required String? uid,
+  required DateTime now,
+}) => {
+  for (final request in desiredReminders(items: items, uid: uid, now: now))
+    for (final item in items)
+      if (item.id == request.itemId && item.createdByUid != item.targetUid)
+        item.createdByUid,
+};
 
 /// The notification's second line.
 ///

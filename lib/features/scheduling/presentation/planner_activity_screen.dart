@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -24,17 +27,128 @@ import 'planner_item_detail_sheet.dart';
 /// The planner's view of everything they created — updates LIVE as the target
 /// approves/rejects and marks Done/Skip (Option B: no push, just a Firestore
 /// listener). This is where the loop closes for the planner.
-class PlannerActivityScreen extends ConsumerWidget {
-  const PlannerActivityScreen({super.key, this.embedded = false});
+class PlannerActivityScreen extends ConsumerStatefulWidget {
+  const PlannerActivityScreen({
+    super.key,
+    this.embedded = false,
+    this.highlightItemId,
+    this.highlightToken = 0,
+  });
 
   /// When true, this is a sub-tab inside the Plan shell: the shell owns the app
-  /// bar and its persistent bottom-right `PLAN` action, so both are suppressed
-  /// here. Default false retains this screen's standalone presentation.
+  /// bar and its persistent `PLAN` action, so both are suppressed here. Default
+  /// false retains this screen's standalone presentation.
   final bool embedded;
 
+  /// The item to reveal and outline (Calendar → "Open in Activity"). A new
+  /// [highlightToken] re-triggers the same item.
+  final String? highlightItemId;
+  final int highlightToken;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PlannerActivityScreen> createState() =>
+      _PlannerActivityScreenState();
+}
+
+class _PlannerActivityScreenState extends ConsumerState<PlannerActivityScreen> {
+  final _scrollController = ScrollController();
+  final _highlightKey = GlobalKey();
+  Timer? _fade;
+  String? _highlighted;
+  int? _highlightIndex;
+  int _itemCount = 0;
+  int _scrollRequest = 0;
+
+  static const _highlightDuration = Duration(seconds: 6);
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.highlightItemId != null) _applyHighlight(widget.highlightItemId);
+  }
+
+  @override
+  void didUpdateWidget(PlannerActivityScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.highlightItemId != oldWidget.highlightItemId ||
+        widget.highlightToken != oldWidget.highlightToken) {
+      _applyHighlight(widget.highlightItemId);
+    }
+  }
+
+  @override
+  void dispose() {
+    _fade?.cancel();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  /// Called from initState/didUpdateWidget, both of which are followed by a
+  /// build, so the field is set directly.
+  void _applyHighlight(String? itemId) {
+    _fade?.cancel();
+    final request = ++_scrollRequest;
+    _highlighted = itemId;
+    if (itemId == null) return;
+    _fade = Timer(_highlightDuration, () {
+      if (mounted) setState(() => _highlighted = null);
+    });
+    _tryScroll(request, 0);
+  }
+
+  /// Same reveal as My Schedule / History: the day is forced open, then the
+  /// keyed card is brought into view; a far card in the lazy list is first
+  /// approached by its flattened position so it gets built at all.
+  void _tryScroll(int request, int attempt) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _highlighted == null || request != _scrollRequest) return;
+      final ctx = _highlightKey.currentContext;
+      if (ctx != null) {
+        if (_isVisible(ctx)) return;
+        if (attempt < 60) {
+          Scrollable.ensureVisible(
+            ctx,
+            duration: Motion.fast,
+            curve: Motion.curve,
+            alignment: 0.2,
+          ).whenComplete(() => _tryScroll(request, attempt + 1));
+        }
+      } else {
+        if (_scrollController.hasClients &&
+            _highlightIndex != null &&
+            _itemCount > 0) {
+          final max = _scrollController.position.maxScrollExtent;
+          final fraction = _itemCount <= 1
+              ? 0.0
+              : _highlightIndex! / (_itemCount - 1);
+          _scrollController.jumpTo((fraction * max).clamp(0.0, max));
+        }
+        if (attempt < 60) _tryScroll(request, attempt + 1);
+      }
+    });
+  }
+
+  bool _isVisible(BuildContext context) {
+    final box = context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return false;
+    final viewport = RenderAbstractViewport.maybeOf(box);
+    final position = Scrollable.maybeOf(context)?.position;
+    if (viewport == null ||
+        position == null ||
+        !position.hasPixels ||
+        !position.hasViewportDimension) {
+      return false;
+    }
+    final top = viewport.getOffsetToReveal(box, 0).offset;
+    final bottom = top + box.size.height;
+    return top < position.pixels + position.viewportDimension &&
+        bottom > position.pixels;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final itemsAsync = ref.watch(myItemsAsPlannerProvider);
+    final embedded = widget.embedded;
 
     return Scaffold(
       appBar: embedded ? null : AppBar(title: const Text('Activity')),
@@ -68,9 +182,29 @@ class PlannerActivityScreen extends ConsumerWidget {
                 final sorted =
                     items.where((i) => i.createdByUid != i.targetUid).toList()
                       ..sort(compareScheduleItemsLatestFirst);
+                final groups = _grouped(context, sorted);
+                _itemCount = sorted.length;
+                _highlightIndex = null;
+                String? forceKey;
+                if (_highlighted != null) {
+                  var flattened = 0;
+                  for (final group in groups) {
+                    final index = _byDay[group.key]!.indexWhere(
+                      (item) => item.id == _highlighted,
+                    );
+                    if (index >= 0) {
+                      _highlightIndex = flattened + index;
+                      forceKey = group.key;
+                      break;
+                    }
+                    flattened += group.itemCount;
+                  }
+                }
                 return CollapsibleDayGroups(
+                  controller: _scrollController,
                   initiallyExpandedKeys: {dayKeyOf(DateTime.now())},
-                  groups: _grouped(context, sorted),
+                  forceExpandKey: forceKey,
+                  groups: groups,
                 );
               },
             ),
@@ -80,12 +214,14 @@ class PlannerActivityScreen extends ConsumerWidget {
     );
   }
 
+  final _byDay = <String, List<ScheduleItem>>{};
+
   /// Bucket the already-sorted (instant-desc) items into collapsible day groups
   /// by each item's OWN-timezone day (`calendarDayFor` — never the viewer's, so
   /// a "Tue 9:00" card can't file under Monday). Days ordered most-recent-first;
   /// within a day, items keep the instant-desc order they arrived in.
   List<DayGroupData> _grouped(BuildContext context, List<ScheduleItem> sorted) {
-    final byDay = <String, List<ScheduleItem>>{};
+    final byDay = _byDay..clear();
     final dateFor = <String, DateTime>{};
     for (final item in sorted) {
       final day = calendarDayFor(item);
@@ -104,17 +240,29 @@ class PlannerActivityScreen extends ConsumerWidget {
           date: dateFor[key]!,
           label: formatWallDate(context, dateFor[key]!),
           itemCount: byDay[key]!.length,
-          itemBuilder: (context, index) =>
-              _ActivityCard(item: byDay[key]![index]),
+          itemBuilder: (context, index) {
+            final item = byDay[key]![index];
+            return _ActivityCard(
+              item: item,
+              highlighted: item.id == _highlighted,
+              cardKey: item.id == _highlighted ? _highlightKey : null,
+            );
+          },
         ),
     ];
   }
 }
 
 class _ActivityCard extends ConsumerWidget {
-  const _ActivityCard({required this.item});
+  const _ActivityCard({
+    required this.item,
+    this.highlighted = false,
+    this.cardKey,
+  });
 
   final ScheduleItem item;
+  final bool highlighted;
+  final Key? cardKey;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -125,7 +273,19 @@ class _ActivityCard extends ConsumerWidget {
     // CardTheme (UI-RULES.md §6.1) — a bare Card would inherit Material's
     // default shadow, which the flat-by-default rule forbids.
     return Card(
+      key: cardKey,
       clipBehavior: Clip.antiAlias,
+      // The same primary outline My Schedule uses for a deep-linked card: line
+      // work, never a doctrine fill (UI-RULES.md §2.7).
+      shape: highlighted
+          ? RoundedRectangleBorder(
+              borderRadius: Radii.md,
+              side: BorderSide(
+                color: context.colors.primary,
+                width: Sizes.ruleWidth,
+              ),
+            )
+          : null,
       child: InkWell(
         onTap: () => showPlannerItemDetailSheet(
           context,

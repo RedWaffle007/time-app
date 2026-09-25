@@ -6,6 +6,10 @@ internal object AlarmLaunchPolicy {
 
     fun isAlarmLaunch(action: String?, payload: String?): Boolean =
         action == SELECT_NOTIFICATION && !payload.isNullOrBlank()
+
+    /** Must match Dart's `Routes.alarmForItem` (see `alarmLaunchItemId`). */
+    fun initialRoute(itemId: String): String =
+        "/alarm?item=" + java.net.URLEncoder.encode(itemId, "UTF-8")
 }
 
 /** Pure hardware-key gate used by MainActivity before consuming Volume Down. */

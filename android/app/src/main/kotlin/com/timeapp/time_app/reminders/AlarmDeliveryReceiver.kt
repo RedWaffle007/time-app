@@ -19,7 +19,12 @@ class AlarmDeliveryReceiver : BroadcastReceiver() {
             note = "native_receiver",
         )
         AlarmDeliveryStore.remove(context, id)
-        val started = AlarmSoundService.start(context, id, itemId)
+        val started = AlarmSoundService.start(
+            context,
+            id,
+            itemId,
+            AlarmDeliveryScheduler.readHeadline(intent),
+        )
         ReminderAuditLog.write(
             context,
             event = if (started) "AUDIO_START_REQUESTED" else "AUDIO_START_FAILED",

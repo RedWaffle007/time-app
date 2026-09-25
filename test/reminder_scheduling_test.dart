@@ -143,7 +143,62 @@ void main() {
       );
       expect(d.map((r) => r.itemId), ['a']);
       expect(d.single.fireAtUtc, inHours(2));
-      expect(d.single.title, 'Run');
+      // The alarm speaks in one sentence (2026-09-25); an unloaded name reads
+      // "Someone", never a uid.
+      expect(d.single.title, 'Someone planned Run for you');
+    });
+
+    test('the alarm sentence names the planner, or "You" for a self-plan', () {
+      final d = desiredReminders(
+        items: [
+          item(id: 'friend'),
+          item(id: 'self', createdByUid: 'me', title: 'Stretch'),
+        ],
+        uid: 'me',
+        now: now,
+        plannerNames: const {'planner': 'Amina'},
+      );
+      expect(
+        {for (final r in d) r.itemId: r.title},
+        {'friend': 'Amina planned Run for you', 'self': 'You planned Stretch'},
+      );
+    });
+
+    test('a planner name arriving changes the fingerprint (re-arms once)', () {
+      final before =
+          desiredReminders(items: [item(id: 'a')], uid: 'me', now: now);
+      final after = desiredReminders(
+        items: [item(id: 'a')],
+        uid: 'me',
+        now: now,
+        plannerNames: const {'planner': 'Amina'},
+      );
+      final again = desiredReminders(
+        items: [item(id: 'a')],
+        uid: 'me',
+        now: now,
+        plannerNames: const {'planner': 'Amina'},
+      );
+      expect(after.single.fingerprint, isNot(before.single.fingerprint));
+      expect(again.single.fingerprint, after.single.fingerprint);
+    });
+
+    test('only planners of reminded items are looked up', () {
+      final uids = reminderPlannerUids(
+        [
+          item(id: 'live'),
+          item(id: 'self', createdByUid: 'me'),
+          item(id: 'past', createdByUid: 'old', at: inHours(-1)),
+          item(
+            id: 'pending',
+            createdByUid: 'asker',
+            status: ScheduleItemStatus.pending,
+          ),
+        ],
+        uid: 'me',
+        now: now,
+      );
+      expect(uids, {'planner'});
     });
 
     test('an approved normal friendship item is reminded', () {

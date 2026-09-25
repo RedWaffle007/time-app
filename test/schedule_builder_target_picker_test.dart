@@ -128,6 +128,37 @@ void main() {
     expect(titleField, findsOneWidget);
   });
 
+  testWidgets('a name still loading never shows the raw uid', (tester) async {
+    // Regression (2026-09-25): first Plan tap flashed uids for ~0.2s.
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authRepositoryProvider.overrideWithValue(_FakeAuthRepository()),
+          effectivePlanningTargetsProvider.overrideWithValue(AsyncData(grants)),
+          iCanEmergencyPlanForProvider.overrideWith(
+            (ref, uid) => const AsyncData(false),
+          ),
+          profileByUidProvider.overrideWith(
+            (ref, uid) => const Stream<UserProfile?>.empty(),
+          ),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: const ScheduleBuilderScreen(),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('friend-0'), findsNothing);
+    expect(find.textContaining('friend-'), findsNothing);
+    expect(find.text(kProfileNameLoading), findsWidgets);
+
+    await tester.tap(find.text(kProfileNameLoading).first);
+    await tester.pump();
+    expect(find.textContaining('friend-'), findsNothing);
+  });
+
   testWidgets('entered fields survive changing the person', (tester) async {
     await tester.pumpWidget(host());
     await tester.pumpAndSettle();

@@ -23,6 +23,7 @@ import '../../reminders/presentation/reminder_primer.dart';
 import '../../scheduling/application/schedule_item_order.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
+import '../../scheduling/presentation/planner_item_detail_sheet.dart';
 import '../application/history_intent.dart';
 import '../application/schedule_partition.dart';
 import '../application/schedule_time_section.dart';
@@ -496,6 +497,7 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
 
     return Card(
       key: widget.cardKey,
+      clipBehavior: Clip.antiAlias,
       // Line work, never a fill: an orange filled surface is reserved for "a
       // schedule item is waiting on you" (UI-RULES.md §2.7), and "you tapped a
       // reminder for this one" is a different, much weaker claim. A primary
@@ -509,66 +511,78 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
               ),
             )
           : null,
-      child: Padding(
-        padding: Space.cardPadding,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(item.title, style: context.text.titleMedium),
-                ),
-                // Archive lives in the card overflow, not inline: this list
-                // scrolls, and an exposed control that makes a row vanish is a
-                // mis-tap waiting to happen. Present only once an outcome is
-                // recorded — a live item is hideable by no route at all.
-                if (item.isManuallyArchivable) ArchiveMenuButton(item: item),
-              ],
-            ),
-            const SizedBox(height: Space.xs),
-            Text(
-              formatInstant(context, item.scheduledInstantUtc, item.timezone),
-            ),
-            const SizedBox(height: Space.xs),
-            Text(
-              'Planned by $plannerName',
-              style: context.text.bodySmall?.copyWith(
-                color: context.colors.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: Space.md),
-            // Undecided after an unanswered alarm: the permanent fact is shown
-            // ABOVE the still-open decision, for transparency.
-            if (outcome == null && item.wasUnavailableAtAlarmTime) ...[
-              const _UnavailableTag(),
-              const SizedBox(height: Space.sm),
-            ],
-            if (outcome == null)
+      // Tapping the card (anywhere but its buttons) opens the same status
+      // timeline the planner sees from Activity — here for upcoming AND past
+      // plans (device report 2026-09-25).
+      child: InkWell(
+        key: ValueKey('outcome-card-${item.id}'),
+        onTap: () => showPlannerItemDetailSheet(
+          context,
+          item: item,
+          targetName: 'you',
+          contextLine: 'Planned by $plannerName · ${item.timezone}',
+        ),
+        child: Padding(
+          padding: Space.cardPadding,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Row(
-                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  // Skipping is a legitimate outcome, so it gets the neutral
-                  // secondary treatment — never red (UI-RULES.md §2.5).
-                  OutlinedButton(
-                    onPressed: _writingOutcome ? null : () => _skip(context),
-                    child: const Text('Skip'),
+                  Expanded(
+                    child: Text(item.title, style: context.text.titleMedium),
                   ),
-                  const SizedBox(width: Space.sm),
-                  FilledButton(
-                    onPressed: _writingOutcome ? null : _markDone,
-                    child: Text(_writingOutcome ? 'Saving…' : 'Done'),
-                  ),
+                  // Archive lives in the card overflow, not inline: this list
+                  // scrolls, and an exposed control that makes a row vanish is a
+                  // mis-tap waiting to happen. Present only once an outcome is
+                  // recorded — a live item is hideable by no route at all.
+                  if (item.isManuallyArchivable) ArchiveMenuButton(item: item),
                 ],
-              )
-            else ...[
-              _outcomeLine(context, outcome),
-              if (item.wasUnavailableAtAlarmTime) ...[
-                const SizedBox(height: Space.xs),
+              ),
+              const SizedBox(height: Space.xs),
+              Text(
+                formatInstant(context, item.scheduledInstantUtc, item.timezone),
+              ),
+              const SizedBox(height: Space.xs),
+              Text(
+                'Planned by $plannerName',
+                style: context.text.bodySmall?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: Space.md),
+              // Undecided after an unanswered alarm: the permanent fact is shown
+              // ABOVE the still-open decision, for transparency.
+              if (outcome == null && item.wasUnavailableAtAlarmTime) ...[
                 const _UnavailableTag(),
+                const SizedBox(height: Space.sm),
+              ],
+              if (outcome == null)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    // Skipping is a legitimate outcome, so it gets the neutral
+                    // secondary treatment — never red (UI-RULES.md §2.5).
+                    OutlinedButton(
+                      onPressed: _writingOutcome ? null : () => _skip(context),
+                      child: const Text('Skip'),
+                    ),
+                    const SizedBox(width: Space.sm),
+                    FilledButton(
+                      onPressed: _writingOutcome ? null : _markDone,
+                      child: Text(_writingOutcome ? 'Saving…' : 'Done'),
+                    ),
+                  ],
+                )
+              else ...[
+                _outcomeLine(context, outcome),
+                if (item.wasUnavailableAtAlarmTime) ...[
+                  const SizedBox(height: Space.xs),
+                  const _UnavailableTag(),
+                ],
               ],
             ],
-          ],
+          ),
         ),
       ),
     );

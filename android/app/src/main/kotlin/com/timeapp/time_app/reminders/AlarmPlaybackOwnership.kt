@@ -63,4 +63,28 @@ internal object AlarmSoundPolicy {
 
     fun shouldStartPlayer(playerAlreadyExists: Boolean): Boolean =
         !playerAlreadyExists
+
+    /**
+     * The ting always comes first and the ringtone starts exactly when it ends.
+     * The service owns BOTH (device report 2026-09-25: the app-start ting used
+     * to race the ringtone, so the order varied between launches).
+     * Matches the splash strike's audible length, fade included.
+     */
+    const val TING_LEAD_MS = 1_500L
+
+    fun ringtoneDelayMs(tingStarted: Boolean): Long =
+        if (tingStarted) TING_LEAD_MS else 0L
+
+    /** "Amina planned Walk for you" — the heads-up must say who and what. */
+    fun ringingTitle(headline: String?): String =
+        headline?.trim()?.takeIf { it.isNotEmpty() } ?: "Alarm"
+
+    const val RINGING_TEXT = "Tap to open · Dismiss to stop"
+
+    const val MISSED_TITLE = "Missed alarm"
+
+    fun missedText(headline: String?): String =
+        headline?.trim()?.takeIf { it.isNotEmpty() }
+            ?.let { "You didn't respond: $it" }
+            ?: "You didn't respond to a planned task."
 }

@@ -24,6 +24,23 @@ class AlarmDeliveryStoreTest {
     }
 
     @Test
+    fun `reboot re-arming keeps the alarm sentence`() {
+        val armed = AlarmDeliveryStore.Pending(
+            7,
+            "item-a",
+            2_000L,
+            true,
+            "Amina planned Walk for you",
+        )
+
+        val restored = AlarmDeliveryStore.futureOnly(listOf(armed), nowEpoch = 1_000L)
+
+        assertEquals("Amina planned Walk for you", restored.single().headline)
+        // Rows written before the sentence existed still restore.
+        assertEquals("", pending(8, "legacy", 2_000L).headline)
+    }
+
+    @Test
     fun `arming another id preserves both alarms`() {
         val first = pending(7, "item-a", 1_000L)
         val second = pending(8, "item-b", 2_000L)

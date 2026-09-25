@@ -33,10 +33,10 @@ import 'package:time_app/features/scheduling/domain/schedule_item.dart';
 void main() {
   setUpAll(tzdata.initializeTimeZones);
 
-  ScheduleItem item() => ScheduleItem(
+  ScheduleItem item({String createdByUid = 'planner'}) => ScheduleItem(
     id: 'a',
     targetUid: 'me',
-    createdByUid: 'planner',
+    createdByUid: createdByUid,
     groupId: '',
     title: 'Morning run',
     localWallTime: '',
@@ -50,6 +50,8 @@ void main() {
     _FakeScheduler scheduler, {
     _FakeAlarmTimelineRepository? timeline,
     _FakeAlarmKeyEvents? keys,
+    Stream<List<ScheduleItem>>? items,
+    Stream<UserProfile?> Function(String uid)? profiles,
   }) {
     final service = ReminderService(
       scheduler: scheduler,
@@ -82,53 +84,128 @@ void main() {
           ),
         ),
         reminderServiceProvider.overrideWithValue(service),
-        allItemsAsTargetProvider.overrideWith((ref) => Stream.value([item()])),
+        allItemsAsTargetProvider.overrideWith(
+          (ref) => items ?? Stream.value([item()]),
+        ),
         profileByUidProvider.overrideWith(
-          (ref, uid) => Stream.value(
-            uid == 'planner'
-                ? const UserProfile(
-                    uid: 'planner',
-                    name: 'Amina',
-                    homeTimezone: 'Asia/Kolkata',
-                  )
-                : null,
-          ),
+          (ref, uid) =>
+              profiles?.call(uid) ??
+              Stream.value(
+                uid == 'planner'
+                    ? const UserProfile(
+                        uid: 'planner',
+                        name: 'Amina',
+                        homeTimezone: 'Asia/Kolkata',
+                      )
+                    : null,
+              ),
         ),
       ],
       child: MaterialApp.router(theme: AppTheme.light, routerConfig: router),
     );
   }
 
+  String headlineText(WidgetTester t) =>
+      t.widget<Text>(find.byKey(const ValueKey('alarm-headline'))).data!;
+
   testWidgets('starts the alarm sound on mount and shows the item', (t) async {
     final sound = _FakeAlarmSound();
     await t.pumpWidget(harness(sound, _FakeScheduler()));
     await t.pump(); // let the post-frame callback run
+    await t.pump();
     expect(sound.starts, 1);
     expect(sound.stops, 0);
-    expect(find.text('Morning run'), findsOneWidget);
+    expect(headlineText(t), 'Amina planned Morning run for you');
   });
 
-  testWidgets('shows the planner above the task, both bold and centered', (
+  testWidgets('reads as ONE centered bold sentence (directed 2026-09-25)', (
     t,
   ) async {
     await t.pumpWidget(harness(_FakeAlarmSound(), _FakeScheduler()));
     await t.pumpAndSettle();
 
-    final planner = t.widget<Text>(
-      find.byKey(const ValueKey('alarm-planner-name')),
+    final headline = t.widget<Text>(
+      find.byKey(const ValueKey('alarm-headline')),
     );
-    final task = t.widget<Text>(find.byKey(const ValueKey('alarm-task-name')));
+    expect(headline.data, 'Amina planned Morning run for you');
+    expect(headline.textAlign, TextAlign.center);
+    expect(headline.style?.fontWeight, FontWeight.bold);
+    // The old two-line layout is gone.
+    expect(find.byKey(const ValueKey('alarm-planner-name')), findsNothing);
+    expect(find.byKey(const ValueKey('alarm-task-name')), findsNothing);
+  });
 
-    expect(planner.data, 'Amina');
-    expect(planner.textAlign, TextAlign.center);
-    expect(planner.style?.fontWeight, FontWeight.bold);
-    expect(task.data, 'Morning run');
-    expect(task.textAlign, TextAlign.center);
-    expect(task.style?.fontWeight, FontWeight.bold);
+  testWidgets('a self-plan reads "You planned …"', (t) async {
+    await t.pumpWidget(
+      harness(
+        _FakeAlarmSound(),
+        _FakeScheduler(),
+        items: Stream.value([item(createdByUid: 'me')]),
+      ),
+    );
+    await t.pumpAndSettle();
 
-    final plannerTopLeft = t.getTopLeft(find.text('Amina'));
-    final taskTopLeft = t.getTopLeft(find.text('Morning run'));
-    expect(plannerTopLeft.dy, lessThan(taskTopLeft.dy));
+    expect(headlineText(t), 'You planned Morning run');
+  });
+
+  testWidgets(
+    'no placeholder flashes: the delivered sentence shows before the item loads',
+    (t) async {
+      // Regression (2026-09-25): on the lock screen the alarm showed
+      // "Reminder" / "Planner" for a moment before the real names.
+      final items = StreamController<List<ScheduleItem>>();
+      addTearDown(items.close);
+      final sound = _FakeAlarmSound(
+        delivered: 'Amina planned Morning run for you',
+      );
+      await t.pumpWidget(harness(sound, _FakeScheduler(), items: items.stream));
+
+      // Before anything resolves: blank, never a wrong word.
+      expect(headlineText(t), '');
+      expect(find.text('Reminder'), findsNothing);
+      expect(find.text('Planner'), findsNothing);
+
+      await t.pump(); // post-frame: the delivered sentence arrives
+      await t.pump();
+      expect(headlineText(t), 'Amina planned Morning run for you');
+
+      items.add([item()]);
+      await t.pumpAndSettle();
+      expect(headlineText(t), 'Amina planned Morning run for you');
+      expect(find.text('Reminder'), findsNothing);
+    },
+  );
+
+  testWidgets('an unresolved planner never shows a placeholder name', (
+    t,
+  ) async {
+    final profiles = StreamController<UserProfile?>();
+    addTearDown(profiles.close);
+    await t.pumpWidget(
+      harness(
+        _FakeAlarmSound(delivered: 'Amina planned Morning run for you'),
+        _FakeScheduler(),
+        profiles: (_) => profiles.stream,
+      ),
+    );
+    await t.pump();
+    await t.pump();
+
+    // Item loaded, planner profile still loading: keep the delivered sentence.
+    expect(headlineText(t), 'Amina planned Morning run for you');
+    expect(find.textContaining('Planner'), findsNothing);
+  });
+
+  testWidgets('the UI-fallback start carries the sentence to native', (
+    t,
+  ) async {
+    final sound = _FakeAlarmSound(
+      delivered: 'Amina planned Morning run for you',
+    );
+    await t.pumpWidget(harness(sound, _FakeScheduler()));
+    await t.pumpAndSettle();
+
+    expect(sound.startHeadlines.single, 'Amina planned Morning run for you');
   });
 
   testWidgets('cancels the fired notification on mount (no double tone)', (
@@ -244,17 +321,23 @@ class _FakeAlarmTimelineRepository implements AlarmTimelineRepository {
 }
 
 class _FakeAlarmSound implements AlarmSound {
-  _FakeAlarmSound({this.startGate});
+  _FakeAlarmSound({this.startGate, this.delivered});
 
   final Completer<void>? startGate;
+  final String? delivered;
   int starts = 0;
   int stops = 0;
+  final startHeadlines = <String>[];
 
   @override
-  Future<void> start(String itemId) async {
+  Future<void> start(String itemId, {String headline = ''}) async {
     starts++;
+    startHeadlines.add(headline);
     if (startGate != null) await startGate!.future;
   }
+
+  @override
+  Future<String?> headline(String itemId) async => delivered;
 
   @override
   Future<void> stop(String itemId) async => stops++;

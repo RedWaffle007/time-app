@@ -10,7 +10,12 @@ enum PlanTab { mySchedule, activity, groups }
 /// [seq] increases on every set, so an identical repeat still notifies — tapping
 /// the same reminder twice re-highlights its card rather than being swallowed.
 class PlanIntent {
-  const PlanIntent({this.tab, this.itemId, required this.seq});
+  const PlanIntent({
+    this.tab,
+    this.itemId,
+    this.activityItemId,
+    required this.seq,
+  });
 
   /// Sub-tab to open on. Ignored when [itemId] is set (a highlight forces My
   /// Schedule).
@@ -18,6 +23,9 @@ class PlanIntent {
 
   /// The item to scroll to and outline on My Schedule.
   final String? itemId;
+
+  /// The item to scroll to and outline on Activity (planner side).
+  final String? activityItemId;
 
   final int seq;
 }
@@ -40,9 +48,18 @@ class PlanIntentNotifier extends Notifier<PlanIntent?> {
   void highlightItem(String itemId) =>
       state = PlanIntent(itemId: itemId, seq: ++_seq);
 
+  /// Open Activity with [itemId] scrolled-to and outlined — Calendar's
+  /// "Open in Activity" lands on the exact plan, not just the tab.
+  void highlightActivityItem(String itemId) => state = PlanIntent(
+    tab: PlanTab.activity,
+    activityItemId: itemId,
+    seq: ++_seq,
+  );
+
   /// Open a specific sub-tab (no highlight).
   void openTab(PlanTab tab) => state = PlanIntent(tab: tab, seq: ++_seq);
 }
 
-final planIntentProvider =
-    NotifierProvider<PlanIntentNotifier, PlanIntent?>(PlanIntentNotifier.new);
+final planIntentProvider = NotifierProvider<PlanIntentNotifier, PlanIntent?>(
+  PlanIntentNotifier.new,
+);

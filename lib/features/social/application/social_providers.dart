@@ -97,6 +97,20 @@ final effectivePlanningTargetsProvider =
       );
     });
 
+/// Keeps every planning target's profile (and my own) listened to from sign-in,
+/// so the Plan builder and voice picker render names on their first frame
+/// instead of waiting on a fresh Firestore read per row when Plan is tapped.
+/// Watched once, from `TimeApp`.
+final planningTargetProfilesPrefetchProvider = Provider<void>((ref) {
+  final me = ref.watch(currentUidProvider);
+  if (me == null) return;
+  ref.watch(profileByUidProvider(me));
+  final targets = ref.watch(effectivePlanningTargetsProvider).value;
+  for (final grant in targets ?? const <PlannerGrant>[]) {
+    ref.watch(profileByUidProvider(grant.targetUid));
+  }
+});
+
 final planningPermissionMigratorProvider = Provider<PlanningPermissionMigrator>(
   (ref) {
     return PlanningPermissionMigrator();

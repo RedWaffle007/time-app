@@ -53,6 +53,8 @@ class AlarmSoundService : Service() {
             "com.timeapp.time_app.ALARM_NOTIFICATION_DISMISS"
         private const val EXTRA_NOTIFICATION_ID = "notification_id"
         private const val EXTRA_ITEM_ID = "item_id"
+        private const val EXTRA_HEADLINE = "headline"
+        private const val MISSED_CHANNEL_ID = "time_app_missed_alarms"
 
         private const val CHANNEL_ID = "time_app_alarm_ringing_v2"
         private const val LEGACY_CHANNEL_ID = "time_app_alarm_ringing"
@@ -63,11 +65,29 @@ class AlarmSoundService : Service() {
         private const val TAG = "AlarmSound"
         @Volatile private var ringing = false
 
-        fun start(context: Context, notificationId: Int, itemId: String): Boolean {
+        /**
+         * itemId → "Amina planned Walk for you". Delivered with the alarm itself,
+         * so the heads-up, the lock-screen AlarmScreen and the missed notice all
+         * name who and what from the first frame — no item/profile read needed.
+         */
+        private val headlines = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+        fun headlineFor(itemId: String): String? = headlines[itemId]
+
+        fun start(
+            context: Context,
+            notificationId: Int,
+            itemId: String,
+            headline: String = "",
+        ): Boolean {
+            if (itemId.isNotEmpty() && headline.isNotBlank()) {
+                headlines[itemId] = headline
+            }
             val intent = Intent(context, AlarmSoundService::class.java)
                 .setAction(ACTION_START)
                 .putExtra(EXTRA_NOTIFICATION_ID, notificationId)
                 .putExtra(EXTRA_ITEM_ID, itemId)
+                .putExtra(EXTRA_HEADLINE, headline)
             return try {
                 ContextCompat.startForegroundService(context, intent)
                 true
@@ -78,7 +98,8 @@ class AlarmSoundService : Service() {
         }
 
         /** UI fallback when native delivery did not run first. */
-        fun startForItem(context: Context, itemId: String) = start(context, -1, itemId)
+        fun startForItem(context: Context, itemId: String, headline: String = "") =
+            start(context, -1, itemId, headline)
 
         fun stopForItem(context: Context, itemId: String) {
             // Not startForeground: a stop must never (re)promote the service.
@@ -128,13 +149,34 @@ class AlarmSoundService : Service() {
     }
 
     private var player: MediaPlayer? = null
+    private var tingPlayer: MediaPlayer? = null
+    private var tingStartedAt = 0L
     private var wakeLock: PowerManager.WakeLock? = null
     private val ownership = AlarmPlaybackOwnership()
     private val handler = Handler(Looper.getMainLooper())
+    private val startRingtone = Runnable { startRingtoneNow() }
+    private val fadeTing = object : Runnable {
+        override fun run() {
+            val ting = tingPlayer ?: return
+            val elapsed = android.os.SystemClock.uptimeMillis() - tingStartedAt
+            val scale = com.timeapp.time_app.SplashSoundPolicy.volumeScale(elapsed)
+            try {
+                ting.setVolume(scale, scale)
+            } catch (_: Exception) {
+            }
+            if (elapsed < AlarmSoundPolicy.TING_LEAD_MS) {
+                handler.postDelayed(this, com.timeapp.time_app.SplashSoundPolicy.FADE_STEP_MS)
+            }
+        }
+    }
     private val autoStop = Runnable {
         val at = System.currentTimeMillis()
         cancelOwningNotifications()
         ownership.itemIds().forEach { itemId ->
+            // The alarm gave up on its own: tell the person, even if the app is
+            // dead. Tapping opens the app, whose missed-alarm review offers
+            // Done / Skip for exactly this task.
+            postMissedNotification(itemId)
             AlarmLifecycleStore.record(this, itemId, AlarmLifecycleStore.KIND_TIMEOUT, at)
             ReminderAuditLog.write(
                 this,
@@ -185,6 +227,10 @@ class AlarmSoundService : Service() {
             else -> {
                 val notificationId = intent?.getIntExtra(EXTRA_NOTIFICATION_ID, -1) ?: -1
                 val itemId = intent?.getStringExtra(EXTRA_ITEM_ID) ?: ""
+                val headline = intent?.getStringExtra(EXTRA_HEADLINE).orEmpty()
+                if (itemId.isNotEmpty() && headline.isNotBlank()) {
+                    headlines[itemId] = headline
+                }
                 if (itemId.isNotEmpty()) {
                     if (notificationId >= 0) {
                         Log.i(TAG, "claim notification owner $notificationId")
@@ -208,7 +254,9 @@ class AlarmSoundService : Service() {
 
     private fun startAlarm() {
         // Idempotent — the UI can call start more than once (mount + resume).
-        if (!AlarmSoundPolicy.shouldStartPlayer(player != null)) return
+        if (!AlarmSoundPolicy.shouldStartPlayer(player != null || tingPlayer != null)) {
+            return
+        }
 
         createChannel()
         val type =
@@ -226,6 +274,55 @@ class AlarmSoundService : Service() {
             acquire(AlarmSoundPolicy.MAX_RING_DURATION_MS + 5_000L)
         }
 
+        // Ting first, ringtone exactly when it ends — the same order on every
+        // path (locked, unlocked, app dead or alive). The app-start ting is
+        // suppressed while this rings, so it can no longer race the ringtone.
+        ringing = true
+        val tingStarted = startTing()
+        handler.postDelayed(startRingtone, AlarmSoundPolicy.ringtoneDelayMs(tingStarted))
+        handler.postDelayed(autoStop, AlarmSoundPolicy.MAX_RING_DURATION_MS)
+    }
+
+    private fun alarmAttributes(): AudioAttributes =
+        AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_ALARM)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+
+    /** The clock strike, on the ALARM stream so it is heard exactly like the ring. */
+    private fun startTing(): Boolean = try {
+        val fd = resources.openRawResourceFd(R.raw.tick)
+        tingPlayer = MediaPlayer().apply {
+            setAudioAttributes(alarmAttributes())
+            setDataSource(fd.fileDescriptor, fd.startOffset, fd.length)
+            fd.close()
+            prepare()
+            start()
+        }
+        tingStartedAt = android.os.SystemClock.uptimeMillis()
+        handler.postDelayed(fadeTing, com.timeapp.time_app.SplashSoundPolicy.FADE_START_MS)
+        true
+    } catch (e: Exception) {
+        Log.e(TAG, "ting failed, ringing without it: $e")
+        releaseTing()
+        false
+    }
+
+    private fun releaseTing() {
+        handler.removeCallbacks(fadeTing)
+        tingPlayer?.let {
+            try {
+                if (it.isPlaying) it.stop()
+            } catch (_: Exception) {
+            }
+            it.release()
+        }
+        tingPlayer = null
+    }
+
+    private fun startRingtoneNow() {
+        releaseTing()
+        if (player != null) return
         try {
             player = MediaPlayer().apply {
                 setAudioAttributes(
@@ -243,16 +340,55 @@ class AlarmSoundService : Service() {
                 prepare()
                 start()
             }
-            ringing = true
             Log.i(TAG, "alarm ringing")
         } catch (e: Exception) {
             // If playback cannot start there is nothing to keep foreground for.
             Log.e(TAG, "failed to start alarm playback: $e")
             stopAlarm()
-            return
         }
+    }
 
-        handler.postDelayed(autoStop, AlarmSoundPolicy.MAX_RING_DURATION_MS)
+    /** One per item, replacing itself; auto-cancelled when tapped. */
+    private fun postMissedNotification(itemId: String) {
+        try {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                nm.getNotificationChannel(MISSED_CHANNEL_ID) == null
+            ) {
+                nm.createNotificationChannel(
+                    NotificationChannel(
+                        MISSED_CHANNEL_ID,
+                        "Missed alarms",
+                        NotificationManager.IMPORTANCE_DEFAULT,
+                    ).apply {
+                        description = "When an alarm stopped without a response."
+                    },
+                )
+            }
+            val launch = packageManager.getLaunchIntentForPackage(packageName)
+                ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            val open = launch?.let {
+                PendingIntent.getActivity(
+                    this,
+                    ("missed:$itemId").hashCode(),
+                    it,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                )
+            }
+            val text = AlarmSoundPolicy.missedText(headlines[itemId])
+            val notification = NotificationCompat.Builder(this, MISSED_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(AlarmSoundPolicy.MISSED_TITLE)
+                .setContentText(text)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+                .setCategory(NotificationCompat.CATEGORY_REMINDER)
+                .setAutoCancel(true)
+                .apply { if (open != null) setContentIntent(open) }
+                .build()
+            nm.notify(("missed:$itemId").hashCode(), notification)
+        } catch (e: Exception) {
+            Log.e(TAG, "failed to post missed-alarm notification: $e")
+        }
     }
 
     /** A capped/silenced alarm must not remain tappable and restart playback. */
@@ -284,6 +420,8 @@ class AlarmSoundService : Service() {
 
     private fun stopAlarm() {
         handler.removeCallbacks(autoStop)
+        handler.removeCallbacks(startRingtone)
+        releaseTing()
         player?.let {
             try {
                 if (it.isPlaying) it.stop()
@@ -337,14 +475,19 @@ class AlarmSoundService : Service() {
         nm.createNotificationChannel(channel)
     }
 
+    private fun currentItemId(): String =
+        ownership.latestNotification()?.second ?: ownership.latestUiItem().orEmpty()
+
+    // With the phone unlocked Android shows this as a heads-up instead of the
+    // full-screen alarm, so the heads-up itself must say who planned what.
     private fun buildNotification() =
         NotificationCompat.Builder(this, CHANNEL_ID)
             // Android small icons are monochrome silhouettes. The launcher icon
             // becomes a solid blob here; this resource is the Checkmate mark
             // specifically drawn for the notification tray.
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("Reminder")
-            .setContentText("Alarm ringing — tap to open")
+            .setContentTitle(AlarmSoundPolicy.ringingTitle(headlines[currentItemId()]))
+            .setContentText(AlarmSoundPolicy.RINGING_TEXT)
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setPriority(NotificationCompat.PRIORITY_HIGH)

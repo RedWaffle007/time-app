@@ -14,8 +14,12 @@ import 'package:flutter/services.dart';
 /// makes: the job is two verbs over one native service, and an audio package
 /// would not own the wake lock or the foreground-service type this needs.
 abstract interface class AlarmSound {
-  Future<void> start(String itemId);
+  Future<void> start(String itemId, {String headline = ''});
   Future<void> stop(String itemId);
+
+  /// The sentence the native alarm was delivered with ("Amina planned Walk for
+  /// you"), or null when this process did not receive one.
+  Future<String?> headline(String itemId);
 }
 
 class PlatformAlarmSound implements AlarmSound {
@@ -24,14 +28,33 @@ class PlatformAlarmSound implements AlarmSound {
   static const _channel = MethodChannel('time_app/alarm_sound');
 
   @override
-  Future<void> start(String itemId) => _invoke('start', itemId);
+  Future<void> start(String itemId, {String headline = ''}) =>
+      _invoke('start', itemId, {'headline': headline});
 
   @override
   Future<void> stop(String itemId) => _invoke('stop', itemId);
 
-  Future<void> _invoke(String method, String itemId) async {
+  @override
+  Future<String?> headline(String itemId) async {
     try {
-      await _channel.invokeMethod<void>(method, {'itemId': itemId});
+      return await _channel.invokeMethod<String>('headline', {
+        'itemId': itemId,
+      });
+    } on MissingPluginException {
+      return null;
+    } on PlatformException catch (e) {
+      debugPrint('alarm_sound: headline failed — $e');
+      return null;
+    }
+  }
+
+  Future<void> _invoke(
+    String method,
+    String itemId, [
+    Map<String, Object?> extra = const {},
+  ]) async {
+    try {
+      await _channel.invokeMethod<void>(method, {'itemId': itemId, ...extra});
     } on MissingPluginException {
       // iOS / tests register no handler. The alarm still shows; only the
       // wake-lock-backed sound is Android-only.

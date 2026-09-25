@@ -7,24 +7,37 @@ import '../../../core/theme/app_tokens.dart';
 import '../application/planner_item_timeline.dart';
 import '../domain/schedule_item.dart';
 
+/// The item's status timeline. Opened from Activity (planner side) and from
+/// My Schedule / History (target side); [contextLine] replaces the planner's
+/// "For [targetName]" line on the target side.
 Future<void> showPlannerItemDetailSheet(
   BuildContext context, {
   required ScheduleItem item,
   required String targetName,
+  String? contextLine,
 }) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    builder: (_) => _PlannerItemDetail(item: item, targetName: targetName),
+    builder: (_) => _PlannerItemDetail(
+      item: item,
+      targetName: targetName,
+      contextLine: contextLine,
+    ),
   );
 }
 
 class _PlannerItemDetail extends StatelessWidget {
-  const _PlannerItemDetail({required this.item, required this.targetName});
+  const _PlannerItemDetail({
+    required this.item,
+    required this.targetName,
+    this.contextLine,
+  });
 
   final ScheduleItem item;
   final String targetName;
+  final String? contextLine;
 
   @override
   Widget build(BuildContext context) {
@@ -37,7 +50,7 @@ class _PlannerItemDetail extends StatelessWidget {
             Text(item.title, style: context.text.headlineSmall),
             const SizedBox(height: Space.xs),
             Text(
-              'For $targetName · ${item.timezone}',
+              contextLine ?? 'For $targetName · ${item.timezone}',
               style: context.text.bodySmall?.copyWith(
                 color: context.colors.onSurfaceVariant,
               ),

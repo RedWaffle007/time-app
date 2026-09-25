@@ -119,3 +119,15 @@ private class RecordingWakeHost : AlarmWakeWindowHost {
         keepScreenOn += enabled
     }
 }
+
+class AlarmLaunchRouteTest {
+    @Test
+    fun `an alarm cold start opens Flutter directly on the alarm route`() {
+        // Must match Dart's Routes.alarmForItem / alarmLaunchLocation.
+        assertEquals("/alarm?item=item-a", AlarmLaunchPolicy.initialRoute("item-a"))
+        assertEquals(
+            "/alarm?item=a%2Fb+c",
+            AlarmLaunchPolicy.initialRoute("a/b c"),
+        )
+    }
+}

@@ -78,6 +78,7 @@ class ReminderService {
     required List<ScheduleItem> items,
     required String? uid,
     String reason = 'sync',
+    Map<String, String> plannerNames = const {},
   }) =>
       _enqueue(() async {
         // An account change invalidates the entire local state: the previous
@@ -93,7 +94,12 @@ class ReminderService {
         if (uid == null) return;
 
         final now = DateTime.now().toUtc();
-        final desired = desiredReminders(items: items, uid: uid, now: now);
+        final desired = desiredReminders(
+          items: items,
+          uid: uid,
+          now: now,
+          plannerNames: plannerNames,
+        );
         final mirror = await _store.load();
         final plan = reconcileReminders(
           desired: desired,

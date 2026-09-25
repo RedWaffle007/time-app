@@ -45,6 +45,11 @@ final profileProvider = StreamProvider<UserProfile?>((ref) {
   return ref.watch(profileRepositoryProvider).watchProfile(user.uid);
 });
 
+/// What a person row shows for the moment before a profile resolves. Never the
+/// uid: a raw id flashing in place of a name was a device-reported bug
+/// (2026-09-25). [planningTargetProfilesPrefetchProvider] keeps it rare.
+const kProfileNameLoading = 'Loading…';
+
 /// Any user's profile by uid — used to read a planning target's name + home
 /// timezone. Family is warranted (it's parameterised by uid).
 final profileByUidProvider =

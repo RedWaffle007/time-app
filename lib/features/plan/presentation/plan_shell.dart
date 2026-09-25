@@ -66,6 +66,10 @@ class _PlanShellState extends ConsumerState<PlanShell>
   String? _highlightItemId;
   int _highlightSeq = 0;
 
+  /// The same, for the Activity sub-tab (Calendar → "Open in Activity").
+  String? _activityHighlightId;
+  int _activityHighlightSeq = 0;
+
   /// The [PlanIntent.seq] of the last intent applied, so the same intent is not
   /// applied twice (once from the initial [initState] read and again from the
   /// first [ref.listen] fire).
@@ -83,6 +87,8 @@ class _PlanShellState extends ConsumerState<PlanShell>
       _appliedSeq = intent.seq;
       _highlightItemId = intent.itemId;
       _highlightSeq = intent.seq;
+      _activityHighlightId = intent.activityItemId;
+      _activityHighlightSeq = intent.seq;
       initialIndex = intent.itemId != null
           ? _mySchedule
           : (intent.tab?.index ?? _mySchedule);
@@ -111,6 +117,12 @@ class _PlanShellState extends ConsumerState<PlanShell>
       });
     } else if (intent.tab != null) {
       _tabController.animateTo(intent.tab!.index);
+      if (intent.activityItemId != null) {
+        setState(() {
+          _activityHighlightId = intent.activityItemId;
+          _activityHighlightSeq = intent.seq;
+        });
+      }
     }
   }
 
@@ -161,11 +173,13 @@ class _PlanShellState extends ConsumerState<PlanShell>
         ),
       ),
       // The one always-present manual create affordance for Plan — a
-      // bottom-right text FAB, shown on ALL three sub-tabs (My Schedule /
-      // Activity / Groups). The explicit verb distinguishes it from the centre
+      // bottom-LEFT text FAB, shown on ALL three sub-tabs (My Schedule /
+      // Activity / Groups). Left, not right: on the right it sat over the last
+      // card's Done button (device report 2026-09-25). The explicit verb distinguishes it from the centre
       // voice FAB and leaves Track's separate `＋` log-time action unchanged.
       // Its own heroTag prevents a collision with the voice FAB during a route
       // transition.
+      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'planCreateFab',
         tooltip: 'Plan an item',
@@ -190,7 +204,13 @@ class _PlanShellState extends ConsumerState<PlanShell>
               highlightToken: _highlightSeq,
             ),
           ),
-          const _KeepAlivePage(child: PlannerActivityScreen(embedded: true)),
+          _KeepAlivePage(
+            child: PlannerActivityScreen(
+              embedded: true,
+              highlightItemId: _activityHighlightId,
+              highlightToken: _activityHighlightSeq,
+            ),
+          ),
           const _KeepAlivePage(child: GroupsScreen(embedded: true)),
         ],
       ),

@@ -107,7 +107,8 @@ class _PlanTargetPicker extends ConsumerWidget {
     final profile = ref.watch(profileByUidProvider(grant.targetUid)).value;
     return ListTile(
       leading: const Icon(AppIcons.person),
-      title: Text(profile?.name ?? grant.targetUid),
+      // Never the raw uid, even for the few ms before the profile resolves.
+      title: Text(profile?.name ?? kProfileNameLoading),
       subtitle: profile == null ? null : Text(profile.homeTimezone),
       onTap: () => Navigator.pop(
         context,

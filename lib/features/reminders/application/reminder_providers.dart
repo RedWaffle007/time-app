@@ -9,6 +9,7 @@ import '../data/local_notifications_reminder_scheduler.dart';
 import '../data/reminder_audit_log.dart';
 import '../data/reminder_mirror_store.dart';
 import '../data/reminder_scheduler.dart';
+import 'reminder_policy.dart';
 import 'reminder_service.dart';
 
 /// One plugin instance for the whole app. It is not a singleton internally
@@ -84,6 +85,25 @@ final reminderServiceProvider = Provider<ReminderService>((ref) {
 /// `fireImmediately` covers app start; `TimeApp` calls `sync` again on resume.
 /// Both are safe because the reconcile is idempotent — the overwhelmingly common
 /// pass computes an empty plan and touches no plugin at all.
+/// uid → display name for the planners of items about to be reminded, so the
+/// alarm can say "Amina planned Walk for you" even when it fires with the app
+/// dead. Only those planners are listened to.
+final reminderPlannerNamesProvider = Provider<Map<String, String>>((ref) {
+  final items = ref.watch(allItemsAsTargetProvider).value ?? const [];
+  final uid = ref.watch(currentUidProvider);
+  final names = <String, String>{};
+  final planners = reminderPlannerUids(
+    items,
+    uid: uid,
+    now: DateTime.now().toUtc(),
+  );
+  for (final planner in planners) {
+    final name = ref.watch(profileByUidProvider(planner)).value?.name.trim();
+    if (name != null && name.isNotEmpty) names[planner] = name;
+  }
+  return names;
+});
+
 final reminderSyncProvider = Provider<void>((ref) {
   final service = ref.watch(reminderServiceProvider);
   service.initialize();
@@ -97,10 +117,25 @@ final reminderSyncProvider = Provider<void>((ref) {
         items: items,
         uid: ref.read(currentUidProvider),
         reason: 'items',
+        plannerNames: ref.read(reminderPlannerNamesProvider),
       );
     },
     fireImmediately: true,
   );
+
+  // A planner's name arriving (or changing) re-words the armed alarm.
+  // Idempotent: an unchanged sentence is an unchanged fingerprint, so nothing
+  // re-arms.
+  ref.listen(reminderPlannerNamesProvider, (previous, next) {
+    final items = ref.read(allItemsAsTargetProvider).value;
+    if (items == null) return;
+    service.sync(
+      items: items,
+      uid: ref.read(currentUidProvider),
+      reason: 'planner-names',
+      plannerNames: next,
+    );
+  });
 
   // Sign-out and account switches. `sync` itself detects the uid change and
   // clears everything, so this only has to make sure it is CALLED — the item

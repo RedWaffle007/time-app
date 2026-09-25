@@ -4,6 +4,9 @@
 
 - Do not run tests, commit, push, deploy, or publish. The user does those after
   receiving exact commands.
+- Before any device test that depends on rules, run
+  `scripts/check-deployed-rules.sh` (read-only). Device passes against stale
+  rules produced false "regressions" on 2026-09-25.
 - Edit with `apply_patch`; preserve unrelated worktree changes.
 - Every feature/fix needs proportional regression coverage.
 - Full verification:
@@ -30,6 +33,12 @@
   outcome (tag + Done/Skip on the card); Log Time pop-up removed; celebration
   starts on save. Needs the full verification run, then a device re-check,
   before Item 32.
+- **Second device pass (2026-09-25) — IMPLEMENTED, NOT YET RUN.** See
+  DECISIONS.md "Second device pass". **Live Firestore rules are stale
+  (match `01ff2b5`)** — deploy before re-testing; check with
+  `scripts/check-deployed-rules.sh`. Alarm sentence + ting→ring order +
+  missed-alarm notice + heads-up copy (native), timelines on My Schedule /
+  History, Calendar→Activity highlight, PLAN bottom-left, no uid flash.
 - Next implementation order: **32 → 24 → 33**.
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
 

@@ -538,7 +538,8 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       color: selected ? Theme.of(context).colorScheme.primaryContainer : null,
       child: ListTile(
         leading: const Icon(AppIcons.person),
-        title: Text(profile?.name ?? grant.targetUid),
+        // Never the raw uid, even for the few ms before the profile resolves.
+        title: Text(profile?.name ?? kProfileNameLoading),
         subtitle: profile == null ? null : Text(profile.homeTimezone),
         trailing: selected ? const Icon(AppIcons.selected) : null,
         onTap: () => _choose(() {
@@ -568,7 +569,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
   /// The collapsed picker: who this plan is for, and the way back to the list.
   Widget _chosenTargetTile(UserProfile? profile) {
     final name = profile == null
-        ? (_isSelf ? 'Myself' : _targetUid ?? '')
+        ? (_isSelf ? 'Myself' : kProfileNameLoading)
         : _isSelf
         ? '${profile.name} (myself)'
         : profile.name;

@@ -20,6 +20,7 @@ class AlarmDeliveryChannel(private val appContext: Context) {
                     val itemId = call.argument<String>("itemId") ?: ""
                     val fireAt = call.argument<Long>("fireAtMillis")
                     val exact = call.argument<Boolean>("exact") ?: true
+                    val headline = call.argument<String>("headline") ?: ""
                     if (id == null || fireAt == null || itemId.isEmpty()) {
                         result.success("bad_args")
                     } else {
@@ -30,6 +31,7 @@ class AlarmDeliveryChannel(private val appContext: Context) {
                                 itemId,
                                 fireAt,
                                 exact,
+                                headline,
                             ),
                         )
                     }

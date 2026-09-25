@@ -14,6 +14,8 @@ object AlarmDeliveryStore {
         val itemId: String,
         val scheduledEpoch: Long,
         val exact: Boolean,
+        /** The sentence the alarm shows; survives reboot re-arming. */
+        val headline: String = "",
     )
 
     private fun prefs(context: Context) =
@@ -30,6 +32,7 @@ object AlarmDeliveryStore {
                     value.optString("itemId"),
                     value.getLong("scheduledEpoch"),
                     value.optBoolean("exact", true),
+                    value.optString("headline", ""),
                 )
             }
         } catch (_: Throwable) {
@@ -46,6 +49,7 @@ object AlarmDeliveryStore {
                     put("itemId", item.itemId)
                     put("scheduledEpoch", item.scheduledEpoch)
                     put("exact", item.exact)
+                    put("headline", item.headline)
                 },
             )
         }

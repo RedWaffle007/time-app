@@ -131,6 +131,9 @@ void main() {
       'fireAtMillis': isA<int>(),
       // The native audio alarm must mirror the notification fallback mode.
       'exact': false,
+      // The sentence travels with the alarm so the native heads-up and the
+      // missed-alarm notice need no Dart at fire time (2026-09-25).
+      'headline': 'Friend plan',
     });
   });
 }

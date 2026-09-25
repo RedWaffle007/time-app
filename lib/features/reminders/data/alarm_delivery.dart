@@ -19,6 +19,7 @@ class AlarmDelivery {
     required String itemId,
     required DateTime fireAtUtc,
     required bool exact,
+    String headline = '',
   }) async {
     try {
       return await _channel.invokeMethod<String>('arm', {
@@ -26,6 +27,9 @@ class AlarmDelivery {
             'itemId': itemId,
             'fireAtMillis': fireAtUtc.millisecondsSinceEpoch,
             'exact': exact,
+            // "Amina planned Walk for you" travels WITH the alarm, so the
+            // native heads-up and missed notice need no Dart at fire time.
+            'headline': headline,
           }) ??
           'unavailable';
     } on MissingPluginException {

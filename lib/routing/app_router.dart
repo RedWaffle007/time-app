@@ -1,6 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart' show TimeOfDay;
+import 'package:flutter/material.dart' show TimeOfDay, WidgetsBinding;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -314,7 +314,9 @@ final routerProvider = Provider<GoRouter>((ref) {
   ref.onDispose(refresh.dispose);
 
   return GoRouter(
-    initialLocation: Routes.home,
+    // A cold start FROM an alarm opens on the alarm itself — no home screen
+    // flashes first (device report 2026-09-25).
+    initialLocation: alarmLaunchLocation() ?? Routes.home,
     refreshListenable: refresh,
     redirect: (context, state) {
       final loggedIn = FirebaseAuth.instance.currentUser != null;
@@ -581,3 +583,18 @@ final routerProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
+
+/// The alarm location a cold start was launched for, or null for an ordinary
+/// launch. Native `MainActivity.getInitialRoute` puts `/alarm?item=<id>` there
+/// when the full-screen alarm starts the process; Flutter exposes it
+/// synchronously as `defaultRouteName`, before the first frame.
+String? alarmLaunchLocation([String? defaultRouteName]) {
+  final route =
+      defaultRouteName ??
+      WidgetsBinding.instance.platformDispatcher.defaultRouteName;
+  final uri = Uri.tryParse(route);
+  if (uri == null || uri.path != Routes.alarm) return null;
+  final item = uri.queryParameters[Routes.alarmItemParam];
+  if (item == null || item.isEmpty) return null;
+  return Routes.alarmForItem(item);
+}

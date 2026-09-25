@@ -5969,3 +5969,52 @@ and is de-duplicated, and acknowledgement is unchanged. The user chose "on save"
 over "on tap" so a Done that loses a race never celebrates. The host also
 requests a frame when an event arrives, because a post-frame callback on an idle
 screen otherwise waits for an unrelated repaint.
+
+---
+
+## Second device pass: stale rules, alarm sentence, ting→ring order (2026-09-25)
+
+**Root cause of the still-missing "User unavailable" tag: the live Firestore
+rules were three days stale.** Fetched read-only from the Rules API, the live
+ruleset (`fe6c9239-…`, released 2026-09-23 11:42Z) is byte-identical to commit
+`01ff2b5` and contains no `unavailableAt`, so every write of it was rejected.
+The same staleness denies the Item 27 planner schedule read (the conflict check
+then queues an error dialog right after the date pick), Item 23 plan requests
+and Item 22 pictures. No test can observe a deploy, so
+`scripts/check-deployed-rules.sh` now compares live vs local and names the
+commit the live rules match. Run it before any rules-dependent device test.
+The "defer all deploys to the release gate" plan is what let device testing run
+against code the server did not accept; deploy rules before device passes.
+
+**Not regressions, recorded so they are not re-diagnosed:** the Activity card
+still opens its timeline (covered by `planner_activity_name_test`); My
+Schedule/History cards never had one — they now open the same sheet. Calendar's
+"Open in Activity" only ever switched tabs (since at least 38929e5); it now
+reveals and outlines the item like My Schedule.
+
+**Alarm copy is one sentence** — `alarmHeadline()`: "Amina planned Walk for
+you", "You planned Walk" for a self-plan, "Someone …" while a name is unknown,
+never a uid. It is the reminder request's title, so it rides the existing
+fingerprint (a name arriving re-arms once) and is passed to the native alarm
+with the arm call (and kept through reboot re-arming). The native side uses it
+for (a) the unlocked heads-up — Android shows a full-screen intent only when
+locked, and the user chose a rich heads-up over the "display over other apps"
+permission — (b) the new missed-alarm notification posted at the one-minute
+auto-stop (works with the app dead; tap opens the app, whose review offers
+Done/Skip), and (c) AlarmScreen's first frames, which show that delivered
+sentence or nothing — never a "Reminder"/"Planner" placeholder.
+
+**Ting then ring, always.** The "ting" was the app-start splash strike, played
+only when the alarm happened to cold-start the activity, racing the ringtone
+the native service had already started. The service now owns both: it plays the
+strike on the alarm stream and starts the ringtone exactly
+`TING_LEAD_MS` (1.5 s, the strike's faded length) later. The splash strike is
+suppressed while an alarm rings, and an alarm cold start opens Flutter directly
+on `/alarm?item=` via `getInitialRoute` (read as `defaultRouteName`), skipping
+the reveal so nothing flashes before the alarm screen.
+
+**Also:** PLAN moved bottom-left (it covered the last card's Done); person rows
+show "Loading…" instead of a uid, and planning-target profiles are prefetched
+from sign-in so Plan opens with names. Remaining planning-flow lag is judged on
+a **profile** build (debug is JIT and janky by design); a profile APK shares the
+debug signature, so `adb install -r` keeps app data.

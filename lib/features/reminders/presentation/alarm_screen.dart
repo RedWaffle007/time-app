@@ -13,8 +13,10 @@ import '../../auth/application/auth_providers.dart';
 import '../../plan/application/plan_intent.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
+import '../../auth/domain/user_profile.dart';
 import '../application/alarm_timeline_providers.dart';
 import '../application/missed_alarm_providers.dart';
+import '../application/reminder_policy.dart';
 import '../application/reminder_providers.dart';
 import '../data/alarm_lifecycle_store.dart';
 
@@ -49,6 +51,11 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
   bool _dismissing = false;
   AlarmKeyEvents? _keyEvents;
 
+  /// The sentence the native alarm was delivered with. Shown until the live
+  /// item + planner name resolve, so the first frames never show a placeholder
+  /// ("Reminder" / "Planner") that then changes — a device-reported flash.
+  String? _deliveredHeadline;
+
   @override
   void initState() {
     super.initState();
@@ -60,11 +67,19 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
       final keyEvents = ref.read(alarmKeyEventsProvider);
       _keyEvents = keyEvents;
       keyEvents.listen(_leave);
+      final sound = ref.read(alarmSoundProvider);
+      final delivered = await sound.headline(widget.itemId);
+      if (!mounted) return;
+      if (delivered != null && delivered.trim().isNotEmpty) {
+        setState(() => _deliveredHeadline = delivered.trim());
+      }
       // The UI ownership claim must reach the native service before cancelling
       // the scheduled notification releases its native-delivery owner. These
       // used to race as two unawaited platform calls, briefly stopping and
       // restarting playback on an unlocked/full-screen launch.
-      await ref.read(alarmSoundProvider).start(widget.itemId);
+      // The UI-fallback start carries the sentence too, for the heads-up of an
+      // alarm whose native delivery did not run first.
+      await sound.start(widget.itemId, headline: _headlineNow() ?? '');
       if (!mounted) return;
       final uid = ref.read(currentUidProvider);
       if (uid != null) {
@@ -86,6 +101,30 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
   void dispose() {
     _keyEvents?.listen(null);
     super.dispose();
+  }
+
+  /// The best sentence available right now, or null when nothing trustworthy
+  /// is known yet (render nothing rather than a placeholder).
+  String? _headlineNow() {
+    final item = ref
+        .read(allItemsAsTargetProvider)
+        .maybeWhen(data: _find, orElse: () => null);
+    if (item == null) return _deliveredHeadline;
+    final planner = ref.read(profileByUidProvider(item.createdByUid));
+    return _resolveHeadline(item, planner);
+  }
+
+  String? _resolveHeadline(
+    ScheduleItem item,
+    AsyncValue<UserProfile?> planner,
+  ) {
+    final isSelf = item.createdByUid == item.targetUid;
+    // The live sentence wins once the planner's name is settled (or not
+    // needed); until then the delivered one is already correct.
+    if (isSelf || planner.hasValue) {
+      return alarmHeadline(item, plannerName: planner.value?.name);
+    }
+    return _deliveredHeadline;
   }
 
   ScheduleItem? _find(List<ScheduleItem> items) {
@@ -130,12 +169,12 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
     final item = ref
         .watch(allItemsAsTargetProvider)
         .maybeWhen(data: _find, orElse: () => null);
-    final planner = item == null
-        ? null
-        : ref
-              .watch(profileByUidProvider(item.createdByUid))
-              .maybeWhen(data: (profile) => profile, orElse: () => null);
-    final plannerName = planner?.name.trim();
+    final headline = item == null
+        ? _deliveredHeadline
+        : _resolveHeadline(
+            item,
+            ref.watch(profileByUidProvider(item.createdByUid)),
+          );
 
     // Back / gesture-dismiss must also stop the tone, never leave it ringing.
     return PopScope(
@@ -157,22 +196,12 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
                   color: context.attention,
                 ),
                 const SizedBox(height: Space.xl),
-                if (item != null) ...[
-                  Text(
-                    plannerName == null || plannerName.isEmpty
-                        ? 'Planner'
-                        : plannerName,
-                    key: const ValueKey('alarm-planner-name'),
-                    textAlign: TextAlign.center,
-                    style: context.text.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: Space.sm),
-                ],
+                // ONE sentence, centered and bold: "Amina planned Walk for
+                // you" (device-directed copy, 2026-09-25). Nothing — not a
+                // placeholder — until a trustworthy sentence is known.
                 Text(
-                  item?.title ?? 'Reminder',
-                  key: const ValueKey('alarm-task-name'),
+                  headline ?? '',
+                  key: const ValueKey('alarm-headline'),
                   textAlign: TextAlign.center,
                   style: context.text.headlineSmall?.copyWith(
                     fontWeight: FontWeight.bold,
