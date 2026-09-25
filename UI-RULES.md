@@ -692,40 +692,29 @@ them; the sheet's one primary action navigates there. Two renderings of one
 item's controls are two things to keep in step — the same reasoning
 `OutcomeScreen` gives for not being a detail screen.
 
-### 6.11 The target-schedule modal
+### 6.11 Conditional conflict warning
 
-The one blurred surface in the app (`showTargetScheduleModal`). It exists so a
-planner can see what the target already has booked before choosing a time.
+The Schedule Builder never exposes another person's timetable. Once a target
+and date are selected, an ordinary `AlertDialog` appears only when that person
+has live commitments on that local day, or when the authorized read fails.
 
-**Not a route.** A function, like every other dialog and sheet here. It is
-transient state inside the builder, not a location.
+**Disclosure floor:** name, localized date/time and explicit timezone only.
+Never pass a `ScheduleItem` into this dialog; titles, notes, status, creator,
+outcome, empty hours and item counts are out of scope. Two commitments at one
+instant render one time.
 
-| Token | Value | Use |
-|---|---|---|
-| `Blurs.modalBackdrop` | 12 | `ImageFilter.blur` sigma behind the modal |
-| `Sizes.modalMaxWidth` | 420 | The card stops growing past this |
-| `Sizes.modalMaxHeightFraction` | 0.8 | Never taller than this share of the screen |
-| `Sizes.slotRowHeight` | 48 | One selectable slot — the §7 touch floor |
+**Inform, never block.** The only action is the filled `Got it` acknowledgement.
+Closing it does not clear the form, disable Save, or claim the chosen time is
+invalid. A read error is shown explicitly in the same dialog and likewise does
+not block saving.
 
-**The backdrop is blur PLUS a scrim, never blur alone.** Blur lowers contrast
-without raising it anywhere; text over a purely blurred background fails §7 at
-some wallpapers and passes at others. The scrim is what makes the floor
-predictable.
+**Groups get one popup.** Wait for every selected member's profile and schedule
+read to settle, then group conflict times under localized member names in one
+scrollable dialog. Do not open one dialog per member.
 
-**Slot state is drawn with the ONE status mapping where a real item owns the
-slot** — a blocked slot shows the occupying item's badge via `statusStyle()` /
-`outcomeStyle()`. A slot that is merely *unselectable* (in the past) is line work
-and `onSurfaceVariant`, never a status colour: nothing is waiting on anyone there.
-
-**A blocked slot is disabled, not hidden.** The planner has to be able to see
-*why* a time is unavailable — the point of the modal is showing B's day, and a
-gap where a conflict lives is indistinguishable from free time.
-
-**Both times, whenever the zones differ.** The target's local time is primary and
-always labelled with the zone; the planner's own equivalent is secondary
-`labelSmall`. Never render a bare "4pm" in this modal — whose 4pm is the exact
-confusion it exists to prevent. All of it through
-`core/format/datetime_format.dart` (§1).
+All displayed instants go through `core/format/datetime_format.dart` (§1). The
+dialog uses the standard Material barrier/scrim; conflict disclosure no longer
+has a custom blur, size, slot-row, or status-badge recipe.
 
 ---
 

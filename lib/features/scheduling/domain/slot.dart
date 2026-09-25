@@ -3,10 +3,10 @@ import 'schedule_item.dart';
 
 /// **The slot grid.** Pure — no plugins, no clock, no Firestore.
 ///
-/// A slot is a fixed 30-minute DISPLAY bucket. It is NOT a duration on the
-/// item: `ScheduleItem` carries an instant and has no duration field. Multiple
-/// items may share a bucket; these helpers only group the target's schedule for
-/// the planner preview and identify old lock documents during migration.
+/// A slot is a fixed 30-minute legacy display/lock bucket. Multiple point items
+/// may share one; these helpers remain for lock migration and property coverage.
+/// Item 27's disclosure uses only [blocksSlot] + [localDayRangeUtc], never the
+/// old full-timetable slot grid.
 
 /// Minutes per display slot. Legacy Firestore lock ids were derived from it.
 const int kSlotMinutes = 30;
@@ -45,11 +45,11 @@ DateTime slotEndUtc(int index) => slotStartUtc(index + 1);
 /// it can construct the path, and it cannot run a query.
 String slotLockId(int index) => index.toString();
 
-/// Should this live item appear in its display slot?
+/// Is this a live commitment for conflict disclosure / legacy slot projection?
 ///
-/// Pending and approved items are useful schedule context. Rejected, withdrawn,
-/// completed, and skipped items no longer belong in the live preview. Despite
-/// the legacy name, a true result does not prevent another plan at that time.
+/// Pending and approved outcome-less items count. Rejected, withdrawn,
+/// completed, and skipped items do not. Despite the legacy name, a true result
+/// informs the planner and never prevents another plan at that time.
 bool blocksSlot(ScheduleItem item) =>
     item.outcome == null &&
     (item.status == ScheduleItemStatus.pending ||

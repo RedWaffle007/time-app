@@ -43,7 +43,7 @@ class ScheduleRepository {
     // Items are point-in-time alarms, not 30-minute appointments: the model has
     // no duration. Multiple plans may therefore share a half-hour (or even the
     // same instant). The old scheduleSlots write is intentionally gone; the
-    // target's schedule remains visible to planners as context, never a lock.
+    // the authorized stream is projected into day conflict times, never a lock.
     await itemRef.set({
       'targetUid': targetUid,
       'createdByUid': createdByUid,

@@ -130,6 +130,12 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
     final item = ref
         .watch(allItemsAsTargetProvider)
         .maybeWhen(data: _find, orElse: () => null);
+    final planner = item == null
+        ? null
+        : ref
+              .watch(profileByUidProvider(item.createdByUid))
+              .maybeWhen(data: (profile) => profile, orElse: () => null);
+    final plannerName = planner?.name.trim();
 
     // Back / gesture-dismiss must also stop the tone, never leave it ringing.
     return PopScope(
@@ -151,10 +157,26 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
                   color: context.attention,
                 ),
                 const SizedBox(height: Space.xl),
+                if (item != null) ...[
+                  Text(
+                    plannerName == null || plannerName.isEmpty
+                        ? 'Planner'
+                        : plannerName,
+                    key: const ValueKey('alarm-planner-name'),
+                    textAlign: TextAlign.center,
+                    style: context.text.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: Space.sm),
+                ],
                 Text(
                   item?.title ?? 'Reminder',
+                  key: const ValueKey('alarm-task-name'),
                   textAlign: TextAlign.center,
-                  style: context.text.headlineSmall,
+                  style: context.text.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 if (item != null) ...[
                   const SizedBox(height: Space.sm),

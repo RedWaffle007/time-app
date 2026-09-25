@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:timezone/timezone.dart' as tz;
 
 import '../../../core/format/datetime_format.dart';
 import '../../../core/theme/app_icons.dart';
@@ -18,10 +17,11 @@ import '../../groups/application/group_providers.dart';
 import '../../groups/domain/planner_grant.dart';
 import '../../notifications/application/outcome_notifier.dart';
 import '../../social/application/social_providers.dart';
+import '../application/conflict_disclosure.dart';
 import '../application/schedule_providers.dart';
 import '../application/target_schedule_providers.dart';
 import '../domain/schedule_item.dart';
-import 'target_schedule_modal.dart';
+import 'conflict_warning_dialog.dart';
 
 /// Planner picks a target they may plan for and creates a timetable item IN THE
 /// TARGET'S LOCAL TIME.
@@ -72,11 +72,10 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
   String? _groupId; // group the grant came from (null when planning for self)
   bool _isSelf = false; // selected target is me → skip queue, no group
 
-  /// Targets whose schedule preview has already auto-opened this screen session.
-  /// The preview pops up the first time a granted, non-self target is selected
-  /// (so their commitments are visible before a time is chosen); reopening is
-  /// the manual button. A Set — not a single latch — so A→B→A does not re-nag.
-  final _autoShownTargets = <String>{};
+  final _shownConflictFingerprints = <String>{};
+  String? _queuedConflictFingerprint;
+  String? _activeConflictFingerprint;
+  bool _conflictDialogOpen = false;
   final _titleController = TextEditingController();
   final _noteController = TextEditingController();
   DateTime? _date;
@@ -145,49 +144,41 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     if (picked != null) setState(() => _time = picked);
   }
 
-  /// Auto-open the preview the first time a granted, non-self target is selected.
-  ///
-  /// Scheduled post-frame (never shows a dialog during build) and latched per
-  /// target via [_autoShownTargets], so it fires once and the manual button
-  /// handles every reopen. The caller has already checked grant + timezone.
-  void _maybeAutoShowPreview(String targetUid, String timezone) {
-    if (!_autoShownTargets.add(targetUid)) return; // already shown this session
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Re-check: the target may have changed (or gone self) before the frame.
-      if (!mounted || _isSelf || _targetUid != targetUid) return;
-      _pickSlotFromTargetSchedule(timezone);
-    });
-  }
-
-  /// Open the target's schedule and let the planner pick a free half-hour.
-  ///
-  /// **Gated on the existing grant, not on a new permission.** No active
-  /// `plannerGrants` row over this target means no modal — the same fact the
-  /// rules check before letting the read happen at all.
-  ///
-  /// Self-planning does not use it: a user looking at their own schedule already
-  /// has My Schedule and the calendar, and the plain pickers are less ceremony.
-  Future<void> _pickSlotFromTargetSchedule(String timezone) async {
-    final targetUid = _targetUid;
-    if (targetUid == null) return;
-    final profile = ref.read(profileByUidProvider(targetUid)).value;
-
-    final choice = await showTargetScheduleModal(
-      context,
-      targetUid: targetUid,
-      targetName: profile?.name ?? 'Their',
-      targetTimezone: timezone,
-      initialLocalDay: _date ?? DateTime.now(),
-    );
-    if (choice == null || !mounted) return;
-
-    // The modal hands back an INSTANT; the form holds wall-clock fields in the
-    // target's zone. Converting here keeps `_wall()` the single place that
-    // builds the carrier the repository expects.
-    final local = tz.TZDateTime.from(choice.startUtc, tz.getLocation(timezone));
-    setState(() {
-      _date = DateTime(local.year, local.month, local.day);
-      _time = TimeOfDay(hour: local.hour, minute: local.minute);
+  void _queueConflictDisclosure({
+    required String fingerprint,
+    required List<ConflictDisclosureGroup> groups,
+    Map<String, String> readErrors = const {},
+  }) {
+    if (_shownConflictFingerprints.contains(fingerprint) ||
+        _queuedConflictFingerprint == fingerprint) {
+      return;
+    }
+    _queuedConflictFingerprint = fingerprint;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      if (_queuedConflictFingerprint != fingerprint ||
+          _activeConflictFingerprint != fingerprint) {
+        if (_queuedConflictFingerprint == fingerprint) {
+          _queuedConflictFingerprint = null;
+        }
+        return;
+      }
+      if (_conflictDialogOpen) {
+        _queuedConflictFingerprint = null;
+        return;
+      }
+      _shownConflictFingerprints.add(fingerprint);
+      _queuedConflictFingerprint = null;
+      _conflictDialogOpen = true;
+      await showConflictWarningDialog(
+        context,
+        groups: groups,
+        readErrors: readErrors,
+      );
+      _conflictDialogOpen = false;
+      // A feed/date/target change while the dialog was open gets evaluated
+      // against the latest frame now, without stacking a second popup.
+      if (mounted) setState(() {});
     });
   }
 
@@ -322,16 +313,50 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
         ? null
         : ref.watch(profileByUidProvider(_targetUid!)).value;
     final timezone = selectedProfile?.homeTimezone;
+    _activeConflictFingerprint = null;
 
-    // Planning for someone else, with a live grant and their zone resolved:
-    // surface their schedule up front. Same fact the button and the modal read
-    // are gated on (`plannerGrants`) — no grant, no preview and no button.
-    final canViewTarget =
-        !_isSelf &&
-        _targetUid != null &&
-        ref.watch(canViewTargetScheduleProvider(_targetUid!));
-    if (canViewTarget && timezone != null) {
-      _maybeAutoShowPreview(_targetUid!, timezone);
+    // A warning exists only after target + day are known, and only when the
+    // authorized live feed contains commitments on that target-local day.
+    // The dialog receives time/date projections, never item content.
+    if (!_isSelf && _targetUid != null && _date != null && timezone != null) {
+      final schedule = ref.watch(targetScheduleProvider(_targetUid!));
+      if (schedule.hasError) {
+        final name = selectedProfile?.name ?? 'Selected friend';
+        final errorKey = '${_targetUid!}:${schedule.error.runtimeType}';
+        final fingerprint = conflictDisclosureFingerprint(
+          localDay: _date!,
+          groups: const [],
+          errorUids: [errorKey],
+        );
+        _activeConflictFingerprint = fingerprint;
+        _queueConflictDisclosure(
+          fingerprint: fingerprint,
+          groups: const [],
+          readErrors: {_targetUid!: name},
+        );
+      } else if (schedule.value case final items?) {
+        final instants = conflictInstantsForLocalDay(
+          localDay: _date!,
+          timezone: timezone,
+          items: items,
+        );
+        if (instants.isNotEmpty) {
+          final groups = [
+            ConflictDisclosureGroup(
+              uid: _targetUid!,
+              name: selectedProfile?.name ?? 'Selected friend',
+              timezone: timezone,
+              instantsUtc: instants,
+            ),
+          ];
+          final fingerprint = conflictDisclosureFingerprint(
+            localDay: _date!,
+            groups: groups,
+          );
+          _activeConflictFingerprint = fingerprint;
+          _queueConflictDisclosure(fingerprint: fingerprint, groups: groups);
+        }
+      }
     }
 
     // Whether I hold the SEPARATE emergency grant over this (non-self) target.
@@ -377,22 +402,6 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
             onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: Space.lg),
-          // Planning for someone else: their schedule auto-opens on selection
-          // (see `_maybeAutoShowPreview`); this button reopens it so a conflict
-          // stays visible before a time is chosen rather than refused after.
-          // Gated on the grant — `canViewTargetSchedule` reads `plannerGrants`,
-          // the same consent this whole screen runs on, so no grant means no
-          // button and no modal.
-          if (canViewTarget && timezone != null) ...[
-            FilledButton.tonalIcon(
-              onPressed: () => _pickSlotFromTargetSchedule(timezone),
-              icon: const Icon(AppIcons.navSchedule),
-              label: Text(
-                'See ${selectedProfile?.name ?? 'their'} schedule & pick a slot',
-              ),
-            ),
-            const SizedBox(height: Space.md),
-          ],
           Row(
             children: [
               Expanded(

@@ -9,7 +9,10 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../notifications/application/outcome_notifier.dart';
+import '../application/conflict_disclosure.dart';
 import '../application/schedule_providers.dart';
+import '../application/target_schedule_providers.dart';
+import 'conflict_warning_dialog.dart';
 
 /// One eligible group-plan recipient: a member the planner selected, plus
 /// whether it is the planner themselves (self items skip the queue).
@@ -64,6 +67,10 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
   TimeOfDay? _time;
   bool _saving = false;
   String? _error;
+  final _shownConflictFingerprints = <String>{};
+  String? _queuedConflictFingerprint;
+  String? _activeConflictFingerprint;
+  bool _conflictDialogOpen = false;
 
   @override
   void dispose() {
@@ -98,7 +105,48 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
   }
 
   DateTime _wall() => DateTime.utc(
-        _date!.year, _date!.month, _date!.day, _time!.hour, _time!.minute);
+    _date!.year,
+    _date!.month,
+    _date!.day,
+    _time!.hour,
+    _time!.minute,
+  );
+
+  void _queueConflictDisclosure({
+    required String fingerprint,
+    required List<ConflictDisclosureGroup> groups,
+    required Map<String, String> readErrors,
+  }) {
+    if (_shownConflictFingerprints.contains(fingerprint) ||
+        _queuedConflictFingerprint == fingerprint) {
+      return;
+    }
+    _queuedConflictFingerprint = fingerprint;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      if (_queuedConflictFingerprint != fingerprint ||
+          _activeConflictFingerprint != fingerprint) {
+        if (_queuedConflictFingerprint == fingerprint) {
+          _queuedConflictFingerprint = null;
+        }
+        return;
+      }
+      if (_conflictDialogOpen) {
+        _queuedConflictFingerprint = null;
+        return;
+      }
+      _shownConflictFingerprints.add(fingerprint);
+      _queuedConflictFingerprint = null;
+      _conflictDialogOpen = true;
+      await showConflictWarningDialog(
+        context,
+        groups: groups,
+        readErrors: readErrors,
+      );
+      _conflictDialogOpen = false;
+      if (mounted) setState(() {});
+    });
+  }
 
   Future<void> _send() async {
     final me = ref.read(currentUidProvider);
@@ -118,24 +166,28 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
       // never resolves its `.future`, hanging the whole send. A member we can't
       // resolve is skipped, never a freeze.
       final repo = ref.read(profileRepositoryProvider);
-      final resolved = await Future.wait(widget.candidates.map((c) async {
-        try {
-          final p = await repo
-              .watchProfile(c.uid)
-              .first
-              .timeout(const Duration(seconds: 8));
-          final tz = p?.homeTimezone;
-          if (tz == null || tz.isEmpty) return null;
-          return (uid: c.uid, timezone: tz, isSelf: c.isSelf);
-        } catch (_) {
-          return null;
-        }
-      }));
+      final resolved = await Future.wait(
+        widget.candidates.map((c) async {
+          try {
+            final p = await repo
+                .watchProfile(c.uid)
+                .first
+                .timeout(const Duration(seconds: 8));
+            final tz = p?.homeTimezone;
+            if (tz == null || tz.isEmpty) return null;
+            return (uid: c.uid, timezone: tz, isSelf: c.isSelf);
+          } catch (_) {
+            return null;
+          }
+        }),
+      );
       final targets = <({String uid, String timezone, bool isSelf})>[
         for (final t in resolved) ?t,
       ];
 
-      final result = await ref.read(scheduleRepositoryProvider).planForGroup(
+      final result = await ref
+          .read(scheduleRepositoryProvider)
+          .planForGroup(
             groupId: widget.groupId,
             createdByUid: me,
             targets: targets,
@@ -152,11 +204,13 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
       final notifier = ref.read(notificationEventNotifierProvider);
       for (final s in result.sent) {
         if (!s.isSelf) {
-          unawaited(notifier.notify(
-            event: NotifyEvent.created,
-            targetUid: s.uid,
-            itemId: s.itemId,
-          ));
+          unawaited(
+            notifier.notify(
+              event: NotifyEvent.created,
+              targetUid: s.uid,
+              itemId: s.itemId,
+            ),
+          );
         }
       }
 
@@ -171,7 +225,8 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
       } else if (n == 0) {
         message = 'No one could be planned for right now.';
       } else {
-        message = 'Planned for $n ${n == 1 ? 'member' : 'members'}'
+        message =
+            'Planned for $n ${n == 1 ? 'member' : 'members'}'
             '${skipped > 0 ? ' · $skipped skipped' : ''}.';
       }
       messenger.showSnackBar(SnackBar(content: Text(message)));
@@ -187,78 +242,170 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final count = widget.candidates.length;
+    _activeConflictFingerprint = null;
+
+    // Wait for every candidate's profile + authorized schedule read so the
+    // group flow emits ONE consolidated, name-grouped popup—not a procession of
+    // per-member dialogs. A read failure is part of that same popup.
+    if (_date != null && widget.candidates.isNotEmpty) {
+      var allSettled = true;
+      final groups = <ConflictDisclosureGroup>[];
+      final readErrors = <String, String>{};
+      final errorKeys = <String>[];
+      for (final candidate in widget.candidates) {
+        final profile = ref.watch(profileByUidProvider(candidate.uid));
+        if (profile.isLoading && !profile.hasValue) {
+          allSettled = false;
+          continue;
+        }
+        final person = profile.value;
+        final name = person?.name ?? 'Group member';
+        final timezone = person?.homeTimezone;
+        if (profile.hasError || timezone == null || timezone.isEmpty) {
+          readErrors[candidate.uid] = name;
+          errorKeys.add(
+            '${candidate.uid}:profile:${profile.error.runtimeType}',
+          );
+          continue;
+        }
+
+        final schedule = ref.watch(targetScheduleProvider(candidate.uid));
+        if (schedule.isLoading && !schedule.hasValue && !schedule.hasError) {
+          allSettled = false;
+          continue;
+        }
+        if (schedule.hasError) {
+          readErrors[candidate.uid] = name;
+          errorKeys.add(
+            '${candidate.uid}:schedule:${schedule.error.runtimeType}',
+          );
+          continue;
+        }
+        final items = schedule.value;
+        if (items == null) {
+          allSettled = false;
+          continue;
+        }
+        final instants = conflictInstantsForLocalDay(
+          localDay: _date!,
+          timezone: timezone,
+          items: items,
+        );
+        if (instants.isNotEmpty) {
+          groups.add(
+            ConflictDisclosureGroup(
+              uid: candidate.uid,
+              name: name,
+              timezone: timezone,
+              instantsUtc: instants,
+            ),
+          );
+        }
+      }
+      if (allSettled && (groups.isNotEmpty || readErrors.isNotEmpty)) {
+        groups.sort((a, b) => a.name.compareTo(b.name));
+        final fingerprint = conflictDisclosureFingerprint(
+          localDay: _date!,
+          groups: groups,
+          errorUids: errorKeys,
+        );
+        _activeConflictFingerprint = fingerprint;
+        _queueConflictDisclosure(
+          fingerprint: fingerprint,
+          groups: groups,
+          readErrors: readErrors,
+        );
+      }
+    }
 
     return Padding(
       padding: EdgeInsets.fromLTRB(
-          Space.xl, Space.sm, Space.xl, Space.xl + bottomInset),
+        Space.xl,
+        Space.sm,
+        Space.xl,
+        Space.xl + bottomInset,
+      ),
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-          Text('Plan for ${widget.groupName}', style: context.text.titleLarge),
-          const SizedBox(height: Space.xs),
-          Text(
-            count == 0
-                ? "You can't plan for anyone in this group yet — members grant "
-                    'you permission first.'
-                : 'Goes to $count ${count == 1 ? 'member' : 'members'}, each at '
-                    'this time in their own local zone. Everyone still approves '
-                    'it (you added yourself directly).',
-            style: context.text.bodySmall
-                ?.copyWith(color: context.colors.onSurfaceVariant),
-          ),
-          const SizedBox(height: Space.lg),
-          TextField(
-            controller: _title,
-            autofocus: true,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(labelText: 'Title (what to do)'),
-            onChanged: (_) => setState(() {}),
-          ),
-          const SizedBox(height: Space.lg),
-          Wrap(
-            spacing: Space.md,
-            runSpacing: Space.sm,
-            children: [
-              OutlinedButton.icon(
+            Text(
+              'Plan for ${widget.groupName}',
+              style: context.text.titleLarge,
+            ),
+            const SizedBox(height: Space.xs),
+            Text(
+              count == 0
+                  ? "You can't plan for anyone in this group yet — members grant "
+                        'you permission first.'
+                  : 'Goes to $count ${count == 1 ? 'member' : 'members'}, each at '
+                        'this time in their own local zone. Everyone still approves '
+                        'it (you added yourself directly).',
+              style: context.text.bodySmall?.copyWith(
+                color: context.colors.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: Space.lg),
+            TextField(
+              controller: _title,
+              autofocus: true,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'Title (what to do)',
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: Space.lg),
+            Wrap(
+              spacing: Space.md,
+              runSpacing: Space.sm,
+              children: [
+                OutlinedButton.icon(
                   onPressed: _pickDate,
                   icon: const Icon(AppIcons.date),
-                  label: Text(_date == null
-                      ? 'Pick date'
-                      : formatWallDate(context, _date!)),
-              ),
-              OutlinedButton.icon(
+                  label: Text(
+                    _date == null
+                        ? 'Pick date'
+                        : formatWallDate(context, _date!),
+                  ),
+                ),
+                OutlinedButton.icon(
                   onPressed: _pickTime,
                   icon: const Icon(AppIcons.time),
-                  label: Text(_time == null
-                      ? 'Pick time'
-                      : formatTimeOfDay(context, _time!)),
+                  label: Text(
+                    _time == null
+                        ? 'Pick time'
+                        : formatTimeOfDay(context, _time!),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: Space.lg),
+            TextField(
+              controller: _note,
+              decoration: const InputDecoration(labelText: 'Note (optional)'),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: Space.md),
+              Text(
+                _error!,
+                style: context.text.bodySmall?.copyWith(
+                  color: context.colors.error,
+                ),
               ),
             ],
-          ),
-          const SizedBox(height: Space.lg),
-          TextField(
-            controller: _note,
-            decoration: const InputDecoration(labelText: 'Note (optional)'),
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: Space.md),
-            Text(_error!,
-                style: context.text.bodySmall
-                    ?.copyWith(color: context.colors.error)),
-          ],
-          const SizedBox(height: Space.xl),
-          FilledButton(
-            onPressed: (_canSend && count > 0) ? _send : null,
-            child: _saving
-                ? const SizedBox(
-                    height: Sizes.buttonSpinner,
-                    width: Sizes.buttonSpinner,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Plan for the group'),
-          ),
+            const SizedBox(height: Space.xl),
+            FilledButton(
+              onPressed: (_canSend && count > 0) ? _send : null,
+              child: _saving
+                  ? const SizedBox(
+                      height: Sizes.buttonSpinner,
+                      width: Sizes.buttonSpinner,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Plan for the group'),
+            ),
           ],
         ),
       ),

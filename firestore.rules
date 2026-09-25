@@ -1573,14 +1573,14 @@ service cloud.firestore {
           );
       }
 
-      // The target always. A PLANNER holding access over them may also read —
-      // that is the "view B's schedule before picking a time" modal, and it is
+      // The target always. A PLANNER holding access over them may also read so
+      // Item 27 can derive day-scoped conflict TIMES from the live stream. It is
       // read-only: every write branch below still requires the caller to be the
       // target or the item's own creator, unchanged by this.
       //
-      // Full detail, not free/busy, and that is the access model rather than an
-      // oversight: B granted A the power to put things ON this schedule, which
-      // is strictly more than the power to read it.
+      // Firestore cannot field-redact documents, so rules still authorize the
+      // record read; the product boundary immediately projects it through
+      // conflictInstantsForLocalDay and presentation receives no title/note.
       allow read: if signedIn()
         && (request.auth.uid == targetUid
             || callerHasPlannerAccess(targetUid)

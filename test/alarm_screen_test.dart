@@ -8,6 +8,7 @@ import 'package:timezone/data/latest_all.dart' as tzdata;
 
 import 'package:time_app/core/theme/app_theme.dart';
 import 'package:time_app/features/auth/application/auth_providers.dart';
+import 'package:time_app/features/auth/domain/user_profile.dart';
 import 'package:time_app/features/reminders/application/alarm_timeline_providers.dart';
 import 'package:time_app/features/reminders/application/alarm_timeline_service.dart';
 import 'package:time_app/features/reminders/application/missed_alarm_providers.dart';
@@ -35,7 +36,7 @@ void main() {
   ScheduleItem item() => ScheduleItem(
     id: 'a',
     targetUid: 'me',
-    createdByUid: 'me',
+    createdByUid: 'planner',
     groupId: '',
     title: 'Morning run',
     localWallTime: '',
@@ -82,6 +83,17 @@ void main() {
         ),
         reminderServiceProvider.overrideWithValue(service),
         allItemsAsTargetProvider.overrideWith((ref) => Stream.value([item()])),
+        profileByUidProvider.overrideWith(
+          (ref, uid) => Stream.value(
+            uid == 'planner'
+                ? const UserProfile(
+                    uid: 'planner',
+                    name: 'Amina',
+                    homeTimezone: 'Asia/Kolkata',
+                  )
+                : null,
+          ),
+        ),
       ],
       child: MaterialApp.router(theme: AppTheme.light, routerConfig: router),
     );
@@ -94,6 +106,29 @@ void main() {
     expect(sound.starts, 1);
     expect(sound.stops, 0);
     expect(find.text('Morning run'), findsOneWidget);
+  });
+
+  testWidgets('shows the planner above the task, both bold and centered', (
+    t,
+  ) async {
+    await t.pumpWidget(harness(_FakeAlarmSound(), _FakeScheduler()));
+    await t.pumpAndSettle();
+
+    final planner = t.widget<Text>(
+      find.byKey(const ValueKey('alarm-planner-name')),
+    );
+    final task = t.widget<Text>(find.byKey(const ValueKey('alarm-task-name')));
+
+    expect(planner.data, 'Amina');
+    expect(planner.textAlign, TextAlign.center);
+    expect(planner.style?.fontWeight, FontWeight.bold);
+    expect(task.data, 'Morning run');
+    expect(task.textAlign, TextAlign.center);
+    expect(task.style?.fontWeight, FontWeight.bold);
+
+    final plannerTopLeft = t.getTopLeft(find.text('Amina'));
+    final taskTopLeft = t.getTopLeft(find.text('Morning run'));
+    expect(plannerTopLeft.dy, lessThan(taskTopLeft.dy));
   });
 
   testWidgets('cancels the fired notification on mount (no double tone)', (

@@ -17,13 +17,15 @@
 
 ## Current state
 
-- Branch: `main`; latest committed work: `29f1ebb` (Item 34 missed-alarm
-  review flow).
-- Complete locally: Items **1–23, 25, 26, 28, 29, 30, 31, 34**.
+- Branch: `main`; latest committed work: `86db693` (Item 23 request-plan
+  workflow).
+- Complete locally: Items **1–23, 25, 26, 27, 28, 29, 30, 31, 34, 35**.
 - Item 34 is committed and fully verified.
-- Item 23 is implemented in the current worktree; static analysis is clean, but
-  the handoff-required full suite has not been run and it is not committed.
-- Next implementation order: **23 → 27 → 32 → 24 → 33**.
+- Item 23 is committed and fully verified.
+- Items 27 and 35 are implemented in the current worktree; static analysis is
+  clean, but the handoff-required full suite has not been run and they are not
+  committed.
+- Next implementation order: **32 → 24 → 33**.
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
 
 ## Deferred final release gate
@@ -100,9 +102,7 @@ Batch deployment and real-device acceptance after feature work is finished:
   offline/retry behavior, rules, planner timeline, follow-up delivery, dedupe,
   and notification replay.
 
-## Remaining roadmap
-
-### 23 — Request a plan (complete locally)
+## Recently completed — Item 23
 
 - New request model; never reuse the permanent `PlanningRequest` grant.
 - Require active friendship plus an existing normal planning grant, rechecked
@@ -114,7 +114,9 @@ Batch deployment and real-device acceptance after feature work is finished:
 - Test grant/revocation, DST, adjacency/concurrency, multi-item fulfillment, and
   every creation mode in rules and application layers.
 
-### 27 — Conditional conflict disclosure
+## Remaining roadmap
+
+### 27 — Conditional conflict disclosure (complete locally)
 
 - Replace the always-visible timetable with a day-scoped warning shown only when
   the selected target has live pending/approved outcome-less items that day.
@@ -124,6 +126,15 @@ Batch deployment and real-device acceptance after feature work is finished:
   read errors explicitly. Reuse authorized streams and live-item policy.
 - Test DST/timezones, state filtering, ordering/fingerprints, mixed-zone groups,
   errors, removed old entry points, and successful save after acknowledgement.
+
+### 35 — Alarm planner attribution (complete locally)
+
+- Show the planner's resolved profile name above the task title on the ringing
+  alarm screen so the receiver can identify who created the task at a glance.
+- Keep both the planner name and task title centered and explicitly bold, while
+  retaining a safe generic planner label until the profile stream resolves.
+- Cover the displayed name, visual emphasis, centering, and vertical order in a
+  focused alarm-screen regression test.
 
 ### 32 — Custom voice-note alarms
 
@@ -171,5 +182,5 @@ Batch deployment and real-device acceptance after feature work is finished:
 
 ## Immediate next action
 
-Run the full verification suite for Item 23. If green, commit it, then implement
-Item 27.
+Run the full verification suite for Items 27 and 35. If green, commit them, then
+implement Item 32.

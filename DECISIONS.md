@@ -5859,3 +5859,63 @@ Request pushes carry the request id, route to the plan-request inbox, and stamp
 `notifiedRequested` only after a successful delivery so client replay is
 idempotent. Fulfilled items reuse the existing `created` notification and
 approval routing instead of adding a duplicate target alert.
+
+---
+
+## Conditional conflict disclosure replaces schedule browsing (2026-09-25)
+
+The Schedule Builder no longer opens or offers a full target timetable. That
+surface disclosed titles, notes, statuses and empty portions of another
+person's day even when the planner only needed one narrow fact: whether the
+selected target already had a live commitment on the chosen date. Item 27
+replaces it with an informational warning that appears only when the authorized
+live stream contains an outcome-less `pending` or `approved` item on that
+target-local day.
+
+The privacy boundary is structural. `conflictInstantsForLocalDay` consumes the
+authorized item stream and returns sorted, unique UTC instants. Presentation
+receives `ConflictDisclosureGroup` values containing only uid, display name,
+timezone and those instants—never a `ScheduleItem`, title, note, creator, status
+or outcome. Times and dates render through the global localized formatter. Two
+items at one instant disclose that time once, avoiding unnecessary count
+metadata.
+
+The warning is advisory. Its only action is `Got it`; dismissal leaves the form
+and save button unchanged. The normal create transaction and grant checks stay
+authoritative. Read failures are never treated as an empty schedule: the same
+dialog names each person whose schedule could not be checked and explicitly
+says saving remains possible.
+
+Single-person planning watches the selected target, selected date and existing
+live schedule provider. Group planning watches every candidate and waits until
+all profile/schedule reads settle, then shows one consolidated popup grouped by
+name. Each member's shared wall date is evaluated in that member's own timezone,
+so mixed-zone and DST-short/long days use absolute day bounds correctly.
+
+A stable fingerprint contains the wall date, sorted uids, timezones, conflict
+instants and read-error identities; display names are excluded. Identical
+information is shown once per form session, while target/date/feed/error changes
+produce a new fingerprint and re-evaluate. A queued dialog also verifies that
+its fingerprint is still current before opening, preventing stale popups after
+a rapid target or date change.
+
+The old `showTargetScheduleModal`, its builder button/auto-open path, and the
+blur-only design token were removed. Existing slot-domain helpers remain because
+legacy lock reconciliation and its DST/property coverage still use them; they
+are no longer a schedule-browsing UI.
+
+---
+
+## Ringing alarms identify the planner (2026-09-25)
+
+The ringing alarm screen resolves the schedule item's `createdByUid` through the
+existing profile stream and places that display name directly above the task
+title. Both lines are centered and explicitly bold so planner attribution is
+visible in the alarm's primary hierarchy rather than hidden in secondary
+metadata.
+
+The schedule item remains keyed to the immutable planner uid; the display name
+is not duplicated into alarm or schedule storage. This keeps profile renames
+consistent across the product and avoids a new stale-name migration. While a
+cold profile read is settling, the screen uses the neutral `Planner` label and
+continues ringing instead of blocking the alarm UI.
