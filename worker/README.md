@@ -66,7 +66,9 @@ FIREBASE_SERVICE_ACCOUNT={"type":"service_account", ... }
 
 `POST /`
 - Header: `Authorization: Bearer <Firebase ID token>`
-- Body: `{ "targetUid": "...", "itemId": "...", "outcome": "done" | "skipped" }`
+- Item body: `{ "event": "created" | "decided" | "outcome" | "withdrawn", "targetUid": "...", "itemId": "..." }`
+- Relationship body: `{ "event": "friendRequest" | "friendAccept" | "planningRequest" | "planningApprove", "fromUid": "...", "toUid": "...", "kind": "normal" | "emergency"? }`
+- Plan-request body: `{ "event": "planRequested", "fromUid": "...", "toUid": "...", "planRequestId": "..." }`
 
 Returns `200` with `{ sent, cleaned, recipientUid, reason }` on any handled
 outcome (including "nothing to send" reasons like `already-notified` /

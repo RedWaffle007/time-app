@@ -163,6 +163,16 @@ service cloud.firestore {
         && exists(g) && get(g).data.granted == true;
     }
 
+    // Same fact with explicit parties, for a plan-request authored by the
+    // TARGET. A plan request is never permission: its create rule requires this
+    // target-authored normal grant already to exist, and item fulfillment
+    // re-checks it again through callerHasFriendGrant.
+    function friendGrantIsActive(plannerUid, targetUid) {
+      let g = /databases/$(database)/documents/friendships/$(sortedPairId(plannerUid, targetUid))/plannerGrants/$(plannerUid + '_' + targetUid);
+      return areFriends(plannerUid, targetUid)
+        && exists(g) && get(g).data.granted == true;
+    }
+
     // Does the CALLER hold an active EMERGENCY grant over `targetUid`? (#5)
     //
     // A SEPARATE, independent grant at `.../emergencyGrants/{caller}_{target}`.
@@ -1134,6 +1144,195 @@ service cloud.firestore {
       allow delete: if signedIn() && isParty();
     }
 
+    // ---- planRequests/{batchId}_{plannerUid} ----
+    // A request for one or more ACTUAL plans (Item 23), not a request for a
+    // planning grant. The requester is the schedule target and may fan one
+    // batch out to several friends. Each recipient gets an independent row so
+    // retries are deterministic and one person's decision cannot mutate
+    // another person's request.
+    match /planRequests/{planRequestId} {
+      function requesterUid() { return resource.data.requesterUid; }
+      function plannerUid() { return resource.data.plannerUid; }
+      function isParty() {
+        return request.auth.uid == requesterUid()
+          || request.auth.uid == plannerUid();
+      }
+      function identityUnchanged() {
+        return request.resource.data.requesterUid == requesterUid()
+          && request.resource.data.plannerUid == plannerUid()
+          && request.resource.data.batchId == resource.data.batchId
+          && request.resource.data.mode == resource.data.mode
+          && request.resource.data.timezone == resource.data.timezone
+          && request.resource.data.windowStartUtc == resource.data.windowStartUtc
+          && request.resource.data.windowEndUtc == resource.data.windowEndUtc
+          && request.resource.data.durationMinutes == resource.data.durationMinutes;
+      }
+
+      allow get, list: if signedIn() && isParty();
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+             'batchId', 'requesterUid', 'plannerUid', 'participantUids',
+             'mode', 'status', 'timezone', 'windowStartUtc', 'windowEndUtc',
+             'durationMinutes', 'title', 'message', 'fulfilledSpans',
+             'fulfilledItemIds', 'createdAt', 'updatedAt'
+           ])
+        && request.resource.data.requesterUid == request.auth.uid
+        && request.resource.data.plannerUid is string
+        && request.resource.data.plannerUid != request.auth.uid
+        && planRequestId == request.resource.data.batchId + '_'
+             + request.resource.data.plannerUid
+        && request.resource.data.participantUids.hasOnly([
+             request.resource.data.requesterUid,
+             request.resource.data.plannerUid
+           ])
+        && request.resource.data.mode in ['onePlan', 'flexibleWindow']
+        && request.resource.data.status == 'pending'
+        && request.resource.data.timezone is string
+        && request.resource.data.timezone.size() > 0
+        && request.resource.data.windowStartUtc is timestamp
+        && request.resource.data.windowEndUtc is timestamp
+        && request.resource.data.windowEndUtc
+             > request.resource.data.windowStartUtc
+        && request.resource.data.windowStartUtc > request.time
+        && request.resource.data.durationMinutes is int
+        && request.resource.data.durationMinutes >= 1
+        && request.resource.data.durationMinutes <= 1440
+        && request.resource.data.windowStartUtc
+             + duration.value(request.resource.data.durationMinutes, 'm')
+             <= request.resource.data.windowEndUtc
+        && request.resource.data.fulfilledSpans == []
+        && request.resource.data.fulfilledItemIds == []
+        && (!('title' in request.resource.data)
+            || (request.resource.data.title is string
+                && request.resource.data.title.size() <= 200))
+        && (!('message' in request.resource.data)
+            || (request.resource.data.message is string
+                && request.resource.data.message.size() <= 500))
+        // Friendship + an EXISTING normal grant are prerequisites. The request
+        // grants nothing and cannot be sent as a way around consent.
+        && friendGrantIsActive(
+             request.resource.data.plannerUid, request.auth.uid);
+
+      allow update: if signedIn()
+        && isParty()
+        && identityUnchanged()
+        && changedKeys().hasOnly([
+             'status', 'fulfilledSpans', 'fulfilledItemIds',
+             'lastFulfilledItemId', 'settledByUid', 'updatedAt'
+           ])
+        && (
+          // The requester may cancel an open request, but cannot edit its
+          // contents or erase already-created item provenance.
+          (request.auth.uid == requesterUid()
+            && resource.data.status in ['pending', 'inProgress']
+            && request.resource.data.status == 'cancelled'
+            && request.resource.data.settledByUid == request.auth.uid
+            && request.resource.data.fulfilledSpans
+                 == resource.data.fulfilledSpans
+            && request.resource.data.fulfilledItemIds
+                 == resource.data.fulfilledItemIds
+            && request.resource.data.get('lastFulfilledItemId', '')
+                 == resource.data.get('lastFulfilledItemId', ''))
+          ||
+          // The selected planner may decline without creating anything.
+          (request.auth.uid == plannerUid()
+            && resource.data.status == 'pending'
+            && request.resource.data.status == 'declined'
+            && request.resource.data.settledByUid == request.auth.uid
+            && request.resource.data.fulfilledSpans == []
+            && request.resource.data.fulfilledItemIds == []
+            && request.resource.data.get('lastFulfilledItemId', '')
+                 == resource.data.get('lastFulfilledItemId', ''))
+          ||
+          // Or append exactly one item in the same atomic transaction. The
+          // item rule below checks the reverse link and the live normal grant.
+          (request.auth.uid == plannerUid()
+            && resource.data.status in ['pending', 'inProgress']
+            && request.resource.data.status in ['inProgress', 'fulfilled']
+            && request.resource.data.fulfilledSpans is list
+            && request.resource.data.fulfilledItemIds is list
+            && request.resource.data.fulfilledSpans.size()
+                 == resource.data.fulfilledSpans.size() + 1
+            && request.resource.data.fulfilledItemIds.size()
+                 == resource.data.fulfilledItemIds.size() + 1
+            && request.resource.data.fulfilledSpans
+                 .hasAll(resource.data.fulfilledSpans)
+            && request.resource.data.fulfilledItemIds
+                 .hasAll(resource.data.fulfilledItemIds)
+            && request.resource.data.lastFulfilledItemId is string
+            && request.resource.data.lastFulfilledItemId
+                 in request.resource.data.fulfilledItemIds
+            // The appended span is exact, chronological, and agrees with the
+            // item. Sorted append turns non-overlap into a bounded rules check:
+            // the new start only needs to be at/after the previous end.
+            && request.resource.data.fulfilledSpans[
+                 resource.data.fulfilledSpans.size()].keys().hasOnly([
+                   'itemId', 'startUtc', 'durationMinutes'
+                 ])
+            && request.resource.data.fulfilledSpans[
+                 resource.data.fulfilledSpans.size()].itemId
+                 == request.resource.data.lastFulfilledItemId
+            && request.resource.data.fulfilledSpans[
+                 resource.data.fulfilledSpans.size()].startUtc is timestamp
+            && request.resource.data.fulfilledSpans[
+                 resource.data.fulfilledSpans.size()].durationMinutes is int
+            && request.resource.data.fulfilledSpans[
+                 resource.data.fulfilledSpans.size()].durationMinutes >= 1
+            && request.resource.data.fulfilledSpans[
+                 resource.data.fulfilledSpans.size()].durationMinutes <= 1440
+            && request.resource.data.fulfilledSpans[
+                 resource.data.fulfilledSpans.size()].startUtc
+                 >= resource.data.windowStartUtc
+            && request.resource.data.fulfilledSpans[
+                 resource.data.fulfilledSpans.size()].startUtc
+                 + duration.value(request.resource.data.fulfilledSpans[
+                     resource.data.fulfilledSpans.size()].durationMinutes, 'm')
+                 <= resource.data.windowEndUtc
+            && (resource.data.fulfilledSpans.size() == 0
+                || request.resource.data.fulfilledSpans[
+                     resource.data.fulfilledSpans.size()].startUtc
+                   >= resource.data.fulfilledSpans[
+                     resource.data.fulfilledSpans.size() - 1].startUtc
+                     + duration.value(resource.data.fulfilledSpans[
+                         resource.data.fulfilledSpans.size() - 1]
+                         .durationMinutes, 'm'))
+            && existsAfter(/databases/$(database)/documents/scheduleItems/$(requesterUid())/items/$(request.resource.data.lastFulfilledItemId))
+            && getAfter(/databases/$(database)/documents/scheduleItems/$(requesterUid())/items/$(request.resource.data.lastFulfilledItemId)).data.planRequestId
+                 == planRequestId
+            && getAfter(/databases/$(database)/documents/scheduleItems/$(requesterUid())/items/$(request.resource.data.lastFulfilledItemId)).data.scheduledInstantUtc
+                 == request.resource.data.fulfilledSpans[
+                      resource.data.fulfilledSpans.size()].startUtc
+            && getAfter(/databases/$(database)/documents/scheduleItems/$(requesterUid())/items/$(request.resource.data.lastFulfilledItemId)).data.durationMinutes
+                 == request.resource.data.fulfilledSpans[
+                      resource.data.fulfilledSpans.size()].durationMinutes
+            && (resource.data.mode != 'onePlan'
+                || request.resource.data.fulfilledSpans[
+                     resource.data.fulfilledSpans.size()].durationMinutes
+                   == resource.data.durationMinutes)
+            && (request.resource.data.status != 'fulfilled'
+                || request.resource.data.settledByUid == request.auth.uid)
+            && (resource.data.mode != 'onePlan'
+                || request.resource.data.status == 'fulfilled'))
+          ||
+          // A flexible request with at least one item can be closed later
+          // without fabricating another item.
+          (request.auth.uid == plannerUid()
+            && resource.data.mode == 'flexibleWindow'
+            && resource.data.status == 'inProgress'
+            && request.resource.data.status == 'fulfilled'
+            && request.resource.data.settledByUid == request.auth.uid
+            && request.resource.data.fulfilledSpans
+                 == resource.data.fulfilledSpans
+            && request.resource.data.fulfilledItemIds
+                 == resource.data.fulfilledItemIds
+            && request.resource.data.get('lastFulfilledItemId', '')
+                 == resource.data.get('lastFulfilledItemId', ''))
+        );
+
+      allow delete: if false;
+    }
+
     // ---- blocks/{blockId} ----
     // A one-way record at `{blockerUid}_{blockedUid}`, enforced both ways by
     // blocked() above.
@@ -1394,13 +1593,44 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly([
              'targetUid', 'createdByUid', 'groupId', 'title', 'note',
              'localWallTime', 'timezone', 'scheduledInstantUtc', 'status',
-             'tier', 'decidedAt', 'createdAt', 'updatedAt'
+             'tier', 'durationMinutes', 'planRequestId', 'decidedAt',
+             'createdAt', 'updatedAt'
            ])
         && request.resource.data.targetUid == targetUid
         && request.resource.data.createdByUid == request.auth.uid
         // `tier` defaults to 'normal' when absent (old clients), and must be one
         // of the two. The default is what keeps a tierless create a NORMAL one.
         && request.resource.data.get('tier', 'normal') in ['normal', 'emergency']
+        && (('durationMinutes' in request.resource.data)
+            == ('planRequestId' in request.resource.data))
+        && (!('durationMinutes' in request.resource.data)
+            || (request.resource.data.durationMinutes is int
+                && request.resource.data.durationMinutes >= 1
+                && request.resource.data.durationMinutes <= 1440))
+        && (!('planRequestId' in request.resource.data)
+            || (
+              // Reverse half of the atomic fulfillment link. The request must
+              // have been open BEFORE this write, advance in this write, name
+              // this exact item, and agree on parties/bounds/duration.
+              exists(/databases/$(database)/documents/planRequests/$(request.resource.data.planRequestId))
+              && get(/databases/$(database)/documents/planRequests/$(request.resource.data.planRequestId)).data.status
+                   in ['pending', 'inProgress']
+              && get(/databases/$(database)/documents/planRequests/$(request.resource.data.planRequestId)).data.requesterUid
+                   == targetUid
+              && get(/databases/$(database)/documents/planRequests/$(request.resource.data.planRequestId)).data.plannerUid
+                   == request.auth.uid
+              && request.resource.data.status == 'pending'
+              && request.resource.data.get('tier', 'normal') == 'normal'
+              && request.resource.data.groupId == ''
+              && request.resource.data.durationMinutes is int
+              && request.resource.data.scheduledInstantUtc
+                   >= get(/databases/$(database)/documents/planRequests/$(request.resource.data.planRequestId)).data.windowStartUtc
+              && request.resource.data.scheduledInstantUtc
+                   + duration.value(request.resource.data.durationMinutes, 'm')
+                   <= get(/databases/$(database)/documents/planRequests/$(request.resource.data.planRequestId)).data.windowEndUtc
+              && getAfter(/databases/$(database)/documents/planRequests/$(request.resource.data.planRequestId)).data.lastFulfilledItemId
+                   == itemId
+            ))
         && (
           // Self-planning: consent is inherent. Any tier, pending or approved.
           (request.auth.uid == targetUid

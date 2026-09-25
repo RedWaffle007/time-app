@@ -262,12 +262,18 @@ function result(sent, cleaned, recipientUid, reason) {
 // by the transport shell BEFORE this runs — see index.js handleFriendEvent.
 export const FRIEND_EVENTS = new Set([
   'friendRequest', 'friendAccept', 'planningRequest', 'planningApprove',
+  'planRequested',
 ]);
 
 // Events whose recipient is the `toUid` (the other two notify the `fromUid`).
-const NOTIFIES_TO_UID = new Set(['friendRequest', 'planningRequest']);
+const NOTIFIES_TO_UID = new Set([
+  'friendRequest', 'planningRequest', 'planRequested',
+]);
 
-export async function sendFriendNotification(ctx, { event, fromUid, toUid, kind }) {
+export async function sendFriendNotification(
+  ctx,
+  { event, fromUid, toUid, kind, planRequestId },
+) {
   if (!FRIEND_EVENTS.has(event) || !fromUid || !toUid || fromUid === toUid) {
     return result(0, 0, null, 'bad-args');
   }
@@ -275,13 +281,29 @@ export async function sendFriendNotification(ctx, { event, fromUid, toUid, kind 
   const recipientUid = NOTIFIES_TO_UID.has(event) ? toUid : fromUid;
   const actorUid = NOTIFIES_TO_UID.has(event) ? fromUid : toUid;
 
+  // Item 23 batches use deterministic request ids, so a client retry must not
+  // ring the same friend twice. The request is durable; stamp it only after at
+  // least one device accepted the push, matching item-event dedupe semantics.
+  let planRequestPath = null;
+  if (event === 'planRequested') {
+    if (!planRequestId) return result(0, 0, recipientUid, 'bad-args');
+    planRequestPath = `planRequests/${planRequestId}`;
+    const request = await ctx.db.getDoc(planRequestPath);
+    if (!request) return result(0, 0, recipientUid, 'request-not-found');
+    if (request.notifiedRequested === true) {
+      return result(0, 0, recipientUid, 'already-notified');
+    }
+  }
+
   const actor = await ctx.db.getDoc(`users/${actorUid}`);
   const who = actor && actor.name ? String(actor.name) : 'Someone';
 
   const tokens = await ctx.db.listDocIds(`users/${recipientUid}/fcmTokens`);
   if (tokens.length === 0) return result(0, 0, recipientUid, 'no-tokens');
 
-  const message = buildFriendMessage(event, who, fromUid, toUid, kind);
+  const message = buildFriendMessage(
+    event, who, fromUid, toUid, kind, planRequestId,
+  );
 
   let sent = 0;
   let cleaned = 0;
@@ -295,13 +317,20 @@ export async function sendFriendNotification(ctx, { event, fromUid, toUid, kind 
     }
   }
 
+  if (sent > 0 && planRequestPath) {
+    await ctx.db.patchDoc(planRequestPath, {
+      notifiedRequested: true,
+      notifiedRequestedAt: new Date().toISOString(),
+    });
+  }
+
   return result(sent, cleaned, recipientUid, sent > 0 ? 'sent' : 'no-delivery');
 }
 
 // Carries only the actor's display name — a fact the recipient is entitled to
 // (they are about to see it in the request / friends list anyway). `data` drives
 // tap-routing (notification_routing.dart).
-function buildFriendMessage(event, who, fromUid, toUid, kind) {
+function buildFriendMessage(event, who, fromUid, toUid, kind, planRequestId) {
   const emergency = kind === 'emergency';
   let notification;
   switch (event) {
@@ -339,6 +368,12 @@ function buildFriendMessage(event, who, fromUid, toUid, kind) {
             body: `${who} let you plan for them`,
           };
       break;
+    case 'planRequested':
+      notification = {
+        title: 'Plan requested',
+        body: `${who} asked you to plan something for them`,
+      };
+      break;
   }
 
   return {
@@ -349,6 +384,7 @@ function buildFriendMessage(event, who, fromUid, toUid, kind) {
       fromUid,
       toUid,
       ...(kind ? { kind } : {}),
+      ...(planRequestId ? { planRequestId } : {}),
     },
   };
 }

@@ -17,10 +17,12 @@
 
 ## Current state
 
-- Branch: `main`; latest committed work: `deaac3a` (Item 31 Plan affordance).
-- Complete locally: Items **1–22, 25, 26, 28, 29, 30, 31, 34**.
-- Item 34 is implemented and fully verified in the current worktree; it needs
-  its commit.
+- Branch: `main`; latest committed work: `29f1ebb` (Item 34 missed-alarm
+  review flow).
+- Complete locally: Items **1–23, 25, 26, 28, 29, 30, 31, 34**.
+- Item 34 is committed and fully verified.
+- Item 23 is implemented in the current worktree; static analysis is clean, but
+  the handoff-required full suite has not been run and it is not committed.
 - Next implementation order: **23 → 27 → 32 → 24 → 33**.
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
 
@@ -60,9 +62,7 @@ Batch deployment and real-device acceptance after feature work is finished:
   Plan sub-tabs, and separation from the center voice FAB.
 - Update coach/help copy and tests. Do not rename Track's log-time action.
 
-## Remaining roadmap
-
-### 34 — Missed-alarm review actions (complete locally)
+## Recently completed — Item 34
 
 - Treat the current few-second popup lag as a separate bug within this item.
   Show the review promptly on the next unlocked foreground after reconciliation;
@@ -100,7 +100,9 @@ Batch deployment and real-device acceptance after feature work is finished:
   offline/retry behavior, rules, planner timeline, follow-up delivery, dedupe,
   and notification replay.
 
-### 23 — Request a plan
+## Remaining roadmap
+
+### 23 — Request a plan (complete locally)
 
 - New request model; never reuse the permanent `PlanningRequest` grant.
 - Require active friendship plus an existing normal planning grant, rechecked
@@ -169,4 +171,5 @@ Batch deployment and real-device acceptance after feature work is finished:
 
 ## Immediate next action
 
-Commit Item 34, then implement Item 23.
+Run the full verification suite for Item 23. If green, commit it, then implement
+Item 27.

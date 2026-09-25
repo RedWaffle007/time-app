@@ -5825,3 +5825,37 @@ the automatic outcome is durable, the local review becomes visible immediately;
 the potentially slow token/HTTP path proceeds independently and remains backed
 by the durable native row. The app lock and cold-start reveal still remain above
 the review surface.
+
+---
+
+## Request a plan uses requests as workflow, never authority (2026-09-25)
+
+Item 23 adds `planRequests`, deliberately separate from the existing
+`planningRequests` permission ask. A plan request is addressed from the schedule
+target to a friend who already holds the target-authored normal friendship
+grant. Both friendship and grant are checked on request creation and again in
+the atomic fulfillment transaction. The schedule-item create rule still uses
+the ordinary normal-grant branch and still forces `pending`; possession of a
+request can therefore never create an emergency or auto-approved item.
+
+One-plan requests require exactly one item of the requested duration. Flexible
+requests may append several items and are explicitly closed by the planner.
+Every request carries the requester's timezone snapshot and absolute UTC window
+bounds. Fulfilled spans are half-open `[start,end)`, so adjacent plans are
+allowed. They append chronologically; this is both a simple planner interaction
+and the bounded invariant that lets Firestore rules prove non-overlap without a
+query or loop. The item and request advance in one transaction and cross-check
+each other through `planRequestId`, `lastFulfilledItemId`, start, and duration.
+Settled requests reject replay.
+
+A multi-friend ask is a batch of independently actionable documents with stable
+`batchId_plannerUid` ids. The UI caps one atomic send at ten recipients because
+each write's rules re-read one friendship and one grant, fitting Firestore's
+20-access-call batch limit. One friend's response cannot settle another's row.
+
+Only request-created items gain `durationMinutes`; an absent value decodes to
+zero so all legacy and ordinary point alarms retain their existing behavior.
+Request pushes carry the request id, route to the plan-request inbox, and stamp
+`notifiedRequested` only after a successful delivery so client replay is
+idempotent. Fulfilled items reuse the existing `created` notification and
+approval routing instead of adding a duplicate target alert.

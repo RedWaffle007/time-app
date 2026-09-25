@@ -42,6 +42,15 @@ class _PlannerItemDetail extends StatelessWidget {
                 color: context.colors.onSurfaceVariant,
               ),
             ),
+            if (item.durationMinutes > 0) ...[
+              const SizedBox(height: Space.xs),
+              Text(
+                formatDurationMinutes(context, item.durationMinutes),
+                style: context.text.bodySmall?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
+              ),
+            ],
             if (item.note case final note? when note.trim().isNotEmpty) ...[
               const SizedBox(height: Space.md),
               Text(note.trim(), style: context.text.bodyMedium),

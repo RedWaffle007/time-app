@@ -96,6 +96,11 @@ class _CalendarItemSheet extends ConsumerWidget {
               ),
             ),
             _DetailRow(icon: AppIcons.timezone, text: item.timezone),
+            if (item.durationMinutes > 0)
+              _DetailRow(
+                icon: AppIcons.duration,
+                text: formatDurationMinutes(context, item.durationMinutes),
+              ),
 
             // Who the other party is. Omitted entirely when there isn't one —
             // a self-planned item has nobody on the other end, and "planned by

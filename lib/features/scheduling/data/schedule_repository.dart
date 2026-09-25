@@ -34,6 +34,8 @@ class ScheduleRepository {
     required String timezone,
     ScheduleItemStatus status = ScheduleItemStatus.pending,
     ItemTier tier = ItemTier.normal,
+    int durationMinutes = 0,
+    String? planRequestId,
   }) async {
     final instant = resolveWallTimeToUtc(wall, timezone);
 
@@ -57,6 +59,8 @@ class ScheduleRepository {
       // 'normal'. An emergency item is created already-`approved` (skips the
       // queue) — the caller sets that status.
       if (tier != ItemTier.normal) 'tier': tier.name,
+      if (durationMinutes > 0) 'durationMinutes': durationMinutes,
+      'planRequestId': ?planRequestId,
       // A self-approved item is decided at creation — record it for parity with
       // the approve() transition.
       if (status == ScheduleItemStatus.approved)

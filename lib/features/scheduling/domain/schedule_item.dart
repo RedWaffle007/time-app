@@ -125,6 +125,8 @@ class ScheduleItem {
     required this.scheduledInstantUtc,
     required this.status,
     this.tier = ItemTier.normal,
+    this.durationMinutes = 0,
+    this.planRequestId,
     this.note,
     this.outcome,
     this.alarm,
@@ -153,6 +155,14 @@ class ScheduleItem {
 
   /// Normal (queued) or emergency (auto-approved). See [ItemTier].
   final ItemTier tier;
+
+  /// Optional occupied duration introduced with plan requests. Existing items
+  /// have no field and remain point alarms (`0`), so this is migration-free.
+  final int durationMinutes;
+
+  /// Soft provenance link for an item created while fulfilling Item 23. The
+  /// request is never authority; rules still require the live normal grant.
+  final String? planRequestId;
 
   final ScheduleOutcome? outcome;
   final ScheduleAlarmTimeline? alarm;
@@ -261,6 +271,8 @@ class ScheduleItem {
         orElse: () => ScheduleItemStatus.pending,
       ),
       tier: d['tier'] == 'emergency' ? ItemTier.emergency : ItemTier.normal,
+      durationMinutes: (d['durationMinutes'] as num?)?.toInt() ?? 0,
+      planRequestId: d['planRequestId'] as String?,
       outcome: ScheduleOutcome.fromMap(d['outcome'] as Map<String, dynamic>?),
       alarm: ScheduleAlarmTimeline.fromMap(d['alarm'] as Map<String, dynamic>?),
       rejectionReason: d['rejectionReason'] as String?,

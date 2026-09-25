@@ -32,10 +32,11 @@ class PendingApprovalsScreen extends ConsumerWidget {
         emptyMessage: 'Nothing waiting for approval.',
         emptyIcon: AppIcons.emptyGeneric,
         builder: (context, items) {
-          final pending = items
-              .where((i) => i.status == ScheduleItemStatus.pending)
-              .toList()
-            ..sort(compareScheduleItemsDayAscendingLatestFirst);
+          final pending =
+              items
+                  .where((i) => i.status == ScheduleItemStatus.pending)
+                  .toList()
+                ..sort(compareScheduleItemsDayAscendingLatestFirst);
           return ListView(
             children: [
               // The one place in the app where an orange section rule is
@@ -61,7 +62,8 @@ class _ApprovalCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final plannerName =
-        ref.watch(profileByUidProvider(item.createdByUid)).value?.name ?? 'Someone';
+        ref.watch(profileByUidProvider(item.createdByUid)).value?.name ??
+        'Someone';
 
     return Card(
       child: Padding(
@@ -71,19 +73,30 @@ class _ApprovalCard extends ConsumerWidget {
           children: [
             Text(item.title, style: context.text.titleMedium),
             const SizedBox(height: Space.xs),
-            Text(formatInstant(context, item.scheduledInstantUtc, item.timezone)),
+            Text(
+              formatInstant(context, item.scheduledInstantUtc, item.timezone),
+            ),
+            if (item.durationMinutes > 0)
+              Text(
+                formatDurationMinutes(context, item.durationMinutes),
+                style: context.text.bodySmall?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
+              ),
             Text(
               '${item.timezone} · from $plannerName',
-              style: context.text.bodySmall
-                  ?.copyWith(color: context.colors.onSurfaceVariant),
+              style: context.text.bodySmall?.copyWith(
+                color: context.colors.onSurfaceVariant,
+              ),
             ),
             if (item.note != null && item.note!.isNotEmpty) ...[
               const SizedBox(height: Space.sm),
               // Quoted user content is set apart by colour, not italics.
               Text(
                 '“${item.note}”',
-                style: context.text.bodyMedium
-                    ?.copyWith(color: context.colors.onSurfaceVariant),
+                style: context.text.bodyMedium?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
               ),
             ],
             const SizedBox(height: Space.md),
@@ -113,7 +126,9 @@ class _ApprovalCard extends ConsumerWidget {
   /// push is additive (a failed push never blocks the approval).
   Future<void> _approve(WidgetRef ref) async {
     await ref.read(scheduleRepositoryProvider).approve(item.targetUid, item.id);
-    await ref.read(notificationEventNotifierProvider).notify(
+    await ref
+        .read(notificationEventNotifierProvider)
+        .notify(
           event: NotifyEvent.decided,
           targetUid: item.targetUid,
           itemId: item.id,
@@ -134,13 +149,21 @@ class _ApprovalCard extends ConsumerWidget {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Reject')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Reject'),
+          ),
         ],
       ),
     );
     if (confirmed == true) {
-      await ref.read(scheduleRepositoryProvider).reject(
+      await ref
+          .read(scheduleRepositoryProvider)
+          .reject(
             item.targetUid,
             item.id,
             reason: controller.text,
@@ -148,7 +171,9 @@ class _ApprovalCard extends ConsumerWidget {
             // half-hour, and without this it would block it permanently.
             item: item,
           );
-      await ref.read(notificationEventNotifierProvider).notify(
+      await ref
+          .read(notificationEventNotifierProvider)
+          .notify(
             event: NotifyEvent.decided,
             targetUid: item.targetUid,
             itemId: item.id,

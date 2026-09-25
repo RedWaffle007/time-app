@@ -262,7 +262,7 @@ async function runInactivityCron(env, now) {
  * sent; `friendAccept` requires the friendship to exist. Fails CLOSED.
  */
 async function handleFriendEvent(request, env, body) {
-  const { event, fromUid, toUid, kind } = body || {};
+  const { event, fromUid, toUid, kind, planRequestId } = body || {};
   if (
     typeof fromUid !== 'string' ||
     typeof toUid !== 'string' ||
@@ -329,6 +329,19 @@ async function handleFriendEvent(request, env, body) {
       ) {
         return json({ error: 'forbidden' }, 403);
       }
+    } else if (event === 'planRequested') {
+      if (callerUid !== fromUid || typeof planRequestId !== 'string') {
+        return json({ error: 'forbidden' }, 403);
+      }
+      const req = await db.getDoc(`planRequests/${planRequestId}`);
+      if (!req) return json({ error: 'request-not-found' }, 404);
+      if (
+        req.requesterUid !== fromUid ||
+        req.plannerUid !== toUid ||
+        (req.status !== 'pending' && req.status !== 'inProgress')
+      ) {
+        return json({ error: 'forbidden' }, 403);
+      }
     } else {
       // planningApprove: the approver (toUid) notifies the original requester
       // (fromUid) — only once the GRANT actually exists (the approval wrote it).
@@ -350,7 +363,9 @@ async function handleFriendEvent(request, env, body) {
       db,
       fcm: makeFcm(projectId, accessToken),
     };
-    const res = await sendFriendNotification(ctx, { event, fromUid, toUid, kind });
+    const res = await sendFriendNotification(ctx, {
+      event, fromUid, toUid, kind, planRequestId,
+    });
     console.log(JSON.stringify(res));
     return json(res, 200);
   } catch (e) {

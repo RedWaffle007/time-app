@@ -93,6 +93,15 @@ class HowItWorksScreen extends ConsumerWidget {
                 'revocable any time. A friendship alone grants nothing.',
           ),
           const _Feature(
+            icon: AppIcons.navSchedule,
+            title: 'Request a plan',
+            body:
+                'From You → Friends → Plan requests, ask one or more trusted '
+                'friends to plan one item or fill a time window. They still '
+                'need your normal planning permission, and every item still '
+                'comes back to you for approval.',
+          ),
+          const _Feature(
             icon: AppIcons.approved,
             title: 'Approve or reject',
             body:

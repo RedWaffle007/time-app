@@ -52,6 +52,13 @@ class NotificationRouter {
         router.go(Routes.friendRequests);
       case 'friendAccept':
         router.go(Routes.friends);
+      case 'planRequested':
+        final requestId = data['planRequestId'];
+        router.go(
+          requestId is String && requestId.isNotEmpty
+              ? Routes.fulfillPlanRequestFor(requestId)
+              : Routes.planRequests,
+        );
       case 'inactivity':
         router.go(Routes.plan);
       default:

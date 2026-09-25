@@ -98,4 +98,46 @@ void main() {
       expect(find.text('Main tabs'), findsOneWidget);
     },
   );
+
+  testWidgets('a plan request push opens the actionable request inbox', (
+    tester,
+  ) async {
+    final router = GoRouter(
+      initialLocation: Routes.friends,
+      routes: [
+        GoRoute(
+          path: Routes.friends,
+          builder: (_, _) => const Text('Friends'),
+          routes: [
+            GoRoute(
+              path: 'plan-requests',
+              builder: (_, _) => const Text('Plan requests'),
+              routes: [
+                GoRoute(
+                  path: 'fulfill/:requestId',
+                  builder: (_, state) =>
+                      Text('Fulfill ${state.pathParameters['requestId']}'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+    final container = ProviderContainer(
+      overrides: [routerProvider.overrideWithValue(router)],
+    );
+    addTearDown(container.dispose);
+    addTearDown(router.dispose);
+    await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+    await tester.pumpAndSettle();
+
+    container.read(notificationRouterProvider).openForPushEvent({
+      'event': 'planRequested',
+      'planRequestId': 'batch_planner',
+    });
+    await tester.pumpAndSettle();
+
+    expect(find.text('Fulfill batch_planner'), findsOneWidget);
+  });
 }

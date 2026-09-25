@@ -464,6 +464,45 @@ test('friend notifications reject bad parties and use a safe missing-name fallba
   );
 });
 
+test('plan-request notification carries the request id for routing', async () => {
+  const harness = context({
+    'users/requester': { name: 'Alex' },
+    'planRequests/batch_planner': { status: 'pending' },
+  });
+  const result = await sendFriendNotification(harness.ctx, {
+    event: 'planRequested',
+    fromUid: 'requester',
+    toUid: 'planner',
+    planRequestId: 'batch_planner',
+  });
+
+  assert.equal(result.recipientUid, 'planner');
+  assert.deepEqual(harness.sent[0].data, {
+    type: 'planRequested',
+    event: 'planRequested',
+    fromUid: 'requester',
+    toUid: 'planner',
+    planRequestId: 'batch_planner',
+  });
+  assert.equal(harness.patched[0].path, 'planRequests/batch_planner');
+  assert.equal(harness.patched[0].fields.notifiedRequested, true);
+});
+
+test('plan-request notification replay is deduplicated', async () => {
+  const harness = context({
+    'planRequests/batch_planner': { notifiedRequested: true },
+  });
+  const result = await sendFriendNotification(harness.ctx, {
+    event: 'planRequested',
+    fromUid: 'requester',
+    toUid: 'planner',
+    planRequestId: 'batch_planner',
+  });
+
+  assert.equal(result.reason, 'already-notified');
+  assert.equal(harness.sent.length, 0);
+});
+
 test('friend notifications share multi-device cleanup semantics', async () => {
   const harness = context({ 'users/sender': { name: 'Alex' } }, {
     tokens: ['good', 'gone', 'transient'],

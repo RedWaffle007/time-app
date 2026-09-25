@@ -21,6 +21,7 @@ enum FriendNotifyEvent {
   friendAccept,
   planningRequest,
   planningApprove,
+  planRequested,
 }
 
 /// The seam between "a friend-graph action happened" and "the other party gets a
@@ -35,6 +36,7 @@ abstract class FriendEventNotifier {
     // Only the planning events carry it (normal/emergency); it just changes the
     // push copy and is validated by the Worker.
     String? kind,
+    String? planRequestId,
   });
 }
 
@@ -49,6 +51,7 @@ class NoopFriendEventNotifier implements FriendEventNotifier {
     required String fromUid,
     required String toUid,
     String? kind,
+    String? planRequestId,
   }) async {}
 }
 

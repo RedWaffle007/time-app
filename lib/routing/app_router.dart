@@ -16,6 +16,7 @@ import '../features/calendar/presentation/calendar_screen.dart';
 import '../features/home/presentation/home_gate.dart';
 import '../features/onboarding/presentation/onboarding_screen.dart';
 import '../features/outcomes/presentation/history_screen.dart';
+import '../features/plan_requests/presentation/plan_request_screens.dart';
 import '../features/walkthrough/presentation/how_it_works_screen.dart';
 import '../features/social/presentation/blocked_users_screen.dart';
 import '../features/social/presentation/friend_requests_screen.dart';
@@ -141,6 +142,12 @@ class Routes {
   static const friendRequests = '$friends/requests';
   static const userSearch = '$friends/search';
   static const blockedUsers = '$friends/blocked';
+  static const planRequests = '$friends/plan-requests';
+  static const newPlanRequest = '$planRequests/new';
+  static const fulfillPlanRequest = '$planRequests/fulfill';
+
+  static String fulfillPlanRequestFor(String requestId) =>
+      '$fulfillPlanRequest/$requestId';
 
   /// Viewing ONE person's profile.
   ///
@@ -456,6 +463,24 @@ final routerProvider = Provider<GoRouter>((ref) {
                       GoRoute(
                         path: 'blocked',
                         builder: (context, state) => const BlockedUsersScreen(),
+                      ),
+                      GoRoute(
+                        path: 'plan-requests',
+                        builder: (context, state) => const PlanRequestsScreen(),
+                        routes: [
+                          GoRoute(
+                            path: 'new',
+                            builder: (context, state) =>
+                                const CreatePlanRequestScreen(),
+                          ),
+                          GoRoute(
+                            path: 'fulfill/:requestId',
+                            builder: (context, state) =>
+                                FulfillPlanRequestScreen(
+                                  requestId: state.pathParameters['requestId']!,
+                                ),
+                          ),
+                        ],
                       ),
                     ],
                   ),

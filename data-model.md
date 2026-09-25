@@ -25,6 +25,7 @@ joinCodes/{code}
 usernames/{handle}                        # SOCIAL — uniqueness + search
 friendRequests/{fromUid}_{toUid}          # SOCIAL — directed
 friendships/{sortedPairId}                # SOCIAL — symmetric
+planRequests/{batchId}_{plannerUid}        # request for actual plans (Item 23)
 blocks/{blockerUid}_{blockedUid}          # SOCIAL — directed record, symmetric effect
 invites/{inviteId}
 scheduleItems/{targetUid}/items/{itemId}
@@ -133,6 +134,7 @@ Split into **commitment fields** (changing these re-triggers consent) and
 | `localWallTime` | string | Wall-clock the planner set, e.g. `2026-07-20T09:00`. No offset — a wall time, not an instant. |
 | `timezone` | string | IANA tz the item was **built against** — a snapshot of the target's `homeTimezone` at creation time. Stored per-item so later profile changes don't silently move existing commitments. |
 | `scheduledInstantUtc` | Timestamp | Resolved absolute instant = `localWallTime` interpreted in `timezone` (DST-correct at that date). This is the source of truth for *when it fires*. |
+| `durationMinutes` | int? | Occupied duration for a request-fulfilled item. Absent on legacy/self/manual point alarms and decoded as `0`. |
 
 **Cosmetic fields** (edit ⇒ status unchanged):
 
@@ -148,11 +150,42 @@ Split into **commitment fields** (changing these re-triggers consent) and
 | `targetUid` | string | Redundant with path; kept for collection-group queries. |
 | `createdByUid` | string | The planner. |
 | `groupId` | string | Group context the planning happened in. |
+| `planRequestId` | string? | Provenance for an Item 23 fulfillment. Never an authority token; item create still requires the live normal grant. |
 | `status` | enum | See state machine. |
 | `outcome` | map? | See below. Target-recorded completion or skip. |
 | `alarm` | map? | Target-device observations: optional `rangAt`, `dismissedAt`, and `unavailableAt` timestamps. See below. |
 | `rejectionReason` / `withdrawnReason` / `cancellationReason` | string? | Optional, per terminal transition. |
 | `createdAt` / `decidedAt` / `updatedAt` | Timestamp | `decidedAt` = when the target approved/rejected. |
+
+---
+
+## `planRequests/{batchId}_{plannerUid}` — request actual plans
+
+Distinct from `planningRequests`, which asks for a permanent grant. Here the
+requester is the schedule target and asks one or more friends who **already hold
+the normal friendship grant** to create real pending items. A multi-friend send
+is one deterministic document per recipient, all sharing `batchId`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `batchId` | string | Stable id shared by a multi-friend send. |
+| `requesterUid` / `plannerUid` | string | Target and selected friend. Immutable. |
+| `participantUids` | string[2] | Caller-scoped inbox queries. |
+| `mode` | enum | `onePlan` or `flexibleWindow`. |
+| `status` | enum | `pending` → `inProgress` → `fulfilled`, or `declined` / `cancelled`. |
+| `timezone` | string | Requester's IANA-zone snapshot. |
+| `windowStartUtc` / `windowEndUtc` | Timestamp | Exclusive-end absolute bounds resolved from requester-local wall fields. |
+| `durationMinutes` | int | Exact duration for `onePlan`; default offered for flexible items. |
+| `title` / `message` | string? | Optional ask and context. |
+| `fulfilledSpans` | map[] | Append-only chronological `{itemId,startUtc,durationMinutes}` spans. Half-open; adjacency is valid. |
+| `fulfilledItemIds` / `lastFulfilledItemId` | string[] / string? | Reverse link used by rules to require atomic item + request advancement. |
+
+Creating a request requires active friendship plus an already-active normal
+friendship grant. Every fulfillment rechecks both and atomically creates a
+normal `pending` schedule item while appending exactly one span. Rules validate
+the item/request links in both directions, absolute bounds, requested one-plan
+duration, chronological non-overlap, and terminal replay denial. Old schedule
+items remain valid point alarms because `durationMinutes` is optional.
 
 ---
 
