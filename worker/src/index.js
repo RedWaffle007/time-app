@@ -37,6 +37,12 @@ import {
   voiceDownload,
   voiceUpload,
 } from './voice.js';
+import {
+  libraryAttach,
+  libraryDelete,
+  libraryDownload,
+  saveSentVoiceNote,
+} from './voice-library.js';
 
 const MAX_BODY_BYTES = 2048;
 const EVENTS = new Set([
@@ -196,6 +202,22 @@ export default {
         fcm: makeFcm(projectId, accessToken),
       };
       const res = await sendEventNotification(ctx, { event, targetUid, itemId });
+      // Every SENT voice note goes into the planner's library (32d). Never
+      // allowed to fail the push; the hourly sweep retries it.
+      if (event === 'created' && item.voiceNote && item.createdByUid !== targetUid) {
+        try {
+          const storage = makeVoiceStorage(env);
+          if (storage.configured) {
+            const saved = await saveSentVoiceNote(
+              { db, storage },
+              { targetUid, itemId, item },
+            );
+            console.log(JSON.stringify({ event: 'voice-library-save', saved }));
+          }
+        } catch (e) {
+          console.error('voice library save failed', { name: e?.name || 'Error' });
+        }
+      }
       // Surface the decisive result in `wrangler tail` — HTTP 200 alone can't
       // distinguish a real send from a "nothing to send" reason (no-tokens,
       // already-notified, no-active-grant, …); the body's `reason`/`sent` can.
@@ -281,10 +303,11 @@ export function cronJobFor(cron) {
  */
 async function handleVoiceRequest(request, env, url) {
   const isUpload = url.pathname === '/voice';
-  if (isUpload ? request.method !== 'POST' : request.method !== 'GET') {
-    return json({ error: 'method-not-allowed' }, 405, {
-      Allow: isUpload ? 'POST' : 'GET',
-    });
+  const isAttach = url.pathname === '/voice/attach';
+  const libraryMatch = /^\/voice\/library\/([^/]+)$/.exec(url.pathname);
+  const allowed = isUpload || isAttach ? ['POST'] : libraryMatch ? ['GET', 'DELETE'] : ['GET'];
+  if (!allowed.includes(request.method)) {
+    return json({ error: 'method-not-allowed' }, 405, { Allow: allowed.join(', ') });
   }
   const storage = makeVoiceStorage(env);
   if (!storage.configured) return json({ error: 'storage-not-configured' }, 500);
@@ -310,6 +333,20 @@ async function handleVoiceRequest(request, env, url) {
   try {
     const accessToken = await getAccessToken(serviceAccount);
     const ctx = { db: makeFirestoreDb(env.PROJECT_ID, accessToken), storage };
+    if (isAttach) {
+      const res = await libraryAttach(ctx, {
+        callerUid,
+        noteId: request.headers.get('x-note-id') || '',
+        targetUid: request.headers.get('x-target-uid') || '',
+        itemId: request.headers.get('x-item-id') || '',
+        groupId: request.headers.get('x-group-id') || '',
+      });
+      return json(res.body, res.status);
+    }
+    if (libraryMatch && request.method === 'DELETE') {
+      const res = await libraryDelete(ctx, { callerUid, noteId: libraryMatch[1] });
+      return json(res.body, res.status);
+    }
     if (isUpload) {
       const bytes = new Uint8Array(await request.arrayBuffer());
       const res = await voiceUpload(ctx, {
@@ -322,7 +359,9 @@ async function handleVoiceRequest(request, env, url) {
       return json(res.body, res.status);
     }
     const [, , targetUid, itemId] = url.pathname.split('/');
-    const res = await voiceDownload(ctx, { callerUid, targetUid, itemId });
+    const res = libraryMatch
+      ? await libraryDownload(ctx, { callerUid, noteId: libraryMatch[1] })
+      : await voiceDownload(ctx, { callerUid, targetUid, itemId });
     if (!res.bytes) return json(res.body, res.status);
     return new Response(res.bytes, {
       status: 200,
@@ -350,6 +389,7 @@ async function runVoiceSweepCron(env, now) {
     db: makeFirestoreDb(env.PROJECT_ID, accessToken),
     storage: makeVoiceStorage(env),
   };
+  ctx.saveToLibrary = (args, at) => saveSentVoiceNote(ctx, args, at);
   const result = await sweepVoiceUploads(ctx, now);
   console.log(JSON.stringify({ event: 'voice-sweep-cron', ...result }));
 }

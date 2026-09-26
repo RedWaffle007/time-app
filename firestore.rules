@@ -451,6 +451,22 @@ service cloud.firestore {
         allow read, write: if signedIn() && request.auth.uid == uid;
       }
 
+      // ---- voiceLibrary/{noteId} (item 32d) ----
+      // The owner's saved voice notes. Created and deleted ONLY by the Worker,
+      // which keeps each entry and its audio together (every sent note is
+      // saved; 20 max, first in first out). The owner reads them and may
+      // rename one (1–60 characters) or clear the name back to its date.
+      match /voiceLibrary/{noteId} {
+        allow read: if signedIn() && request.auth.uid == uid;
+        allow create, delete: if false;
+        allow update: if signedIn() && request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])
+          && (!('name' in request.resource.data)
+              || (request.resource.data.name is string
+                  && request.resource.data.name.size() >= 1
+                  && request.resource.data.name.size() <= 60));
+      }
+
       // ---- users/{uid}/trackedTime/{entryId} ----
       // Personal, manual time-tracking. A genuinely SEPARATE feature from
       // planning: it lives in its own tree, and owner-only in BOTH directions —

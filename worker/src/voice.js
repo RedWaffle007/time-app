@@ -6,6 +6,7 @@
 //   POST /voice                       upload for a plan about to be created
 //        headers: x-target-uid, x-item-id, [x-group-id]; body = the .m4a
 //   GET  /voice/{targetUid}/{itemId}  download (the target or the planner)
+//   /voice/library/…, /voice/attach   the planner's library (voice-library.js)
 //
 // Every check is made HERE against the bytes and against Firestore; nothing
 // the phone claims is trusted. The item then carries only
@@ -170,6 +171,9 @@ export async function voiceUpload(ctx, { callerUid, targetUid, itemId, groupId, 
     createdAt: now,
     // Orphan deadline; the sweep extends it once the plan exists.
     expiresAt: new Date(now.getTime() + ORPHAN_TTL_MS),
+    // A fresh recording (even one replacing an attached library note) is
+    // saved to the library once its plan is sent (32d).
+    librarySavedAt: null,
   });
   return reply(200, { sha256, durationMs, sizeBytes: bytes.length });
 }
@@ -211,6 +215,15 @@ export async function sweepVoiceUploads(ctx, now = new Date(), limit = 15) {
     if (!UID.test(targetUid || '') || !ITEM_ID.test(itemId || '')) continue;
     const item = await ctx.db.getDoc(`scheduleItems/${targetUid}/items/${itemId}`);
     const used = item && item.voiceNote && item.voiceNote.sha256 === record.sha256;
+    if (used && ctx.saveToLibrary) {
+      // Fallback for the library save (32d) should the send-time one have
+      // failed; idempotent, and never allowed to stall the sweep.
+      try {
+        await ctx.saveToLibrary({ targetUid, itemId, item }, now);
+      } catch (e) {
+        console.error('voice library save (sweep) failed', { name: e?.name || 'Error' });
+      }
+    }
     if (used) {
       const keepUntil = Date.parse(item.scheduledInstantUtc) + RETAIN_AFTER_DUE_MS;
       if (Number.isFinite(keepUntil) && keepUntil > now.getTime()) {

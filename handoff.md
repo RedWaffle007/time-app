@@ -44,7 +44,7 @@
 - Latest profile build installed on the Redmi; the third-pass fixes await the
   user's device check.
 - Next implementation order (revised 2026-09-26 after the in-person device
-  check): **Batch A ✓ → B ✓ → B2 ✓ → C ✓ → D ✓ (decided) → E (18 → 19 → 20 → 15 → 14 → 16 → 17) ✓ → 32-0…32c ✓ → F (F1+F6 ✓ → F2 ✓ → F3+F5 ✓ → F4 ✓ built) → 32d → 24 → 33**. See "Device-check
+  check): **Batch A ✓ → B ✓ → B2 ✓ → C ✓ → D ✓ (decided) → E (18 → 19 → 20 → 15 → 14 → 16 → 17) ✓ → 32-0…32c ✓ → F (F1+F6 ✓ → F2 ✓ → F3+F5 ✓ → F4 ✓) → 32d ✓ built → 24 → 33**. See "Device-check
   backlog (2026-09-26)" below.
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
 
@@ -391,6 +391,11 @@ Steps (each its own tests + commit):
   process-death via `AlarmDeliveryStore`, fallback + planner notice, pre-due
   rescue push, local cleanup off the reminder mirror. Native unit tests +
   Redmi audio acceptance.
+- **32d — BUILT 2026-09-26 (awaiting rules deploy → Worker deploy → commit;
+  phone check deferred).** Auto-save of every sent note (Worker, send time +
+  sweep fallback), newest 20 FIFO, You → Voice notes (play / rename / delete,
+  localized default names, month groups), "Choose from library" in the builder
+  via server-side copy. DECISIONS.md "Voice-note library". Original:
 - **32d** Library: save, You → Voice notes (play, rename, delete, localized
   timestamp default name, newest first, month groups once two months exist),
   attach from library via server-side copy.

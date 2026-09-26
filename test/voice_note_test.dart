@@ -20,6 +20,7 @@ import 'package:time_app/features/scheduling/domain/schedule_item.dart';
 import 'package:time_app/core/theme/app_tokens.dart';
 import 'package:time_app/core/widgets/field_glow.dart';
 import 'package:time_app/features/scheduling/presentation/schedule_builder_screen.dart';
+import 'package:time_app/features/voice_notes/domain/voice_library_note.dart';
 import 'package:time_app/features/social/application/social_providers.dart';
 import 'package:time_app/features/voice_notes/application/voice_note_cache.dart';
 import 'package:time_app/features/voice_notes/application/voice_note_providers.dart';
@@ -107,6 +108,30 @@ class _Client implements VoiceNoteClient {
     required String itemId,
   }) async {
     downloads++;
+    return downloadBytes ?? _audio;
+  }
+
+  final attaches = <(String, String, String, String?)>[];
+  final libraryDeletes = <String>[];
+  var libraryDownloads = 0;
+
+  @override
+  Future<VoiceNoteMeta> attachFromLibrary({
+    required String noteId,
+    required String targetUid,
+    required String itemId,
+    String? groupId,
+  }) async {
+    attaches.add((noteId, targetUid, itemId, groupId));
+    return _metaFor(_audio);
+  }
+
+  @override
+  Future<void> deleteLibrary(String noteId) async => libraryDeletes.add(noteId);
+
+  @override
+  Future<Uint8List> downloadLibrary(String noteId) async {
+    libraryDownloads++;
     return downloadBytes ?? _audio;
   }
 }
@@ -503,6 +528,7 @@ void main() {
       _Client? client,
       String target = 'friend-1',
       bool dark = false,
+      List<VoiceLibraryNote> library = const [],
     }) async {
       final repo = _Repo();
       final voice = client ?? _Client();
@@ -540,6 +566,7 @@ void main() {
             scheduleRepositoryProvider.overrideWithValue(repo),
             notificationEventNotifierProvider.overrideWithValue(_Notifier()),
             voiceNoteClientProvider.overrideWithValue(voice),
+            voiceLibraryProvider.overrideWith((ref) => Stream.value(library)),
             voiceRecorderFactoryProvider.overrideWithValue(
               () => _Recorder(permission: true),
             ),
@@ -750,6 +777,74 @@ void main() {
         tester.widget<Text>(find.text(kTaskNameRequired)).style?.color,
         AppTheme.dark.colorScheme.error,
       );
+    });
+
+    VoiceLibraryNote saved() => VoiceLibraryNote(
+      id: 'note0000000000000001',
+      sha256: _metaFor(_audio).sha256,
+      durationMs: 7000,
+      sizeBytes: _audio.length,
+      createdAt: DateTime.utc(2030, 1, 1, 9),
+      name: 'Rise and shine',
+    );
+
+    testWidgets('no library, no "Choose from library" (32d)', (tester) async {
+      await pumpBuilder(tester);
+      await tester.tap(find.text('Voice Note'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('choose-from-library')), findsNothing);
+    });
+
+    testWidgets('a library note is attached server-side, never re-uploaded', (
+      tester,
+    ) async {
+      final (repo, client) = await pumpBuilder(tester, library: [saved()]);
+      await tester.tap(find.text('Voice Note'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('choose-from-library')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Rise and shine'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('library-choice')), findsOneWidget);
+      expect(find.byKey(const ValueKey('voice-note-recorder')), findsNothing);
+      expect(find.textContaining('plays 5 times'), findsOneWidget);
+
+      await send(tester);
+      expect(client.uploads, isEmpty);
+      expect(client.attaches.single, (
+        'note0000000000000001',
+        'friend-1',
+        'prepared-id-000001',
+        null,
+      ));
+      final created = repo.created.single;
+      expect(created['itemId'], 'prepared-id-000001');
+      expect(created['title'], kVoiceAlarmTitle);
+      expect(
+        (created['voiceNote'] as VoiceNoteMeta?)?.sha256,
+        _metaFor(_audio).sha256,
+      );
+      expect(find.text('Voice alarm sent.'), findsOneWidget);
+      expect(find.byKey(const ValueKey('library-choice')), findsNothing);
+    });
+
+    testWidgets('removing the library choice goes back to recording', (
+      tester,
+    ) async {
+      final (repo, client) = await pumpBuilder(tester, library: [saved()]);
+      await tester.tap(find.text('Voice Note'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('choose-from-library')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Rise and shine'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('library-choice-remove')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('voice-note-recorder')), findsOneWidget);
+      await send(tester);
+      expect(find.text(kVoiceNoteRequired), findsOneWidget);
+      expect(client.attaches, isEmpty);
+      expect(repo.created, isEmpty);
     });
   });
 }

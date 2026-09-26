@@ -30,6 +30,7 @@ import '../features/home/presentation/you_screen.dart';
 import '../features/plan/presentation/plan_shell.dart';
 import '../features/stats/presentation/stats_screen.dart';
 import '../features/time_tracking/presentation/track_screen.dart';
+import '../features/voice_notes/presentation/voice_library_screen.dart';
 import 'go_router_refresh_stream.dart';
 import '../features/invites/application/pending_invite.dart';
 import '../features/invites/domain/invite_link.dart';
@@ -140,9 +141,13 @@ class Routes {
   /// so Back has a main-tab destination even when the app was opened directly
   /// from a friend-accept notification.
   static const friends = '/you/friends';
+
   static const friendRequests = '$friends/requests';
   static const userSearch = '$friends/search';
   static const blockedUsers = '$friends/blocked';
+  /// **Your voice-note library** (32d): every voice note you send, newest 20.
+  /// In You's branch, pushed from its tile.
+  static const voiceNotes = '/you/voice-notes';
   static const planRequests = '$friends/plan-requests';
   static const newPlanRequest = '$planRequests/new';
   static const fulfillPlanRequest = '$planRequests/fulfill';
@@ -450,6 +455,11 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: Routes.you,
                 builder: (context, state) => const YouScreen(),
                 routes: [
+                  // The voice-note library (32d), pushed from its You tile.
+                  GoRoute(
+                    path: 'voice-notes',
+                    builder: (context, state) => const VoiceLibraryScreen(),
+                  ),
                   // Social screens live in You's branch. In particular, a
                   // friend-accept notification uses `go(Routes.friends)`; this
                   // parent route gives that deep link a real screen beneath it

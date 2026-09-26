@@ -1,4 +1,9 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../auth/application/auth_providers.dart';
+import '../data/voice_library_repository.dart';
+import '../domain/voice_library_note.dart';
 
 import '../data/voice_note_client.dart';
 import '../data/voice_player.dart';
@@ -37,3 +42,14 @@ int voicePlaysFor(Duration length) {
   if (ms >= 5000) return 5;
   return 6;
 }
+
+final voiceLibraryRepositoryProvider = Provider<VoiceLibraryRepository>(
+  (ref) => FirestoreVoiceLibraryRepository(FirebaseFirestore.instance),
+);
+
+/// The signed-in planner's saved voice notes, newest first (item 32d).
+final voiceLibraryProvider = StreamProvider<List<VoiceLibraryNote>>((ref) {
+  final uid = ref.watch(currentUidProvider);
+  if (uid == null) return Stream.value(const []);
+  return ref.watch(voiceLibraryRepositoryProvider).watch(uid);
+});

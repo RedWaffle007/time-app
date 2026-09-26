@@ -499,3 +499,13 @@ Placing a block cascades — block doc, then planner grants both directions, the
 the friendship, then pending requests — in that order, so every intermediate
 state is safe. **Existing schedule items are untouched.** Unblocking restores
 nothing.
+
+## `users/{uid}/voiceLibrary/{noteId}` — the planner's saved voice notes (32d)
+
+`{sha256, durationMs, sizeBytes, createdAt, name?}`; `noteId` = the id of the
+plan the note was first sent with. Audio at `library/{uid}/{noteId}.m4a` in the
+private `voice-notes` bucket. **Only the Worker creates or deletes** (entry and
+audio together); the owner reads and may set/clear `name` (1–60 chars). Every
+sent voice note is saved (idempotent via `voiceUploads/{itemId}.librarySavedAt`,
+deduplicated by `sha256`); newest 20 kept, first in first out.
+

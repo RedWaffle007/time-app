@@ -21,7 +21,11 @@ import '../../groups/domain/planner_grant.dart';
 import '../../notifications/application/outcome_notifier.dart';
 import '../../social/application/social_providers.dart';
 import '../../voice_notes/application/voice_note_providers.dart';
+import '../../voice_notes/application/voice_note_cache.dart';
 import '../../voice_notes/data/voice_note_client.dart';
+import '../../voice_notes/domain/voice_library_note.dart';
+import '../../voice_notes/presentation/voice_library_picker.dart';
+import '../../voice_notes/presentation/voice_library_screen.dart';
 import '../../voice_notes/presentation/voice_note_recorder.dart';
 import '../application/conflict_disclosure.dart';
 import '../application/schedule_providers.dart';
@@ -119,6 +123,12 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
   /// The recorded-but-unsent voice note for someone else's alarm (item 32b).
   RecordedVoiceNote? _voiceDraft;
 
+  /// A note chosen from the library instead of recording (32d); the Worker
+  /// copies it onto the plan at Send.
+  VoiceLibraryNote? _libraryNote;
+  bool _libraryPlaying = false;
+  StreamSubscription<void>? _libraryDone;
+
   /// Bumped to give the recorder a fresh state (after a save or a target
   /// change) — the recorder owns its phase; the builder only resets it.
   int _voiceRecorderGen = 0;
@@ -141,6 +151,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
 
   @override
   void dispose() {
+    _libraryDone?.cancel();
     _scrollController.dispose();
     _titleController.dispose();
     _noteController.dispose();
@@ -226,7 +237,8 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
   /// Whether the alarm is complete; marks what is missing when it is not.
   bool _validate() {
     final nameMissing = !_isVoice && _titleController.text.trim().isEmpty;
-    final voiceMissing = _isVoice && _voiceDraft == null;
+    final voiceMissing =
+        _isVoice && _voiceDraft == null && _libraryNote == null;
     setState(() {
       _nameError = nameMissing;
       _voiceError = voiceMissing;
@@ -268,19 +280,27 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       // the metadata the Worker recorded. A failed upload saves nothing.
       final repository = ref.read(scheduleRepositoryProvider);
       final draft = _isVoice ? _voiceDraft : null;
+      final fromLibrary = _isVoice && draft == null ? _libraryNote : null;
       String? preparedId;
       VoiceNoteMeta? voiceNote;
-      if (draft != null) {
+      if (draft != null || fromLibrary != null) {
         preparedId = repository.newItemId(_targetUid!);
+        final client = ref.read(voiceNoteClientProvider);
+        final groupId = (_groupId ?? '').isEmpty ? null : _groupId;
         try {
-          voiceNote = await ref
-              .read(voiceNoteClientProvider)
-              .upload(
-                bytes: await File(draft.path).readAsBytes(),
-                targetUid: _targetUid!,
-                itemId: preparedId,
-                groupId: (_groupId ?? '').isEmpty ? null : _groupId,
-              );
+          voiceNote = fromLibrary != null
+              ? await client.attachFromLibrary(
+                  noteId: fromLibrary.id,
+                  targetUid: _targetUid!,
+                  itemId: preparedId,
+                  groupId: groupId,
+                )
+              : await client.upload(
+                  bytes: await File(draft!.path).readAsBytes(),
+                  targetUid: _targetUid!,
+                  itemId: preparedId,
+                  groupId: groupId,
+                );
         } on VoiceNoteFailure catch (e) {
           if (mounted) {
             ScaffoldMessenger.of(
@@ -303,7 +323,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
         targetUid: _targetUid!,
         createdByUid: me.uid,
         groupId: _isSelf ? null : _groupId,
-        title: draft != null ? kVoiceAlarmTitle : _titleController.text,
+        title: voiceNote != null ? kVoiceAlarmTitle : _titleController.text,
         note: _noteController.text,
         wall: wall,
         timezone: timezone,
@@ -348,6 +368,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
         _date = null;
         _time = null;
         _voiceDraft = null;
+        _libraryNote = null;
         _voiceRecorderGen++;
         _nameError = false;
         _voiceError = false;
@@ -529,15 +550,32 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
           ],
           const SizedBox(height: Space.xl),
           if (_isVoice) ...[
-            VoiceNoteRecorder(
-              key: ValueKey('voice-$_targetUid-$_voiceRecorderGen'),
-              recipientName: selectedProfile?.name ?? 'their',
-              enabled: !_saving,
-              onChanged: (note) => setState(() {
-                _voiceDraft = note;
-                if (note != null) _voiceError = false;
-              }),
-            ),
+            if (_libraryNote case final note?)
+              _libraryChoice(note)
+            else ...[
+              VoiceNoteRecorder(
+                key: ValueKey('voice-$_targetUid-$_voiceRecorderGen'),
+                recipientName: selectedProfile?.name ?? 'their',
+                enabled: !_saving,
+                onChanged: (note) => setState(() {
+                  _voiceDraft = note;
+                  if (note != null) _voiceError = false;
+                }),
+              ),
+              // Reuse a saved note instead (32d) — offered while nothing is
+              // recorded, and only once the library has something in it.
+              if (_voiceDraft == null &&
+                  (ref.watch(voiceLibraryProvider).value?.isNotEmpty ?? false))
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: TextButton.icon(
+                    key: const ValueKey('choose-from-library'),
+                    onPressed: _saving ? null : _chooseFromLibrary,
+                    icon: const Icon(AppIcons.voiceLibrary),
+                    label: const Text('Choose from library'),
+                  ),
+                ),
+            ],
             if (_voiceError) _errorLine(kVoiceNoteRequired),
           ] else ...[
             Text('Name of the Task', style: context.text.titleMedium),
@@ -600,6 +638,85 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
           ),
         ],
       ],
+    );
+  }
+
+  Future<void> _chooseFromLibrary() async {
+    final picked = await showVoiceLibraryPicker(context);
+    if (picked == null || !mounted) return;
+    setState(() {
+      _libraryNote = picked;
+      _voiceError = false;
+    });
+  }
+
+  Future<void> _stopLibraryPreview() async {
+    if (!_libraryPlaying) return;
+    await ref.read(voicePlayerProvider).stop();
+    if (mounted) setState(() => _libraryPlaying = false);
+  }
+
+  Future<void> _toggleLibraryPreview(VoiceLibraryNote note) async {
+    if (_libraryPlaying) return _stopLibraryPreview();
+    final player = ref.read(voicePlayerProvider);
+    try {
+      final path = await ref.read(voiceNoteCacheProvider).ensureLibrary(note);
+      _libraryDone?.cancel();
+      _libraryDone = player.completed.listen((_) {
+        if (mounted) setState(() => _libraryPlaying = false);
+      });
+      await player.play(path);
+      if (mounted) setState(() => _libraryPlaying = true);
+    } on VoiceNoteFailure catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
+  }
+
+  /// The chosen library note, with a preview and the way back to recording.
+  Widget _libraryChoice(VoiceLibraryNote note) {
+    return Card(
+      key: const ValueKey('library-choice'),
+      child: ListTile(
+        leading: const Icon(AppIcons.voiceLibrary),
+        title: Text(
+          voiceNoteLabel(context, note),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          'From your library · ${formatVoiceLength(note.length)} · '
+          'plays ${voicePlaysFor(note.length)} times',
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              tooltip: _libraryPlaying ? 'Stop' : 'Play',
+              onPressed: _saving ? null : () => _toggleLibraryPreview(note),
+              icon: Icon(
+                _libraryPlaying
+                    ? AppIcons.voiceNoteStopPlaying
+                    : AppIcons.voiceNotePlay,
+              ),
+            ),
+            IconButton(
+              key: const ValueKey('library-choice-remove'),
+              tooltip: 'Record instead',
+              onPressed: _saving
+                  ? null
+                  : () async {
+                      await _stopLibraryPreview();
+                      if (mounted) setState(() => _libraryNote = null);
+                    },
+              icon: const Icon(AppIcons.voiceNoteDiscard),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -673,6 +790,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
           _targetUid = me.uid;
           _groupId = null;
           _voiceDraft = null;
+          _libraryNote = null;
           _voiceRecorderGen++;
         }),
       ),
@@ -695,6 +813,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
           _targetUid = grant.targetUid;
           _groupId = grant.groupId;
           _voiceDraft = null;
+          _libraryNote = null;
           _voiceRecorderGen++;
         }),
       ),

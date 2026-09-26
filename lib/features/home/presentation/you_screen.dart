@@ -65,6 +65,11 @@ class YouScreen extends ConsumerWidget {
               badgeCount: pendingRequests,
               onTap: () => context.push(Routes.friends),
             ),
+            _YouTile(
+              icon: AppIcons.voiceLibrary,
+              label: 'Voice notes',
+              onTap: () => context.push(Routes.voiceNotes),
+            ),
             const SectionHeader('Account & device'),
             _YouTile(
               icon: AppIcons.walkthrough,

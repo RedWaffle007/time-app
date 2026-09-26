@@ -28,6 +28,21 @@ abstract interface class VoiceNoteClient {
     required String targetUid,
     required String itemId,
   });
+
+  /// One of your own library notes (32d).
+  Future<Uint8List> downloadLibrary(String noteId);
+
+  /// Delete one of your library notes — its audio and its entry (32d).
+  Future<void> deleteLibrary(String noteId);
+
+  /// Reuse a library note on a plan about to be created: the Worker copies it
+  /// server-side and records it exactly like an upload (32d).
+  Future<VoiceNoteMeta> attachFromLibrary({
+    required String noteId,
+    required String targetUid,
+    required String itemId,
+    String? groupId,
+  });
 }
 
 /// The words for each Worker refusal.
@@ -42,6 +57,7 @@ String voiceNoteErrorMessage(String? code) => switch (code) {
   'self-plan' => 'Voice notes are for plans you make for someone else.',
   'no-voice-note' || 'gone' => 'This voice note is no longer available.',
   'forbidden' => "You can't play this voice note.",
+  'not-found' => 'That voice note is no longer in your library.',
   _ => "The voice note couldn't be sent. Check your connection and try again.",
 };
 
@@ -101,6 +117,56 @@ class HttpVoiceNoteClient implements VoiceNoteClient {
     }
     return response.bodyBytes;
   }
+
+  @override
+  Future<Uint8List> downloadLibrary(String noteId) async {
+    final response = await _http
+        .get(
+          Uri.parse('$kNotifyEndpoint/voice/library/$noteId'),
+          headers: {'Authorization': 'Bearer ${await _token()}'},
+        )
+        .timeout(const Duration(seconds: 30));
+    if (response.statusCode != 200) _fail(response);
+    return response.bodyBytes;
+  }
+
+  @override
+  Future<void> deleteLibrary(String noteId) async {
+    final response = await _http
+        .delete(
+          Uri.parse('$kNotifyEndpoint/voice/library/$noteId'),
+          headers: {'Authorization': 'Bearer ${await _token()}'},
+        )
+        .timeout(const Duration(seconds: 30));
+    if (response.statusCode != 200) _fail(response);
+  }
+
+  @override
+  Future<VoiceNoteMeta> attachFromLibrary({
+    required String noteId,
+    required String targetUid,
+    required String itemId,
+    String? groupId,
+  }) async {
+    final response = await _http
+        .post(
+          Uri.parse('$kNotifyEndpoint/voice/attach'),
+          headers: {
+            'Authorization': 'Bearer ${await _token()}',
+            'x-note-id': noteId,
+            'x-target-uid': targetUid,
+            'x-item-id': itemId,
+            if (groupId != null && groupId.isNotEmpty) 'x-group-id': groupId,
+          },
+        )
+        .timeout(const Duration(seconds: 30));
+    return parseUploadResponse(response.statusCode, response.body);
+  }
+}
+
+extension on HttpVoiceNoteClient {
+  Never _fail(http.Response response) =>
+      throw VoiceNoteFailure(voiceNoteErrorMessage(errorCode(response.body)));
 }
 
 String? errorCode(String body) =>

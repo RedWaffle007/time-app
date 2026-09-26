@@ -77,6 +77,23 @@ export function makeFirestoreDb(projectId, accessToken) {
       return docs.map((d) => decodeURIComponent(d.name.split('/').pop()));
     },
 
+    // Every document of a small collection with its fields (item 32d: a voice
+    // library holds at most 20). One page; callers bound their own size.
+    async listDocs(collectionPath) {
+      const resp = await fetch(`${urlFor(collectionPath)}?pageSize=100`, {
+        headers: authHeader,
+      });
+      if (resp.status === 404) return [];
+      if (!resp.ok) {
+        throw new Error(`Firestore list ${collectionPath} → ${resp.status}`);
+      }
+      const json = await resp.json();
+      return (json.documents || []).map((d) => ({
+        id: decodeURIComponent(d.name.split('/').pop()),
+        data: decodeFields(d.fields),
+      }));
+    },
+
     async deleteDoc(path) {
       const resp = await fetch(urlFor(path), {
         method: 'DELETE',

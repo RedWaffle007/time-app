@@ -6623,3 +6623,29 @@ User-directed redesign of the builder, light and dark.
   scale (no new token, no inline weight).
 - New icon concept `AppIcons.defaultAlarm` (`alarm_outlined`) for the choice.
 
+## Voice-note library (2026-09-26, item 32d)
+
+- **Every voice note you SEND is saved automatically** (user-directed; no
+  Save button), and the library keeps the **newest 20 — the 21st pushes the
+  oldest out** (user-directed FIFO). About 5 MB per person at most.
+- **The Worker saves it, at send time** (the `created` push, whose caller is
+  already proven to be the creator) **with the hourly voice sweep as the
+  fallback**. It is idempotent: `voiceUploads/{itemId}.librarySavedAt` marks
+  it done, so a note the owner deletes is never re-added, and identical audio
+  (e.g. a note attached from the library) is never saved twice. A save can
+  never fail the push. A fresh upload clears the mark.
+- **Only the Worker creates or deletes entries**, so an entry never exists
+  without its audio or vice versa; eviction and delete remove the audio first
+  and keep the entry if that fails (retried next time). The owner may only
+  rename (rules: `name` alone, 1–60 characters, or cleared).
+- **Unnamed notes show when they were recorded**, in the phone's language,
+  zone and 12/24-hour clock (`formatLocalInstant`, the one helper). Newest
+  first; month headings only once there are two months.
+- **Reuse = server-side copy.** "Choose from library" in the builder's Voice
+  Note mode; at Send the Worker copies the audio onto the plan's own object and
+  writes the same `voiceUploads` record an upload does — so
+  `voiceNoteIsValidOnCreate` did not change, and each plan's audio still
+  follows its own 7-day retention. Deleting a library note never affects
+  alarms already sent with it.
+- Reached from **You → Voice notes** (in You's branch, like Friends).
+

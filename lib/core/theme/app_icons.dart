@@ -95,6 +95,10 @@ abstract final class AppIcons {
   /// builder (F4). Distinct from `exactTiming`'s alarm_on.
   static const IconData defaultAlarm = Icons.alarm_outlined;
 
+  /// The saved VOICE NOTES library (32d) — You → Voice notes, and "Choose from
+  /// library" in the builder.
+  static const IconData voiceLibrary = Icons.library_music_outlined;
+
   /// Start recording a voice note.
   static const IconData voiceNoteRecord = Icons.fiber_manual_record_outlined;
 

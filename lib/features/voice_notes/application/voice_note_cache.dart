@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../scheduling/domain/schedule_item.dart';
 import '../data/voice_note_client.dart';
+import '../domain/voice_library_note.dart';
 import 'voice_note_providers.dart';
 
 /// Whether [bytes] are exactly the voice note the plan was made with.
@@ -84,6 +85,33 @@ class VoiceNoteCache {
     }
     await file.writeAsBytes(bytes, flush: true);
     return file.path;
+  }
+
+  /// A verified local copy of one of your library notes (32d), in its own
+  /// folder so the alarm copies' [prune] never touches it.
+  Future<String> ensureLibrary(VoiceLibraryNote note) async {
+    final dir = Directory('${(await _dir()).path}/voice-library');
+    if (!await dir.exists()) await dir.create(recursive: true);
+    final file = File('${dir.path}/${note.id}.m4a');
+    if (await file.exists() &&
+        voiceBytesMatch(await file.readAsBytes(), note.meta)) {
+      return file.path;
+    }
+    final bytes = await _client.downloadLibrary(note.id);
+    if (!voiceBytesMatch(bytes, note.meta)) {
+      throw const VoiceNoteFailure(
+        "This voice note didn't arrive intact. Try again.",
+      );
+    }
+    await file.writeAsBytes(bytes, flush: true);
+    return file.path;
+  }
+
+  /// Drop a deleted library note's local copy.
+  Future<void> forgetLibrary(String noteId) async {
+    try {
+      await File('${(await _dir()).path}/voice-library/$noteId.m4a').delete();
+    } catch (_) {}
   }
 }
 

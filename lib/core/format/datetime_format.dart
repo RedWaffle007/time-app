@@ -45,6 +45,15 @@ String formatInstant(
   return '$date, ${_timeFormat(context).format(t)}';
 }
 
+/// An absolute instant in the PHONE's own zone, localized — for things that
+/// belong to this device's user rather than to a plan's target (the voice
+/// library's default note names, 32d).
+String formatLocalInstant(BuildContext context, DateTime utcInstant) {
+  final t = utcInstant.toLocal();
+  final date = DateFormat.yMMMEd(_locale(context)).format(t);
+  return '$date, ${_timeFormat(context).format(t)}';
+}
+
 /// Just the time part of an absolute instant in [ianaZone], localized.
 ///
 /// Same clock and locale decisions as [formatInstant] — this is that function
