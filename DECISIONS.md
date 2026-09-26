@@ -6415,3 +6415,33 @@ the instant the alarm fires (`TING_LEAD_MS` / `ringtoneDelayMs` removed); the
 splash ting is unchanged and is still suppressed while an alarm rings. It also
 resolves the voice-note timing clash: three loops of a 20 s note now fit the
 alarm with no 1.5 s lead in front of them.
+
+## Voice-note alarms — storage, checks and rules (2026-09-26, item 32a)
+
+- **Private bucket** `voice-notes` (Supabase, not public), reached only through
+  the Worker with the existing service key. Audio never enters Firestore or a
+  notification.
+- **`POST /voice`** (ID token; headers `x-target-uid`, `x-item-id` — the
+  client pre-generates the item id — optional `x-group-id`): refuses self-plans,
+  bad ids, > 256 KB, anything whose BYTES are not an MPEG-4 audio container,
+  a missing/unreadable `moov/mvhd` header, > 20.5 s or < 0.3 s (duration read
+  from the file, never the phone), a caller without a live planning grant
+  (group grant for the stated group, or while friends the friendship planning
+  OR emergency grant), and any upload once the item exists (immutable). Stores
+  `items/{target}/{item}.m4a` and writes `voiceUploads/{itemId}` {uploader,
+  target, sha256, durationMs, sizeBytes, expiresAt}. Re-recording before saving
+  replaces your own upload only.
+- **`GET /voice/{target}/{item}`**: target or planner only; the served bytes
+  must hash to the item's `voiceNote.sha256` or it refuses (409).
+- **Rules:** the item may carry `voiceNote {durationMs, sha256, sizeBytes}`
+  only on someone else's plan and only if it matches the Worker's
+  `voiceUploads` record (uploader = creator, same target, same hash) — the
+  phone cannot attach audio the Worker never checked. The target may stamp
+  `voiceNote.deliveredAt` once (the receipt, used in 32c). `voiceUploads` is
+  closed to every client.
+- **Cleanup** (hourly cron `7 * * * *`): an upload that never became a plan
+  (or a plan saved without it) is deleted after a day; a used note 7 days
+  after its plan's scheduled time. The record is removed only after the audio
+  delete succeeds, so a failed delete is retried.
+- The Worker's Firestore writer now encodes whole numbers as integers (was
+  doubles), so the rules' `is int` checks hold for Worker-written counters.

@@ -146,6 +146,31 @@ export function makeFirestoreDb(projectId, accessToken) {
       ], limit);
     },
 
+    // voiceUploads whose expiresAt has passed, oldest first (voice.js sweep).
+    async listDueVoiceUploads(now, limit = 15) {
+      const resp = await fetch(`${base}:runQuery`, {
+        method: 'POST',
+        headers: { ...authHeader, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          structuredQuery: {
+            from: [{ collectionId: 'voiceUploads' }],
+            where: itemFilter('expiresAt', 'LESS_THAN_OR_EQUAL',
+              { timestampValue: now.toISOString() }),
+            orderBy: [{ field: { fieldPath: 'expiresAt' }, direction: 'ASCENDING' }],
+            limit,
+          },
+        }),
+      });
+      if (!resp.ok) throw new Error(`Firestore voiceUploads query → ${resp.status}`);
+      const rows = await resp.json();
+      return rows
+        .filter((row) => row.document)
+        .map((row) => ({
+          id: decodeURIComponent(row.document.name.split('/').pop()),
+          data: decodeFields(row.document.fields),
+        }));
+    },
+
     async listDueInactivityStates(now, limit = 100) {
       const resp = await fetch(`${base}:runQuery`, {
         method: 'POST',
@@ -215,7 +240,13 @@ function encodeValue(val) {
   if (val instanceof Date) return { timestampValue: val.toISOString() };
   if (typeof val === 'string') return { stringValue: val };
   if (typeof val === 'boolean') return { booleanValue: val };
-  if (typeof val === 'number') return { doubleValue: val };
+  // Whole numbers are written as integers so the rules' `is int` checks and
+  // the app's int parsing see what they expect.
+  if (typeof val === 'number') {
+    return Number.isInteger(val)
+      ? { integerValue: String(val) }
+      : { doubleValue: val };
+  }
   if (val == null) return { nullValue: null };
   if (typeof val === 'object' && !Array.isArray(val)) {
     return { mapValue: { fields: encodeFields(val) } };

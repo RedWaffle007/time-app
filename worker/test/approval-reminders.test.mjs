@@ -311,7 +311,7 @@ test('the every-minute cron runs reminders; the 5-minute cron stays inactivity',
   assert.equal(cronJobFor(undefined), 'inactivity');
 
   const toml = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
-  assert.match(toml, /crons = \["\*\/5 \* \* \* \*", "\* \* \* \* \*", "\*\/2 \* \* \* \*"\]/);
+  assert.match(toml, /crons = \["\*\/5 \* \* \* \*", "\* \* \* \* \*", "\*\/2 \* \* \* \*", "7 \* \* \* \*"\]/);
 });
 
 test('the pending-items query asks for pending items due after now, soonest first', async () => {

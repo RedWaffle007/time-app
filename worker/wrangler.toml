@@ -7,13 +7,17 @@ compatibility_date = "2025-01-01"
 # plan needs minute resolution). */2: server-side lapse (settle unanswered
 # items at their response deadline and notify both people). index.js
 # `cronJobFor` routes by this string; each invocation has its own budget.
-crons = ["*/5 * * * *", "* * * * *", "*/2 * * * *"]
+# 7 * * * *: hourly voice-note cleanup (orphan uploads after a day; used
+# notes 7 days after their plan's scheduled time).
+crons = ["*/5 * * * *", "* * * * *", "*/2 * * * *", "7 * * * *"]
 
 # Non-secret config. The project id is a public identifier.
 [vars]
 PROJECT_ID = "time-app-1e1c9"
 SUPABASE_URL = "https://sssbuqrseunytlcqhlqy.supabase.co"
 SUPABASE_BUCKET = "avatars"
+# Voice-note alarms: a PRIVATE bucket, served only through /voice.
+SUPABASE_VOICE_BUCKET = "voice-notes"
 # Android App Links (invite links, /.well-known/assetlinks.json). Public
 # signing-certificate fingerprints, comma-separated: the DEBUG key (debug and
 # profile builds) and the RELEASE key.

@@ -295,8 +295,8 @@ and never silent:
   alarm rang with the normal ringtone — your voice note couldn't play".
 
 Steps (each its own tests + commit):
-- **32-0** Remove the ting from alarms (native + tests + docs). — **BUILT 2026-09-26; awaiting commit + Redmi check.**
-- **32a** Worker `POST /voice` (auth, active grant, byte-sniffed AAC/M4A, header
+- **32-0** Remove the ting from alarms (native + tests + docs). — **BUILT, committed; Redmi check deferred.**
+- **32a** — **BUILT 2026-09-26; awaiting rules deploy, Worker deploy, commit.** Worker `POST /voice` (auth, active grant, byte-sniffed AAC/M4A, header
   duration ≤ 20.5 s, ≤ 256 KB, immutable once the item exists), `GET` download
   (target or planner only), library copy, retention cron (item audio deleted 7
   days after its scheduled time; orphan uploads after 1 day); private bucket;

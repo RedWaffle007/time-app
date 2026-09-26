@@ -30,6 +30,13 @@ import { sendDueInactivityNotifications } from './inactivity.js';
 import { sendDueApprovalReminders } from './approval-reminders.js';
 import { settleLapsedItems } from './lapse.js';
 import { handleInviteRequest } from './invite.js';
+import {
+  MAX_VOICE_BYTES,
+  makeVoiceStorage,
+  sweepVoiceUploads,
+  voiceDownload,
+  voiceUpload,
+} from './voice.js';
 
 const MAX_BODY_BYTES = 2048;
 const EVENTS = new Set(['created', 'decided', 'outcome', 'withdrawn', 'dismissed']);
@@ -56,6 +63,10 @@ export default {
     // handled before every other route (item 17).
     const invite = handleInviteRequest(request, env);
     if (invite) return invite;
+
+    if (url.pathname === '/voice' || url.pathname.startsWith('/voice/')) {
+      return handleVoiceRequest(request, env, url);
+    }
 
     if (url.pathname === '/avatar') {
       if (request.method !== 'POST' && request.method !== 'DELETE') {
@@ -200,7 +211,9 @@ export default {
       ? runApprovalReminderCron(env, now)
       : job === 'lapse'
         ? runLapseCron(env, now)
-        : runInactivityCron(env, now);
+        : job === 'voiceSweep'
+          ? runVoiceSweepCron(env, now)
+          : runInactivityCron(env, now);
     ctx.waitUntil(run);
   },
 };
@@ -254,10 +267,92 @@ export function groupAvatarAuthorization(group, uid) {
 // string. Anything unrecognised keeps the original inactivity behaviour.
 export const APPROVAL_REMINDER_CRON = '* * * * *';
 export const LAPSE_CRON = '*/2 * * * *';
+export const VOICE_SWEEP_CRON = '7 * * * *';
 export function cronJobFor(cron) {
   if (cron === APPROVAL_REMINDER_CRON) return 'approvalReminders';
   if (cron === LAPSE_CRON) return 'lapse';
+  if (cron === VOICE_SWEEP_CRON) return 'voiceSweep';
   return 'inactivity';
+}
+
+/**
+ * Voice-note routes (item 32a). POST /voice uploads; GET
+ * /voice/{targetUid}/{itemId} downloads. Both need a verified ID token; the
+ * policy (voice.js) re-checks everything against Firestore.
+ */
+async function handleVoiceRequest(request, env, url) {
+  const isUpload = url.pathname === '/voice';
+  if (isUpload ? request.method !== 'POST' : request.method !== 'GET') {
+    return json({ error: 'method-not-allowed' }, 405, {
+      Allow: isUpload ? 'POST' : 'GET',
+    });
+  }
+  const storage = makeVoiceStorage(env);
+  if (!storage.configured) return json({ error: 'storage-not-configured' }, 500);
+  if (isUpload) {
+    const declared = Number(request.headers.get('content-length') || '0');
+    if (declared > MAX_VOICE_BYTES) return json({ error: 'too-large' }, 413);
+  }
+
+  let callerUid;
+  try {
+    callerUid = await requireUid(request, env.PROJECT_ID);
+  } catch (e) {
+    if (e instanceof IdTokenError) return json({ error: 'unauthorized' }, 401);
+    throw e;
+  }
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
+  } catch {
+    return json({ error: 'server-misconfigured' }, 500);
+  }
+
+  try {
+    const accessToken = await getAccessToken(serviceAccount);
+    const ctx = { db: makeFirestoreDb(env.PROJECT_ID, accessToken), storage };
+    if (isUpload) {
+      const bytes = new Uint8Array(await request.arrayBuffer());
+      const res = await voiceUpload(ctx, {
+        callerUid,
+        targetUid: request.headers.get('x-target-uid') || '',
+        itemId: request.headers.get('x-item-id') || '',
+        groupId: request.headers.get('x-group-id') || '',
+        bytes,
+      });
+      return json(res.body, res.status);
+    }
+    const [, , targetUid, itemId] = url.pathname.split('/');
+    const res = await voiceDownload(ctx, { callerUid, targetUid, itemId });
+    if (!res.bytes) return json(res.body, res.status);
+    return new Response(res.bytes, {
+      status: 200,
+      headers: {
+        'Content-Type': 'audio/mp4',
+        'Cache-Control': 'private, no-store',
+        ETag: `"${res.sha256}"`,
+      },
+    });
+  } catch (e) {
+    console.error('voice handler failed', { name: e?.name || 'Error' });
+    return json({ error: 'voice-failed' }, 500);
+  }
+}
+
+async function runVoiceSweepCron(env, now) {
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
+  } catch {
+    throw new Error('server-misconfigured');
+  }
+  const accessToken = await getAccessToken(serviceAccount);
+  const ctx = {
+    db: makeFirestoreDb(env.PROJECT_ID, accessToken),
+    storage: makeVoiceStorage(env),
+  };
+  const result = await sweepVoiceUploads(ctx, now);
+  console.log(JSON.stringify({ event: 'voice-sweep-cron', ...result }));
 }
 
 async function runLapseCron(env, now) {

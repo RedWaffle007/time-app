@@ -1399,6 +1399,13 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // ---- voiceUploads/{itemId} ----
+    // Written ONLY by the Worker (service account) after it has checked the
+    // audio; read only by these rules (get() inside voiceNoteIsValidOnCreate).
+    match /voiceUploads/{itemId} {
+      allow read, write: if false;
+    }
+
     // ---- completionCelebrations/{targetUid_itemId}[_skipped] ----
     // Durable, per-participant delivery for the 1.4-second completion effect
     // AND the planner's in-app outcome pop-up (2026-09-26). The target creates
@@ -1555,6 +1562,44 @@ service cloud.firestore {
           );
       }
 
+      // Voice-note alarms (item 32a). The item carries only metadata, and it
+      // must match the upload record the Worker wrote after checking the
+      // audio itself (`voiceUploads/{itemId}`): same uploader (the creator),
+      // same target, same hash. Only on someone ELSE's plan.
+      function voiceNoteIsValidOnCreate() {
+        let note = request.resource.data.get('voiceNote', null);
+        let upload = /databases/$(database)/documents/voiceUploads/$(itemId);
+        return note == null
+          || (
+            request.resource.data.createdByUid != targetUid
+            && note is map
+            && note.keys().hasOnly(['durationMs', 'sha256', 'sizeBytes'])
+            && note.durationMs is int
+            && note.durationMs > 0 && note.durationMs <= 20500
+            && note.sizeBytes is int
+            && note.sizeBytes > 0 && note.sizeBytes <= 262144
+            && note.sha256 is string && note.sha256.size() == 64
+            && exists(upload)
+            && get(upload).data.uploaderUid == request.auth.uid
+            && get(upload).data.targetUid == targetUid
+            && get(upload).data.sha256 == note.sha256
+          );
+      }
+
+      // The TARGET's delivery receipt: once, only `voiceNote.deliveredAt`,
+      // never touching the approved metadata.
+      function voiceDeliveryIsValid() {
+        return !changedKeys().hasAny(['voiceNote'])
+          || (
+            resource.data.get('voiceNote', null) is map
+            && !resource.data.voiceNote.keys().hasAny(['deliveredAt'])
+            && request.resource.data.voiceNote is map
+            && request.resource.data.voiceNote.diff(resource.data.voiceNote)
+                 .affectedKeys().hasOnly(['deliveredAt'])
+            && request.resource.data.voiceNote.deliveredAt is timestamp
+          );
+      }
+
       function outcomeIsValid() {
         return request.resource.data.outcome is map
           && (
@@ -1614,8 +1659,9 @@ service cloud.firestore {
              'targetUid', 'createdByUid', 'groupId', 'title', 'note',
              'localWallTime', 'timezone', 'scheduledInstantUtc', 'status',
              'tier', 'durationMinutes', 'planRequestId', 'decidedAt',
-             'createdAt', 'updatedAt'
+             'createdAt', 'updatedAt', 'voiceNote'
            ])
+        && voiceNoteIsValidOnCreate()
         && request.resource.data.targetUid == targetUid
         && request.resource.data.createdByUid == request.auth.uid
         // `tier` defaults to 'normal' when absent (old clients), and must be one
@@ -1713,8 +1759,9 @@ service cloud.firestore {
             request.auth.uid == targetUid
             && changedKeys().hasOnly(
                  ['status', 'decidedAt', 'rejectionReason', 'outcome', 'alarm',
-                  'updatedAt'])
+                  'voiceNote', 'updatedAt'])
             && alarmTimelineIsValid()
+            && voiceDeliveryIsValid()
             && outcomeTransitionIsValid()
             && (!changedKeys().hasAny(['alarm'])
                 || request.resource.data.status == 'approved')
