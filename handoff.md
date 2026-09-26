@@ -202,8 +202,7 @@ Batch E — build, one item at a time, thorough regression tests each:
     "Emergency" in every push about an emergency item (created, decided,
     outcome, dismissed, withdrawn, reminders). Alarm timing unchanged. No DND
     bypass (would need notification-policy access).
-19. **Two-hour minimum response window near midnight** — **BUILT 2026-09-26;
-    awaiting full suite + commit** (no deploy).
+19. **Two-hour minimum response window near midnight** — **BUILT, committed**.
     Deadline = the LATER of (a) midnight ending the task's own local day —
     today's rule, still the limit for every task scheduled before 22:00 — and
     (b) the scheduled time + 2 h. So a 23:50 task gets until 01:50, not 10
@@ -213,7 +212,8 @@ Batch E — build, one item at a time, thorough regression tests each:
     deadline. Tests: before/after 22:00, exactly 22:00, DST nights, unknown
     zone, the lapse reconciler, and the calendar/My Schedule "still
     actionable" state.
-20. **Auto-skip notifies both people** (added 2026-09-26). When an item lapses
+20. **Auto-skip notifies both people** — **BUILT 2026-09-26; awaiting full
+    suite, Worker deploy, commit** (DECISIONS.md "Server-side lapse…"). When an item lapses
     to Skipped "Did not respond", push to the target AND the planner (self-
     plans: target only). Recommended with it: move the lapse itself to the
     Worker cron (it already scans items every minute), because today it only

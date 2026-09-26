@@ -6277,3 +6277,38 @@ across DST nights) and applies to BOTH lapses — pending → Rejected "Not
 approved in time" and approved → Skipped "Did not respond" — so there is one
 deadline. `endOfScheduledLocalDayUtc` is unchanged and still the midnight part.
 The Worker lapse (item 20) must implement the same rule.
+
+## Server-side lapse + auto-skip notifications (2026-09-26, item 20)
+
+The Worker now settles unanswered items at their response deadline, so a
+target who never opens the app is still settled — and both people are told.
+The client `ItemLapseReconciler` stays as an idempotent fallback.
+
+- **Cron `*/2 * * * *`** (`settleLapsedItems`, `worker/src/lapse.js`), its own
+  invocation and subrequest budget. Two collection-group queries on the
+  existing `status + scheduledInstantUtc` index: pending and approved items
+  scheduled between 50 h and 2 h ago; each item's exact deadline is then
+  computed in JS.
+- **Deadline parity is tested, not assumed.** `lapse.js` reimplements
+  `responseDeadlineUtc` with `Intl` time zones; both it and the Dart rule must
+  reproduce every case in `test/fixtures/response_deadlines.json` (DST
+  spring/fall days and nights, a quarter-hour zone, UTC+12, an unknown zone,
+  month/year ends).
+- **Claim = the write.** The outcome (`skipped`, "Did not respond",
+  `skippedAt`) plus `lapsedByServerAt` is written only if the item's
+  `updateTime` is unchanged since the query — a Done/Skip or the client's own
+  lapse in between wins and nothing is sent. Pending items are rejected "Not
+  approved in time" the same way, silently (as before).
+- **Notifications (skip only):** the person — "{task}, planned by {planner},
+  was marked Skipped because you didn't respond in time." (self-plan: no
+  planner); the planner — "{name} didn't respond to {task}, so it was marked
+  Skipped." Titles "Task / Group task / Emergency task skipped automatically";
+  groups add "in {group}". No clock time (decided: overkill). A revoked grant
+  still settles the item and tells the person, but not the planner. Taps: the
+  person → History, the planner → Plan activity. Posted as a normal
+  notification in the foreground (no pop-up record for lapses).
+- Budget: at most 3 skips and 10 rejects per run; the rest wait 2 minutes.
+  Known gap: sends are not retried if every device send fails — the lapse
+  itself is not repeated, so the notification is lost.
+- `lapsedByServerAt` is Worker-only (no client whitelist); pinned in the
+  adversarial rules matrix.

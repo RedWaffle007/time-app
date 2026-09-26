@@ -63,6 +63,14 @@ class NotificationRouter {
         );
       case 'inactivity':
         router.go(Routes.plan);
+      // An item settled automatically (Worker lapse): the planner reviews it
+      // in Activity; the target finds it in History, where settled plans go.
+      case 'lapsed':
+        if (data['audience'] == 'planner') {
+          _openPlanActivity();
+        } else {
+          router.go(Routes.history);
+        }
       case 'groupJoinApproved':
         final groupId = data['groupId'];
         router.go(

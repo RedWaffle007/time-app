@@ -4,8 +4,10 @@ compatibility_date = "2025-01-01"
 
 [triggers]
 # */5: six-hour inactivity nudges. Every minute: approval reminders (a 5-minute
-# plan needs minute resolution). index.js `cronJobFor` routes by this string.
-crons = ["*/5 * * * *", "* * * * *"]
+# plan needs minute resolution). */2: server-side lapse (settle unanswered
+# items at their response deadline and notify both people). index.js
+# `cronJobFor` routes by this string; each invocation has its own budget.
+crons = ["*/5 * * * *", "* * * * *", "*/2 * * * *"]
 
 # Non-secret config. The project id is a public identifier.
 [vars]

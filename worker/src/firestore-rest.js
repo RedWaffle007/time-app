@@ -6,12 +6,52 @@
 const BASE = (projectId) =>
   `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`;
 
+function itemFilter(fieldPath, op, value) {
+  return { fieldFilter: { field: { fieldPath }, op, value } };
+}
+
 export function makeFirestoreDb(projectId, accessToken) {
   const base = BASE(projectId);
   const authHeader = { Authorization: `Bearer ${accessToken}` };
 
   const urlFor = (path) =>
     `${base}/${path.split('/').map(encodeURIComponent).join('/')}`;
+
+  // Collection-group query over every target's `items`, soonest first.
+  async function queryItems(filters, limit) {
+    const resp = await fetch(`${base}:runQuery`, {
+      method: 'POST',
+      headers: { ...authHeader, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        structuredQuery: {
+          from: [{ collectionId: 'items', allDescendants: true }],
+          where: { compositeFilter: { op: 'AND', filters } },
+          orderBy: [{
+            field: { fieldPath: 'scheduledInstantUtc' },
+            direction: 'ASCENDING',
+          }],
+          limit,
+        },
+      }),
+    });
+    if (!resp.ok) throw new Error(`Firestore items query → ${resp.status}`);
+    const rows = await resp.json();
+    const marker = '/documents/';
+    return rows
+      .filter((row) => row.document)
+      .map((row) => {
+        const name = row.document.name;
+        const at = name.indexOf(marker);
+        return {
+          path: at >= 0
+            ? name.slice(at + marker.length).split('/').map(decodeURIComponent).join('/')
+            : '',
+          data: decodeFields(row.document.fields),
+          updateTime: row.document.updateTime,
+          createTime: row.document.createTime,
+        };
+      });
+  }
 
   return {
     async getDoc(path) {
@@ -89,58 +129,21 @@ export function makeFirestoreDb(projectId, accessToken) {
     // Pending schedule items due after `now`, soonest first, across every
     // target (collection group; composite index status+scheduledInstantUtc).
     async listPendingItems(now, limit = 50) {
-      const resp = await fetch(`${base}:runQuery`, {
-        method: 'POST',
-        headers: { ...authHeader, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          structuredQuery: {
-            from: [{ collectionId: 'items', allDescendants: true }],
-            where: {
-              compositeFilter: {
-                op: 'AND',
-                filters: [
-                  {
-                    fieldFilter: {
-                      field: { fieldPath: 'status' },
-                      op: 'EQUAL',
-                      value: { stringValue: 'pending' },
-                    },
-                  },
-                  {
-                    fieldFilter: {
-                      field: { fieldPath: 'scheduledInstantUtc' },
-                      op: 'GREATER_THAN',
-                      value: { timestampValue: now.toISOString() },
-                    },
-                  },
-                ],
-              },
-            },
-            orderBy: [{
-              field: { fieldPath: 'scheduledInstantUtc' },
-              direction: 'ASCENDING',
-            }],
-            limit,
-          },
-        }),
-      });
-      if (!resp.ok) throw new Error(`Firestore pending-items query → ${resp.status}`);
-      const rows = await resp.json();
-      const marker = '/documents/';
-      return rows
-        .filter((row) => row.document)
-        .map((row) => {
-          const name = row.document.name;
-          const at = name.indexOf(marker);
-          return {
-            path: at >= 0
-              ? name.slice(at + marker.length).split('/').map(decodeURIComponent).join('/')
-              : '',
-            data: decodeFields(row.document.fields),
-            updateTime: row.document.updateTime,
-            createTime: row.document.createTime,
-          };
-        });
+      return queryItems([
+        itemFilter('status', 'EQUAL', { stringValue: 'pending' }),
+        itemFilter('scheduledInstantUtc', 'GREATER_THAN',
+          { timestampValue: now.toISOString() }),
+      ], limit);
+    },
+
+    // Items with [status] scheduled in (fromIso, toIso], soonest first. Same
+    // composite index; used by the server-side lapse.
+    async listItemsScheduledBetween(status, fromIso, toIso, limit = 100) {
+      return queryItems([
+        itemFilter('status', 'EQUAL', { stringValue: status }),
+        itemFilter('scheduledInstantUtc', 'GREATER_THAN', { timestampValue: fromIso }),
+        itemFilter('scheduledInstantUtc', 'LESS_THAN_OR_EQUAL', { timestampValue: toIso }),
+      ], limit);
     },
 
     async listDueInactivityStates(now, limit = 100) {
@@ -214,5 +217,8 @@ function encodeValue(val) {
   if (typeof val === 'boolean') return { booleanValue: val };
   if (typeof val === 'number') return { doubleValue: val };
   if (val == null) return { nullValue: null };
+  if (typeof val === 'object' && !Array.isArray(val)) {
+    return { mapValue: { fields: encodeFields(val) } };
+  }
   throw new Error(`encodeValue: unsupported type for ${val}`);
 }
