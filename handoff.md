@@ -1,4 +1,4 @@
-# Checkmate handoff — 2026-09-25 (end of day)
+# Checkmate handoff — 2026-09-26 (end of day)
 
 ## Operating rules
 
@@ -27,26 +27,60 @@
   A push does not deploy Firestore rules or the Cloudflare Worker.
 - Device builds: **profile** to judge smoothness/lag (debug is JIT-janky);
   **debug** for alarm diagnostics (dev menu, reminder audit CSV). Both share the
-  debug signature, so `adb install -r` keeps data. Never release on the Redmi.
+  debug signature, so `adb install -r` keeps data. Never release on the Redmi —
+  except to check the exact APK being shared with an external tester (see
+  "International test build"); switching signatures needs an uninstall, which
+  wipes the app's data and sign-in.
+- **Release APK for testers (arm64 only, lean):**
+  `flutter build apk --release --target-platform android-arm64` →
+  `build/app/outputs/flutter-apk/app-release.apk`. The release SHA-1
+  (`89:73:22:BE:…:06:60`) is registered in Firebase (verified 2026-09-26 via
+  `./gradlew :app:signingReport`, which prints fingerprints only), so Google
+  sign-in works on other phones. Never read `android/key.properties`.
 
 ## Current state
 
-- Branch `main`, clean. Latest commits: `489c922`, `09ea496`, `a3d7e3d` — three
-  device-pass correction rounds, all verified green by the full suite.
-- Completed: Items **1–23, 25–31, 34, 35**, plus the three 2026-09-25 device
-  passes (DECISIONS.md: "Device-pass corrections…", "Second device pass…",
-  "Third device pass…").
-- **Firestore rules deployed 2026-09-25 and byte-verified** with
-  `scripts/check-deployed-rules.sh` (they had been stale at `01ff2b5`).
-- **Cloudflare Worker deploy state is UNKNOWN.** Items 23/34 changed it
-  (plan-request pushes, late-Done follow-up). If planner pushes misbehave,
-  redeploy (`wrangler deploy` then `wrangler versions deploy <id>@100%`).
-- Latest profile build installed on the Redmi; the third-pass fixes await the
-  user's device check.
-- Next implementation order (revised 2026-09-26 after the in-person device
-  check): **Batch A ✓ → B ✓ → B2 ✓ → C ✓ → D ✓ (decided) → E (18 → 19 → 20 → 15 → 14 → 16 → 17) ✓ → 32-0…32c ✓ → F (F1+F6 ✓ → F2 ✓ → F3+F5 ✓ → F4 ✓) → 32d ✓ built → 24 → 33**. See "Device-check
-  backlog (2026-09-26)" below.
+- Branch `main`, clean after `dc9d7f3`. Today's commits, each green on the full
+  suite: `b1db021` (F1+F6), `4e9489a` (F2), `29feacb` (F3+F5), `f1a0950` (F4),
+  `dc9d7f3` (32d).
+- Completed: Items **1–23, 25–32 (32-0 … 32d), 34, 35**, Batches **A–F**.
+- **Deployed 2026-09-26 (user-confirmed):** Firestore rules (latest adds
+  `users/{uid}/voiceLibrary`; run `scripts/check-deployed-rules.sh` before any
+  rules-dependent device pass) and the Cloudflare Worker (32d library routes +
+  save hooks). `wrangler deploy` makes the new version live immediately.
+- Test counts at `dc9d7f3`: Flutter 737, Worker 147 (`node --test
+  worker/test/*.test.mjs` from the repo root — there is no worker/package.json),
+  rules 262, Kotlin unit tests green.
+- **International test build (2026-09-26):** the user is building an arm64
+  release APK to share with a tester abroad, and may install it on the Redmi
+  to check it first. Their results are the next device evidence.
+- Next implementation order: **… F ✓ → 32d ✓ → 24 → 33**. Every phone check
+  since Batch A is deferred to the device pass (see "Deferred device checks").
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
+
+## Product model now (2026-09-26 — read before touching planning or alarms)
+
+- **No approval step (F2, user-directed change to the core loop).** Consent is
+  ONE revocable permission per person ("Let {name} set alarms for me"; the old
+  planning + emergency grants are merged — turning it off revokes both). Every
+  alarm a permitted person sets is saved `approved` and rings directly; the
+  planner can **Cancel alarm** until it rings. Legacy `pending` items become
+  alarms on the target's device (past ones → skipped "did not respond"). No
+  Pending approvals screen, badge, glow, approval reminders or "Emergency"
+  label anywhere. CLAUDE.md's core-loop line still says "A approves each item" —
+  DECISIONS.md "Approval removed" supersedes it.
+- **Two alarm kinds (F4):** Default Alarm (mandatory task name; rings the
+  ringtone) and Voice Note (no name — stored as "Voice alarm"; lock screen,
+  missed notice and push read "{planner} sent you a voice alarm"). Self-plans
+  are Default Alarm only.
+- **Tones (F3):** only alarms ring; every other notification uses the phone's
+  normal tone on the `planner_activity` / `app_nudges` channels.
+- **Voice replays (F5):** 15–20 s → 3 plays, 10–15 s → 4, 5–10 s → 5,
+  under 5 s → 6 (boundaries take the longer band); notes are 1–20 s.
+- **Voice library (32d):** every SENT voice note is saved automatically
+  (Worker, send time + hourly sweep fallback), newest 20 FIFO; You → Voice
+  notes (play / rename / delete); "Choose from library" in the builder via a
+  server-side copy.
 
 ## Behaviour that must not regress (all test-pinned)
 
@@ -65,7 +99,8 @@
   fires from the committed save (`committedCelebrationProvider`), de-duplicated
   with the Firestore echo by id. No Log Time pop-up after Done.
 - **Alarm copy is one sentence** from `alarmHeadline()`: "{planner} planned
-  {task} for you" / "You planned {task}". It is carried natively with the armed
+  {task} for you" / "You planned {task}" / (voice) "{planner} sent you a voice
+  alarm". It is carried natively with the armed
   alarm (survives reboot) and used for the lock-screen AlarmScreen (no
   placeholder flash), the unlocked heads-up (Android shows full-screen only when
   locked; user chose a rich heads-up over "display over other apps"), and the
@@ -79,9 +114,29 @@
   the ring).
 - Plan builder: person list collapses to one row + Change after a pick; rows
   show `Loading…`, never a uid; planning-target profiles are prefetched from
-  sign-in. PLAN button is bottom-left.
+  sign-in. PLAN button is bottom-left. Send validates on tap (red "Please write
+  task name. It is mandatory." / "Please record a voice note."); the field
+  glow is UI-RULES §6.2b.
+- The phone's 12/24-hour setting wins over the language default everywhere
+  (F1, `DeviceClockScope`).
+- Library entries are created/deleted ONLY by the Worker (entry + audio stay
+  together); a deleted note is never re-added (`librarySavedAt`).
 - My Schedule and History cards open the status timeline; Calendar → "Open in
   Activity" reveals and outlines the exact item.
+
+## Deferred device checks (everything since Batch A — run in one pass)
+
+- Nothing built on 2026-09-26 has been checked on a phone. Priorities for the
+  pass: an alarm rings with no approval step (friend → target); Cancel alarm;
+  voice alarm plays 3–6× by length and reads "{planner} sent you a voice
+  alarm" locked and unlocked; ringtone fallback when the note is missing; new
+  alarm / other notifications use the normal tone and the old "Emergency
+  plans" channel is gone from Settings; Plan screen in light + dark (glow,
+  red validation, possessive zone line); You → Voice notes (auto-save after a
+  send, play, rename, delete, 21st evicts the oldest); Choose from library →
+  send; 12/24-hour on the Nothing 4a.
+- International tester: sign-in, timezone of alarms planned across zones,
+  permissions onboarding on their OEM, delivery while their app is killed.
 
 ## Deferred final release gate
 
@@ -94,6 +149,10 @@
   cleaner (see CLAUDE.md "Parked & unverified").
 
 ## Device-check backlog (2026-09-26) — before Item 32
+
+> **Historical.** Everything below was resolved in Batches A–E (the stale
+> Worker was redeployed). Kept for the diagnosis trail; the live list is
+> "Deferred device checks" above.
 
 Step 0 diagnosis (read-only, 2026-09-26):
 - Live rules `89d484d1…` match `firestore.rules` byte-for-byte.
@@ -258,7 +317,7 @@ Batch E — build, one item at a time, thorough regression tests each:
 
 ## Remaining roadmap
 
-### Batch F — device feedback after 32c (added 2026-09-26) — BEFORE 32d
+### Batch F — device feedback after 32c (added 2026-09-26) — DONE
 
 Decided with the user 2026-09-26. **This removes the per-item approval step
 that mvp-spec.md / CLAUDE.md describe as the core loop** — record it in
@@ -338,7 +397,7 @@ entirely on the planning permission (still target-granted and revocable).
 Order: **F1 + F6** (small, app-only) → **F2** → **F3 + F5** (both ring-time
 sound) → **F4** → 32d.
 
-### 32 — Custom voice-note alarms (NEXT) — PLAN AGREED 2026-09-26, not started
+### 32 — Custom voice-note alarms — DONE (32-0 … 32d, 2026-09-26)
 
 Decisions (2026-09-26): storage = private Supabase bucket via the Worker;
 recorder = `record` package, playback = native MediaPlayer; library = You →
@@ -400,7 +459,7 @@ Steps (each its own tests + commit):
   timestamp default name, newest first, month groups once two months exist),
   attach from library via server-side copy.
 
-### 24 — Stats and product review
+### 24 — Stats and product review (NEXT)
 
 - Last product-surface change: audit/reuse existing stats; prioritize useful,
   privacy-safe signals over surveillance/vanity metrics.
@@ -430,8 +489,9 @@ Steps (each its own tests + commit):
 
 ## Immediate next action
 
-1. Get the user's device result for the third-pass fixes (profile build
-   installed). Fix anything reported before new work.
-2. Then plan Item 32 — state the plan and wait for sign-off before code (it
-   needs storage, rules and Worker decisions; deploy rules before its device
-   pass and re-run `scripts/check-deployed-rules.sh`).
+1. Collect the user's results from the release APK (their Redmi and the
+   tester abroad). Fix anything reported before new work; record verified
+   items in CLAUDE.md "Parked & unverified" / DECISIONS.md.
+2. Then Item 24 (stats and product review): research and audit first, present
+   findings and a proposal, and wait for sign-off before changing anything.
+3. Item 33 (competitor review) last.
