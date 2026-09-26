@@ -122,9 +122,8 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
   static const _legacyChannelId = 'time_app_reminders';
   static const channelId = 'time_app_reminders_alert';
 
-  /// Retired 2026-09-26: the emergency alert moved to its own max-importance
-  /// channel (`kEmergencyPlansChannelId`); channel settings are frozen, so the
-  /// old one is deleted in [initialize].
+  /// Retired 2026-09-26 (item 14); `kRetiredEmergencyPlansChannelId`, its
+  /// successor, retired in F3. Both are deleted in [initialize].
   static const _legacyReceivedPlanChannelId = 'time_app_received_plans';
   static final _channel = AndroidNotificationChannel(
     channelId,
@@ -175,7 +174,10 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
     await android?.deleteNotificationChannel(
       channelId: _legacyReceivedPlanChannelId,
     );
-    await android?.createNotificationChannel(emergencyPlansChannel);
+    await android?.deleteNotificationChannel(
+      channelId: kRetiredEmergencyPlansChannelId,
+    );
+    await android?.createNotificationChannel(plannerActivityChannel);
   }
 
   @visibleForTesting
@@ -194,12 +196,13 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
     _onTapItem(itemId);
   }
 
-  /// Show the immediate, non-ringing alert paired with a background emergency
+  /// Show the immediate "New alarm for you" alert paired with a background
   /// alarm command. High-priority FCM data is reserved for user-visible work;
   /// displaying this alert prevents FCM from treating repeated silent commands
-  /// as abuse and deprioritising later alarms. The due-time alarm remains a
-  /// separate notification on the alarm channel.
-  Future<void> showEmergencyPlanAlert({
+  /// as abuse and deprioritising later alarms. It is an ordinary activity
+  /// notification with the phone's normal tone (F3) — the alarm itself rings
+  /// at its time on the alarm channel.
+  Future<void> showNewAlarmAlert({
     required String itemId,
     required String title,
     required String body,
@@ -209,7 +212,7 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
       id: reminderNotificationId('received:$itemId'),
       title: title,
       body: body,
-      notificationDetails: emergencyPlanAlertDetails(),
+      notificationDetails: activityAlertDetails(),
       // Tapping routes like the push itself (to the item in My Schedule).
       payload: encodePushTapPayload(data),
     );

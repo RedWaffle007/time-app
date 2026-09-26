@@ -372,10 +372,16 @@ void main() {
       expect(find.textContaining('Recording…'), findsOneWidget);
       expect(find.textContaining('/ 0:20'), findsOneWidget);
 
+      await tester.pump(const Duration(seconds: 7));
       await tester.tap(find.text('Stop'));
       await settleIo(tester);
       await tester.pump();
       expect(changes.single, isNotNull);
+      expect(changes.single!.length.inSeconds, 7);
+      expect(
+        find.text('Voice note ready · 0:07 · plays 5 times'),
+        findsOneWidget,
+      );
       final path = changes.single!.path;
       expect(File(path).existsSync(), isTrue);
       expect(find.text('Play'), findsOneWidget);
@@ -410,6 +416,75 @@ void main() {
       await settleIo(tester);
       expect(changes, isNotEmpty);
       expect(find.text('Re-record'), findsOneWidget);
+    });
+
+    testWidgets('a note under a second is thrown away and explained (F5)', (
+      tester,
+    ) async {
+      final (changes, _, _) = await pump(tester, permission: true);
+      await tester.tap(find.text('Record'));
+      await settleIo(tester);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 800));
+      await tester.tap(find.text('Stop'));
+      await settleIo(tester);
+      await tester.pump();
+      expect(changes.single, isNull);
+      expect(
+        find.text('Too short — record at least 1 second.'),
+        findsOneWidget,
+      );
+      expect(find.text('Record'), findsOneWidget);
+      expect(
+        File('${temp.path}/draft-0.m4a').existsSync(),
+        isFalse,
+        reason: 'the short file is deleted',
+      );
+
+      // Recording again clears the warning.
+      await tester.tap(find.text('Record'));
+      await settleIo(tester);
+      await tester.pump();
+      expect(find.textContaining('Too short'), findsNothing);
+      await tester.pump(const Duration(seconds: 1));
+      await tester.tap(find.text('Stop'));
+      await settleIo(tester);
+      await tester.pump();
+      expect(changes.last, isNotNull, reason: 'exactly 1 s is accepted');
+      expect(find.textContaining('plays 6 times'), findsOneWidget);
+    });
+
+    test('plays scale with length; boundaries take the longer band (F5)', () {
+      const cases = {
+        20500: 3, 20000: 3, 15001: 3, 15000: 3, //
+        14999: 4, 10000: 4, //
+        9999: 5, 5000: 5, //
+        4999: 6, 1000: 6,
+      };
+      cases.forEach((ms, plays) {
+        expect(
+          voicePlaysFor(Duration(milliseconds: ms)),
+          plays,
+          reason: '$ms ms',
+        );
+      });
+      expect(kMinVoiceNote, const Duration(seconds: 1));
+    });
+
+    test('Dart and native agree on the bands', () {
+      final native = File(
+        'android/app/src/main/kotlin/com/timeapp/time_app/reminders/VoiceAlarm.kt',
+      ).readAsStringSync();
+      for (final line in [
+        'durationMs >= 15_000 -> 3',
+        'durationMs >= 10_000 -> 4',
+        'durationMs >= 5_000 -> 5',
+        'else -> 6',
+      ]) {
+        expect(native, contains(line));
+      }
+      final worker = File('worker/src/voice.js').readAsStringSync();
+      expect(worker, contains('MIN_VOICE_MS = 1_000'));
     });
 
     test('lengths read as m:ss in any locale', () {
@@ -500,6 +575,7 @@ void main() {
         await tester.tap(find.text('Record'));
         await settleIo(tester);
         await tester.pump();
+        await tester.pump(const Duration(seconds: 3));
         await tester.tap(find.text('Stop'));
         await settleIo(tester);
         await tester.pump();

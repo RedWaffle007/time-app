@@ -34,15 +34,26 @@ data class VoiceAlarmSpec(val path: String, val sha256: String, val sizeBytes: L
 
 /** The ring-time rules for a voice note, pure and unit-tested. */
 internal object VoiceAlarmPolicy {
-    /** User-directed: exactly three plays, then the alarm ends. */
-    const val PLAYS = 3
+    /**
+     * User-directed (F5, 2026-09-26): shorter notes play more often. 15–20 s →
+     * 3, 10–15 s → 4, 5–10 s → 5, under 5 s → 6. An exact boundary takes the
+     * LONGER band's count (15.0 s → 3). Mirrored by `voicePlaysFor` in Dart.
+     */
+    fun playsFor(durationMs: Int): Int = when {
+        durationMs >= 15_000 -> 3
+        durationMs >= 10_000 -> 4
+        durationMs >= 5_000 -> 5
+        else -> 6
+    }
+
     const val MAX_BYTES = 256L * 1024L
 
-    /** Ring for three plays plus a second of slack, never more. */
-    fun capMs(durationMs: Int): Long = PLAYS * durationMs.toLong() + 1_000L
+    /** Ring for every play plus a second of slack, never more. */
+    fun capMs(durationMs: Int): Long = playsFor(durationMs) * durationMs.toLong() + 1_000L
 
-    /** After [completedPlays] finished plays, play again? */
-    fun playAgain(completedPlays: Int): Boolean = completedPlays < PLAYS
+    /** After [completedPlays] finished plays of a [durationMs] note, play again? */
+    fun playAgain(completedPlays: Int, durationMs: Int): Boolean =
+        completedPlays < playsFor(durationMs)
 
     /**
      * The file is exactly the note the plan was approved with. Anything else —

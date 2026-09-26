@@ -271,7 +271,7 @@ class AlarmSoundService : Service() {
         // (user-directed 2026-09-26) and stays suppressed while this rings.
         ringing = true
         if (voice != null) {
-            // A voice-note alarm plays the note exactly three times — but only
+            // A voice-note alarm plays the note 3–6 times by length (F5) — but only
             // the exact file the plan was approved with. Anything else rings
             // the normal ringtone (never silence) and tells the planner.
             if (VoiceAlarmPolicy.verify(voice) && startVoiceNow(voice)) return
@@ -282,21 +282,25 @@ class AlarmSoundService : Service() {
         handler.postDelayed(autoStop, AlarmSoundPolicy.MAX_RING_DURATION_MS)
     }
 
-    /** Plays [voice] three times on the alarm stream, then ends the alarm. */
+    /**
+     * Plays [voice] on the alarm stream — 3 to 6 times by its length
+     * ([VoiceAlarmPolicy.playsFor]) — then ends the alarm.
+     */
     private fun startVoiceNow(voice: VoiceAlarmSpec): Boolean = try {
         voicePlays = 0
+        var noteMs = 1
         player = MediaPlayer().apply {
             setAudioAttributes(alarmAttributes())
             setDataSource(voice.path)
             isLooping = false
             setOnCompletionListener { mp ->
                 voicePlays += 1
-                if (VoiceAlarmPolicy.playAgain(voicePlays)) {
+                if (VoiceAlarmPolicy.playAgain(voicePlays, noteMs)) {
                     mp.seekTo(0)
                     mp.start()
                 } else {
-                    // Three plays done: the alarm ends into the missed flow.
-                    endNote = "voice_three_plays"
+                    // Every play done: the alarm ends into the missed flow.
+                    endNote = "voice_all_plays"
                     handler.removeCallbacks(autoStop)
                     handler.post(autoStop)
                 }
@@ -304,10 +308,11 @@ class AlarmSoundService : Service() {
             prepare()
         }
         val durationMs = player!!.duration.coerceAtLeast(1)
+        noteMs = durationMs
         endNote = "voice_cap"
         handler.postDelayed(autoStop, VoiceAlarmPolicy.capMs(durationMs))
         player!!.start()
-        ReminderAuditLog.write(this, event = "VOICE_PLAYING", note = "${durationMs}ms")
+        ReminderAuditLog.write(this, event = "VOICE_PLAYING", note = "${durationMs}ms x${VoiceAlarmPolicy.playsFor(durationMs)}")
         true
     } catch (e: Exception) {
         Log.e(TAG, "voice note failed, ringing instead: $e")

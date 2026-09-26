@@ -14,7 +14,8 @@
 
 export const MAX_VOICE_BYTES = 256 * 1024;
 export const MAX_VOICE_MS = 20_500; // 20 s recorder cap + encoder slack
-export const MIN_VOICE_MS = 300;
+// F5 (2026-09-26): at least 1 s, so every note falls in a replay band.
+export const MIN_VOICE_MS = 1_000;
 export const ORPHAN_TTL_MS = 24 * 60 * 60 * 1000; // upload never became a plan
 export const RETAIN_AFTER_DUE_MS = 7 * 24 * 60 * 60 * 1000;
 

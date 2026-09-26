@@ -6,6 +6,7 @@ import worker, { VOICE_SWEEP_CRON, cronJobFor } from '../src/index.js';
 import { makeFirestoreDb } from '../src/firestore-rest.js';
 import {
   MAX_VOICE_BYTES,
+  MIN_VOICE_MS,
   ORPHAN_TTL_MS,
   RETAIN_AFTER_DUE_MS,
   callerMayPlanFor,
@@ -164,6 +165,7 @@ test('bad audio is refused before anything is stored', async () => {
     [m4a({ noMoov: true }), 415, 'unreadable-audio'],
     [m4a({ ms: 20600 }), 413, 'too-long'],
     [m4a({ ms: 100 }), 400, 'too-short'],
+    [m4a({ ms: 999 }), 400, 'too-short'],
   ];
   for (const [bytes, status, error] of cases) {
     const h = harness();
@@ -171,6 +173,14 @@ test('bad audio is refused before anything is stored', async () => {
     assert.deepEqual([res.status, res.body.error], [status, error]);
     assert.equal(Object.keys(h.objects).length, 0);
   }
+});
+
+test('the shortest accepted note is exactly one second (F5)', async () => {
+  assert.equal(MIN_VOICE_MS, 1000);
+  const h = harness();
+  const res = await upload(h, { bytes: m4a({ ms: 1000 }) });
+  assert.equal(res.status, 200);
+  assert.equal(h.store[`voiceUploads/${ITEM}`].durationMs, 1000);
 });
 
 test('self-plans, malformed ids and existing plans are refused', async () => {

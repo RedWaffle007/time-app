@@ -14,12 +14,13 @@ import 'package:time_app/features/reminders/data/reminder_audit_log.dart';
 import 'package:time_app/routing/app_router.dart';
 import 'package:time_app/routing/notification_routing.dart';
 
-/// Item 14 (2026-09-26): the immediate alert for an emergency plan has its own
-/// max-importance channel, and every emergency push says "Emergency".
+/// The immediate "New alarm for you" alert (item 14, then F2/F3 2026-09-26):
+/// since F3 it is an ordinary activity notification with the phone's normal
+/// tone — only the due-time alarm rings. The Emergency channel is retired.
 
 const _channel = MethodChannel('dexterous.com/flutter/local_notifications');
 
-const _emergencyCreated = {
+const _alarmCreated = {
   'type': 'created',
   'event': 'created',
   'targetUid': 'TARGET',
@@ -28,8 +29,8 @@ const _emergencyCreated = {
   'fireAtUtc': '2030-01-01T10:00:00.000Z',
   'title': 'Meds',
   'body': 'With water',
-  'pushTitle': 'New emergency plan for you',
-  'pushBody': 'Test Planner planned Meds for you',
+  'pushTitle': 'New alarm for you',
+  'pushBody': 'Test Planner set Meds for you',
 };
 
 List<MethodCall> _fakeAndroid() {
@@ -58,74 +59,91 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('channel choice', () {
-    test('only the arming emergency push uses the emergency channel', () {
-      expect(isEmergencyPlanAlert(_emergencyCreated), isTrue);
-      expect(channelIdForPush(_emergencyCreated), kEmergencyPlansChannelId);
-      for (final data in [
-        {'event': 'created', 'itemId': 'i'},
-        {'event': 'outcome', 'subtype': 'done'},
-        {'event': 'dismissed'},
-        {'event': 'lapsed', 'audience': 'planner'},
-      ]) {
-        expect(
-          channelIdForPush(data),
-          kPlannerActivityChannelId,
-          reason: '$data',
-        );
-      }
-      expect(channelIdForPush({'event': 'inactivity'}), kNudgeChannelId);
+    test(
+      'every push, the alarm command included, is on an ordinary channel',
+      () {
+        for (final data in [
+          _alarmCreated,
+          {'event': 'created', 'itemId': 'i'},
+          {'event': 'withdrawn', 'itemId': 'i'},
+          {'event': 'outcome', 'subtype': 'done'},
+          {'event': 'lapsed', 'audience': 'planner'},
+          {'event': 'voiceUndelivered'},
+        ]) {
+          expect(
+            channelIdForPush(data),
+            kPlannerActivityChannelId,
+            reason: '$data',
+          );
+        }
+        expect(channelIdForPush({'event': 'inactivity'}), kNudgeChannelId);
+      },
+    );
+
+    test('the activity channel plays the phone\'s normal tone', () {
+      const c = plannerActivityChannel;
+      expect(c.importance, Importance.high);
+      expect(c.sound, isNull, reason: 'no custom tone: the phone default');
+      expect(c.playSound, isTrue);
+      expect(c.vibrationPattern, isNull);
+      expect(c.id, isNot(LocalNotificationsReminderScheduler.channelId));
     });
 
-    test('the emergency channel is max importance, own tone and vibration', () {
-      final c = emergencyPlansChannel;
-      expect(c.id, kEmergencyPlansChannelId);
-      expect(c.importance, Importance.max);
-      expect(c.playSound, isTrue);
-      expect(c.sound, isA<UriAndroidNotificationSound>());
-      expect(c.enableVibration, isTrue);
-      expect(c.vibrationPattern, isNotNull);
-      // It is not the reminder (alarm) channel, and not the activity one.
-      expect(c.id, isNot(LocalNotificationsReminderScheduler.channelId));
-      expect(c.id, isNot(kPlannerActivityChannelId));
+    test('no app notification carries its own alarm tone any more', () {
+      final hits = Directory('lib')
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.dart'))
+          .where(
+            (f) => f.readAsStringSync().contains('settings/system/alarm_alert'),
+          )
+          .map((f) => f.path)
+          .toList();
+      // Only the reminder channel's frozen legacy metadata; its notifications
+      // are silent and AlarmSoundService owns the ring.
+      expect(hits, [
+        'lib/features/reminders/data/local_notifications_reminder_scheduler.dart',
+      ]);
     });
   });
 
   group('posting', () {
     test(
-      'foreground: the emergency alert posts on the emergency channel',
+      'foreground: the new-alarm alert posts on the activity channel',
       () async {
         final calls = _fakeAndroid();
         final shown =
             await ForegroundPushPresenter(
               FlutterLocalNotificationsPlugin(),
             ).show(
-              title: 'New emergency plan for you',
-              body: 'Test Planner planned Meds for you',
-              data: _emergencyCreated,
+              title: 'New alarm for you',
+              body: 'Test Planner set Meds for you',
+              data: _alarmCreated,
             );
         expect(shown, isTrue);
         final details = _details(calls.singleWhere((c) => c.method == 'show'));
-        expect(details['channelId'], kEmergencyPlansChannelId);
-        expect(details['importance'], Importance.max.value);
+        expect(details['channelId'], kPlannerActivityChannelId);
+        expect(details['importance'], Importance.high.value);
       },
     );
 
     test(
-      'killed app: the alert posts on the emergency channel and is tappable',
+      'killed app: the alert posts on the activity channel and is tappable',
       () async {
         final calls = _fakeAndroid();
         await LocalNotificationsReminderScheduler(
           plugin: FlutterLocalNotificationsPlugin(),
           audit: const ReminderAuditLog(),
           onTapItem: (_) {},
-        ).showEmergencyPlanAlert(
+        ).showNewAlarmAlert(
           itemId: 'item-1',
-          title: 'New emergency plan for you',
-          body: 'Test Planner planned Meds for you',
-          data: _emergencyCreated,
+          title: 'New alarm for you',
+          body: 'Test Planner set Meds for you',
+          data: _alarmCreated,
         );
         final show = calls.singleWhere((c) => c.method == 'show');
-        expect(_details(show)['channelId'], kEmergencyPlansChannelId);
+        expect(_details(show)['channelId'], kPlannerActivityChannelId);
+        expect(_details(show)['sound'], isNull);
         expect(
           decodePushTapPayload((show.arguments as Map)['payload'] as String),
           isNotNull,
@@ -133,37 +151,37 @@ void main() {
       },
     );
 
-    test(
-      'initialize retires the old channel and creates the emergency one',
-      () async {
-        final calls = _fakeAndroid();
-        await LocalNotificationsReminderScheduler(
-          plugin: FlutterLocalNotificationsPlugin(),
-          audit: const ReminderAuditLog(),
-          onTapItem: (_) {},
-        ).initialize();
-        final deleted = calls
-            .where((c) => c.method == 'deleteNotificationChannel')
-            .map(
-              (c) => c.arguments is Map
-                  ? (c.arguments as Map)['channelId']
-                  : c.arguments,
-            )
-            .toList();
-        expect(deleted, contains('time_app_received_plans'));
-        final created = calls
-            .where((c) => c.method == 'createNotificationChannel')
-            .map((c) => (c.arguments as Map)['id'])
-            .toList();
-        expect(created, contains(kEmergencyPlansChannelId));
-      },
-    );
+    test('initialize deletes both retired alert channels', () async {
+      final calls = _fakeAndroid();
+      await LocalNotificationsReminderScheduler(
+        plugin: FlutterLocalNotificationsPlugin(),
+        audit: const ReminderAuditLog(),
+        onTapItem: (_) {},
+      ).initialize();
+      final deleted = calls
+          .where((c) => c.method == 'deleteNotificationChannel')
+          .map(
+            (c) => c.arguments is Map
+                ? (c.arguments as Map)['channelId']
+                : c.arguments,
+          )
+          .toList();
+      expect(deleted, contains('time_app_received_plans'));
+      expect(deleted, contains(kRetiredEmergencyPlansChannelId));
+      final created = calls
+          .where((c) => c.method == 'createNotificationChannel')
+          .map((c) => (c.arguments as Map)['id'])
+          .toList();
+      expect(created, isNot(contains(kRetiredEmergencyPlansChannelId)));
+      expect(created, contains(kPlannerActivityChannelId));
+    });
 
     test('the killed-app handler passes the push data through', () {
       final source = File(
         'lib/features/notifications/application/messaging_service.dart',
       ).readAsStringSync();
-      expect(source, contains('showEmergencyPlanAlert('));
+      expect(source, contains('showNewAlarmAlert('));
+      expect(source, contains("'New alarm for you'"));
       expect(source, contains('data: message.data'));
     });
   });
@@ -204,7 +222,7 @@ void main() {
     testWidgets('an emergency alert opens the item in My Schedule', (
       tester,
     ) async {
-      final container = await open(tester, _emergencyCreated);
+      final container = await open(tester, _alarmCreated);
       expect(find.text('Plan'), findsOneWidget);
       expect(find.text('Approvals'), findsNothing);
       expect(container.read(planIntentProvider)?.itemId, 'item-1');

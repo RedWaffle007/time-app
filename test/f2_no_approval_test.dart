@@ -100,11 +100,8 @@ void main() {
           if (line.trimLeft().startsWith('//')) continue;
           for (final m in quoted.allMatches(line)) {
             final text = m.group(1)!;
-            // Group JOIN approval stays. The "Emergency plans" CHANNEL is
-            // retired with the tones in F3; until then its name survives.
-            if (f.path.contains('/groups/') || text == 'Emergency plans') {
-              continue;
-            }
+            // Group JOIN approval stays.
+            if (f.path.contains('/groups/')) continue;
             expect(
               RegExp(
                 r'sent for approval|you still approve|approve each|'

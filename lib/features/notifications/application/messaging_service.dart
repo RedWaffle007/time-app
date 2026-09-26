@@ -39,7 +39,7 @@ ReminderRequest? reminderRequestFromPushData(Map<String, dynamic> data) {
   }
   final fireAt = DateTime.tryParse(fireAtRaw)?.toUtc();
   if (fireAt == null || !fireAt.isAfter(DateTime.now().toUtc())) return null;
-  // A voice-note emergency (item 32c-2) arms WITH its note.
+  // A voice alarm (item 32c-2) arms WITH its note.
   final sha = data['voiceSha256'];
   final size = int.tryParse('${data['voiceSizeBytes'] ?? ''}');
   final voice =
@@ -55,7 +55,7 @@ ReminderRequest? reminderRequestFromPushData(Map<String, dynamic> data) {
   );
 }
 
-/// Background/terminated message handler. Emergency plans are created already
+/// Background/terminated message handler. Alarms (F2) are created already
 /// approved on the planner's device, so the target's ordinary Firestore stream
 /// cannot arm them while their app is killed. The Worker sends those events as
 /// high-priority data and this handler installs the same local alarm the live
@@ -114,15 +114,15 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
           itemId: request.itemId,
         ));
       } catch (e) {
-        debugPrint('TimeApp: emergency voice fetch failed: $e');
+        debugPrint('TimeApp: background voice fetch failed: $e');
       }
     }
   }
   if (armed) {
-    await scheduler.showEmergencyPlanAlert(
+    await scheduler.showNewAlarmAlert(
       itemId: request.itemId,
       title: message.data['pushTitle'] as String? ??
-          'New emergency plan for you',
+          'New alarm for you',
       body: message.data['pushBody'] as String? ?? request.title,
       data: message.data,
     );

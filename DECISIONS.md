@@ -6568,3 +6568,24 @@ A has permitted rings at its time with no queue.
   a cancel reads "Alarm cancelled". Tapping `created` opens My Schedule on the
   item.
 
+## Tones and voice replays (2026-09-26, F3 + F5)
+
+- **F3 — only alarms ring.** A Default Alarm rings the alarm ringtone and a
+  voice alarm plays its recording, both from `AlarmSoundService` at the due
+  time (unchanged). Everything else the app posts uses the phone's normal
+  notification tone. The max-importance "Emergency plans" channel (its own
+  alarm tone + urgent vibration) is **retired**: the immediate "New alarm for
+  you" alert — foreground and killed-app — now posts on the ordinary
+  `planner_activity` channel. Channel settings are frozen, so
+  `time_app_emergency_plans` is deleted on start, like its predecessor.
+- **F5 — replays scale with length** (replaces "exactly three"): 15–20 s → 3,
+  10–15 s → 4, 5–10 s → 5, under 5 s → 6; an exact boundary takes the longer
+  band's count. Native `VoiceAlarmPolicy.playsFor` decides at ring time from
+  the file's real duration; Dart `voicePlaysFor` mirrors it only for the
+  recorder's "plays N times" copy (a test pins the two together). Cap =
+  plays × duration + 1 s; the longest (20.5 s × 3 = 62.5 s) stays inside the
+  65 s wake lock. The Worker's minimum rises from 0.3 s to **1 s** so every
+  note is in a band; the recorder discards anything shorter on the spot and
+  says so. The recorder's stopwatch is now `clock.stopwatch()` (fakeable in
+  tests); `clock` became a direct dependency (already locked).
+

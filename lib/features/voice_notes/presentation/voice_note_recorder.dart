@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
@@ -64,7 +65,10 @@ class _VoiceNoteRecorderState extends ConsumerState<VoiceNoteRecorder> {
   _Phase _phase = _Phase.idle;
   bool _playing = false;
   RecordedVoiceNote? _draft;
-  final _clock = Stopwatch();
+  final _clock = clock.stopwatch();
+
+  /// The last recording was under [kMinVoiceNote] and was thrown away.
+  bool _tooShort = false;
   Timer? _ticker;
   Timer? _hardStop;
   Duration _elapsed = Duration.zero;
@@ -147,6 +151,7 @@ class _VoiceNoteRecorderState extends ConsumerState<VoiceNoteRecorder> {
     _clock
       ..reset()
       ..start();
+    _tooShort = false;
     _ticker = Timer.periodic(const Duration(milliseconds: 200), (_) {
       if (mounted) setState(() => _elapsed = _clock.elapsed);
     });
@@ -167,8 +172,17 @@ class _VoiceNoteRecorderState extends ConsumerState<VoiceNoteRecorder> {
         : _clock.elapsed;
     final path = await _recorder.stop();
     if (!mounted) return;
-    if (path == null) {
-      setState(() => _phase = _Phase.idle);
+    if (path == null || length < kMinVoiceNote) {
+      if (path != null) {
+        try {
+          await File(path).delete();
+        } catch (_) {}
+      }
+      if (!mounted) return;
+      setState(() {
+        _phase = _Phase.idle;
+        _tooShort = path != null;
+      });
       widget.onChanged(null);
       return;
     }
@@ -245,14 +259,18 @@ class _VoiceNoteRecorderState extends ConsumerState<VoiceNoteRecorder> {
             const SizedBox(height: Space.xs),
             Text(
               switch (_phase) {
+                _Phase.idle when _tooShort =>
+                  'Too short — record at least 1 second.',
                 _Phase.idle =>
-                  "Plays 3 times instead of the ringtone when ${widget.recipientName}'s "
-                      'alarm rings. Up to 20 seconds.',
+                  "Plays instead of the ringtone when ${widget.recipientName}'s "
+                      'alarm rings — 3 to 6 times, shorter notes more. '
+                      '1 to 20 seconds.',
                 _Phase.recording =>
                   'Recording… ${formatVoiceLength(_elapsed)} / '
                       '${formatVoiceLength(kMaxVoiceNote)}',
                 _Phase.recorded =>
-                  'Voice note ready · ${formatVoiceLength(_elapsed)}',
+                  'Voice note ready · ${formatVoiceLength(_elapsed)} · '
+                      'plays ${voicePlaysFor(_elapsed)} times',
               },
               key: const ValueKey('voice-note-status'),
               style: muted,

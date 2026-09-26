@@ -16,57 +16,42 @@ const kPlannerActivityChannelId = 'planner_activity';
 /// people. The Worker names it as `NUDGE_CHANNEL_ID` in `inactivity.js`.
 const kNudgeChannelId = 'app_nudges';
 
-/// The immediate alert when someone places an EMERGENCY plan for you (item 14,
-/// 2026-09-26): max importance, its own tone and a distinct urgent vibration,
-/// so it is unmistakable. It does NOT bypass Do Not Disturb (decided). The
-/// alarm itself still rings at the due time on the reminder channel.
-const kEmergencyPlansChannelId = 'time_app_emergency_plans';
+/// Retired 2026-09-26 (F3): the max-importance "Emergency plans" channel with
+/// its own alarm tone. The "New alarm for you" alert is an ordinary
+/// notification now — only the alarm itself rings, at its time. Channel
+/// settings are frozen, so the old one is deleted on start.
+const kRetiredEmergencyPlansChannelId = 'time_app_emergency_plans';
 
-/// Only the emergency "created" push carries the alarm-arming command.
-bool isEmergencyPlanAlert(Map<String, dynamic> data) =>
-    data['command'] == 'scheduleReminder';
+/// Which channel a push belongs on, foreground and background alike. Every
+/// one plays the phone's normal notification tone (F3); only the due-time
+/// alarm rings, and that is not a push.
+String channelIdForPush(Map<String, dynamic> data) =>
+    (data['event'] ?? data['type']) == 'inactivity'
+    ? kNudgeChannelId
+    : kPlannerActivityChannelId;
 
-/// Which channel a push belongs on, foreground and background alike.
-String channelIdForPush(Map<String, dynamic> data) {
-  if (isEmergencyPlanAlert(data)) return kEmergencyPlansChannelId;
-  return (data['event'] ?? data['type']) == 'inactivity'
-      ? kNudgeChannelId
-      : kPlannerActivityChannelId;
-}
+const _activityName = 'Activity from your people';
+const _activityDescription =
+    'New alarms, cancellations and Done/Skip updates from people you plan '
+    'with.';
 
-const _emergencyName = 'Emergency plans';
-const _emergencyDescription =
-    'Rings out when someone you trust sets an emergency plan for you.';
-final _emergencyVibration = Int64List.fromList([0, 300, 150, 300, 150, 700]);
-const _emergencySound = UriAndroidNotificationSound(
-  'content://settings/system/alarm_alert',
+/// The one activity channel definition, shared by the foreground presenter and
+/// the killed-app handler, so the two can never disagree. No custom sound: the
+/// phone's own notification tone.
+const plannerActivityChannel = AndroidNotificationChannel(
+  kPlannerActivityChannelId,
+  _activityName,
+  description: _activityDescription,
+  importance: Importance.high,
 );
 
-/// The one definition, shared by the foreground presenter and the killed-app
-/// handler (via the reminder scheduler), so the two can never disagree.
-final emergencyPlansChannel = AndroidNotificationChannel(
-  kEmergencyPlansChannelId,
-  _emergencyName,
-  description: _emergencyDescription,
-  importance: Importance.max,
-  playSound: true,
-  sound: _emergencySound,
-  enableVibration: true,
-  vibrationPattern: _emergencyVibration,
-);
-
-NotificationDetails emergencyPlanAlertDetails() => NotificationDetails(
+NotificationDetails activityAlertDetails() => const NotificationDetails(
   android: AndroidNotificationDetails(
-    kEmergencyPlansChannelId,
-    _emergencyName,
-    channelDescription: _emergencyDescription,
-    importance: Importance.max,
-    priority: Priority.max,
-    category: AndroidNotificationCategory.reminder,
-    playSound: true,
-    sound: _emergencySound,
-    enableVibration: true,
-    vibrationPattern: _emergencyVibration,
+    kPlannerActivityChannelId,
+    _activityName,
+    channelDescription: _activityDescription,
+    importance: Importance.high,
+    priority: Priority.high,
     icon: 'ic_notification',
   ),
 );
@@ -121,40 +106,28 @@ class ForegroundPushPresenter {
 
   final FlutterLocalNotificationsPlugin _plugin;
 
-  static const _activityName = 'Activity from your people';
-  static const _activityDescription =
-      'Plans, approvals and Done/Skip updates from people you plan with.';
   static const _nudgeName = 'Reminders to plan';
   static const _nudgeDescription =
       'An occasional nudge to plan something when you have not opened '
       'Checkmate for a while.';
 
   static final _channels = [
-    const AndroidNotificationChannel(
-      kPlannerActivityChannelId,
-      _activityName,
-      description: _activityDescription,
-      importance: Importance.high,
-    ),
+    plannerActivityChannel,
     const AndroidNotificationChannel(
       kNudgeChannelId,
       _nudgeName,
       description: _nudgeDescription,
       importance: Importance.high,
     ),
-    emergencyPlansChannel,
   ];
 
   static NotificationDetails _detailsFor(String channelId) {
-    if (channelId == kEmergencyPlansChannelId) {
-      return emergencyPlanAlertDetails();
-    }
-    final nudge = channelId == kNudgeChannelId;
-    return NotificationDetails(
+    if (channelId != kNudgeChannelId) return activityAlertDetails();
+    return const NotificationDetails(
       android: AndroidNotificationDetails(
-        channelId,
-        nudge ? _nudgeName : _activityName,
-        channelDescription: nudge ? _nudgeDescription : _activityDescription,
+        kNudgeChannelId,
+        _nudgeName,
+        channelDescription: _nudgeDescription,
         importance: Importance.high,
         priority: Priority.high,
         icon: 'ic_notification',

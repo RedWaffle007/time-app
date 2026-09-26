@@ -44,7 +44,7 @@
 - Latest profile build installed on the Redmi; the third-pass fixes await the
   user's device check.
 - Next implementation order (revised 2026-09-26 after the in-person device
-  check): **Batch A ✓ → B ✓ → B2 ✓ → C ✓ → D ✓ (decided) → E (18 → 19 → 20 → 15 → 14 → 16 → 17) ✓ → 32-0…32c ✓ → F (F1+F6 ✓ → F2 ✓ built → F3+F5 → F4) → 32d → 24 → 33**. See "Device-check
+  check): **Batch A ✓ → B ✓ → B2 ✓ → C ✓ → D ✓ (decided) → E (18 → 19 → 20 → 15 → 14 → 16 → 17) ✓ → 32-0…32c ✓ → F (F1+F6 ✓ → F2 ✓ → F3+F5 ✓ built → F4) → 32d → 24 → 33**. See "Device-check
   backlog (2026-09-26)" below.
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
 
@@ -295,6 +295,12 @@ entirely on the planning permission (still target-granted and revocable).
   10–11), approval reminders + planner heads-up (items 13, 16), approve /
   reject pushes, the pending lapse. The planner keeps a Cancel for alarms
   they set (the emergency "recall", generalised). Rules + Worker + app.
+- **F3 + F5 — BUILT 2026-09-26 (awaiting test/deploy/commit; phone check
+  deferred).** Emergency channel retired (new-alarm alert on the activity
+  channel, normal tone); plays 3–6 by length natively + recorder copy; Worker
+  minimum 1 s; notes under 1 s discarded in the recorder. DECISIONS.md "Tones
+  and voice replays". Worker tests: `node --test worker/test/*.test.mjs` from
+  the repo root (there is no worker/package.json). Original items:
 - **F3 — Tones.** At the scheduled time: a Default Alarm rings the alarm
   ringtone (as today); a Voice Note alarm plays the recording 3×. Everything
   else the app sends uses the phone's normal notification tone (the
