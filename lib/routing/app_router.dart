@@ -173,8 +173,8 @@ class Routes {
   /// five-pillar shell, no longer a pushed route.
   static const track = '/track';
 
-  /// **The You pillar** (profile / friends / calendar / language practice /
-  /// permissions / sign out / dev). The old account popup, promoted to the fifth
+  /// **The You pillar** (profile / friends / calendar / permissions / sign
+  /// out / dev). The old account popup, promoted to the fifth
   /// bottom-bar pillar at the S5 cutover — a branch of the shell.
   static const you = '/you';
 

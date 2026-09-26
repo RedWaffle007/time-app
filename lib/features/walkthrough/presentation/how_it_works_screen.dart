@@ -73,7 +73,7 @@ class HowItWorksScreen extends ConsumerWidget {
             title: 'You',
             body:
                 'Your profile plus everything below — Friends, Calendar, '
-                'Language practice, this guide, and reminder permissions.',
+                'this guide, and reminder permissions.',
           ),
 
           const SizedBox(height: Space.md),

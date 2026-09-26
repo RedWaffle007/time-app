@@ -7,17 +7,31 @@ import 'package:timezone/timezone.dart' as tz;
 /// Every user-facing time display routes through here so the whole app is
 /// consistent: one locale (the device's, via [Localizations]) and one 12h/24h
 /// decision (the device's setting, via [MediaQuery.alwaysUse24HourFormat]).
+///
+/// F1 (2026-09-26): the app sets `alwaysUse24HourFormat` from the PHONE's real
+/// clock setting (see `device_clock.dart`), and the 12-hour patterns below are
+/// explicit — never the language's default, which is 24-hour for e.g. English
+/// (UK/India) and made a 12-hour phone show 24-hour times.
 /// This is what stops one screen showing "9:00 PM" while another shows "21:00",
 /// and what gets month/day names and field order right outside English.
 
-String _locale(BuildContext context) => Localizations.localeOf(context).toString();
+String _locale(BuildContext context) =>
+    Localizations.localeOf(context).toString();
 
 DateFormat _timeFormat(BuildContext context) {
   final locale = _locale(context);
-  return MediaQuery.of(context).alwaysUse24HourFormat
-      ? DateFormat.Hm(locale) //  e.g. 21:00
-      : DateFormat.jm(locale); //  e.g. 9:00 PM (or locale default)
+  if (MediaQuery.of(context).alwaysUse24HourFormat) {
+    return DateFormat.Hm(locale); //  e.g. 21:00
+  }
+  // The language's own 12-hour form where it has one (keeps its spacing,
+  // e.g. the narrow no-break space in "9:00 PM"); an explicit 12-hour form
+  // only for languages whose default is 24-hour (F1).
+  final native = DateFormat.jm(locale);
+  return _is12Hour(native) ? native : DateFormat('h:mm a', locale);
 }
+
+/// Whether a CLDR pattern is 12-hour (it carries a day-period field).
+bool _is12Hour(DateFormat format) => (format.pattern ?? '').contains('a');
 
 /// An absolute instant rendered in [ianaZone], localized. Replaces the old
 /// English-only, always-24h `formatInZone`.
@@ -57,7 +71,10 @@ String formatTimeOfDay(BuildContext context, TimeOfDay time) =>
 
 /// Minutes-since-midnight (how quiet hours are stored) as a localized time.
 String formatMinutesOfDayLocalized(BuildContext context, int minutes) =>
-    formatTimeOfDay(context, TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60));
+    formatTimeOfDay(
+      context,
+      TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60),
+    );
 
 /// A DURATION in whole minutes, rendered per the unit rule: minutes are the
 /// base, hours appear only past 59 — "45 min", "1h 30m", "2h". Digits are
@@ -111,9 +128,10 @@ String formatDayHeadingShort(BuildContext context, DateTime date) =>
 /// `alwaysUse24HourFormat`, never a guess from the locale alone.
 String formatHourOfDay(BuildContext context, int hour) {
   final locale = _locale(context);
+  final native = DateFormat.j(locale);
   final format = MediaQuery.of(context).alwaysUse24HourFormat
       ? DateFormat.H(locale)
-      : DateFormat.j(locale);
+      : (_is12Hour(native) ? native : DateFormat('h a', locale));
   return format.format(DateTime(2000, 1, 1, hour));
 }
 
@@ -125,6 +143,4 @@ String formatHourOfDay(BuildContext context, int hour) {
 /// have already been resolved; passing an instant to this one would render it
 /// in the wrong zone. The two must not be swapped.
 String formatWallTimeOfDay(BuildContext context, DateTime wall) =>
-    _timeFormat(context).format(
-      DateTime(2000, 1, 1, wall.hour, wall.minute),
-    );
+    _timeFormat(context).format(DateTime(2000, 1, 1, wall.hour, wall.minute));

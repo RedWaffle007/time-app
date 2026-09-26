@@ -44,7 +44,7 @@
 - Latest profile build installed on the Redmi; the third-pass fixes await the
   user's device check.
 - Next implementation order (revised 2026-09-26 after the in-person device
-  check): **Batch A ✓ → B ✓ → B2 ✓ → C ✓ → D ✓ (decided) → E (18 → 19 → 20 → 15 → 14 → 16 → 17) → 32 → 24 → 33**. See "Device-check
+  check): **Batch A ✓ → B ✓ → B2 ✓ → C ✓ → D ✓ (decided) → E (18 → 19 → 20 → 15 → 14 → 16 → 17) ✓ → 32-0…32c ✓ → F (F1+F6 → F2 → F3+F5 → F4) → 32d → 24 → 33**. See "Device-check
   backlog (2026-09-26)" below.
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
 
@@ -258,6 +258,61 @@ Batch E — build, one item at a time, thorough regression tests each:
 
 ## Remaining roadmap
 
+### Batch F — device feedback after 32c (added 2026-09-26) — BEFORE 32d
+
+Decided with the user 2026-09-26. **This removes the per-item approval step
+that mvp-spec.md / CLAUDE.md describe as the core loop** — record it in
+DECISIONS.md as a directed product change before any code; consent now rests
+entirely on the planning permission (still target-granted and revocable).
+
+- **F1 — 12/24-hour clock.** — **BUILT 2026-09-26; awaiting commit + device check.** Bug (Nothing 4a): the time picker shows 24-hour
+  while the phone is set to 12-hour. Cause: Flutter only exposes "forced
+  24-hour"; when false, Material falls back to the LANGUAGE default, which is
+  24-hour for e.g. English (UK/India). Fix: read Android's real
+  `DateFormat.is24HourFormat` natively (startup + resume) and apply it to the
+  picker AND the one format helper, both ways. Tests for both settings in a
+  24-hour-default locale.
+- **F2 — Remove approval entirely (groups too).** Every alarm anyone sets
+  through the app rings directly (what "emergency" did); the Emergency
+  switch/label goes. One permission: the existing planning permission
+  (friend or group) now authorises direct alarms; the separate emergency
+  permission is merged in (either one keeps someone able to plan for you).
+  Plans still pending at ship time become alarms (past ones are skipped).
+  Removed with it: Pending approvals screen, its badge + glow (B2 items
+  10–11), approval reminders + planner heads-up (items 13, 16), approve /
+  reject pushes, the pending lapse. The planner keeps a Cancel for alarms
+  they set (the emergency "recall", generalised). Rules + Worker + app.
+- **F3 — Tones.** At the scheduled time: a Default Alarm rings the alarm
+  ringtone (as today); a Voice Note alarm plays the recording 3×. Everything
+  else the app sends uses the phone's normal notification tone (the
+  "Emergency plans" max-importance alert channel is retired).
+- **F4 — Plan screen overhaul** (light + dark, UI-RULES first for the new
+  glow recipe): "You're building in {Name}'s local time" (possessive fix);
+  Pick date / Pick time bold, larger, subtle glowing outline; two rounded
+  choices **Voice Note** / **Default Alarm**; Voice Note → Record (Play /
+  Re-record / Discard) and **no name field** — the notification AND the
+  lock-screen alarm read "{planner} sent you a voice alarm"; Default Alarm →
+  mandatory **Name of the Task** (bold label, glowing border; empty → red
+  "Please write task name. It is mandatory."); then Note (optional, glowing
+  border); submit renamed **Send**. Self-plans: Default Alarm only (voice
+  notes are for someone else).
+
+- **F5 — Replays scale with the note's length** (user-directed 2026-09-26,
+  replaces "exactly three"): 15–20 s → 3 plays, 10–15 s → 4, 5–10 s → 5,
+  under 5 s → 6. Boundaries go to the LONGER band's count (exactly 15.0 s → 3,
+  10.0 s → 4, 5.0 s → 5). The shortest note the Worker accepts rises from
+  0.3 s to 1 s so every note falls in a band. Native `VoiceAlarmPolicy` (play
+  count + cap = plays × duration + 1 s; a 5 s note × 6 = 31 s, a 20 s note × 3 =
+  61 s, both inside the wake-lock window), the recorder copy ("Plays N times"),
+  Worker `MIN_VOICE_MS`, tests at every boundary.
+- **F6 — Remove language practice entirely** (widened 2026-09-26 — the
+  feature code was already gone in `8b0b3e6`) — **BUILT 2026-09-26; awaiting commit.** Was: remove it from the app's explanations: the "How this
+  app works" You line and the first-run tour's You step. The feature itself
+  (You → Language practice) is untouched. Copy tests updated.
+
+Order: **F1 + F6** (small, app-only) → **F2** → **F3 + F5** (both ring-time
+sound) → **F4** → 32d.
+
 ### 32 — Custom voice-note alarms (NEXT) — PLAN AGREED 2026-09-26, not started
 
 Decisions (2026-09-26): storage = private Supabase bucket via the Worker;
@@ -305,8 +360,8 @@ Steps (each its own tests + commit):
 - **32b** — **BUILT, committed; Redmi check deferred.** Recorder in the schedule builder (≤ 20 s, auto-stop, preview,
   discard/re-record, attach; mic permission only after an explanation);
   "Play voice note" on Pending approvals (hear it before consenting).
-- **32c** — **32c-1 BUILT, deployed, committed; 32c-2 BUILT 2026-09-26
-  (awaiting rules + Worker deploy, commit, and the Redmi audio pass).**
+- **32c** — **32c-1 and 32c-2 BUILT, deployed, committed; installed on the
+  device 2026-09-26 (feedback became Batch F).**
   Target download + receipt, native three-loop playback, reboot /
   process-death via `AlarmDeliveryStore`, fallback + planner notice, pre-due
   rescue push, local cleanup off the reminder mirror. Native unit tests +

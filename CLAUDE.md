@@ -829,6 +829,11 @@ locale, which nothing here has been run in.
 
 ## Language practice chatbot — a SEPARATE feature (added 2026-08-18)
 
+> **REMOVED.** The feature was deleted in commit `8b0b3e6`, and its last
+> traces (explanation copy, icons, test fixtures) on 2026-09-26 (F6); old
+> installs' ~143 MB `support/chatbot_model` folder is deleted on startup.
+> Everything below is history — do not restore it without a new decision.
+
 **Not part of the core loop and deliberately not woven into it.** `lib/features/chatbot/`
 shares the theme, the icon vocabulary and the router with the delegation app and
 **nothing else**: no group, no schedule item, no approval, no outcome, no Firestore

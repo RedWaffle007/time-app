@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
@@ -13,6 +16,8 @@ import 'features/notifications/application/messaging_service.dart';
 import 'features/splash/application/startup_sound_providers.dart';
 import 'features/splash/data/startup_sound_store.dart';
 import 'firebase_options.dart';
+import 'core/platform/device_clock.dart';
+import 'core/platform/legacy_cleanup.dart';
 
 Future<void> main() async {
   // Required before any async work in main().
@@ -50,6 +55,15 @@ Future<void> main() async {
   // why an async read is not acceptable here.
   final appLockEnabled = await _readAppLockSetting();
   final startupSoundEnabled = await _readStartupSoundSetting();
+  // Free the removed chatbot's leftover model files (~143 MB), in the
+  // background; never delays the first frame (F6).
+  unawaited(
+    getApplicationSupportDirectory()
+        .then(removeLegacyChatbotModel)
+        .catchError((_) => false),
+  );
+  // The phone's own 12/24-hour setting, before the first frame (F1).
+  final deviceUses24Hour = await const DeviceClock().is24Hour();
 
   // ProviderScope is the root of Riverpod — every provider lives under it.
   runApp(
@@ -59,6 +73,7 @@ Future<void> main() async {
         startupSoundInitiallyEnabledProvider.overrideWithValue(
           startupSoundEnabled,
         ),
+        deviceClockInitialProvider.overrideWithValue(deviceUses24Hour),
       ],
       child: const TimeApp(),
     ),

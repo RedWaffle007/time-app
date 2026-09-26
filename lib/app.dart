@@ -39,6 +39,7 @@ import 'routing/app_router.dart';
 import 'routing/notification_routing.dart';
 import 'features/voice_notes/application/voice_delivery_reconciler.dart';
 import 'features/voice_notes/application/voice_rescue.dart';
+import 'core/platform/device_clock.dart';
 
 /// Root widget. Uses MaterialApp.router so go_router owns navigation.
 ///
@@ -126,6 +127,8 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
       // A voice note that failed to download (offline) is retried on resume.
       unawaited(ref.read(voiceDeliveryReconcilerProvider).resync());
     }
+    // The clock setting may have changed in Settings while we were away.
+    unawaited(ref.read(deviceUses24HourProvider.notifier).refresh());
 
     // RECONCILE ON RESUME. The item stream alone is not enough, because the
     // things that invalidate scheduled alarms happen while the app is not
@@ -526,30 +529,35 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
       // beneath. Only an ALARM launch bypasses it (launchSkipsReveal); a push
       // tap keeps it and lands beneath; a warm resume never re-runs `main()`.
       // See SplashOverlay for both paths.
-      builder: (context, child) => Listener(
-        behavior: HitTestBehavior.translucent,
-        onPointerDown: (_) {
-          final currentUid = _activityUid;
-          if (currentUid != null) {
-            ref.read(inactivityTrackerProvider).record(currentUid);
-          }
-        },
-        child: SplashOverlay(
-          skipReveal: _openedFromNotification,
-          playSound: ref.read(startupSoundEnabledProvider),
-          onRevealComplete: () {
-            if (mounted && !_splashReady) {
-              setState(() => _splashReady = true);
+      // The phone's real 12/24-hour setting for every time shown and the
+      // time picker (F1) — outermost, so everything below inherits it.
+      builder: (context, child) => DeviceClockScope(
+        use24Hour: ref.watch(deviceUses24HourProvider),
+        child: Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (_) {
+            final currentUid = _activityUid;
+            if (currentUid != null) {
+              ref.read(inactivityTrackerProvider).record(currentUid);
             }
           },
-          child: AppLockGate(
-            child: CompletionCelebrationHost(
-              enabled: _splashReady,
-              child: MissedAlarmReviewHost(
+          child: SplashOverlay(
+            skipReveal: _openedFromNotification,
+            playSound: ref.read(startupSoundEnabledProvider),
+            onRevealComplete: () {
+              if (mounted && !_splashReady) {
+                setState(() => _splashReady = true);
+              }
+            },
+            child: AppLockGate(
+              child: CompletionCelebrationHost(
                 enabled: _splashReady,
-                child: TimeBackdrop(
-                  key: TimeBackdrop.backdropKey,
-                  child: child ?? const SizedBox.shrink(),
+                child: MissedAlarmReviewHost(
+                  enabled: _splashReady,
+                  child: TimeBackdrop(
+                    key: TimeBackdrop.backdropKey,
+                    child: child ?? const SizedBox.shrink(),
+                  ),
                 ),
               ),
             ),

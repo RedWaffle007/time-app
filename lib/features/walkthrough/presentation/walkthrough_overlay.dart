@@ -40,7 +40,7 @@ const kWalkthroughStepCopy = <WalkthroughStepCopy>[
   ),
   WalkthroughStepCopy(
     'You',
-    'Everything else lives here: Profile, Friends, Language practice, '
+    'Everything else lives here: Profile, Friends, '
         '“How this app works”, and reminder permissions.',
   ),
 ];

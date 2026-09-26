@@ -245,6 +245,17 @@ class MainActivity : FlutterFragmentActivity() {
             .register(flutterEngine.dartExecutor.binaryMessenger)
         // Voice-note preview (item 32b) — media stream, not the alarm.
         voicePreview.register(flutterEngine.dartExecutor.binaryMessenger)
+        // The phone's real 12/24-hour clock (F1): Flutter only knows "forced
+        // 24-hour", so a 12-hour phone in a 24-hour-default language looked
+        // 24-hour in the time picker.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "time_app/clock")
+            .setMethodCallHandler { call, result ->
+                if (call.method == "is24Hour") {
+                    result.success(android.text.format.DateFormat.is24HourFormat(applicationContext))
+                } else {
+                    result.notImplemented()
+                }
+            }
         alarmKeyChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             ALARM_KEY_CHANNEL,

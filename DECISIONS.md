@@ -6519,3 +6519,22 @@ alarm with no 1.5 s lead in front of them.
   note immediately instead of waiting for the rescue push.
 - Known limit: if the native receiver never ran and the alarm screen starts
   the sound itself, it rings the ringtone (the screen path carries no voice).
+
+## Phone clock wins over language; language practice fully gone (2026-09-26, F1 + F6)
+
+- **F1 — 12/24-hour.** Device report (Nothing 4a): a 12-hour phone got a
+  24-hour time picker. Flutter exposes only "forced 24-hour"; when that is off
+  Material falls back to the LANGUAGE default, which is 24-hour for e.g.
+  English (UK/India) and German. Now the app reads Android's real
+  `DateFormat.is24HourFormat` (`time_app/clock`), before the first frame and
+  on every resume, and `DeviceClockScope` (outermost in the app builder)
+  applies it to both the one format helper (via MediaQuery) and the Material
+  time picker (via `DeviceClockMaterialLocalizations`, a generated
+  pass-through that overrides only the clock members — regenerate on a
+  Flutter upgrade; the compiler reports any missed member). 12-hour languages
+  keep their own CLDR form; 24-hour-default languages get an explicit
+  localized `h:mm a`. Unknown setting → nothing changes.
+- **F6 — language practice removed completely** (user-directed): the feature
+  was already deleted in `8b0b3e6`; its explanation copy ("How this app
+  works", first-run tour), chatbot-only icons and unused test fixtures are
+  now gone, and old installs' ~143 MB model folder is deleted at startup.

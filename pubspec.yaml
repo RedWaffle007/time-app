@@ -65,23 +65,18 @@ dependencies:
   # Voice STT (redesign S6). `speech_to_text` wraps the PLATFORM recognizer
   # (Android SpeechRecognizer / iOS SFSpeechRecognizer) — on-device where the OS
   # ships offline models, otherwise routed by the OS to its own free service.
-  # No API key, no per-call billing, no network code of ours: the same
-  # no-Blaze, privacy-leaning posture as the on-device chatbot. It is the ONLY
-  # thing that requests RECORD_AUDIO. `flutter_tts` speaks the two prompts aloud
+  # No API key, no per-call billing, no network code of ours. It and the
+  # voice-note recorder (`record`, below) are what use RECORD_AUDIO. `flutter_tts` speaks the two prompts aloud
   # ("audio + on-screen text") through the platform TTS; it needs no permission.
   # Both stay behind the `SpeechService` seam (data/speech_service.dart) — no OS
   # vocabulary crosses it, so an iOS or on-device swap is one provider line.
   speech_to_text: ^7.0.0
   flutter_tts: ^4.2.0
 
-  # On-device chatbot model files (~143MB), downloaded from a GitHub Release on
-  # first use rather than bundled in the APK. Both were already resolving as
-  # transitive dependencies at these exact versions — promoting them to direct
-  # only records that this code calls them by name; no new package resolves.
-  #
-  # `path_provider` finds the app-private support directory the files live in.
-  # `crypto` streams a sha256 over a downloaded file so a half-finished or
-  # corrupted download can never be installed as if it were good.
+  # `path_provider` finds the app-private support directory (voice-note
+  # copies, the removed chatbot's leftover model files to clean up).
+  # `crypto` checks a downloaded voice note's sha256 so a damaged or swapped
+  # file is never treated as the one the plan was made with.
   path_provider: ^2.1.6
   crypto: ^3.0.7
 
