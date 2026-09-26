@@ -186,6 +186,10 @@ class PlanRequestRepository {
     required DateTime wall,
     required int durationMinutes,
     bool finishFlexibleRequest = false,
+    // Item 5b: fulfilled from the Plan screen — a voice alarm uploads its note
+    // first under [itemId], and the item carries the Worker's metadata.
+    String? itemId,
+    VoiceNoteMeta? voiceNote,
   }) async {
     if (plannerUid != request.plannerUid) {
       throw StateError('This request belongs to another planner.');
@@ -203,7 +207,7 @@ class PlanRequestRepository {
     final friendshipRef = _db
         .collection('friendships')
         .doc(friendshipId(plannerUid, request.requesterUid));
-    final itemRef = _items(request.requesterUid).doc();
+    final itemRef = _items(request.requesterUid).doc(itemId);
 
     await _db.runTransaction((transaction) async {
       final requestSnapshot = await transaction.get(requestRef);
@@ -255,7 +259,10 @@ class PlanRequestRepository {
         'scheduledInstantUtc': Timestamp.fromDate(instant),
         'durationMinutes': durationMinutes,
         'planRequestId': live.id,
-        'status': ScheduleItemStatus.pending.name,
+        if (voiceNote != null) 'voiceNote': voiceNote.toCreateMap(),
+        // Item 5b: an alarm like every other (F2 — no approval step).
+        'status': ScheduleItemStatus.approved.name,
+        'decidedAt': FieldValue.serverTimestamp(),
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });

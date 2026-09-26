@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -59,6 +61,8 @@ class _Repo implements PlanRequestRepository {
     required DateTime wall,
     required int durationMinutes,
     bool finishFlexibleRequest = false,
+    String? itemId,
+    VoiceNoteMeta? voiceNote,
   }) async {
     final failure = fulfilFails;
     if (failure != null) throw failure;
@@ -409,33 +413,17 @@ void main() {
       expect(find.text('Set the alarm'), findsOneWidget);
     });
 
-    testWidgets('Set the alarm plans exactly the requested minute', (
-      tester,
-    ) async {
-      final (repo, _) = await open(tester);
-      await tester.tap(find.byKey(const ValueKey('request-set-alarm')));
-      await tester.pumpAndSettle();
-      final f = repo.fulfilled.single;
-      expect(f['title'], 'Take medicine');
-      expect(f['note'], 'After dinner');
-      // 01:00Z = 18:00 PDT on Oct 4, as a wall time in THEIR zone.
-      expect(f['wall'], DateTime.utc(2030, 10, 4, 18));
-      expect(f['duration'], 1);
-      expect(find.text('Start'), findsOneWidget);
-    });
-
-    testWidgets('a busy minute is explained, not a raw error', (tester) async {
-      final (repo, schedule) = await open(tester);
-      repo.fulfilFails = Exception('permission-denied');
-      schedule.holder = 'their-own-plan';
-      await tester.tap(find.byKey(const ValueKey('request-set-alarm')));
-      await tester.pumpAndSettle();
+    test('Set the alarm opens the normal Plan screen for this request '
+        '(item 5b)', () {
+      final screen = File(
+        'lib/features/plan_requests/presentation/plan_request_screens.dart',
+      ).readAsStringSync();
       expect(
-        find.textContaining(
-          'Name alex already has a plan scheduled for this time',
-        ),
-        findsOneWidget,
+        screen,
+        contains('ScheduleBuilderScreen(planRequest: request)'),
       );
+      // The request screen itself no longer writes a plan.
+      expect(screen, isNot(contains('.fulfill(')));
     });
 
     testWidgets('Decline declines', (tester) async {

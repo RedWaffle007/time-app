@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:timezone/timezone.dart' as tz;
 
 import '../../../core/format/datetime_format.dart';
 import '../../../core/theme/app_icons.dart';
@@ -15,9 +14,8 @@ import '../../../core/widgets/section_header.dart';
 import '../../../routing/app_router.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../notifications/application/friend_notifier.dart';
-import '../../notifications/application/outcome_notifier.dart';
 import '../../scheduling/application/schedule_clash.dart';
-import '../../scheduling/application/schedule_providers.dart';
+import '../../scheduling/presentation/schedule_builder_screen.dart';
 import '../../social/application/social_providers.dart';
 import '../../social/presentation/avatar_image.dart';
 import '../application/plan_request_providers.dart';
@@ -449,9 +447,10 @@ class _PlanRequestCard extends ConsumerWidget {
 }
 
 /// A friend's request, seen by the friend asked (Batch G item 5): who, what,
-/// when (in THEIR zone), the note, and one action — **Set the alarm** — which
-/// creates the plan at exactly that minute and completes the request. Opening
-/// this screen does not stop the reminders; setting the alarm does.
+/// when (in THEIR zone), the note, and **Set the alarm**, which opens the
+/// normal Plan screen pre-filled and locked to that minute (item 5b) — Default
+/// Alarm or Voice Note. Opening either screen does not stop the reminders;
+/// sending the plan does.
 class FulfillPlanRequestScreen extends ConsumerStatefulWidget {
   const FulfillPlanRequestScreen({required this.requestId, super.key});
 
@@ -464,74 +463,14 @@ class FulfillPlanRequestScreen extends ConsumerStatefulWidget {
 
 class _FulfillPlanRequestScreenState
     extends ConsumerState<FulfillPlanRequestScreen> {
-  bool _saving = false;
-  String? _error;
-
-  Future<void> _setAlarm(PlanRequest request, String requesterName) async {
-    final uid = ref.read(currentUidProvider);
-    if (uid == null || _saving) return;
-    final local = tz.TZDateTime.from(
-      request.windowStartUtc,
-      tz.getLocation(request.timezone),
+  /// Item 5b: the normal Plan screen, pre-filled and locked to the requested
+  /// minute — Default Alarm or Voice Note, exactly like any other plan.
+  void _openPlan(PlanRequest request) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ScheduleBuilderScreen(planRequest: request),
+      ),
     );
-    final wall = DateTime.utc(
-      local.year,
-      local.month,
-      local.day,
-      local.hour,
-      local.minute,
-    );
-    final messenger = ScaffoldMessenger.of(context);
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
-    try {
-      final itemId = await ref
-          .read(planRequestRepositoryProvider)
-          .fulfill(
-            request: request,
-            plannerUid: uid,
-            title: (request.title ?? '').trim().isEmpty
-                ? 'Reminder'
-                : request.title!,
-            note: request.message,
-            wall: wall,
-            durationMinutes: request.durationMinutes,
-            finishFlexibleRequest: true,
-          );
-      unawaited(
-        ref
-            .read(notificationEventNotifierProvider)
-            .notifyConfirmed(
-              event: NotifyEvent.created,
-              targetUid: request.requesterUid,
-              itemId: itemId,
-            ),
-      );
-      messenger.showSnackBar(
-        SnackBar(content: Text('Alarm set for $requesterName.')),
-      );
-      if (mounted) context.pop();
-    } catch (error) {
-      // Refused? Most likely they already have a plan at that minute (item 4).
-      String? holder;
-      try {
-        holder = await ref
-            .read(scheduleRepositoryProvider)
-            .minuteLockHolder(request.requesterUid, request.windowStartUtc);
-      } catch (_) {}
-      if (mounted) {
-        setState(
-          () => _error = holder != null
-              ? '$requesterName already has a plan scheduled for this time, '
-                    'so this alarm can’t be set.'
-              : 'Could not set the alarm. $error',
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
   }
 
   @override
@@ -569,28 +508,20 @@ class _FulfillPlanRequestScreenState
               ),
               if (note.isNotEmpty) _Detail(label: 'Note', value: note),
               const SizedBox(height: Space.xl),
-              if (_error != null) ...[
-                _RequestError(_error!),
-                const SizedBox(height: Space.md),
-              ],
               if (live.isOpen) ...[
                 FilledButton.icon(
                   key: const ValueKey('request-set-alarm'),
-                  onPressed: _saving ? null : () => _setAlarm(live, name),
+                  onPressed: () => _openPlan(live),
                   icon: const Icon(AppIcons.navPlan),
-                  label: Text(_saving ? 'Setting…' : 'Set the alarm'),
+                  label: const Text('Set the alarm'),
                 ),
                 const SizedBox(height: Space.sm),
                 OutlinedButton(
                   key: const ValueKey('request-decline'),
-                  onPressed: _saving
-                      ? null
-                      : () async {
-                          await ref
-                              .read(planRequestRepositoryProvider)
-                              .decline(live);
-                          if (context.mounted) context.pop();
-                        },
+                  onPressed: () async {
+                    await ref.read(planRequestRepositoryProvider).decline(live);
+                    if (context.mounted) context.pop();
+                  },
                   child: const Text('Decline'),
                 ),
               ] else

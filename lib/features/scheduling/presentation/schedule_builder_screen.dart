@@ -20,6 +20,8 @@ import '../../auth/application/auth_providers.dart';
 import '../../auth/domain/user_profile.dart';
 import '../../groups/domain/planner_grant.dart';
 import '../../notifications/application/outcome_notifier.dart';
+import '../../plan_requests/application/plan_request_providers.dart';
+import '../../plan_requests/domain/plan_request.dart';
 import '../../social/application/social_providers.dart';
 import '../../voice_notes/application/voice_note_providers.dart';
 import '../../voice_notes/application/voice_note_cache.dart';
@@ -56,7 +58,16 @@ class ScheduleBuilderScreen extends ConsumerStatefulWidget {
     this.initialIsSelf = false,
     this.initialTitle,
     this.initialTime,
+    this.planRequest,
   });
+
+  /// Item 5b (2026-09-27): fulfilling a friend's Request Plan. The builder
+  /// opens on the requester, their requested date and time (LOCKED — the
+  /// request is for that minute), the task and the note; the friend chooses
+  /// Default Alarm or Voice Note as usual. Send saves the plan AND completes
+  /// the request in one write (which is what stops the reminders), then
+  /// closes the screen.
+  final PlanRequest? planRequest;
 
   /// A date to open with, seeded by the calendar when a user plans from a
   /// tapped day (`Routes.calendarNew`). Null everywhere else, and null behaves
@@ -134,10 +145,24 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
   /// change) — the recorder owns its phase; the builder only resets it.
   int _voiceRecorderGen = 0;
 
+  bool get _fromRequest => widget.planRequest != null;
+
   @override
   void initState() {
     super.initState();
     _date = widget.initialDate;
+    final request = widget.planRequest;
+    if (request != null) {
+      final local = wallNowIn(request.timezone, nowUtc: request.windowStartUtc);
+      _targetUid = request.requesterUid;
+      _groupId = '';
+      _isSelf = false;
+      _date = DateTime(local.year, local.month, local.day);
+      _time = TimeOfDay(hour: local.hour, minute: local.minute);
+      _titleController.text = request.title ?? '';
+      _noteController.text = request.message ?? '';
+      return;
+    }
     // Voice-flow seeds (S6). The target was chosen in the voice person-picker,
     // so honour it and its group here; the tiles below render it selected
     // because `_targetUid`/`_isSelf` already match.
@@ -343,20 +368,39 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
           return;
         }
       }
-      final itemId = await repository.createItem(
-        itemId: preparedId,
-        voiceNote: voiceNote,
-        targetUid: _targetUid!,
-        createdByUid: me.uid,
-        groupId: _isSelf ? null : _groupId,
-        title: voiceNote != null ? kVoiceAlarmTitle : _titleController.text,
-        note: _noteController.text,
-        wall: wall,
-        timezone: timezone,
-        // F2 (2026-09-26): there is no approval step — every alarm rings
-        // directly; the rules re-check the planning permission live.
-        status: ScheduleItemStatus.approved,
-      );
+      final request = widget.planRequest;
+      final itemId = request != null
+          ? await ref
+                .read(planRequestRepositoryProvider)
+                .fulfill(
+                  request: request,
+                  plannerUid: me.uid,
+                  itemId: preparedId,
+                  voiceNote: voiceNote,
+                  title: voiceNote != null
+                      ? kVoiceAlarmTitle
+                      : _titleController.text,
+                  note: _noteController.text,
+                  wall: wall,
+                  durationMinutes: request.durationMinutes,
+                  finishFlexibleRequest: true,
+                )
+          : await repository.createItem(
+              itemId: preparedId,
+              voiceNote: voiceNote,
+              targetUid: _targetUid!,
+              createdByUid: me.uid,
+              groupId: _isSelf ? null : _groupId,
+              title: voiceNote != null
+                  ? kVoiceAlarmTitle
+                  : _titleController.text,
+              note: _noteController.text,
+              wall: wall,
+              timezone: timezone,
+              // F2 (2026-09-26): there is no approval step — every alarm rings
+              // directly; the rules re-check the planning permission live.
+              status: ScheduleItemStatus.approved,
+            );
       // The draft was uploaded and is now the plan's; drop the local copy.
       if (draft != null) unawaited(_deleteQuietly(draft.path));
       // Notify the target that a plan was created for them. Self-planned items
@@ -387,6 +431,11 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
           ),
         ),
       );
+      // A fulfilled request is done — back to it (it now reads "set").
+      if (request != null) {
+        Navigator.of(context).pop();
+        return;
+      }
       // Reset for the next item, keep the same target.
       setState(() {
         _titleController.clear();
@@ -516,7 +565,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
               Expanded(
                 child: _pickerButton(
                   key: const ValueKey('pick-date'),
-                  onPressed: _pickDate,
+                  onPressed: _fromRequest ? null : _pickDate,
                   icon: AppIcons.date,
                   label: _date == null
                       ? 'Pick date'
@@ -527,7 +576,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
               Expanded(
                 child: _pickerButton(
                   key: const ValueKey('pick-time'),
-                  onPressed: _pickTime,
+                  onPressed: _fromRequest ? null : _pickTime,
                   icon: AppIcons.time,
                   label: _time == null
                       ? 'Pick time'
@@ -536,6 +585,17 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
               ),
             ],
           ),
+          if (_fromRequest)
+            Padding(
+              padding: const EdgeInsets.only(top: Space.sm),
+              child: Text(
+                'Requested for this exact time.',
+                key: const ValueKey('plan-request-locked'),
+                style: context.text.bodySmall?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
+              ),
+            ),
           if (_clashBlocked) _errorLine(_clashMessage(selectedProfile?.name)),
           // Voice notes are for someone else: a self-plan is a default alarm
           // and shows no choice (F4).
@@ -744,7 +804,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
   /// Pick date / Pick time: taller, `titleMedium`, with the field glow (F4).
   Widget _pickerButton({
     required Key key,
-    required VoidCallback onPressed,
+    required VoidCallback? onPressed,
     required IconData icon,
     required String label,
   }) {
@@ -869,11 +929,14 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
         leading: const Icon(AppIcons.person),
         title: Text(name),
         subtitle: profile == null ? null : Text(profile.homeTimezone),
-        trailing: TextButton(
-          key: const ValueKey('plan-target-change'),
-          onPressed: () => setState(() => _changingTarget = true),
-          child: const Text('Change'),
-        ),
+        // A request names who it is for: nothing to change (item 5b).
+        trailing: _fromRequest
+            ? null
+            : TextButton(
+                key: const ValueKey('plan-target-change'),
+                onPressed: () => setState(() => _changingTarget = true),
+                child: const Text('Change'),
+              ),
       ),
     );
   }

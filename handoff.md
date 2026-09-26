@@ -530,6 +530,11 @@ mode and multi-friend selection.
    friend creates the plan (viewing does not count); none once past due.
    Revives the deleted Item 13 cron pattern (git history). The Request Plan
    button moves beside Plan; both slightly larger, bold (theme tokens).
+5b. **Fulfil a request through the Plan screen** (user update 2026-09-27):
+   Set the alarm → the normal Plan screen, pre-filled and locked to the
+   requested minute; Default Alarm or Voice Note. — **BUILT 2026-09-27;
+   awaiting rules deploy → commit** (DECISIONS.md "Request Plan fulfilled
+   through the Plan screen").
 6. **"Unavailable" push with a custom tone.** — **BUILT 2026-09-27;
    awaiting Worker deploy → commit; phone check deferred (the tone on the
    Redmi)** (DECISIONS.md "'Unavailable' push with the 'Uh-Oh!' tone"). New planner push when the

@@ -6913,3 +6913,27 @@ phone's tone.
   `alarm.unavailableAt`, dedups on `notifiedUnavailable`, drops self-plans and
   requires a live permission, like every item event.
 - **iOS:** not wired (no iOS target yet).
+
+---
+
+## Request Plan fulfilled through the Plan screen (2026-09-27, Batch G item 5b)
+
+**User-directed update to item 5:** the friend asked should "follow the exact
+same plan sequence and structure". **Set the alarm** on the request screen now
+opens the normal Plan screen (`ScheduleBuilderScreen(planRequest:)`) instead of
+saving directly:
+
+- Pre-filled: the requester (no Change), the requested date and time —
+  **locked** ("Requested for this exact time."), since the request is for that
+  minute — the task as the name, and the note. The friend chooses **Default
+  Alarm or Voice Note** (record, or choose from the library) exactly as in any
+  plan; the item-4 clash line still applies.
+- Send: a voice note is uploaded first (unchanged), then ONE transaction writes
+  the minute lock, the item (with `planRequestId`, and the voice metadata if
+  any) and the request's `fulfilled` update — which is what stops the
+  reminders. The screen then pops back to the request (now "The alarm is
+  set."). The created push fires as for any plan.
+- **Rules:** a plan-request item may now be `approved` (an alarm like every
+  other, F2); `pending` is still accepted from older builds. The voice-note
+  check is the ordinary `voiceNoteIsValidOnCreate`.
+- Supersedes item 5's "Not built: a voice note on a fulfilled request".

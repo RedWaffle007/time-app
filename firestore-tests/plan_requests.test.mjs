@@ -106,7 +106,7 @@ async function seedRequest(overrides = {}) {
   });
 }
 
-function item(itemId, start = '2030-11-03T06:00:00Z', duration = 30) {
+function item(itemId, start = '2030-11-03T06:00:00Z', duration = 30, extra = {}) {
   return {
     targetUid: TARGET,
     createdByUid: PLANNER,
@@ -120,6 +120,7 @@ function item(itemId, start = '2030-11-03T06:00:00Z', duration = 30) {
     status: 'pending',
     createdAt: new Date(),
     updatedAt: new Date(),
+    ...extra,
   };
 }
 
@@ -129,6 +130,7 @@ async function fulfill(db, itemId, {
   priorIds = [],
   priorSpans = [],
   duration = 30,
+  extra = {},
 } = {}) {
   const nextSpan = {
     itemId,
@@ -137,7 +139,7 @@ async function fulfill(db, itemId, {
   };
   const batch = writeBatch(db);
   batch.set(doc(db, `scheduleItems/${TARGET}/items/${itemId}`),
-    item(itemId, start, duration));
+    item(itemId, start, duration, extra));
   // Item 4 (strict): the plan carries the lock on its minute.
   batch.set(doc(db, lockPath(TARGET, new Date(start))), {
     targetUid: TARGET, itemId, createdByUid: PLANNER, createdAt: new Date(),
@@ -227,6 +229,54 @@ describe('the redesigned request is fulfilled at exactly its minute', () => {
     });
     await assertFails(fulfill(as(PLANNER), 'item-1', {
       start: '2030-11-03T05:00:00Z', duration: 1,
+    }));
+  });
+});
+
+describe('5b: fulfilled through the Plan screen — an alarm, voice note allowed', () => {
+  it('an approved plan fulfils the request', async () => {
+    await seedRequest(newRequest());
+    await assertSucceeds(fulfill(as(PLANNER), 'item-1', {
+      start: '2030-11-03T05:00:00Z', duration: 1,
+      extra: { status: 'approved', decidedAt: new Date() },
+    }));
+  });
+
+  it('a voice alarm fulfils it too, with the Worker-checked note', async () => {
+    const sha = 'a'.repeat(64);
+    await seedRequest(newRequest());
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'voiceUploads/voiceitem00000001'), {
+        uploaderUid: PLANNER, targetUid: TARGET, sha256: sha,
+        durationMs: 5000, sizeBytes: 40000,
+      });
+    });
+    await assertSucceeds(fulfill(as(PLANNER), 'voiceitem00000001', {
+      start: '2030-11-03T05:00:00Z', duration: 1,
+      extra: {
+        status: 'approved',
+        title: 'Voice alarm',
+        voiceNote: { durationMs: 5000, sha256: sha, sizeBytes: 40000 },
+      },
+    }));
+  });
+
+  it('DENIES a voice note the Worker did not check', async () => {
+    await seedRequest(newRequest());
+    await assertFails(fulfill(as(PLANNER), 'voiceitem00000002', {
+      start: '2030-11-03T05:00:00Z', duration: 1,
+      extra: {
+        status: 'approved',
+        voiceNote: { durationMs: 5000, sha256: 'b'.repeat(64), sizeBytes: 40000 },
+      },
+    }));
+  });
+
+  it('still refuses an unknown status', async () => {
+    await seedRequest(newRequest());
+    await assertFails(fulfill(as(PLANNER), 'item-9', {
+      start: '2030-11-03T05:00:00Z', duration: 1,
+      extra: { status: 'withdrawn' },
     }));
   });
 });

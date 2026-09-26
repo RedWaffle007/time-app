@@ -14,6 +14,9 @@ import 'package:time_app/features/auth/data/auth_repository.dart';
 import 'package:time_app/features/auth/domain/user_profile.dart';
 import 'package:time_app/features/groups/domain/planner_grant.dart';
 import 'package:time_app/features/notifications/application/outcome_notifier.dart';
+import 'package:time_app/features/plan_requests/application/plan_request_providers.dart';
+import 'package:time_app/features/plan_requests/data/plan_request_repository.dart';
+import 'package:time_app/features/plan_requests/domain/plan_request.dart';
 import 'package:time_app/features/scheduling/application/schedule_providers.dart';
 import 'package:time_app/features/scheduling/application/schedule_clash.dart';
 import 'package:time_app/features/scheduling/data/schedule_repository.dart';
@@ -82,6 +85,37 @@ class _Player implements VoicePlayer {
   @override
   Future<void> stop() async {}
   void finish() => _done.add(null);
+}
+
+/// Records what the Plan screen fulfils in request mode (item 5b).
+class _PlanRequests implements PlanRequestRepository {
+  final fulfilled = <Map<String, Object?>>[];
+
+  @override
+  Future<String> fulfill({
+    required PlanRequest request,
+    required String plannerUid,
+    required String title,
+    String? note,
+    required DateTime wall,
+    required int durationMinutes,
+    bool finishFlexibleRequest = false,
+    String? itemId,
+    VoiceNoteMeta? voiceNote,
+  }) async {
+    fulfilled.add({
+      'title': title,
+      'note': note,
+      'wall': wall,
+      'duration': durationMinutes,
+      'itemId': itemId,
+      'voiceNote': voiceNote,
+    });
+    return itemId ?? 'fulfilled-item';
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _Client implements VoiceNoteClient {
@@ -540,6 +574,8 @@ void main() {
       String zone = 'Etc/UTC',
       bool seeded = true,
       DateTime? seedDate,
+      PlanRequest? planRequest,
+      _PlanRequests? planRequests,
     }) async {
       final repo = _Repo();
       final voice = client ?? _Client();
@@ -580,26 +616,50 @@ void main() {
             voiceDraftPathProvider.overrideWithValue(
               () async => '${temp.path}/draft-${n++}.m4a',
             ),
+            planRequestRepositoryProvider.overrideWithValue(
+              planRequests ?? _PlanRequests(),
+            ),
           ],
           child: MaterialApp(
             theme: dark ? AppTheme.dark : AppTheme.light,
-            home: Scaffold(
-              body: ScheduleBuilderScreen(
-                initialTargetUid: target,
-                initialIsSelf: target == 'me',
-                initialGroupId: target == 'me' ? null : '',
-                initialDate: seeded
-                    ? (seedDate ?? DateTime.now().add(const Duration(days: 2)))
-                    : null,
-                initialTime: seeded
-                    ? const TimeOfDay(hour: 10, minute: 0)
-                    : null,
-              ),
-            ),
+            // Request mode (item 5b) is pushed over the request screen and
+            // pops itself after Send, so give it something to pop back to.
+            home: planRequest != null
+                ? Builder(
+                    builder: (context) => Scaffold(
+                      body: TextButton(
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) =>
+                                ScheduleBuilderScreen(planRequest: planRequest),
+                          ),
+                        ),
+                        child: const Text('Request screen'),
+                      ),
+                    ),
+                  )
+                : Scaffold(
+                    body: ScheduleBuilderScreen(
+                      initialTargetUid: target,
+                      initialIsSelf: target == 'me',
+                      initialGroupId: target == 'me' ? null : '',
+                      initialDate: seeded
+                          ? (seedDate ??
+                                DateTime.now().add(const Duration(days: 2)))
+                          : null,
+                      initialTime: seeded
+                          ? const TimeOfDay(hour: 10, minute: 0)
+                          : null,
+                    ),
+                  ),
           ),
         ),
       );
       await tester.pumpAndSettle();
+      if (planRequest != null) {
+        await tester.tap(find.text('Request screen'));
+        await tester.pumpAndSettle();
+      }
       return (repo, voice);
     }
 
@@ -760,6 +820,85 @@ void main() {
       await send(tester);
       expect(find.text(clashLine), findsOneWidget);
       expect(find.textContaining('Failed:'), findsNothing);
+      expect(repo.created, isEmpty);
+    });
+
+    // Item 5b (2026-09-27): a friend's Request Plan is fulfilled through THIS
+    // screen — Default Alarm or Voice Note — locked to the requested minute.
+    PlanRequest request() => PlanRequest(
+      id: 'req-1',
+      batchId: 'b',
+      requesterUid: 'friend-1',
+      plannerUid: 'me',
+      mode: PlanRequestMode.onePlan,
+      status: PlanRequestStatus.pending,
+      timezone: 'Etc/UTC',
+      windowStartUtc: DateTime.utc(2030, 10, 5, 18),
+      windowEndUtc: DateTime.utc(2030, 10, 5, 18, 1),
+      durationMinutes: 1,
+      title: 'Take medicine',
+      message: 'After dinner',
+    );
+
+    testWidgets('5b: request mode opens pre-filled and locked', (tester) async {
+      await pumpBuilder(tester, planRequest: request());
+      expect(find.text('Name friend-1'), findsOneWidget);
+      expect(find.byKey(const ValueKey('plan-target-change')), findsNothing);
+      expect(find.byKey(const ValueKey('plan-request-locked')), findsOneWidget);
+      for (final key in ['pick-date', 'pick-time']) {
+        final button = tester.widget<ButtonStyleButton>(
+          find.byKey(ValueKey(key)),
+        );
+        expect(button.onPressed, isNull, reason: key);
+      }
+      expect(find.textContaining('Oct 5, 2030'), findsWidgets);
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const ValueKey('task-name')))
+            .controller!
+            .text,
+        'Take medicine',
+      );
+      expect(find.text('Voice Note'), findsOneWidget);
+    });
+
+    testWidgets('5b: Default Alarm fulfils the request, never a plain plan', (
+      tester,
+    ) async {
+      final requests = _PlanRequests();
+      final (repo, _) = await pumpBuilder(
+        tester,
+        planRequest: request(),
+        planRequests: requests,
+      );
+      await send(tester);
+      expect(repo.created, isEmpty);
+      final f = requests.fulfilled.single;
+      expect(f['title'], 'Take medicine');
+      expect(f['note'], 'After dinner');
+      expect(f['wall'], DateTime.utc(2030, 10, 5, 18));
+      expect(f['duration'], 1);
+      expect(f['voiceNote'], isNull);
+      // Back on the request screen.
+      expect(find.text('Request screen'), findsOneWidget);
+    });
+
+    testWidgets('5b: Voice Note uploads first, then fulfils with it', (
+      tester,
+    ) async {
+      final requests = _PlanRequests();
+      final (repo, voice) = await pumpBuilder(
+        tester,
+        planRequest: request(),
+        planRequests: requests,
+      );
+      await fillAndRecord(tester);
+      await send(tester);
+      expect(voice.uploads.single.$1, 'friend-1');
+      final f = requests.fulfilled.single;
+      expect(f['itemId'], 'prepared-id-000001');
+      expect(f['voiceNote'], isNotNull);
+      expect(f['title'], kVoiceAlarmTitle);
       expect(repo.created, isEmpty);
     });
 
