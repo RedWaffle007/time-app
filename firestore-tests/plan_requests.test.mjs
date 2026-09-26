@@ -8,6 +8,8 @@ import {
 } from '@firebase/rules-unit-testing';
 import { deleteDoc, doc, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
 
+import { lockPath, plan } from './minute_lock.mjs';
+
 const TARGET = 'target';
 const PLANNER = 'planner';
 const OUTSIDER = 'outsider';
@@ -125,6 +127,10 @@ async function fulfill(db, itemId, {
   const batch = writeBatch(db);
   batch.set(doc(db, `scheduleItems/${TARGET}/items/${itemId}`),
     item(itemId, start));
+  // Item 4 (strict): the plan carries the lock on its minute.
+  batch.set(doc(db, lockPath(TARGET, new Date(start))), {
+    targetUid: TARGET, itemId, createdByUid: PLANNER, createdAt: new Date(),
+  });
   batch.update(doc(db, REQUEST_PATH), {
     status,
     fulfilledSpans: [...priorSpans, nextSpan],
@@ -180,9 +186,7 @@ describe('fulfillment rechecks authority and lifecycle atomically', () => {
 
   it('denies an item without the matching request update', async () => {
     await seedRequest();
-    await assertFails(setDoc(
-      doc(as(PLANNER), `scheduleItems/${TARGET}/items/item-1`),
-      item('item-1'),
+    await assertFails(plan(as(PLANNER), `scheduleItems/${TARGET}/items/item-1`, item('item-1'),
     ));
   });
 

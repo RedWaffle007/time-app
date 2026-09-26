@@ -208,8 +208,24 @@ Future<void> _pumpSchedule(
 }
 
 Future<void> _expandIfCollapsed(WidgetTester tester, String title) async {
-  if (find.text(title).evaluate().isNotEmpty) return;
-  await tester.tap(find.textContaining('· 1 item').last);
+  // The hero band can show the next plan's title too, so the title being on
+  // screen does not mean its CARD is. Near UTC midnight a plan "two hours
+  // from now" falls in tomorrow's collapsed group — expand it then.
+  final cardShown = find
+      .ancestor(
+        of: find.text(title),
+        matching: find.byWidgetPredicate(
+          (w) =>
+              w.key is ValueKey<String> &&
+              (w.key! as ValueKey<String>).value.startsWith('outcome-card-'),
+        ),
+      )
+      .evaluate()
+      .isNotEmpty;
+  if (cardShown) return;
+  final header = find.textContaining('· 1 item');
+  if (header.evaluate().isEmpty) return;
+  await tester.tap(header.last);
   await tester.pumpAndSettle();
 }
 

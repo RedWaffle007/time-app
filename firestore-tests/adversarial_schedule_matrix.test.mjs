@@ -8,6 +8,8 @@ import {
 } from '@firebase/rules-unit-testing';
 import { doc, setDoc, updateDoc } from 'firebase/firestore';
 
+import { plan } from './minute_lock.mjs';
+
 const TARGET = 'target';
 const PLANNER = 'planner';
 const OUTSIDER = 'outsider';
@@ -54,7 +56,7 @@ beforeEach(async () => {
 
 describe('schedule-item adversarial matrix', () => {
   it('allows the legitimate delegated create', async () => {
-    await assertSucceeds(setDoc(doc(as(PLANNER), ITEM), payload()));
+    await assertSucceeds(plan(as(PLANNER), ITEM, payload()));
   });
 
   it('rejects every identity, lifecycle, and service-field forgery', async () => {
@@ -80,20 +82,17 @@ describe('schedule-item adversarial matrix', () => {
       { unknownInjectedField: 'surprise' },
     ];
     for (let i = 0; i < attacks.length; i++) {
-      await assertFails(setDoc(
-        doc(as(PLANNER), `scheduleItems/${TARGET}/items/attack-${i}`),
-        payload(attacks[i]),
+      await assertFails(plan(as(PLANNER), `scheduleItems/${TARGET}/items/attack-${i}`, payload(attacks[i]),
       ));
     }
   });
 
   it('outsider stays denied even with a perfectly shaped payload', async () => {
-    await assertFails(setDoc(doc(as(OUTSIDER), ITEM),
-      payload({ createdByUid: OUTSIDER })));
+    await assertFails(plan(as(OUTSIDER), ITEM, payload({ createdByUid: OUTSIDER })));
   });
 
   it('target decision cannot smuggle immutable-field changes', async () => {
-    await setDoc(doc(as(PLANNER), ITEM), payload());
+    await plan(as(PLANNER), ITEM, payload());
     await assertSucceeds(updateDoc(doc(as(TARGET), ITEM), {
       status: 'approved', decidedAt: new Date(), updatedAt: new Date(),
     }));
@@ -124,7 +123,7 @@ describe('schedule-item adversarial matrix', () => {
   // approval-reminder counter or the dismiss dedup to silence a push, and the
   // planner cannot pre-stamp them to suppress one.
   it('only the Worker can write reminder and dismiss dedup fields', async () => {
-    await setDoc(doc(as(PLANNER), ITEM), payload());
+    await plan(as(PLANNER), ITEM, payload());
     for (const uid of [TARGET, PLANNER, OUTSIDER]) {
       for (const change of [
         { approvalRemindersSent: 3 },

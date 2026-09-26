@@ -26,6 +26,8 @@ import {
 } from '@firebase/rules-unit-testing';
 import { deleteDoc, doc, getDoc, setDoc } from 'firebase/firestore';
 
+import { plan } from './minute_lock.mjs';
+
 const A = 'uidA'; // target — items live under A
 const B = 'uidB'; // planner — A's friend
 const C = 'uidC'; // outsider — nobody's friend
@@ -102,14 +104,17 @@ describe('a friend needs no grant', () => {
   });
 
   it('sets an alarm that rings directly (approved)', async () => {
-    await assertSucceeds(setDoc(doc(as(B), `scheduleItems/${A}/items/n1`), alarm()));
+    await assertSucceeds(plan(as(B), `scheduleItems/${A}/items/n1`, alarm()));
   });
 
   it('an older client may still write pending or emergency-tier items', async () => {
-    await assertSucceeds(setDoc(doc(as(B), `scheduleItems/${A}/items/n2`),
-      alarm({ status: 'pending' })));
-    await assertSucceeds(setDoc(doc(as(B), `scheduleItems/${A}/items/n3`),
-      alarm({ tier: 'emergency' })));
+    await assertSucceeds(plan(as(B), `scheduleItems/${A}/items/n2`, alarm({ status: 'pending' })));
+    // A different minute: n2 holds 13:30 now (item 4, no double-booking).
+    await assertSucceeds(plan(as(B), `scheduleItems/${A}/items/n3`,
+      alarm({
+        tier: 'emergency',
+        scheduledInstantUtc: new Date('2026-08-25T14:30:00Z'),
+      })));
   });
 
   it('may claim a legacy slot lock', async () => {
@@ -125,19 +130,16 @@ describe('a friend needs no grant', () => {
       grantedByUid: A, updatedAt: new Date(),
     });
     await assertSucceeds(getDoc(doc(as(B), itemPath)));
-    await assertSucceeds(setDoc(doc(as(B), `scheduleItems/${A}/items/n4`), alarm()));
+    await assertSucceeds(plan(as(B), `scheduleItems/${A}/items/n4`, alarm()));
   });
 
   it('an unknown tier or status is still denied', async () => {
-    await assertFails(setDoc(doc(as(B), `scheduleItems/${A}/items/x1`),
-      alarm({ tier: 'urgent' })));
-    await assertFails(setDoc(doc(as(B), `scheduleItems/${A}/items/x2`),
-      alarm({ status: 'withdrawn' })));
+    await assertFails(plan(as(B), `scheduleItems/${A}/items/x1`, alarm({ tier: 'urgent' })));
+    await assertFails(plan(as(B), `scheduleItems/${A}/items/x2`, alarm({ status: 'withdrawn' })));
   });
 
   it('cannot create an item in someone else\'s name', async () => {
-    await assertFails(setDoc(doc(as(B), `scheduleItems/${A}/items/x3`),
-      alarm({ createdByUid: A })));
+    await assertFails(plan(as(B), `scheduleItems/${A}/items/x3`, alarm({ createdByUid: A })));
   });
 });
 
@@ -146,7 +148,7 @@ describe('ending the friendship ends the permission', () => {
     await assertSucceeds(getDoc(doc(as(B), itemPath)));
     await unfriend();
     await assertFails(getDoc(doc(as(B), itemPath)));
-    await assertFails(setDoc(doc(as(B), `scheduleItems/${A}/items/u1`), alarm()));
+    await assertFails(plan(as(B), `scheduleItems/${A}/items/u1`, alarm()));
   });
 
   it('a leftover granted:true doc does not survive unfriending', async () => {
@@ -160,15 +162,14 @@ describe('ending the friendship ends the permission', () => {
     });
     await unfriend();
     await assertFails(getDoc(doc(as(B), itemPath)));
-    await assertFails(setDoc(doc(as(B), `scheduleItems/${A}/items/u2`), alarm()));
+    await assertFails(plan(as(B), `scheduleItems/${A}/items/u2`, alarm()));
   });
 });
 
 describe('a non-friend is denied', () => {
   it('cannot read or set an alarm', async () => {
     await assertFails(getDoc(doc(as(C), itemPath)));
-    await assertFails(setDoc(doc(as(C), `scheduleItems/${A}/items/c1`),
-      alarm({ createdByUid: C })));
+    await assertFails(plan(as(C), `scheduleItems/${A}/items/c1`, alarm({ createdByUid: C })));
   });
 
   it('cannot claim a slot lock', async () => {
@@ -181,8 +182,7 @@ describe('a non-friend is denied', () => {
 
 describe('group labels on a friend\'s alarm', () => {
   it('a group both friends are in may label it', async () => {
-    await assertSucceeds(setDoc(doc(as(B), `scheduleItems/${A}/items/g1`),
-      alarm({ groupId: GROUP })));
+    await assertSucceeds(plan(as(B), `scheduleItems/${A}/items/g1`, alarm({ groupId: GROUP })));
   });
 
   it('DENIES a group the target is not in, or that does not exist', async () => {
@@ -191,22 +191,18 @@ describe('group labels on a friend\'s alarm', () => {
         name: 'B only', ownerUid: B, joinCode: 'XYZ234', memberUids: [B],
       });
     });
-    await assertFails(setDoc(doc(as(B), `scheduleItems/${A}/items/g2`),
-      alarm({ groupId: 'b_only' })));
-    await assertFails(setDoc(doc(as(B), `scheduleItems/${A}/items/g3`),
-      alarm({ groupId: 'no_such_group' })));
+    await assertFails(plan(as(B), `scheduleItems/${A}/items/g2`, alarm({ groupId: 'b_only' })));
+    await assertFails(plan(as(B), `scheduleItems/${A}/items/g3`, alarm({ groupId: 'no_such_group' })));
   });
 });
 
 describe('a non-friend fellow member (item 3: group plans only)', () => {
   it('may set a GROUP-tagged alarm, with no grant', async () => {
-    await assertSucceeds(setDoc(doc(as(C), `scheduleItems/${A}/items/gc1`),
-      alarm({ createdByUid: C, groupId: GROUP })));
+    await assertSucceeds(plan(as(C), `scheduleItems/${A}/items/gc1`, alarm({ createdByUid: C, groupId: GROUP })));
   });
 
   it('may NOT set an untagged (personal) alarm, or read the schedule', async () => {
-    await assertFails(setDoc(doc(as(C), `scheduleItems/${A}/items/gc2`),
-      alarm({ createdByUid: C })));
+    await assertFails(plan(as(C), `scheduleItems/${A}/items/gc2`, alarm({ createdByUid: C })));
     await assertFails(getDoc(doc(as(C), itemPath)));
   });
 
@@ -219,8 +215,7 @@ describe('a non-friend fellow member (item 3: group plans only)', () => {
       plannerUid: C, targetUid: A, groupId: GROUP, updatedAt: new Date(),
     });
     await assertFails(getDoc(doc(as(C), itemPath)));
-    await assertFails(setDoc(doc(as(C), `scheduleItems/${A}/items/gc3`),
-      alarm({ createdByUid: C })));
+    await assertFails(plan(as(C), `scheduleItems/${A}/items/gc3`, alarm({ createdByUid: C })));
   });
 });
 

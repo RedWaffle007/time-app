@@ -26,6 +26,7 @@ import 'features/reminders/application/reminder_providers.dart';
 import 'features/reminders/presentation/missed_alarm_review_host.dart';
 import 'features/scheduling/application/item_lapse_reconciler.dart';
 import 'features/scheduling/application/schedule_providers.dart';
+import 'features/scheduling/application/minute_lock_backfill.dart';
 import 'features/scheduling/application/slot_lock_reconciler.dart';
 import 'features/social/application/stats_providers.dart';
 import 'features/social/application/social_providers.dart';
@@ -433,6 +434,11 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     // stream-driven cleanup wired while existing installations delete locks
     // created by older builds.
     ref.watch(slotLockSyncProvider);
+
+    // NO DOUBLE-BOOKING BACKFILL (Batch G item 4). Plans made before minute
+    // locks existed get their minute locked from this device (the target's),
+    // off the item stream, so they block a clash like every new plan.
+    ref.watch(minuteLockBackfillSyncProvider);
 
     // THE END-OF-DAY LAPSE WIRE — the same shape a fifth time. An item nobody
     // approves or acts on cannot sit in "next" forever: at the end of its own

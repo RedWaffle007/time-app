@@ -6803,3 +6803,51 @@ its switch/ask writes fail (harmless); planning for friends works.
   or both in the tagged group; new `groupJoinRequested` event (a code request
   is the one event where `fromUid == toUid`); `groupAdminUids()`.
 - **Deploy order:** rules → Worker → app.
+
+---
+
+## No double-booking — minute locks (2026-09-27, Batch G item 4, strict)
+
+**User-directed; replaces G1's advisory warning with a hard block.** A person
+can hold ONE live plan per minute. Chosen mode: **strict** — every item create
+must carry its lock, so a build older than this cannot create plans at all
+until it updates (the user accepted this; deploy rules with the new APK).
+
+- **Key.** `scheduleMinutes/{targetUid}/minutes/{epochMinute}`, epochMinute =
+  the plan's absolute instant in whole minutes since the epoch
+  (`minuteLockId`, rules `epochMinute()`, Worker `epochMinute`). Each
+  person's zone is already folded in; DST's repeated hour is two minutes.
+- **Rules.** The item create requires `getAfter(lock).itemId == itemId` (same
+  batch). A lock is claimable when its named plan (in the same write) is live,
+  at exactly that minute, and created by the caller — or, for the backfill,
+  the caller is the target. A HELD lock can be taken over only when the plan
+  it names is no longer live (outcome set, or status not pending/approved, or
+  gone) — **there is no release step and no stale "busy"**. Read: target and
+  friends. List: target. Delete: nobody. Self-plans are covered (it is the
+  target's minute).
+- **Single plans.** The builder checks the exact minute once date + time are
+  known (self-plans too) and shows, in red under the pickers, "{name} already
+  has a plan scheduled for this time. Please select a different time." (self:
+  "You already have…"), with Send off. It re-checks right before saving; a
+  rules refusal that turns out to be a clash becomes the same red line, not a
+  raw error. The "Schedule heads-up" dialog is gone.
+- **Group plans.** The sheet keeps the planner's own date/time; the first pick
+  opens "Everyone's time now" (one line per member, their current local date
+  and time) with Continue, and "Everyone's time" reopens it. Each member's plan
+  is written separately; a member whose minute is held gets no alarm. The app
+  POSTs `groupPlanned` with the failed members + instants; the **Worker
+  verifies** each (member of the group, lock at that minute names a live plan
+  not made by this planner for this group) before pushing the member ("Group
+  task "{task}" from {planner} wasn't set for you at {time} — you already have
+  a plan then.", {time} in THEIR zone, 12-hour — the Worker cannot see a
+  phone's 12/24h setting) and, when anyone was busy, the planner's summary
+  ("Your group task "{task}" is set for {X} members. {Y} ({names}) were busy
+  at that time and won't be alerted."). Once per member per plan minute
+  (`groupBusyNotices`). The app names only the members the Worker verified.
+- **Backfill.** Plans made before locks existed get their minute locked from
+  the TARGET's device (`MinuteLockBackfill`, off the item stream). Until a
+  target opens the new app, their older plans do not block a group member who
+  is not their friend; friends and self are covered by the app's pre-check.
+- **Legacy.** The 30-minute `scheduleSlots` are untouched (their cleanup
+  reconciler stays).
+- **Deploy order:** rules → Worker → install the new APK everywhere.

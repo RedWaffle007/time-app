@@ -621,6 +621,12 @@ planning your schedule and triggering your alarms was already built — groups +
 `plannerGrants` + the `pending → approved` machine + FCM + the reminder layer.
 The social layer does NOT replace or extend it.
 
+**No double-booking, strict (2026-09-27):** every plan is written with a lock on
+its exact minute (`scheduleMinutes/{target}/minutes/{epochMinute}`); a minute
+held by a live plan refuses a second one (self-plans too); a settled plan's
+lock is simply taken over. Old builds cannot create plans until updated.
+DECISIONS.md "No double-booking — minute locks".
+
 **Groups are WhatsApp-style (2026-09-27):** creator = admin (only the creator
 makes admins), admins add/approve/remove, any member plans for the WHOLE group
 with no grant; group grants and `plannerAccess` are retired. DECISIONS.md

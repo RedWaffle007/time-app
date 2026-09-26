@@ -27,6 +27,8 @@ import {
 } from '@firebase/rules-unit-testing';
 import { doc, getDoc, setDoc, writeBatch } from 'firebase/firestore';
 
+import { lockPath as minuteLockPath } from './minute_lock.mjs';
+
 const PLANNER = 'uid_planner';
 const TARGET = 'uid_target';
 const pair = (a, b) => (a < b ? `${a}_${b}` : `${b}_${a}`);
@@ -100,6 +102,10 @@ describe('Bug 2 — createItem batch (item 3: group membership, no grant)', () =
     const batch = writeBatch(db);
     batch.set(doc(db, lockPath), lock);
     batch.set(doc(db, `scheduleItems/${TARGET}/items/new1`), item);
+    // Item 4 (strict): every plan carries the lock on its minute.
+    batch.set(doc(db, minuteLockPath(TARGET, item.scheduledInstantUtc)), {
+      targetUid: TARGET, itemId: 'new1', createdByUid: PLANNER, createdAt: new Date(),
+    });
     return batch.commit();
   }
 

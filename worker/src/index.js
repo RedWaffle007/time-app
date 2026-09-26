@@ -28,6 +28,7 @@ import {
   handleGroupAvatarDelete,
 } from './avatar.js';
 import { sendDueInactivityNotifications } from './inactivity.js';
+import { handleGroupPlanned } from './group-plan.js';
 import { settleLapsedItems } from './lapse.js';
 import { rescueUndeliveredVoiceNotes } from './voice-rescue.js';
 import { handleInviteRequest } from './invite.js';
@@ -147,6 +148,11 @@ export default {
     // as it was, and proven.
     if (FRIEND_EVENTS.has(body && body.event)) {
       return handleFriendEvent(request, env, body);
+    }
+
+    // Item 4: a group plan that met double-booked members (group-plan.js).
+    if (body && body.event === 'groupPlanned') {
+      return handleGroupPlannedRoute(request, env, body);
     }
 
     const { event, targetUid, itemId } = body || {};
@@ -538,6 +544,36 @@ async function handleFriendEvent(request, env, body) {
     });
     console.log(JSON.stringify(res));
     return json(res, 200);
+  } catch (e) {
+    return json({ error: 'send-failed', detail: String(e && e.message) }, 500);
+  }
+}
+
+async function handleGroupPlannedRoute(request, env, body) {
+  const projectId = env.PROJECT_ID;
+  let callerUid;
+  try {
+    callerUid = await requireUid(request, projectId);
+  } catch (e) {
+    if (e instanceof IdTokenError) return json({ error: 'unauthorized' }, 401);
+    throw e;
+  }
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
+  } catch {
+    return json({ error: 'server-misconfigured' }, 500);
+  }
+  try {
+    const accessToken = await getAccessToken(serviceAccount);
+    const ctx = {
+      db: makeFirestoreDb(projectId, accessToken),
+      fcm: makeFcm(projectId, accessToken),
+      now: new Date(),
+    };
+    const res = await handleGroupPlanned(ctx, callerUid, body);
+    console.log(JSON.stringify({ groupPlanned: res.body }));
+    return json(res.body, res.status);
   } catch (e) {
     return json({ error: 'send-failed', detail: String(e && e.message) }, 500);
   }

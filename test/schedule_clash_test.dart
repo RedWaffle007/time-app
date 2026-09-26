@@ -1,16 +1,17 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 
 import 'package:time_app/core/timezone/tz_resolver.dart';
 import 'package:time_app/features/scheduling/application/schedule_clash.dart';
+import 'package:time_app/features/scheduling/domain/minute_lock.dart';
 import 'package:time_app/features/scheduling/domain/schedule_item.dart';
-import 'package:time_app/features/scheduling/presentation/conflict_warning_dialog.dart';
 
-/// Batch G1: the clash warning fires only on a LITERAL clash — a live plan at
-/// the exact minute being planned — and the schedule read never gets stuck.
+/// Batch G1 → item 4: a clash is a LITERAL one — a live plan at the exact
+/// minute being planned — and the schedule read never gets stuck. Since item 4
+/// a clash BLOCKS the plan (server-side minute locks; see
+/// firestore-tests/minute_locks.test.mjs).
 void main() {
   setUpAll(tzdata.initializeTimeZones);
 
@@ -207,87 +208,38 @@ void main() {
     });
   });
 
-  group('dialog', () {
-    Future<void> open(
-      WidgetTester tester,
-      List<String> names, {
-      VoidCallback? onSave,
-    }) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Builder(
-            builder: (context) => Scaffold(
-              body: Column(
-                children: [
-                  FilledButton(
-                    onPressed: () => showClashWarningDialog(
-                      context,
-                      names: names,
-                      timeLabel: '6:00 PM',
-                    ),
-                    child: const Text('Check'),
-                  ),
-                  FilledButton(onPressed: onSave, child: const Text('Save')),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-      await tester.tap(find.text('Check'));
-      await tester.pumpAndSettle();
+  test('the day-scoped rule, the dying listener and the warning dialog are '
+      'gone', () {
+    for (final path in [
+      'lib/features/scheduling/application/conflict_disclosure.dart',
+      'lib/features/scheduling/application/target_schedule_providers.dart',
+      'lib/features/scheduling/presentation/conflict_warning_dialog.dart',
+    ]) {
+      expect(File(path).existsSync(), isFalse, reason: path);
     }
-
-    testWidgets('one person: names them and the time, and does not block', (
-      tester,
-    ) async {
-      var saves = 0;
-      await open(tester, ['Test Target'], onSave: () => saves++);
-      expect(
-        find.text(
-          'Test Target already has a plan at 6:00 PM. You can still send.',
-        ),
-        findsOneWidget,
-      );
-      await tester.tap(find.text('Got it'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Save'));
-      expect(saves, 1);
-    });
-
-    testWidgets('a group: one popup, names sorted', (tester) async {
-      await open(tester, ['Member B', 'Member A']);
-      expect(
-        find.text(
-          'Already busy at this time (6:00 PM): Member A, Member B. '
-          'You can still send.',
-        ),
-        findsOneWidget,
-      );
-    });
-  });
-
-  test('the day-scoped rule and the dying listener are gone', () {
-    expect(
-      File(
-        'lib/features/scheduling/application/conflict_disclosure.dart',
-      ).existsSync(),
-      isFalse,
-    );
-    expect(
-      File(
-        'lib/features/scheduling/application/target_schedule_providers.dart',
-      ).existsSync(),
-      isFalse,
-    );
     for (final path in [
       'lib/features/scheduling/presentation/schedule_builder_screen.dart',
       'lib/features/scheduling/presentation/group_plan_sheet.dart',
     ]) {
       final source = File(path).readAsStringSync();
       expect(source, isNot(contains('targetScheduleProvider')));
-      expect(source, isNot(contains('Could not check')));
+      expect(source, isNot(contains('Schedule heads-up')));
       expect(source, isNot(contains('showTargetScheduleModal')));
     }
+  });
+
+  test('the minute-lock key matches the rules and the Worker', () {
+    // Seconds are dropped; whole minutes since the epoch are kept.
+    final at = DateTime.utc(2030, 10, 5, 1);
+    expect(minuteLockId(at), '${at.millisecondsSinceEpoch ~/ 60000}');
+    expect(minuteLockId(at.add(const Duration(seconds: 59))), minuteLockId(at));
+    expect(
+      minuteLockId(at.add(const Duration(minutes: 1))),
+      isNot(minuteLockId(at)),
+    );
+    // Same instant expressed in another zone: same key.
+    expect(minuteLockId(at.toLocal()), minuteLockId(at));
+    final rules = File('firestore.rules').readAsStringSync();
+    expect(rules, contains('string(int(math.floor(ts.toMillis() / 60000)))'));
   });
 }

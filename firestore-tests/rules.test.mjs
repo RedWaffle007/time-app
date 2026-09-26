@@ -41,6 +41,8 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 
+import { plan, planIn } from './minute_lock.mjs';
+
 // --- fixtures -------------------------------------------------------------
 
 // The a/b/m prefixes keep the uids' SORT ORDER from the original fixtures:
@@ -879,27 +881,21 @@ describe('any member plans for the group — no grant', () => {
   it('a member sets a group-tagged alarm for a fellow member', async () => {
     await dropSeedGrant();
     await assertSucceeds(
-      addDoc(
-        collection(as(PLANNER), 'scheduleItems', TARGET, 'items'),
-        newItemFields({ status: 'approved' }),
+      planIn(as(PLANNER), TARGET, newItemFields({ status: 'approved' }),
       ),
     );
   });
 
   it('DENIES a non-member tagging the group', async () => {
     await assertFails(
-      addDoc(
-        collection(as(OUTSIDER), 'scheduleItems', TARGET, 'items'),
-        newItemFields({ createdByUid: OUTSIDER }),
+      planIn(as(OUTSIDER), TARGET, newItemFields({ createdByUid: OUTSIDER }),
       ),
     );
   });
 
   it('DENIES a member tagging the group for someone outside it', async () => {
     await assertFails(
-      addDoc(
-        collection(as(PLANNER), 'scheduleItems', OUTSIDER, 'items'),
-        newItemFields({ targetUid: OUTSIDER }),
+      planIn(as(PLANNER), OUTSIDER, newItemFields({ targetUid: OUTSIDER }),
       ),
     );
   });
@@ -907,9 +903,7 @@ describe('any member plans for the group — no grant', () => {
   it('DENIES an untagged plan between non-friends (group membership is not '
       + 'a personal permission)', async () => {
     await assertFails(
-      addDoc(
-        collection(as(PLANNER), 'scheduleItems', TARGET, 'items'),
-        newItemFields({ groupId: '' }),
+      planIn(as(PLANNER), TARGET, newItemFields({ groupId: '' }),
       ),
     );
   });
@@ -1161,9 +1155,7 @@ describe('issue 2 — no client may write the Worker dedup fields', () => {
     // The same hole through the other door: an item born pre-silenced would
     // never fire its `created` push.
     await assertFails(
-      addDoc(
-        collection(as(PLANNER), 'scheduleItems', TARGET, 'items'),
-        newItemFields({ notifiedCreated: true }),
+      planIn(as(PLANNER), TARGET, newItemFields({ notifiedCreated: true }),
       ),
     );
   });
@@ -1299,18 +1291,14 @@ describe('issue 2 — the target cannot rewrite the plan itself', () => {
 describe('issue 2 — every legitimate write still works', () => {
   it('ALLOWS the planner to create a pending item under an active grant', async () => {
     await assertSucceeds(
-      addDoc(
-        collection(as(PLANNER), 'scheduleItems', TARGET, 'items'),
-        newItemFields(),
+      planIn(as(PLANNER), TARGET, newItemFields(),
       ),
     );
   });
 
   it('ALLOWS a self-planned approved item', async () => {
     await assertSucceeds(
-      addDoc(
-        collection(as(TARGET), 'scheduleItems', TARGET, 'items'),
-        newItemFields({
+      planIn(as(TARGET), TARGET, newItemFields({
           createdByUid: TARGET,
           groupId: '',
           status: 'approved',

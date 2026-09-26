@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/timezone/tz_resolver.dart';
 import '../../celebrations/domain/completion_celebration.dart';
+import '../domain/minute_lock.dart';
 import '../domain/schedule_item.dart';
 
 /// Creates schedule items and drives their status/outcome transitions.
@@ -12,6 +13,29 @@ class ScheduleRepository {
 
   CollectionReference<Map<String, dynamic>> _items(String targetUid) =>
       _db.collection('scheduleItems').doc(targetUid).collection('items');
+
+  /// The double-booking lock for [targetUid] at [instantUtc] (item 4).
+  DocumentReference<Map<String, dynamic>> minuteLockRef(
+    String targetUid,
+    DateTime instantUtc,
+  ) => _db
+      .collection('scheduleMinutes')
+      .doc(targetUid)
+      .collection('minutes')
+      .doc(minuteLockId(instantUtc));
+
+  /// The lock document's fields — kept in one place so every writer (a new
+  /// plan, a plan-request fulfilment, the backfill) writes the same shape.
+  static Map<String, dynamic> minuteLockData({
+    required String targetUid,
+    required String itemId,
+    required String createdByUid,
+  }) => {
+    'targetUid': targetUid,
+    'itemId': itemId,
+    'createdByUid': createdByUid,
+    'createdAt': FieldValue.serverTimestamp(),
+  };
 
   /// Creates an item. [wall] is the wall-clock time as entered; it's resolved to
   /// a UTC instant using the target's [timezone].
@@ -45,11 +69,21 @@ class ScheduleRepository {
     final instant = resolveWallTimeToUtc(wall, timezone);
 
     final itemRef = _items(targetUid).doc(itemId);
-    // Items are point-in-time alarms, not 30-minute appointments: the model has
-    // no duration. Multiple plans may therefore share a half-hour (or even the
-    // same instant). The old scheduleSlots write is intentionally gone; the
-    // the authorized stream is projected into day conflict times, never a lock.
-    await itemRef.set({
+    // No double-booking (Batch G item 4, strict): the item and the lock on ITS
+    // minute go in ONE batch. The rules refuse an item without its lock, and a
+    // lock on a minute another live plan holds — so a clash fails the whole
+    // write and nothing lands. (Items are point alarms with no duration: only
+    // the exact same minute clashes; the old 30-minute scheduleSlots are gone.)
+    final batch = _db.batch()
+      ..set(
+        minuteLockRef(targetUid, instant),
+        minuteLockData(
+          targetUid: targetUid,
+          itemId: itemRef.id,
+          createdByUid: createdByUid,
+        ),
+      );
+    batch.set(itemRef, {
       'targetUid': targetUid,
       'createdByUid': createdByUid,
       'groupId': groupId ?? '',
@@ -74,7 +108,35 @@ class ScheduleRepository {
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
+    await batch.commit();
     return itemRef.id;
+  }
+
+  /// The target's own backfill (item 4): lock the minute of one of their live
+  /// plans made before locks existed. The rules allow it only for a live plan
+  /// of theirs at exactly that minute, and only over a free or dead lock.
+  Future<void> claimMinuteLock({
+    required String targetUid,
+    required String itemId,
+    required DateTime instantUtc,
+  }) {
+    return minuteLockRef(targetUid, instantUtc).set(
+      minuteLockData(
+        targetUid: targetUid,
+        itemId: itemId,
+        createdByUid: targetUid,
+      ),
+    );
+  }
+
+  /// The item id currently holding [targetUid]'s minute at [instantUtc], or
+  /// null when it is free. Readable by the target and their friends.
+  Future<String?> minuteLockHolder(
+    String targetUid,
+    DateTime instantUtc,
+  ) async {
+    final snap = await minuteLockRef(targetUid, instantUtc).get();
+    return snap.data()?['itemId'] as String?;
   }
 
   /// The TARGET's delivery receipt for a voice note (item 32c): stamped once,
@@ -106,13 +168,14 @@ class ScheduleRepository {
   /// Returns the items actually created (uid + id + isSelf, so the caller can
   /// fire the per-member `created` push) and the skip counts, split so the UI
   /// can say WHY nobody got planned: [skippedPast] (the chosen time is already
-  /// gone in that member's zone) versus [skippedOther] (a taken slot, a missing
-  /// grant, any write failure).
+  /// gone in that member's zone) versus [skippedOther] (a member already busy
+  /// at that minute, or any other write failure — listed in `failed`).
   Future<
     ({
       List<({String uid, String itemId, bool isSelf})> sent,
       int skippedPast,
       int skippedOther,
+      List<({String uid, DateTime instantUtc})> failed,
     })
   >
   planForGroup({
@@ -124,11 +187,13 @@ class ScheduleRepository {
     required DateTime wall,
   }) async {
     final sent = <({String uid, String itemId, bool isSelf})>[];
+    final failed = <({String uid, DateTime instantUtc})>[];
     var skippedPast = 0;
     var skippedOther = 0;
     final now = DateTime.now().toUtc();
     for (final t in targets) {
-      if (!resolveWallTimeToUtc(wall, t.timezone).isAfter(now)) {
+      final instant = resolveWallTimeToUtc(wall, t.timezone);
+      if (!instant.isAfter(now)) {
         skippedPast++;
         continue;
       }
@@ -146,12 +211,20 @@ class ScheduleRepository {
         );
         sent.add((uid: t.uid, itemId: id, isSelf: t.isSelf));
       } catch (_) {
-        // Best-effort: a taken slot or any per-member failure is skipped, never
-        // fatal to the rest of the fan-out.
+        // Best-effort: a member whose minute is already taken (item 4 — the
+        // rules refuse the double-booking) or any other per-member failure is
+        // skipped, never fatal to the rest of the fan-out. [failed] carries the
+        // instant tried so the Worker can VERIFY who was really busy.
         skippedOther++;
+        failed.add((uid: t.uid, instantUtc: instant));
       }
     }
-    return (sent: sent, skippedPast: skippedPast, skippedOther: skippedOther);
+    return (
+      sent: sent,
+      skippedPast: skippedPast,
+      skippedOther: skippedOther,
+      failed: failed,
+    );
   }
 
   /// All items belonging to a target (they filter by status in the UI).

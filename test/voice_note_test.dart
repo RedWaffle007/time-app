@@ -140,6 +140,10 @@ class _Client implements VoiceNoteClient {
 class _Repo implements ScheduleRepository {
   final created = <Map<String, Object?>>[];
 
+  /// Makes the next createItem fail (item 4: the rules refusing a minute
+  /// someone else just took).
+  Object? failWith;
+
   @override
   String newItemId(String targetUid) => 'prepared-id-000001';
 
@@ -159,6 +163,8 @@ class _Repo implements ScheduleRepository {
     String? itemId,
     VoiceNoteMeta? voiceNote,
   }) async {
+    final failure = failWith;
+    if (failure != null) throw failure;
     created.add({
       'targetUid': targetUid,
       'itemId': itemId,
@@ -652,7 +658,17 @@ void main() {
       return DateTime.utc(d.year, d.month, d.day, 10);
     }
 
-    testWidgets('G1: a plan at the SAME minute warns, naming only the time', (
+    const clashLine =
+        'Name friend-1 already has a plan scheduled for this time. '
+        'Please select a different time.';
+
+    bool sendEnabled(WidgetTester tester) =>
+        tester
+            .widget<FilledButton>(find.byKey(const ValueKey('plan-send')))
+            .onPressed !=
+        null;
+
+    testWidgets('item 4: a plan at the SAME minute blocks Send, in red', (
       tester,
     ) async {
       await pumpBuilder(
@@ -661,25 +677,36 @@ void main() {
           fetch: (_) async => [existing(seededInstant())],
         ),
       );
-      expect(find.text('Schedule heads-up'), findsOneWidget);
+      expect(find.text(clashLine), findsOneWidget);
+      expect(find.textContaining('private title'), findsNothing);
+      expect(sendEnabled(tester), isFalse);
+    });
+
+    testWidgets('item 4: a self-plan clash says "You"', (tester) async {
+      await pumpBuilder(
+        tester,
+        target: 'me',
+        checker: ScheduleClashChecker(
+          fetch: (_) async => [existing(seededInstant())],
+        ),
+      );
       expect(
-        find.textContaining('Name friend-1 already has a plan at'),
+        find.text(
+          'You already have a plan scheduled for this time. '
+          'Please select a different time.',
+        ),
         findsOneWidget,
       );
-      expect(find.textContaining('private title'), findsNothing);
-      await tester.tap(find.text('Got it'));
-      await tester.pumpAndSettle();
-      // Informational only: the form is still there, and it does not re-nag.
-      expect(find.text('Schedule heads-up'), findsNothing);
-      expect(find.byKey(const ValueKey('task-name')), findsOneWidget);
+      expect(sendEnabled(tester), isFalse);
     });
 
-    testWidgets('G1: an empty schedule never warns', (tester) async {
+    testWidgets('item 4: an empty schedule never blocks', (tester) async {
       await pumpBuilder(tester);
-      expect(find.text('Schedule heads-up'), findsNothing);
+      expect(find.text(clashLine), findsNothing);
+      expect(sendEnabled(tester), isTrue);
     });
 
-    testWidgets('G1: a plan one minute away, or settled, never warns', (
+    testWidgets('item 4: one minute away, or a settled plan, never blocks', (
       tester,
     ) async {
       final at = seededInstant();
@@ -695,12 +722,12 @@ void main() {
           ],
         ),
       );
-      expect(find.text('Schedule heads-up'), findsNothing);
+      expect(find.text(clashLine), findsNothing);
+      expect(sendEnabled(tester), isTrue);
     });
 
-    testWidgets('G1: a schedule that cannot be read shows nothing', (
-      tester,
-    ) async {
+    testWidgets('item 4: an unreadable schedule does not block (the rules '
+        'decide at save)', (tester) async {
       await pumpBuilder(
         tester,
         checker: ScheduleClashChecker(
@@ -709,8 +736,31 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Schedule heads-up'), findsNothing);
-      expect(find.textContaining('Could not check'), findsNothing);
+      expect(find.text(clashLine), findsNothing);
+      expect(sendEnabled(tester), isTrue);
+    });
+
+    testWidgets('item 4: taken seconds before Send — the refusal becomes the '
+        'red line, not a raw error', (tester) async {
+      var reads = 0;
+      final (repo, _) = await pumpBuilder(
+        tester,
+        checker: ScheduleClashChecker(
+          // Free when first checked and right before saving; taken by the
+          // time the rules refuse the write.
+          fetch: (_) async => ++reads <= 2 ? [] : [existing(seededInstant())],
+          retryDelays: const [],
+        ),
+      );
+      repo.failWith = FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'permission-denied',
+      );
+      await fillAndRecord(tester, record: false);
+      await send(tester);
+      expect(find.text(clashLine), findsOneWidget);
+      expect(find.textContaining('Failed:'), findsNothing);
+      expect(repo.created, isEmpty);
     });
 
     // Batch G2 — the pickers open in the RECIPIENT's time. Fixed clock:

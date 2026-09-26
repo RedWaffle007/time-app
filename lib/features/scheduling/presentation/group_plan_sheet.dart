@@ -9,10 +9,9 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/timezone/tz_resolver.dart';
 import '../../auth/application/auth_providers.dart';
+import '../../notifications/application/group_plan_reporter.dart';
 import '../../notifications/application/outcome_notifier.dart';
-import '../application/schedule_clash.dart';
 import '../application/schedule_providers.dart';
-import 'conflict_warning_dialog.dart';
 
 /// One eligible group-plan recipient: a member the planner selected, plus
 /// whether it is the planner themselves (self items skip the queue).
@@ -71,10 +70,9 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
   /// Everyone who gave me either permission, plus me (F2: one permission).
   List<GroupPlanCandidate> get _recipients => widget.candidates;
 
-  /// The (day, time, members) last checked for clashes — each is checked once
-  /// per sheet, and only the latest one may open the warning.
-  String? _clashKey;
-  bool _clashDialogOpen = false;
+  /// The member-times pop-up opens by itself once, on the first date or time
+  /// pick (item 4); "Everyone's time" reopens it.
+  bool _shownMemberTimes = false;
 
   @override
   void dispose() {
@@ -89,7 +87,63 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
       _time != null &&
       !_saving;
 
+  /// Every member's current local date and time, one line each (item 4), so
+  /// the planner can see what the chosen wall time means for everyone.
+  Future<void> _showMemberTimes() {
+    _shownMemberTimes = true;
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Consumer(
+        builder: (context, dialogRef, _) => AlertDialog(
+          title: const Text("Everyone's time now"),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                for (final c in _recipients)
+                  Builder(
+                    builder: (context) {
+                      final p = dialogRef
+                          .watch(profileByUidProvider(c.uid))
+                          .value;
+                      final zone = p?.homeTimezone;
+                      final name = c.isSelf ? 'You' : (p?.name ?? 'Loading…');
+                      final now = zone == null || zone.isEmpty
+                          ? null
+                          : wallNowIn(zone);
+                      return Padding(
+                        key: ValueKey('member-time-${c.uid}'),
+                        padding: const EdgeInsets.symmetric(vertical: Space.xs),
+                        child: Text(
+                          now == null
+                              ? '$name: —'
+                              : '$name: ${formatWallDate(context, now)}, '
+                                    '${formatWallTimeOfDay(context, now)}',
+                          style: context.text.bodyMedium,
+                        ),
+                      );
+                    },
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Continue'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _pickDate() async {
+    if (!_shownMemberTimes) {
+      await _showMemberTimes();
+      if (!mounted) return;
+    }
     final now = DateTime.now();
     final picked = await showDatePicker(
       context: context,
@@ -101,6 +155,10 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
   }
 
   Future<void> _pickTime() async {
+    if (!_shownMemberTimes) {
+      await _showMemberTimes();
+      if (!mounted) return;
+    }
     final picked = await showTimePicker(
       context: context,
       initialTime: _time ?? TimeOfDay.now(),
@@ -115,33 +173,6 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
     _time!.hour,
     _time!.minute,
   );
-
-  /// Checks every member at the same moment, each in their own zone, and
-  /// shows ONE warning naming whoever already has a plan at that exact minute
-  /// (Batch G1). A member whose schedule still cannot be read after retries is
-  /// left out — the warning is advisory.
-  Future<void> _checkClashes({
-    required String key,
-    required List<({String uid, String name, DateTime instantUtc})> members,
-    required String timeLabel,
-  }) async {
-    final checker = ref.read(scheduleClashCheckerProvider);
-    final results = await Future.wait(
-      members.map(
-        (m) => checker.check(targetUid: m.uid, instantUtc: m.instantUtc),
-      ),
-    );
-    final busy = [
-      for (var i = 0; i < members.length; i++)
-        if (results[i] == ClashResult.clash) members[i].name,
-    ];
-    if (!mounted || _clashKey != key || busy.isEmpty || _clashDialogOpen) {
-      return;
-    }
-    _clashDialogOpen = true;
-    await showClashWarningDialog(context, names: busy, timeLabel: timeLabel);
-    _clashDialogOpen = false;
-  }
 
   Future<void> _send() async {
     final me = ref.read(currentUidProvider);
@@ -161,6 +192,7 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
       // never resolves its `.future`, hanging the whole send. A member we can't
       // resolve is skipped, never a freeze.
       final repo = ref.read(profileRepositoryProvider);
+      final names = <String, String>{};
       final resolved = await Future.wait(
         _recipients.map((c) async {
           try {
@@ -170,6 +202,7 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
                 .timeout(const Duration(seconds: 8));
             final tz = p?.homeTimezone;
             if (tz == null || tz.isEmpty) return null;
+            names[c.uid] = p?.name ?? 'A member';
             return (uid: c.uid, timezone: tz, isSelf: c.isSelf);
           } catch (_) {
             return null;
@@ -209,14 +242,38 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
         }
       }
 
+      // Members whose minute was already taken got no alarm (item 4). The
+      // Worker verifies who was really busy, tells each of them and sends the
+      // summary; its answer is what names them here.
+      Set<String>? verifiedBusy;
+      if (result.failed.isNotEmpty) {
+        verifiedBusy = await ref
+            .read(groupPlanReporterProvider)
+            .reportBusy(
+              groupId: widget.groupId,
+              title: _title.text.trim(),
+              setCount: result.sent.length,
+              failed: result.failed,
+            );
+      }
+
       if (!mounted) return;
       final n = result.sent.length;
       final skipped = result.skippedPast + result.skippedOther;
+      final busyNames = [
+        for (final f in result.failed)
+          if (verifiedBusy?.contains(f.uid) ?? false)
+            names[f.uid] ?? 'A member',
+      ];
       final String message;
       if (n == 0 && result.skippedPast > 0 && result.skippedOther == 0) {
         // The single most common miss: a time already gone. Say so, rather than
         // the useless "no one could be planned for".
         message = 'That time has already passed. Pick a later time.';
+      } else if (busyNames.isNotEmpty) {
+        message =
+            'Alarm set for $n ${n == 1 ? 'member' : 'members'}. '
+            'Busy at that time: ${busyNames.join(', ')}.';
       } else if (n == 0) {
         message = 'No one could be planned for right now.';
       } else {
@@ -240,39 +297,10 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
     final recipients = _recipients;
     final count = recipients.length;
 
-    // Literal clashes only: once day and time are known and every member's
-    // zone has resolved, each member is checked at that wall time in THEIR
-    // zone. The popup names people and the time, never item content.
-    if (_date != null && _time != null && recipients.isNotEmpty) {
-      var allSettled = true;
-      final members = <({String uid, String name, DateTime instantUtc})>[];
-      for (final candidate in recipients) {
-        final profile = ref.watch(profileByUidProvider(candidate.uid));
-        if (profile.isLoading && !profile.hasValue) {
-          allSettled = false;
-          continue;
-        }
-        final timezone = profile.value?.homeTimezone;
-        if (timezone == null || timezone.isEmpty) continue;
-        members.add((
-          uid: candidate.uid,
-          name: profile.value?.name ?? 'Group member',
-          instantUtc: resolveWallTimeToUtc(_wall(), timezone),
-        ));
-      }
-      final key = [
-        _wall().toIso8601String(),
-        for (final m in members)
-          '${m.uid}@${m.instantUtc.millisecondsSinceEpoch}',
-      ].join('|');
-      if (allSettled && members.isNotEmpty && key != _clashKey) {
-        _clashKey = key;
-        final timeLabel = formatTimeOfDay(context, _time!);
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          _checkClashes(key: key, members: members, timeLabel: timeLabel);
-        });
-      }
+    // Keep every member's profile warm, so the member-times pop-up has names
+    // and zones on its first frame.
+    for (final c in recipients) {
+      ref.watch(profileByUidProvider(c.uid));
     }
 
     return Padding(
@@ -335,6 +363,12 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
                         ? 'Pick time'
                         : formatTimeOfDay(context, _time!),
                   ),
+                ),
+                TextButton.icon(
+                  key: const ValueKey('everyones-time'),
+                  onPressed: _showMemberTimes,
+                  icon: const Icon(AppIcons.time),
+                  label: const Text("Everyone's time"),
                 ),
               ],
             ),

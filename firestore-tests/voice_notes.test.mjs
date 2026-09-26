@@ -17,6 +17,8 @@ import {
 } from '@firebase/rules-unit-testing';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 
+import { plan } from './minute_lock.mjs';
+
 const A = 'uidA'; // target
 const B = 'uidB'; // planner (a friend — friendship is the permission)
 const C = 'uidC'; // outsider
@@ -69,16 +71,16 @@ describe('voice note on create', () => {
   beforeEach(() => seed());
 
   it('a granted planner attaches the note the Worker checked', async () => {
-    await assertSucceeds(setDoc(doc(as(B), itemPath), item()));
+    await assertSucceeds(plan(as(B), itemPath, item()));
   });
 
   it('a plan without a voice note is unchanged', async () => {
     const { voiceNote, ...plain } = item();
-    await assertSucceeds(setDoc(doc(as(B), itemPath), plain));
+    await assertSucceeds(plan(as(B), itemPath, plain));
   });
 
   it('DENIES a hash that does not match the checked upload', async () => {
-    await assertFails(setDoc(doc(as(B), itemPath), item({
+    await assertFails(plan(as(B), itemPath, item({
       voiceNote: { durationMs: 12000, sha256: 'b'.repeat(64), sizeBytes: 90000 },
     })));
   });
@@ -94,25 +96,25 @@ describe('voice note on create', () => {
       'not-a-map',
     ];
     for (const voiceNote of bad) {
-      await assertFails(setDoc(doc(as(B), itemPath), item({ voiceNote })));
+      await assertFails(plan(as(B), itemPath, item({ voiceNote })));
     }
   });
 
   it('DENIES a note with no upload record', async () => {
     await seed({ upload: null });
-    await assertFails(setDoc(doc(as(B), itemPath), item()));
+    await assertFails(plan(as(B), itemPath, item()));
   });
 
   it('DENIES reusing an upload made by someone else, or for someone else', async () => {
     await seed({ upload: { uploaderUid: C } });
-    await assertFails(setDoc(doc(as(B), itemPath), item()));
+    await assertFails(plan(as(B), itemPath, item()));
     await seed({ upload: { targetUid: C } });
-    await assertFails(setDoc(doc(as(B), itemPath), item()));
+    await assertFails(plan(as(B), itemPath, item()));
   });
 
   it('DENIES a voice note on a self-plan', async () => {
     await seed({ upload: { uploaderUid: A } });
-    await assertFails(setDoc(doc(as(A), itemPath), item({
+    await assertFails(plan(as(A), itemPath, item({
       createdByUid: A, status: 'approved',
     })));
   });

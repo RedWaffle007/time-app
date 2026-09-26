@@ -503,7 +503,10 @@ mode and multi-friend selection.
    one admin approves/denies. Any member may plan for the GROUP; there is no
    individual planning inside a group (plan 1:1 as friends instead). Replaces
    unanimous approval and group planner grants. Rules + Worker + app.
-4. **Block double-booking** (replaces G1's warning). A live plan at the same
+4. **Block double-booking** (replaces G1's warning). — **BUILT 2026-09-27
+   (STRICT: old builds cannot create plans until updated); awaiting test run →
+   rules deploy → Worker deploy → new APK everywhere → commit; phone check
+   deferred** (DECISIONS.md "No double-booking — minute locks"). A live plan at the same
    minute for the same person blocks the save — self-plans included. Message:
    "{name} already has a plan scheduled for this time. Please select a
    different time." (self: "You already have …"). Server-enforced: a

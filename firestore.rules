@@ -160,6 +160,25 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys();
     }
 
+    // ---- minute locks (Batch G item 4) ----
+    // A person can hold ONE live plan per minute. The minute is the plan's
+    // absolute instant in whole minutes since the epoch — so each person's own
+    // timezone is already folded in, and DST's repeated hour is two minutes.
+    function epochMinute(ts) {
+      return string(int(math.floor(ts.toMillis() / 60000)));
+    }
+
+    function minuteLockPath(targetUid, ts) {
+      return /databases/$(database)/documents/scheduleMinutes/$(targetUid)/minutes/$(epochMinute(ts));
+    }
+
+    // Is the plan at `path` still live — open, holding its minute?
+    function planIsLive(path) {
+      return exists(path)
+        && get(path).data.get('outcome', null) == null
+        && get(path).data.status in ['pending', 'approved'];
+    }
+
     // ---- inactivityStates/{uid} ----
     // Private operational state for the six-hour re-engagement timer. The app
     // owns only the activity timestamp and derived due time; the privileged
@@ -1486,6 +1505,13 @@ service cloud.firestore {
         && voiceNoteIsValidOnCreate()
         && request.resource.data.targetUid == targetUid
         && request.resource.data.createdByUid == request.auth.uid
+        // No double-booking (Batch G item 4, strict): the item must arrive in
+        // the same write as the lock on ITS minute, naming it. The lock rule
+        // refuses a minute another live plan holds, so this is the server-side
+        // clash check — and a client that skips the lock cannot create at all.
+        && request.resource.data.scheduledInstantUtc is timestamp
+        && getAfter(minuteLockPath(targetUid,
+               request.resource.data.scheduledInstantUtc)).data.itemId == itemId
         // `tier` defaults to 'normal' when absent (old clients), and must be one
         // of the two. The default is what keeps a tierless create a NORMAL one.
         && request.resource.data.get('tier', 'normal') in ['normal', 'emergency']
@@ -1622,6 +1648,53 @@ service cloud.firestore {
       allow get, list, delete: if signedIn()
         && (resource.data.plannerUid == request.auth.uid
             || resource.data.targetUid == request.auth.uid);
+    }
+
+    // ---- scheduleMinutes/{targetUid}/minutes/{epochMinute} ----
+    // The double-booking lock (Batch G item 4, strict). One document per person
+    // per minute, naming the live plan that holds it. Every item create must
+    // arrive with its lock (item create rule), and:
+    //   * a FREE minute may be claimed by whoever creates the plan in the same
+    //     write, or by the target for one of their own live plans (the backfill
+    //     of plans made before locks existed);
+    //   * a HELD minute can be taken over ONLY when the plan holding it is no
+    //     longer live (done, skipped, cancelled, rejected, lapsed or gone) — so
+    //     there is no release step and no stale "busy";
+    //   * a minute whose plan is live is refused: that is the clash.
+    // Read by the target and their friends (the app's pre-check); a group
+    // member who is not a friend learns "busy" only through the Worker, which
+    // verifies it (groupPlanned).
+    match /scheduleMinutes/{targetUid}/minutes/{minute} {
+      function lockedPlan() {
+        return /databases/$(database)/documents/scheduleItems/$(targetUid)/items/$(request.resource.data.itemId);
+      }
+
+      function claimIsValid() {
+        let plan = getAfter(lockedPlan());
+        return request.resource.data.keys().hasOnly(
+                 ['targetUid', 'itemId', 'createdByUid', 'createdAt'])
+          && request.resource.data.targetUid == targetUid
+          && request.resource.data.createdByUid == request.auth.uid
+          && request.resource.data.itemId is string
+          && plan.data.targetUid == targetUid
+          && epochMinute(plan.data.scheduledInstantUtc) == minute
+          && plan.data.get('outcome', null) == null
+          && plan.data.status in ['pending', 'approved']
+          && (plan.data.createdByUid == request.auth.uid
+              || request.auth.uid == targetUid);
+      }
+
+      allow get: if signedIn()
+        && (request.auth.uid == targetUid || callerIsFriendOf(targetUid));
+      allow list: if signedIn() && request.auth.uid == targetUid;
+
+      allow create: if signedIn() && claimIsValid();
+
+      allow update: if signedIn()
+        && claimIsValid()
+        && !planIsLive(/databases/$(database)/documents/scheduleItems/$(targetUid)/items/$(resource.data.itemId));
+
+      allow delete: if false;
     }
 
     // ---- scheduleSlots/{targetUid}/slots/{slotIndex} ----

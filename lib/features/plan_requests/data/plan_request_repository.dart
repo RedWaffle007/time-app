@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/timezone/tz_resolver.dart';
+import '../../scheduling/data/schedule_repository.dart';
+import '../../scheduling/domain/minute_lock.dart';
 import '../../scheduling/domain/schedule_item.dart';
 import '../../social/domain/social_ids.dart';
 import '../domain/plan_request.dart';
@@ -198,6 +200,19 @@ class PlanRequestRepository {
       final spans = [...live.fulfilledSpans, span];
       final fulfilled = live.isOnePlan || finishFlexibleRequest;
 
+      // No double-booking (item 4, strict): the plan carries its minute lock.
+      transaction.set(
+        _db
+            .collection('scheduleMinutes')
+            .doc(live.requesterUid)
+            .collection('minutes')
+            .doc(minuteLockId(instant)),
+        ScheduleRepository.minuteLockData(
+          targetUid: live.requesterUid,
+          itemId: itemRef.id,
+          createdByUid: plannerUid,
+        ),
+      );
       transaction.set(itemRef, {
         'targetUid': live.requesterUid,
         'createdByUid': plannerUid,

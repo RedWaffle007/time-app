@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:clock/clock.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -30,7 +31,6 @@ import '../../voice_notes/presentation/voice_note_recorder.dart';
 import '../application/schedule_clash.dart';
 import '../application/schedule_providers.dart';
 import '../domain/schedule_item.dart';
-import 'conflict_warning_dialog.dart';
 
 /// The two kinds of alarm (F4). A self-plan is always [defaultAlarm].
 enum AlarmKind { voiceNote, defaultAlarm }
@@ -101,10 +101,12 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
   bool get _showTargetList => _targetUid == null || _changingTarget;
   final _scrollController = ScrollController();
 
-  /// The (target, minute) last checked for a clash — each is checked once
-  /// per form session, and only the latest one may open the warning.
+  /// No double-booking (Batch G item 4): the (target, minute) last checked,
+  /// and whether that exact minute is already held by a live plan. Only the
+  /// latest check may set [_clashBlocked]; while it is set, Send is off and the
+  /// red line under the pickers says why.
   String? _clashKey;
-  bool _clashDialogOpen = false;
+  bool _clashBlocked = false;
   final _titleController = TextEditingController();
   final _noteController = TextEditingController();
   DateTime? _date;
@@ -210,34 +212,38 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     if (picked != null) setState(() => _time = picked);
   }
 
-  /// Checks for a literal clash (Batch G1) and warns only on one. A read that
-  /// still fails after the checker's retries says nothing: Send stays
-  /// authoritative through the create rules.
-  Future<void> _checkClash({
+  /// Checks the chosen minute (item 4) and blocks Send on a literal clash. A
+  /// read that still fails after the checker's retries blocks nothing here —
+  /// the rules refuse a real clash at save time anyway.
+  Future<ClashResult> _checkClash({
     required String key,
     required String targetUid,
     required DateTime instantUtc,
-    required String name,
-    required String timeLabel,
   }) async {
     final result = await ref
         .read(scheduleClashCheckerProvider)
         .check(targetUid: targetUid, instantUtc: instantUtc);
-    if (!mounted ||
-        _clashKey != key ||
-        result != ClashResult.clash ||
-        _clashDialogOpen) {
-      return;
+    if (mounted && _clashKey == key) {
+      setState(() => _clashBlocked = result == ClashResult.clash);
     }
-    _clashDialogOpen = true;
-    await showClashWarningDialog(context, names: [name], timeLabel: timeLabel);
-    _clashDialogOpen = false;
+    return result;
   }
+
+  /// The red line (item 4). Self-plans say "You"; others name the person.
+  String _clashMessage(String? name) => _isSelf
+      ? 'You already have a plan scheduled for this time. '
+            'Please select a different time.'
+      : '${name ?? 'They'} already has a plan scheduled for this time. '
+            'Please select a different time.';
 
   /// Send is enabled once WHO and WHEN are chosen; what to send is checked
   /// on tap, so the missing piece can be named in red (F4).
   bool get _canSend =>
-      _targetUid != null && _date != null && _time != null && !_saving;
+      _targetUid != null &&
+      _date != null &&
+      _time != null &&
+      !_saving &&
+      !_clashBlocked;
 
   /// Whether the alarm is complete; marks what is missing when it is not.
   bool _validate() {
@@ -279,6 +285,21 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     }
 
     setState(() => _saving = true);
+    // A last check right before saving (item 4): the minute may have been
+    // taken since it was first checked. The rules are the real guard; this
+    // just avoids uploading a voice note for a plan that cannot land.
+    final key = '${_targetUid!}|${instantUtc.millisecondsSinceEpoch}';
+    _clashKey = key;
+    final preCheck = await _checkClash(
+      key: key,
+      targetUid: _targetUid!,
+      instantUtc: instantUtc,
+    );
+    if (!mounted) return;
+    if (preCheck == ClashResult.clash) {
+      setState(() => _saving = false);
+      return;
+    }
     try {
       // A voice note is uploaded FIRST, under an id minted for this plan; the
       // Worker checks the audio and the rules then accept the item only with
@@ -379,7 +400,18 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
         _voiceError = false;
       });
     } catch (e) {
-      if (mounted) {
+      // Refused by the rules? If it is because the minute was taken in the
+      // meantime (item 4), say so in the red line instead of a raw error.
+      final clash =
+          e is FirebaseException &&
+          e.code == 'permission-denied' &&
+          await _checkClash(
+                key: key,
+                targetUid: _targetUid!,
+                instantUtc: instantUtc,
+              ) ==
+              ClashResult.clash;
+      if (mounted && !clash) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Failed: $e')));
@@ -414,12 +446,10 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
         : ref.watch(profileByUidProvider(_targetUid!)).value;
     final timezone = selectedProfile?.homeTimezone;
 
-    // A warning exists only for a LITERAL clash: once target, date and time
-    // are known, the target's live plans are checked at that exact minute in
-    // the target's own zone. The dialog receives a name and a time, never
-    // item content.
-    if (!_isSelf &&
-        _targetUid != null &&
+    // No double-booking (item 4): once target, date and time are known, that
+    // exact minute is checked in the target's own zone — self-plans too. A
+    // clash turns Send off and shows the red line under the pickers.
+    if (_targetUid != null &&
         _date != null &&
         _time != null &&
         timezone != null) {
@@ -428,19 +458,15 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       final key = '$targetUid|${instantUtc.millisecondsSinceEpoch}';
       if (key != _clashKey) {
         _clashKey = key;
-        final name = selectedProfile?.name ?? 'This person';
-        final timeLabel = formatTimeOfDay(context, _time!);
+        _clashBlocked = false;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          _checkClash(
-            key: key,
-            targetUid: targetUid,
-            instantUtc: instantUtc,
-            name: name,
-            timeLabel: timeLabel,
-          );
+          _checkClash(key: key, targetUid: targetUid, instantUtc: instantUtc);
         });
       }
+    } else {
+      _clashKey = null;
+      _clashBlocked = false;
     }
 
     return ListView(
@@ -510,6 +536,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
               ),
             ],
           ),
+          if (_clashBlocked) _errorLine(_clashMessage(selectedProfile?.name)),
           // Voice notes are for someone else: a self-plan is a default alarm
           // and shows no choice (F4).
           if (!_isSelf) ...[

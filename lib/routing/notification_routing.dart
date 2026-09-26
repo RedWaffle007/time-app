@@ -81,7 +81,10 @@ class NotificationRouter {
         } else {
           router.go(Routes.history);
         }
-      case 'groupJoinApproved' || 'groupJoinRequested':
+      case 'groupJoinApproved' ||
+          'groupJoinRequested' ||
+          'groupBusy' ||
+          'groupPlanSummary':
         final groupId = data['groupId'];
         router.go(
           groupId is String && groupId.isNotEmpty && !groupId.contains('/')
