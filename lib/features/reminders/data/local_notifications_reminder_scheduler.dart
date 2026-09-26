@@ -11,6 +11,7 @@ import 'package:timezone/timezone.dart' as tz;
 import '../../../core/platform/oem_info.dart';
 import '../../../core/platform/oem_profile.dart';
 import '../../../core/platform/system_permissions.dart';
+import '../../notifications/data/foreground_push_presenter.dart';
 import '../domain/reminder.dart';
 import 'alarm_delivery.dart';
 import 'reminder_audit_log.dart';
@@ -72,15 +73,22 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
     required FlutterLocalNotificationsPlugin plugin,
     required ReminderAuditLog audit,
     required void Function(String itemId) onTapItem,
+    void Function(Map<String, dynamic> data)? onTapPush,
     AlarmDelivery delivery = const AlarmDelivery(),
   }) : _plugin = plugin,
        _audit = audit,
        _onTapItem = onTapItem,
+       _onTapPush = onTapPush,
        _delivery = delivery;
 
   final FlutterLocalNotificationsPlugin _plugin;
   final ReminderAuditLog _audit;
   final void Function(String itemId) _onTapItem;
+
+  /// The plugin has ONE response callback for the whole app, and foreground
+  /// pushes are posted through the same plugin — so their taps arrive here too
+  /// and are told apart by payload (see `decodePushTapPayload`).
+  final void Function(Map<String, dynamic> data)? _onTapPush;
   final AlarmDelivery _delivery;
 
   /// **Created in code, not left to the plugin.** A channel auto-created by the
@@ -174,7 +182,16 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
     await android?.createNotificationChannel(_receivedPlanChannel);
   }
 
+  @visibleForTesting
+  void onResponseForTest(NotificationResponse response) =>
+      _onResponse(response);
+
   void _onResponse(NotificationResponse response) {
+    final push = decodePushTapPayload(response.payload);
+    if (push != null) {
+      _onTapPush?.call(push);
+      return;
+    }
     final itemId = response.payload;
     if (itemId == null || itemId.isEmpty) return;
     _audit.note(event: 'TAPPED', itemId: itemId, id: response.id);

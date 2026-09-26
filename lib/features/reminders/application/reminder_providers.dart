@@ -45,6 +45,8 @@ final reminderSchedulerProvider = Provider<ReminderScheduler>((ref) {
     // before the router has ever been built, and reading `routerProvider` at
     // construction time would build the whole router just to create a scheduler.
     onTapItem: (itemId) => ref.read(notificationRouterProvider).openItem(itemId),
+    onTapPush: (data) =>
+        ref.read(notificationRouterProvider).openForPushEvent(data),
   );
 });
 

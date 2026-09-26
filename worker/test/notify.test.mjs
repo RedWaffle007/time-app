@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  ACTIVITY_CHANNEL_ID,
   buildMessage,
+  outcomeTiming,
   sendEventNotification,
   sendFriendNotification,
 } from '../src/notify.js';
@@ -109,7 +111,7 @@ test('emergency friendship plans authorize separately and carry an alarm command
     title: 'Take medicine',
     body: 'With water',
     pushTitle: 'New emergency plan for you',
-    pushBody: 'Take medicine',
+    pushBody: 'Someone planned Take medicine for you',
   });
 });
 
@@ -170,17 +172,24 @@ test('only approved emergency creates become background alarm commands', () => {
 test('all ordinary item-event payloads keep their audience routing data', () => {
   const item = { title: 'Morning walk', status: 'approved', tier: 'normal' };
   const cases = [
-    ['created', null, 'New plan for you', 'Morning walk'],
-    ['withdrawn', null, 'Plan withdrawn', 'Morning walk'],
-    ['decided', 'approved', 'Plan approved', 'Approved: Morning walk'],
-    ['decided', 'rejected', 'Plan rejected', 'Rejected: Morning walk'],
-    ['outcome', 'done', 'Task completed', 'Marked done: Morning walk'],
-    ['outcome', 'skipped', 'Task skipped', 'Skipped: Morning walk'],
+    ['created', null, 'New plan for you', 'Test Person planned Morning walk for you'],
+    ['withdrawn', null, 'Plan withdrawn', 'Test Person withdrew: Morning walk'],
+    ['decided', 'approved', 'Plan approved', 'Test Person approved: Morning walk'],
+    ['decided', 'rejected', 'Plan rejected', 'Test Person rejected: Morning walk'],
+    ['outcome', 'done', 'Task completed', 'Test Person completed the task: Morning walk'],
+    ['outcome', 'skipped', 'Task skipped', 'Test Person skipped task: Morning walk'],
   ];
 
   for (const [event, subtype, title, body] of cases) {
-    const message = buildMessage(event, subtype, item, 'target', 'item-1');
+    const message = buildMessage(event, subtype, item, 'target', 'item-1', {
+      actorName: 'Test Person',
+      groupName: null,
+    });
     assert.deepEqual(message.notification, { title, body });
+    assert.deepEqual(message.android, {
+      priority: 'high',
+      notification: { channel_id: ACTIVITY_CHANNEL_ID },
+    });
     assert.deepEqual(message.data, {
       type: event === 'outcome' ? 'outcome' : event,
       event,
@@ -213,7 +222,7 @@ test('a group outcome notifies the planner and stamps only the outcome guard', a
 
   assert.equal(result.recipientUid, 'planner');
   assert.deepEqual(harness.listed, ['users/planner/fcmTokens']);
-  assert.equal(harness.sent[0].notification.title, 'Task completed');
+  assert.equal(harness.sent[0].notification.title, 'Group task completed');
   assert.equal(harness.patched.length, 1);
   assert.equal(harness.patched[0].path, 'scheduleItems/target/items/item-1');
   assert.equal(harness.patched[0].fields.notifiedOutcome, 'done');
@@ -229,7 +238,7 @@ test('a missed alarm corrected to done sends an explicit late follow-up', () => 
 
   assert.deepEqual(message.notification, {
     title: 'Task completed late',
-    body: 'Completed after missed alarm: Morning walk',
+    body: 'Someone completed the task after a missed alarm: Morning walk',
   });
 });
 
@@ -255,7 +264,7 @@ test('skipped notification guard does not suppress the later done follow-up', as
   });
 
   assert.equal(result.reason, 'sent');
-  assert.equal(harness.sent[0].notification.title, 'Task completed late');
+  assert.equal(harness.sent[0].notification.title, 'Group task completed late');
   assert.equal(harness.patched[0].fields.notifiedOutcome, 'done');
 });
 
@@ -427,7 +436,7 @@ test('friend and planning notifications preserve actor, recipient, and kind', as
   ];
 
   for (const [event, kind, actor, recipient, title] of cases) {
-    const harness = context({ [`users/${actor}`]: { name: 'Alex' } });
+    const harness = context({ [`users/${actor}`]: { name: 'Test Person' } });
     const result = await sendFriendNotification(harness.ctx, {
       event, fromUid: 'sender', toUid: 'recipient', kind,
     });
@@ -435,7 +444,7 @@ test('friend and planning notifications preserve actor, recipient, and kind', as
     assert.equal(result.recipientUid, recipient);
     assert.deepEqual(harness.listed, [`users/${recipient}/fcmTokens`]);
     assert.equal(harness.sent[0].notification.title, title);
-    assert.equal(harness.sent[0].notification.body.startsWith('Alex'), true);
+    assert.equal(harness.sent[0].notification.body.startsWith('Test Person'), true);
     assert.deepEqual(harness.sent[0].data, {
       type: event,
       event,
@@ -466,7 +475,7 @@ test('friend notifications reject bad parties and use a safe missing-name fallba
 
 test('plan-request notification carries the request id for routing', async () => {
   const harness = context({
-    'users/requester': { name: 'Alex' },
+    'users/requester': { name: 'Test Person' },
     'planRequests/batch_planner': { status: 'pending' },
   });
   const result = await sendFriendNotification(harness.ctx, {
@@ -504,7 +513,7 @@ test('plan-request notification replay is deduplicated', async () => {
 });
 
 test('friend notifications share multi-device cleanup semantics', async () => {
-  const harness = context({ 'users/sender': { name: 'Alex' } }, {
+  const harness = context({ 'users/sender': { name: 'Test Person' } }, {
     tokens: ['good', 'gone', 'transient'],
     tokenResults: {
       gone: { error: 'UNREGISTERED' },
@@ -519,4 +528,177 @@ test('friend notifications share multi-device cleanup semantics', async () => {
   assert.equal(result.sent, 1);
   assert.equal(result.cleaned, 1);
   assert.deepEqual(harness.deleted, ['users/recipient/fcmTokens/gone']);
+});
+
+test('outcome timing is derived from Firestore timestamps only', () => {
+  const due = '2030-01-01T10:00:00.000Z';
+  const early = '2030-01-01T09:30:00.000Z';
+  const after = '2030-01-01T10:05:00.000Z';
+  const item = (outcome, extra = {}) => ({ scheduledInstantUtc: due, outcome, ...extra });
+
+  assert.equal(outcomeTiming('done', item({ completedAt: early })), 'early');
+  assert.equal(outcomeTiming('done', item({ completedAt: after })), 'onTime');
+  assert.equal(outcomeTiming('done', item({ completedAt: due })), 'onTime');
+  assert.equal(outcomeTiming('skipped', item({ skippedAt: early })), 'early');
+  assert.equal(outcomeTiming('skipped', item({ skippedAt: after })), 'onTime');
+  // A skip's timing never reads completedAt, and vice versa.
+  assert.equal(outcomeTiming('skipped', item({ completedAt: early })), 'onTime');
+  assert.equal(outcomeTiming('done', item({ skippedAt: early })), 'onTime');
+  // Missing / unparsable timestamps are never guessed as early.
+  assert.equal(outcomeTiming('done', item({})), 'onTime');
+  assert.equal(outcomeTiming('done', { outcome: { completedAt: early } }), 'onTime');
+  // A missed alarm answered Done is late even if the clocks disagree.
+  assert.equal(
+    outcomeTiming('done', item({ completedAt: early }, {
+      alarm: { unavailableAt: '2030-01-01T10:01:00.000Z' },
+    })),
+    'late',
+  );
+});
+
+test('early done and early skip use the before-time copy, friendship and group', () => {
+  const base = {
+    title: 'Morning walk',
+    scheduledInstantUtc: '2030-01-01T10:00:00.000Z',
+  };
+  const done = { ...base, outcome: { result: 'done', completedAt: '2030-01-01T09:00:00Z' } };
+  const skipped = { ...base, outcome: { result: 'skipped', skippedAt: '2030-01-01T09:00:00Z' } };
+  const friend = { actorName: 'Test Person', groupName: null };
+  const group = { actorName: 'Test Person', groupName: 'Book club' };
+
+  assert.deepEqual(buildMessage('outcome', 'done', done, 't', 'i', friend).notification, {
+    title: 'Task completed early',
+    body: 'Test Person completed Task: Morning walk before time',
+  });
+  assert.deepEqual(buildMessage('outcome', 'skipped', skipped, 't', 'i', friend).notification, {
+    title: 'Task skipped early',
+    body: 'Test Person skipped Task: Morning walk before time',
+  });
+  assert.deepEqual(buildMessage('outcome', 'done', done, 't', 'i', group).notification, {
+    title: 'Group task completed early',
+    body: 'Test Person completed Task: Morning walk before time in Book club',
+  });
+  assert.deepEqual(buildMessage('outcome', 'skipped', skipped, 't', 'i', group).notification, {
+    title: 'Group task skipped early',
+    body: 'Test Person skipped Task: Morning walk before time in Book club',
+  });
+});
+
+test('a done outcome never renders skipped copy and vice versa', () => {
+  const item = { title: 'Walk', scheduledInstantUtc: '2000-01-01T00:00:00Z' };
+  for (const names of [{}, { actorName: 'Test Person', groupName: 'G' }]) {
+    const done = buildMessage('outcome', 'done', item, 't', 'i', names).notification;
+    const skip = buildMessage('outcome', 'skipped', item, 't', 'i', names).notification;
+    assert.match(done.title, /completed/);
+    assert.doesNotMatch(`${done.title} ${done.body}`, /skip/i);
+    assert.match(skip.title, /skipped/);
+    assert.doesNotMatch(`${skip.title} ${skip.body}`, /complet/i);
+  }
+});
+
+test('group plans are labelled on every event, named or not', () => {
+  const item = { title: 'Standup', status: 'approved' };
+  const cases = [
+    ['created', null, 'New group plan for you'],
+    ['withdrawn', null, 'Group plan withdrawn'],
+    ['decided', 'approved', 'Group plan approved'],
+    ['decided', 'rejected', 'Group plan rejected'],
+    ['outcome', 'done', 'Group task completed'],
+    ['outcome', 'skipped', 'Group task skipped'],
+  ];
+  for (const [event, subtype, title] of cases) {
+    const named = buildMessage(event, subtype, item, 't', 'i', {
+      actorName: 'Test Person', groupName: 'Team',
+    }).notification;
+    assert.equal(named.title, title);
+    assert.match(named.body, / in Team$/);
+    // A group whose name is missing is still labelled a group in the title.
+    const unnamed = buildMessage(event, subtype, item, 't', 'i', {
+      actorName: 'Test Person', groupName: '',
+    }).notification;
+    assert.equal(unnamed.title, title);
+    assert.doesNotMatch(unnamed.body, / in /);
+  }
+});
+
+test('group emergency creates keep the alarm command and say group', () => {
+  const message = buildMessage('created', null, {
+    title: 'Evacuate',
+    status: 'approved',
+    tier: 'emergency',
+    scheduledInstantUtc: '2030-01-01T10:00:00.000Z',
+  }, 't', 'i', { actorName: 'Test Person', groupName: 'Family' });
+  assert.equal(message.data.command, 'scheduleReminder');
+  assert.equal(message.data.title, 'Evacuate');
+  assert.equal(message.data.pushTitle, 'New group emergency plan for you');
+  assert.equal(message.data.pushBody, 'Test Person planned Evacuate for you in Family');
+});
+
+test('the actor name and group name are read from Firestore per event', async () => {
+  const cases = [
+    ['created', { status: 'pending' }, 'Planner Person'],
+    ['withdrawn', { status: 'withdrawn' }, 'Planner Person'],
+    ['decided', { status: 'approved' }, 'Target Person'],
+    ['outcome', { status: 'approved', outcome: { result: 'done' } }, 'Target Person'],
+  ];
+  for (const [event, state, actor] of cases) {
+    const harness = context({
+      'scheduleItems/target/items/item-1': {
+        targetUid: 'target',
+        createdByUid: 'planner',
+        groupId: 'group-1',
+        title: 'Task',
+        ...state,
+      },
+      'groups/group-1/plannerGrants/planner_target': { granted: true },
+      'groups/group-1': { name: 'Team' },
+      'users/planner': { name: 'Planner Person' },
+      'users/target': { name: 'Target Person' },
+    });
+    await sendEventNotification(harness.ctx, {
+      event, targetUid: 'target', itemId: 'item-1',
+    });
+    assert.equal(harness.sent[0].notification.body.startsWith(actor), true, event);
+    assert.equal(harness.sent[0].notification.body.endsWith(' in Team'), true, event);
+  }
+});
+
+test('friendship plans never read a group and are not labelled group', async () => {
+  const reads = [];
+  const harness = context({
+    'scheduleItems/target/items/item-1': {
+      targetUid: 'target',
+      createdByUid: 'planner',
+      groupId: '',
+      title: 'Walk',
+      status: 'approved',
+      outcome: { result: 'skipped' },
+    },
+    'friendships/planner_target/plannerGrants/planner_target': { granted: true },
+    'users/target': { name: 'Target Person' },
+  });
+  const getDoc = harness.ctx.db.getDoc;
+  harness.ctx.db.getDoc = async (path) => {
+    reads.push(path);
+    return getDoc(path);
+  };
+  await sendEventNotification(harness.ctx, {
+    event: 'outcome', targetUid: 'target', itemId: 'item-1',
+  });
+  assert.equal(reads.some((path) => path.startsWith('groups/')), false);
+  assert.deepEqual(harness.sent[0].notification, {
+    title: 'Task skipped',
+    body: 'Target Person skipped task: Walk',
+  });
+});
+
+test('friend-graph pushes use the activity channel at high priority', async () => {
+  const harness = context({ 'users/sender': { name: 'Test Person' } });
+  await sendFriendNotification(harness.ctx, {
+    event: 'friendRequest', fromUid: 'sender', toUid: 'recipient',
+  });
+  assert.deepEqual(harness.sent[0].android, {
+    priority: 'high',
+    notification: { channel_id: ACTIVITY_CHANNEL_ID },
+  });
 });

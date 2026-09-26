@@ -106,7 +106,16 @@ export async function sendEventNotification(ctx, { event, targetUid, itemId }) {
   const tokens = await ctx.db.listDocIds(`users/${recipientUid}/fcmTokens`);
   if (tokens.length === 0) return result(0, 0, recipientUid, 'no-tokens');
 
-  const message = buildMessage(event, derived.subtype, item, targetUid, itemId);
+  // Names are read HERE, from Firestore, never taken from the request: the
+  // actor is whoever performed this event (the planner for created/withdrawn,
+  // the target for decided/outcome). A missing profile degrades to 'Someone'.
+  const actorUid = NOTIFIES_TARGET.has(event) ? plannerUid : targetUid;
+  const actor = await ctx.db.getDoc(`users/${actorUid}`);
+  const group = groupId ? await ctx.db.getDoc(`groups/${groupId}`) : null;
+  const message = buildMessage(event, derived.subtype, item, targetUid, itemId, {
+    actorName: actor && actor.name ? String(actor.name) : null,
+    groupName: groupId ? (group && group.name ? String(group.name) : '') : null,
+  });
 
   let sent = 0;
   let cleaned = 0;
@@ -164,37 +173,90 @@ function deriveEvent(event, item) {
   }
 }
 
+// The Android channel item/friend pushes post on, background AND foreground
+// (the app shows foreground ones itself on the same id — keep them in step with
+// `kPlannerActivityChannelId` in foreground_push_presenter.dart). Never the
+// reminder channel: silencing someone else's activity must not silence alarms.
+export const ACTIVITY_CHANNEL_ID = 'planner_activity';
+
+// When the outcome was recorded relative to the plan, from Firestore state
+// only. 'late' = a missed alarm was later answered Done; 'early' = the outcome
+// timestamp precedes the scheduled instant. Unknown timestamps are 'onTime'.
+export function outcomeTiming(subtype, item) {
+  if (subtype === 'done' && item.alarm && item.alarm.unavailableAt) return 'late';
+  const o = item.outcome || {};
+  const at = Date.parse(subtype === 'done' ? o.completedAt : o.skippedAt);
+  const due = Date.parse(item.scheduledInstantUtc);
+  if (Number.isFinite(at) && Number.isFinite(due) && at < due) return 'early';
+  return 'onTime';
+}
+
 // Payload carries ONLY what the recipient is already entitled to see: the item
-// title (creator made it; target owns it) and the transition verb. No note, no
-// skip/reject reason beyond what the recipient already has. `data` drives
-// tap-routing (see app.dart _handleTap) — `type` is kept for back-compat with
-// the outcome-only payload; `event` is the discriminator going forward.
-export function buildMessage(event, subtype, item, targetUid, itemId) {
+// title (creator made it; target owns it), the actor's display name (the other
+// party of this plan) and, for a group plan, the group's name (both are
+// members). No note, no skip/reject reason. `data` drives tap-routing (see
+// app.dart _handleTap) — `type` is kept for back-compat with the outcome-only
+// payload; `event` is the discriminator going forward.
+//
+// `names.groupName` is null for a friendship plan and a string (possibly empty)
+// for a group plan, so a group plan is labelled even if its name is missing.
+export function buildMessage(event, subtype, item, targetUid, itemId, names = {}) {
   const title = (item.title || 'your scheduled item').toString();
+  const who = names.actorName || 'Someone';
+  const isGroup = typeof names.groupName === 'string';
+  const inGroup = isGroup && names.groupName ? ` in ${names.groupName}` : '';
+  const task = isGroup ? 'Group task' : 'Task';
+  const plan = isGroup ? 'Group plan' : 'Plan';
 
   let notification;
   switch (event) {
     case 'created':
-      notification = { title: 'New plan for you', body: title };
+      notification = {
+        title: isGroup ? 'New group plan for you' : 'New plan for you',
+        body: `${who} planned ${title} for you${inGroup}`,
+      };
       break;
     case 'withdrawn':
-      notification = { title: 'Plan withdrawn', body: title };
+      notification = {
+        title: `${plan} withdrawn`,
+        body: `${who} withdrew: ${title}${inGroup}`,
+      };
       break;
     case 'decided':
       notification = subtype === 'approved'
-        ? { title: 'Plan approved', body: `Approved: ${title}` }
-        : { title: 'Plan rejected', body: `Rejected: ${title}` };
+        ? { title: `${plan} approved`, body: `${who} approved: ${title}${inGroup}` }
+        : { title: `${plan} rejected`, body: `${who} rejected: ${title}${inGroup}` };
       break;
-    case 'outcome':
-      notification = subtype === 'done'
-        ? item.alarm && item.alarm.unavailableAt
+    case 'outcome': {
+      const timing = outcomeTiming(subtype, item);
+      if (subtype === 'done') {
+        notification = timing === 'late'
           ? {
-              title: 'Task completed late',
-              body: `Completed after missed alarm: ${title}`,
+              title: `${task} completed late`,
+              body: `${who} completed the task after a missed alarm: ${title}${inGroup}`,
             }
-          : { title: 'Task completed', body: `Marked done: ${title}` }
-        : { title: 'Task skipped', body: `Skipped: ${title}` };
+          : timing === 'early'
+            ? {
+                title: `${task} completed early`,
+                body: `${who} completed Task: ${title} before time${inGroup}`,
+              }
+            : {
+                title: `${task} completed`,
+                body: `${who} completed the task: ${title}${inGroup}`,
+              };
+      } else {
+        notification = timing === 'early'
+          ? {
+              title: `${task} skipped early`,
+              body: `${who} skipped Task: ${title} before time${inGroup}`,
+            }
+          : {
+              title: `${task} skipped`,
+              body: `${who} skipped task: ${title}${inGroup}`,
+            };
+      }
       break;
+    }
   }
 
   const data = {
@@ -225,13 +287,24 @@ export function buildMessage(event, subtype, item, targetUid, itemId) {
         body: item.note
           ? String(item.note)
           : 'Tap to mark it done or skip.',
-        pushTitle: 'New emergency plan for you',
-        pushBody: title,
+        pushTitle: isGroup
+          ? 'New group emergency plan for you'
+          : 'New emergency plan for you',
+        pushBody: notification.body,
       },
     };
   }
 
-  return { notification, data };
+  // HIGH priority: these are user-visible, and normal priority is batched
+  // under Doze — a planner learning of a Done minutes late defeats the push.
+  return {
+    notification,
+    data,
+    android: {
+      priority: 'high',
+      notification: { channel_id: ACTIVITY_CHANNEL_ID },
+    },
+  };
 }
 
 function result(sent, cleaned, recipientUid, reason) {
@@ -378,6 +451,10 @@ function buildFriendMessage(event, who, fromUid, toUid, kind, planRequestId) {
 
   return {
     notification,
+    android: {
+      priority: 'high',
+      notification: { channel_id: ACTIVITY_CHANNEL_ID },
+    },
     data: {
       type: event,
       event,

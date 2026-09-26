@@ -6044,3 +6044,41 @@ debug signature, so `adb install -r` keeps app data.
   the fallback.
 - **No personal names in the codebase.** Examples use `{planner}`/`{task}`;
   test fixtures use role names (`Test Planner`, `TARGET`/`PLANNER`/`OUTSIDER`).
+
+## Planner notifications: named, timed, group-labelled, shown in foreground (2026-09-26)
+
+In-person device check found planners mostly receiving nothing. Causes, in order:
+
+- **The live Worker was a week stale** (`1a4d5663`, 2026-09-19). Its item-event
+  guard rejected `groupId: ''`, so **every friendship-plan push was dropped** as
+  `item-missing-fields`. Redeployed as `8229568f` (2026-09-26). Lesson, same as
+  the rules one: code-complete ≠ deployed; check `wrangler deployments list`
+  before a device pass that depends on the Worker.
+- **The app hid foreground pushes.** A Done was dropped in favour of the
+  celebration; everything else was a 6 s snackbar. Now every foreground push is
+  a real system notification on a new `planner_activity` channel ("Activity from
+  your people"), which the Worker also names for background delivery. It is
+  NOT a reminder channel, so muting activity never mutes alarms. The Done
+  celebration still plays alongside (separate host, de-duplicated by id). If the
+  notification cannot be shown (disabled), non-Done events fall back to the
+  snackbar; Done keeps only the celebration.
+- **Taps share the plugin's single callback.** Foreground-push payloads are
+  `push:` + JSON and are routed through `openForPushEvent`; a bare payload is
+  still a reminder item id and opens the alarm route. Cold-start taps decode the
+  same way.
+
+Copy (Worker, `buildMessage`), all names read from Firestore, never the request:
+- Done: "{name} completed the task: {task}"; Skip: "{name} skipped task: {task}".
+- Early (outcome timestamp < scheduled instant): "{name} completed Task: {task}
+  before time" / "{name} skipped Task: {task} before time". Late (missed alarm
+  answered Done) wins over early.
+- `{name}` is the ACTOR: the target for decided/outcome, the planner for
+  created/withdrawn. Missing profile → "Someone".
+- Group plans: titles say "Group plan"/"Group task" and bodies end "in {group}"
+  for every event, normal and emergency; a group with no name is still labelled.
+- Item and friend pushes are sent at FCM `priority: high` (user-visible; normal
+  priority is batched under Doze).
+
+"Skipped shown for a completed task" was not reproducible from code — both old
+and new copy branch on the Firestore `outcome.result`. A test now pins that done
+copy never mentions skipping and vice versa. Re-check on device after deploy.

@@ -43,7 +43,9 @@
   redeploy (`wrangler deploy` then `wrangler versions deploy <id>@100%`).
 - Latest profile build installed on the Redmi; the third-pass fixes await the
   user's device check.
-- Next implementation order: **32 → 24 → 33**.
+- Next implementation order (revised 2026-09-26 after the in-person device
+  check): **Batch A → B → C → D (explore) → 32 → 24 → 33**. See "Device-check
+  backlog (2026-09-26)" below.
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
 
 ## Behaviour that must not regress (all test-pinned)
@@ -90,6 +92,47 @@
   before this gate.
 - Still unproven on device: reboot re-arm, and killed-app delivery after an OEM
   cleaner (see CLAUDE.md "Parked & unverified").
+
+## Device-check backlog (2026-09-26) — before Item 32
+
+Step 0 diagnosis (read-only, 2026-09-26):
+- Live rules `89d484d1…` match `firestore.rules` byte-for-byte.
+- **Live Worker is stale**: version `1a4d5663` (deployed 2026-09-19 13:40 UTC)
+  predates five `worker/src` commits (`bcd6a59`, `0665a89`, `dde04c0`,
+  `29f1ebb`, `86db693`). The deployed `notify.js` rejects `groupId: ''` as
+  `item-missing-fields`, so **no item push is sent for friendship plans** —
+  only group plans. It also lacks emergency data pushes, `planRequested`,
+  inactivity, and the late-Done copy.
+- Client suppresses the foreground Done push (`lib/app.dart` `_showForegroundBanner`,
+  celebration instead); every other foreground push is only a 6 s SnackBar.
+- "Skipped shown for a completed task": both deployed and local Worker copy
+  branch correctly on `outcome.result`; not reproducible from code. Needs the
+  exact repro (which button, planner app open/closed) after the Worker redeploy.
+
+Batch A (one Worker deploy + client) — **BUILT 2026-09-26, awaiting the
+user's full-suite run + Worker deploy + device check** (DECISIONS.md "Planner
+notifications: named, timed, group-labelled…"). Current Worker `8229568f`
+(deployed 2026-09-26) does NOT include Batch A:
+1. Foreground pushes become real system notifications on a planner-activity
+   channel (never the reminder channel); Done keeps the celebration too.
+2. Named copy: "{name} completed the task: {task}" / "{name} skipped task:
+   {task}" — `{name}` is the doer, read by the Worker from Firestore.
+3. Early outcome: "{name} completed Task: {task} before time" / "{name} skipped
+   Task: {task} before time" when `completedAt`/`skippedAt` < scheduled instant.
+4. Group items say they are group tasks (normal and emergency), all events.
+
+Batch B (rules deploy, then Worker): 5. Dismiss notifies the planner (new
+`dismissed` event on an immutable `alarm.dismissedAt`). 6. Group join approved
+notifies the requester.
+
+Batch C (client only): 7. Startup-sound toggle (splash only, not alarms).
+8. Slightly larger left content inset — one theme token, DECISIONS → UI-RULES →
+code order.
+
+Batch D (explore, decision each, no build): emergency notification channel/tone;
+group emergency plan (per-member emergency grant, tier invariant holds);
+pending-approvals reminder (no Cloud Functions → Worker cron or client);
+WhatsApp friend-invite link (invite token + landing page + deep link).
 
 ## Remaining roadmap
 

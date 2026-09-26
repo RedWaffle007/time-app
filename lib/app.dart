@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,9 +12,11 @@ import 'core/widgets/time_backdrop.dart';
 import 'features/applock/presentation/app_lock_gate.dart';
 import 'features/auth/application/auth_providers.dart';
 import 'features/celebrations/presentation/completion_celebration_host.dart';
+import 'features/notifications/application/foreground_push_providers.dart';
 import 'features/notifications/application/messaging_service.dart';
 import 'features/notifications/application/fcm_failure_banner_policy.dart';
 import 'features/notifications/application/inactivity_tracker.dart';
+import 'features/notifications/data/foreground_push_presenter.dart';
 import 'features/onboarding/application/onboarding_providers.dart';
 import 'features/groups/application/group_providers.dart';
 import 'features/groups/application/group_stats_providers.dart';
@@ -208,11 +212,19 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
           .read(localNotificationsPluginProvider)
           .getNotificationAppLaunchDetails();
       if (launch?.didNotificationLaunchApp != true) return;
-      final itemId = launch?.notificationResponse?.payload;
-      if (itemId == null || itemId.isEmpty) return;
+      final payload = launch?.notificationResponse?.payload;
+      if (payload == null || payload.isEmpty) return;
       if (!mounted) return;
       _dismissColdStartReveal();
-      ref.read(notificationRouterProvider).openItem(itemId);
+      // A foreground-shown push (see _showForegroundBanner) carries its push
+      // data; it must route like a push, never open the alarm screen.
+      final push = decodePushTapPayload(payload);
+      final router = ref.read(notificationRouterProvider);
+      if (push != null) {
+        router.openForPushEvent(push);
+      } else {
+        router.openItem(payload);
+      }
     } catch (e) {
       // Nothing here is worth failing a launch over — on a platform with no
       // implementation this is a MissingPluginException, and the cost of an
@@ -232,20 +244,14 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
 
     // Foreground message. FCM auto-displays a system-tray notification ONLY when
     // the app is backgrounded/terminated — while it's open, nothing appears
-    // unless we render it. So show an in-app banner (SnackBar) with a View
-    // action; without this, a recipient looking at the app sees nothing at all.
+    // unless we render it. So post it ourselves as a real system notification
+    // (2026-09-26: a snackbar alone meant an open app "received nothing").
+    unawaited(ref.read(foregroundPushPresenterProvider).ensureChannel());
     FirebaseMessaging.onMessage.listen(_showForegroundBanner);
   }
 
-  void _showForegroundBanner(RemoteMessage message) {
+  Future<void> _showForegroundBanner(RemoteMessage message) async {
     debugPrint('FCM foreground: ${message.data}');
-    // A DONE event has a durable Firestore celebration. The app-wide host shows
-    // the colored-paper effect live and acknowledges it exactly once; stacking
-    // the ordinary snackbar over that effect would render the same event twice.
-    if (message.data['event'] == 'outcome' &&
-        message.data['subtype'] == 'done') {
-      return;
-    }
     // In the foreground the `notification` block is delivered but NOT rendered
     // by the OS; render it ourselves. Data-only messages have nothing to show.
     // Emergency-created messages are data-only so Android invokes the
@@ -256,6 +262,16 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     final body =
         message.notification?.body ?? (message.data['pushBody'] as String?);
     if (title == null && body == null) return;
+
+    // A Done ALSO plays the celebration (its own host, de-duplicated by id);
+    // the notification is what names who did what, so both show.
+    final shown = await ref
+        .read(foregroundPushPresenterProvider)
+        .show(title: title, body: body, data: message.data);
+    if (shown || !mounted) return;
+    if (fallbackPresentation(message.data) == ForegroundPushPresentation.none) {
+      return;
+    }
 
     final messenger = _scaffoldMessengerKey.currentState;
     if (messenger == null) return;
