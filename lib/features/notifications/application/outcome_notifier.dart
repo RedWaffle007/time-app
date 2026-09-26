@@ -17,6 +17,10 @@ enum NotifyEvent {
 
   /// Planner withdrew a still-pending plan → notify the target.
   withdrawn,
+
+  /// Target dismissed the ringing alarm → notify the planner. Requires the
+  /// durable `alarm.dismissedAt`, which the Worker re-reads.
+  dismissed,
 }
 
 /// The app's seam between "something happened to an item" and "the other party

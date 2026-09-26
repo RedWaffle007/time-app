@@ -29,7 +29,7 @@ import {
 import { sendDueInactivityNotifications } from './inactivity.js';
 
 const MAX_BODY_BYTES = 2048;
-const EVENTS = new Set(['created', 'decided', 'outcome', 'withdrawn']);
+const EVENTS = new Set(['created', 'decided', 'outcome', 'withdrawn', 'dismissed']);
 // Planner-triggered events (caller must be the item's CREATOR); the rest are
 // target-triggered (caller must be the target). This is the authz branch the
 // "one endpoint" framing requires — one endpoint, but NOT one authz rule.
@@ -262,7 +262,7 @@ async function runInactivityCron(env, now) {
  * sent; `friendAccept` requires the friendship to exist. Fails CLOSED.
  */
 async function handleFriendEvent(request, env, body) {
-  const { event, fromUid, toUid, kind, planRequestId } = body || {};
+  const { event, fromUid, toUid, kind, planRequestId, groupId } = body || {};
   if (
     typeof fromUid !== 'string' ||
     typeof toUid !== 'string' ||
@@ -272,6 +272,12 @@ async function handleFriendEvent(request, env, body) {
   }
   const isPlanning = event === 'planningRequest' || event === 'planningApprove';
   if (isPlanning && kind !== 'normal' && kind !== 'emergency') {
+    return json({ error: 'invalid-body' }, 400);
+  }
+  if (
+    event === 'groupJoinApproved' &&
+    (typeof groupId !== 'string' || !groupId || groupId.includes('/'))
+  ) {
     return json({ error: 'invalid-body' }, 400);
   }
 
@@ -342,6 +348,16 @@ async function handleFriendEvent(request, env, body) {
       ) {
         return json({ error: 'forbidden' }, 403);
       }
+    } else if (event === 'groupJoinApproved') {
+      // A current member (the approver) tells the admitted candidate. The
+      // request's approved state and the roster are re-verified in notify.js;
+      // here the caller must be a member other than the candidate.
+      if (callerUid !== fromUid) return json({ error: 'forbidden' }, 403);
+      const group = await db.getDoc(`groups/${groupId}`);
+      const members = group && Array.isArray(group.memberUids)
+        ? group.memberUids
+        : [];
+      if (!members.includes(callerUid)) return json({ error: 'forbidden' }, 403);
     } else {
       // planningApprove: the approver (toUid) notifies the original requester
       // (fromUid) — only once the GRANT actually exists (the approval wrote it).
@@ -364,7 +380,7 @@ async function handleFriendEvent(request, env, body) {
       fcm: makeFcm(projectId, accessToken),
     };
     const res = await sendFriendNotification(ctx, {
-      event, fromUid, toUid, kind, planRequestId,
+      event, fromUid, toUid, kind, planRequestId, groupId,
     });
     console.log(JSON.stringify(res));
     return json(res, 200);

@@ -109,10 +109,9 @@ Step 0 diagnosis (read-only, 2026-09-26):
   branch correctly on `outcome.result`; not reproducible from code. Needs the
   exact repro (which button, planner app open/closed) after the Worker redeploy.
 
-Batch A (one Worker deploy + client) — **BUILT 2026-09-26, awaiting the
-user's full-suite run + Worker deploy + device check** (DECISIONS.md "Planner
-notifications: named, timed, group-labelled…"). Current Worker `8229568f`
-(deployed 2026-09-26) does NOT include Batch A:
+Batch A (one Worker deploy + client) — **BUILT, committed `68921ad`, Worker
+`85f84670` deployed 2026-09-26; device check deferred by the user**
+(DECISIONS.md "Planner notifications: named, timed, group-labelled…"):
 1. Foreground pushes become real system notifications on a planner-activity
    channel (never the reminder channel); Done keeps the celebration too.
 2. Named copy: "{name} completed the task: {task}" / "{name} skipped task:
@@ -121,13 +120,23 @@ notifications: named, timed, group-labelled…"). Current Worker `8229568f`
    Task: {task} before time" when `completedAt`/`skippedAt` < scheduled instant.
 4. Group items say they are group tasks (normal and emergency), all events.
 
-Batch B (rules deploy, then Worker): 5. Dismiss notifies the planner (new
-`dismissed` event on an immutable `alarm.dismissedAt`). 6. Group join approved
-notifies the requester.
+Batch B — **BUILT 2026-09-26, no rules change needed; Worker deploy +
+device check pending** (DECISIONS.md "Dismiss and group-join pushes").
+5. Dismiss notifies the planner (new `dismissed` event, gated on the existing
+`alarm.dismissedAt`). 6. Group join approved notifies the candidate.
 
-Batch C (client only): 7. Startup-sound toggle (splash only, not alarms).
-8. Slightly larger left content inset — one theme token, DECISIONS → UI-RULES →
-code order.
+Batch C (client, plus a Worker check for 9): 7. Startup-sound toggle (splash
+only, not alarms). 8. Slightly larger left content inset — one theme token,
+DECISIONS → UI-RULES → code order. 9. **Inactivity push (item 15) tap skips the
+startup screen** (reported 2026-09-26): tapping the 6-hour inactivity
+notification plays the startup bell but goes straight to My Schedule without
+the loading/startup screen. Fix so the startup screen shows (likely the
+`_openedFromNotification` / `_dismissColdStartReveal` path in `lib/app.dart`,
+which suppresses the reveal for push taps while the splash sound still plays).
+Also re-audit that the inactivity push reliably reaches ALL users: the
+`*/5` cron in `worker/src/inactivity.js`, which users it scans, token
+handling, dedup, and that it was not live until Worker `8229568f`
+(2026-09-26) — it had never been deployed before that.
 
 Batch D (explore, decision each, no build): emergency notification channel/tone;
 group emergency plan (per-member emergency grant, tier invariant holds);

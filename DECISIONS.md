@@ -6082,3 +6082,30 @@ Copy (Worker, `buildMessage`), all names read from Firestore, never the request:
 "Skipped shown for a completed task" was not reproducible from code — both old
 and new copy branch on the Firestore `outcome.result`. A test now pins that done
 copy never mentions skipping and vice versa. Re-check on device after deploy.
+
+## Dismiss and group-join pushes — no rules change needed (2026-09-26)
+
+Batch B was expected to need a rules deploy; it does not.
+
+- **Dismiss → planner.** `alarm.dismissedAt` was already written by both
+  dismiss paths (AlarmScreen, and the native lifecycle row the missed-alarm
+  service replays) and already allowed by the rules. New item event
+  `dismissed` (target-triggered, notifies the planner): the Worker requires
+  `item.alarm.dismissedAt`, dedups on its own `notifiedDismissed` flag (never
+  shared with the outcome flag), and skips self-plans. Copy: "{name} dismissed
+  the alarm for {task}", "Group alarm dismissed" for group plans.
+  **One hook:** `DismissNotifyingTimelineRepository` wraps
+  `AlarmTimelineRepository.recordDismissed` at the provider, so both paths are
+  covered and the push only follows a durable write. Do not add a second
+  notify in AlarmScreen or the missed-alarm service.
+- **Group join approved → candidate.** New friend-family event
+  `groupJoinApproved` (`fromUid` = approving member, `toUid` = candidate,
+  `groupId`). `decideJoinRequest`/`inviteFriend` now return whether THIS call
+  admitted the candidate; only that caller fires it. The Worker requires the
+  caller on the roster, the request `approved`, the candidate on the roster,
+  and stamps `notifiedApproved` on the join request (client key whitelists
+  exclude it, and a decided request accepts no client update). Copy: code
+  request "Your request to join {group} was approved"; friend invitation
+  "Added to a group / You're now a member of {group}". Tap opens the group.
+- The approver's snackbar now says "{name} joined the group." when their
+  approval (or a one-member-group invite) admitted the candidate.

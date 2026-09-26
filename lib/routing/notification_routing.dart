@@ -45,6 +45,7 @@ class NotificationRouter {
         router.go(Routes.approvals);
       case 'decided':
       case 'outcome':
+      case 'dismissed':
         _openPlanActivity();
       // Friend-graph pushes: a new request opens the requests inbox; an accept
       // opens the friends list, where the new friend now appears.
@@ -61,6 +62,13 @@ class NotificationRouter {
         );
       case 'inactivity':
         router.go(Routes.plan);
+      case 'groupJoinApproved':
+        final groupId = data['groupId'];
+        router.go(
+          groupId is String && groupId.isNotEmpty && !groupId.contains('/')
+              ? '${Routes.plan}/groups/$groupId'
+              : Routes.plan,
+        );
       default:
         if (data['type'] == 'outcome') {
           _openPlanActivity();

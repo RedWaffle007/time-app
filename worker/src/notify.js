@@ -32,12 +32,13 @@
 //   withdrawn   planner        target     —
 //   decided     target         planner    approved | rejected  (item.status)
 //   outcome     target         planner    done | skipped       (outcome.result)
+//   dismissed   target         planner    —  (requires item.alarm.dismissedAt)
 //
 // `event` says WHICH transition this push is for; it is NOT trusted as the state.
 // The item is re-read and the sub-type is DERIVED from Firestore — the caller
 // cannot assert an outcome/decision that didn't actually happen.
 
-const EVENTS = new Set(['created', 'decided', 'outcome', 'withdrawn']);
+const EVENTS = new Set(['created', 'decided', 'outcome', 'withdrawn', 'dismissed']);
 
 // Which party each event notifies. The ACTOR is never the recipient: for a
 // planner-triggered event the recipient is the target, and vice versa — and the
@@ -168,6 +169,13 @@ function deriveEvent(event, item) {
       }
       return { ok: true, subtype: r, field: 'notifiedOutcome', value: r };
     }
+    case 'dismissed':
+      // The target's device records `alarm.dismissedAt` when the ringing alarm
+      // is dismissed; no recorded dismissal, no push.
+      if (!item.alarm || !item.alarm.dismissedAt) {
+        return { ok: false, reason: 'not-dismissed' };
+      }
+      return { ok: true, subtype: null, field: 'notifiedDismissed', value: true };
     default:
       return { ok: false, reason: 'bad-args' };
   }
@@ -226,6 +234,12 @@ export function buildMessage(event, subtype, item, targetUid, itemId, names = {}
       notification = subtype === 'approved'
         ? { title: `${plan} approved`, body: `${who} approved: ${title}${inGroup}` }
         : { title: `${plan} rejected`, body: `${who} rejected: ${title}${inGroup}` };
+      break;
+    case 'dismissed':
+      notification = {
+        title: isGroup ? 'Group alarm dismissed' : 'Alarm dismissed',
+        body: `${who} dismissed the alarm for ${title}${inGroup}`,
+      };
       break;
     case 'outcome': {
       const timing = outcomeTiming(subtype, item);
@@ -335,17 +349,17 @@ function result(sent, cleaned, recipientUid, reason) {
 // by the transport shell BEFORE this runs — see index.js handleFriendEvent.
 export const FRIEND_EVENTS = new Set([
   'friendRequest', 'friendAccept', 'planningRequest', 'planningApprove',
-  'planRequested',
+  'planRequested', 'groupJoinApproved',
 ]);
 
 // Events whose recipient is the `toUid` (the other two notify the `fromUid`).
 const NOTIFIES_TO_UID = new Set([
-  'friendRequest', 'planningRequest', 'planRequested',
+  'friendRequest', 'planningRequest', 'planRequested', 'groupJoinApproved',
 ]);
 
 export async function sendFriendNotification(
   ctx,
-  { event, fromUid, toUid, kind, planRequestId },
+  { event, fromUid, toUid, kind, planRequestId, groupId },
 ) {
   if (!FRIEND_EVENTS.has(event) || !fromUid || !toUid || fromUid === toUid) {
     return result(0, 0, null, 'bad-args');
@@ -368,6 +382,31 @@ export async function sendFriendNotification(
     }
   }
 
+  // groupJoinApproved (toUid = the admitted candidate): only for a request
+  // that Firestore says is approved AND a candidate now on the roster, and
+  // at most once per request — the stamp lives on the request itself.
+  let joinRequestPath = null;
+  let group = null;
+  let joinSource = null;
+  if (event === 'groupJoinApproved') {
+    if (!groupId) return result(0, 0, recipientUid, 'bad-args');
+    joinRequestPath = `groups/${groupId}/joinRequests/${toUid}`;
+    const request = await ctx.db.getDoc(joinRequestPath);
+    if (!request) return result(0, 0, recipientUid, 'request-not-found');
+    if (request.status !== 'approved') {
+      return result(0, 0, recipientUid, 'not-approved');
+    }
+    group = await ctx.db.getDoc(`groups/${groupId}`);
+    const members = group && Array.isArray(group.memberUids)
+      ? group.memberUids
+      : [];
+    if (!members.includes(toUid)) return result(0, 0, recipientUid, 'not-member');
+    if (request.notifiedApproved === true) {
+      return result(0, 0, recipientUid, 'already-notified');
+    }
+    joinSource = request.source;
+  }
+
   const actor = await ctx.db.getDoc(`users/${actorUid}`);
   const who = actor && actor.name ? String(actor.name) : 'Someone';
 
@@ -376,6 +415,11 @@ export async function sendFriendNotification(
 
   const message = buildFriendMessage(
     event, who, fromUid, toUid, kind, planRequestId,
+    {
+      groupId,
+      groupName: group && group.name ? String(group.name) : '',
+      joinSource,
+    },
   );
 
   let sent = 0;
@@ -388,6 +432,13 @@ export async function sendFriendNotification(
       await ctx.db.deleteDoc(`users/${recipientUid}/fcmTokens/${token}`);
       cleaned += 1;
     }
+  }
+
+  if (sent > 0 && joinRequestPath) {
+    await ctx.db.patchDoc(joinRequestPath, {
+      notifiedApproved: true,
+      notifiedApprovedAt: new Date().toISOString(),
+    });
   }
 
   if (sent > 0 && planRequestPath) {
@@ -403,7 +454,9 @@ export async function sendFriendNotification(
 // Carries only the actor's display name — a fact the recipient is entitled to
 // (they are about to see it in the request / friends list anyway). `data` drives
 // tap-routing (notification_routing.dart).
-function buildFriendMessage(event, who, fromUid, toUid, kind, planRequestId) {
+function buildFriendMessage(
+  event, who, fromUid, toUid, kind, planRequestId, groupInfo = {},
+) {
   const emergency = kind === 'emergency';
   let notification;
   switch (event) {
@@ -447,6 +500,18 @@ function buildFriendMessage(event, who, fromUid, toUid, kind, planRequestId) {
         body: `${who} asked you to plan something for them`,
       };
       break;
+    case 'groupJoinApproved': {
+      const name = groupInfo.groupName || 'the group';
+      // A code request was asked for; a friend invitation was not, so it
+      // reads as being added rather than approved.
+      notification = groupInfo.joinSource === 'friend'
+        ? { title: 'Added to a group', body: `You're now a member of ${name}` }
+        : {
+            title: 'Group join approved',
+            body: `Your request to join ${name} was approved`,
+          };
+      break;
+    }
   }
 
   return {
@@ -462,6 +527,9 @@ function buildFriendMessage(event, who, fromUid, toUid, kind, planRequestId) {
       toUid,
       ...(kind ? { kind } : {}),
       ...(planRequestId ? { planRequestId } : {}),
+      ...(event === 'groupJoinApproved' && groupInfo.groupId
+        ? { groupId: groupInfo.groupId }
+        : {}),
     },
   };
 }

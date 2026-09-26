@@ -702,3 +702,154 @@ test('friend-graph pushes use the activity channel at high priority', async () =
     notification: { channel_id: ACTIVITY_CHANNEL_ID },
   });
 });
+
+function dismissedItem(extra = {}) {
+  return {
+    targetUid: 'target',
+    createdByUid: 'planner',
+    groupId: '',
+    title: 'Morning walk',
+    status: 'approved',
+    alarm: { rangAt: '2030-01-01T10:00:00Z', dismissedAt: '2030-01-01T10:00:20Z' },
+    ...extra,
+  };
+}
+
+test('a recorded dismissal notifies the planner, named, once', async () => {
+  const harness = context({
+    'scheduleItems/target/items/item-1': dismissedItem(),
+    'friendships/planner_target/plannerGrants/planner_target': { granted: true },
+    'users/target': { name: 'Target Person' },
+  });
+
+  const result = await sendEventNotification(harness.ctx, {
+    event: 'dismissed', targetUid: 'target', itemId: 'item-1',
+  });
+
+  assert.equal(result.recipientUid, 'planner');
+  assert.deepEqual(harness.listed, ['users/planner/fcmTokens']);
+  assert.deepEqual(harness.sent[0].notification, {
+    title: 'Alarm dismissed',
+    body: 'Target Person dismissed the alarm for Morning walk',
+  });
+  assert.equal(harness.sent[0].data.event, 'dismissed');
+  assert.equal(harness.patched[0].fields.notifiedDismissed, true);
+  // Its own guard: it never suppresses the later outcome push.
+  assert.equal(harness.patched[0].fields.notifiedOutcome, undefined);
+});
+
+test('dismissed fails closed without a recorded dismissal, and dedups', async () => {
+  const harness = context({
+    'scheduleItems/target/items/none': dismissedItem({ alarm: { rangAt: '2030-01-01T10:00:00Z' } }),
+    'scheduleItems/target/items/noalarm': dismissedItem({ alarm: undefined }),
+    'scheduleItems/target/items/done': dismissedItem({ notifiedDismissed: true }),
+    'friendships/planner_target/plannerGrants/planner_target': { granted: true },
+  });
+  for (const [itemId, reason] of [
+    ['none', 'not-dismissed'],
+    ['noalarm', 'not-dismissed'],
+    ['done', 'already-notified'],
+  ]) {
+    const result = await sendEventNotification(harness.ctx, {
+      event: 'dismissed', targetUid: 'target', itemId,
+    });
+    assert.equal(result.reason, reason, itemId);
+  }
+  assert.equal(harness.sent.length, 0);
+  assert.equal(harness.patched.length, 0);
+});
+
+test('a self-planned dismissal notifies nobody', async () => {
+  const harness = context({
+    'scheduleItems/me/items/item-1': dismissedItem({ targetUid: 'me', createdByUid: 'me' }),
+  });
+  const result = await sendEventNotification(harness.ctx, {
+    event: 'dismissed', targetUid: 'me', itemId: 'item-1',
+  });
+  assert.equal(result.reason, 'self-planned');
+  assert.equal(harness.sent.length, 0);
+});
+
+test('a group dismissal is labelled a group alarm', () => {
+  const message = buildMessage('dismissed', null, dismissedItem(), 't', 'i', {
+    actorName: 'Test Person', groupName: 'Team',
+  });
+  assert.deepEqual(message.notification, {
+    title: 'Group alarm dismissed',
+    body: 'Test Person dismissed the alarm for Morning walk in Team',
+  });
+});
+
+function joinDocs(requestExtra = {}, groupExtra = {}) {
+  return {
+    'groups/group-1/joinRequests/candidate': {
+      candidateUid: 'candidate',
+      status: 'approved',
+      source: 'code',
+      ...requestExtra,
+    },
+    'groups/group-1': {
+      name: 'Book club',
+      memberUids: ['owner', 'member', 'candidate'],
+      ...groupExtra,
+    },
+    'users/member': { name: 'Test Person' },
+  };
+}
+
+test('an approved code join notifies the candidate once and stamps the request', async () => {
+  const harness = context(joinDocs());
+  const result = await sendFriendNotification(harness.ctx, {
+    event: 'groupJoinApproved', fromUid: 'member', toUid: 'candidate', groupId: 'group-1',
+  });
+
+  assert.equal(result.recipientUid, 'candidate');
+  assert.deepEqual(harness.listed, ['users/candidate/fcmTokens']);
+  assert.deepEqual(harness.sent[0].notification, {
+    title: 'Group join approved',
+    body: 'Your request to join Book club was approved',
+  });
+  assert.deepEqual(harness.sent[0].data, {
+    type: 'groupJoinApproved',
+    event: 'groupJoinApproved',
+    fromUid: 'member',
+    toUid: 'candidate',
+    groupId: 'group-1',
+  });
+  assert.equal(harness.patched[0].path, 'groups/group-1/joinRequests/candidate');
+  assert.equal(harness.patched[0].fields.notifiedApproved, true);
+});
+
+test('a friend invitation reads as being added', async () => {
+  const harness = context(joinDocs({ source: 'friend' }));
+  await sendFriendNotification(harness.ctx, {
+    event: 'groupJoinApproved', fromUid: 'member', toUid: 'candidate', groupId: 'group-1',
+  });
+  assert.deepEqual(harness.sent[0].notification, {
+    title: 'Added to a group',
+    body: "You're now a member of Book club",
+  });
+});
+
+test('group-join pushes fail closed on unapproved, non-member, missing or replayed', async () => {
+  const cases = [
+    [joinDocs({ status: 'pending' }), 'not-approved'],
+    [joinDocs({ status: 'rejected' }), 'not-approved'],
+    [joinDocs({}, { memberUids: ['owner', 'member'] }), 'not-member'],
+    [joinDocs({ notifiedApproved: true }), 'already-notified'],
+    [{}, 'request-not-found'],
+  ];
+  for (const [docs, reason] of cases) {
+    const harness = context(docs);
+    const result = await sendFriendNotification(harness.ctx, {
+      event: 'groupJoinApproved', fromUid: 'member', toUid: 'candidate', groupId: 'group-1',
+    });
+    assert.equal(result.reason, reason);
+    assert.equal(harness.sent.length, 0);
+    assert.equal(harness.patched.length, 0);
+  }
+  const noGroup = context(joinDocs());
+  assert.equal((await sendFriendNotification(noGroup.ctx, {
+    event: 'groupJoinApproved', fromUid: 'member', toUid: 'candidate',
+  })).reason, 'bad-args');
+});

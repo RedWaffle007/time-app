@@ -26,6 +26,7 @@ class HttpFriendEventNotifier implements FriendEventNotifier {
     required String toUid,
     String? kind,
     String? planRequestId,
+    String? groupId,
   }) async {
     if (kNotifyEndpoint.isEmpty) return; // Worker not deployed yet.
 
@@ -47,6 +48,7 @@ class HttpFriendEventNotifier implements FriendEventNotifier {
               'toUid': toUid,
               'kind': ?kind,
               'planRequestId': ?planRequestId,
+              'groupId': ?groupId,
             }),
           )
           .timeout(const Duration(seconds: 10));

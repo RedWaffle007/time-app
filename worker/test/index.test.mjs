@@ -150,3 +150,41 @@ test('avatar writes require authentication before touching storage', async () =>
   assert.equal(response.status, 401);
   assert.deepEqual(await body(response), { error: 'unauthorized' });
 });
+
+test('dismissed is an item event that requires a bearer token', async () => {
+  const response = await worker.fetch(new Request('https://worker.example/', {
+    method: 'POST',
+    body: JSON.stringify({ event: 'dismissed', targetUid: 'target', itemId: 'item-1' }),
+  }), env);
+
+  assert.equal(response.status, 401);
+  assert.deepEqual(await body(response), { error: 'missing-token' });
+});
+
+test('group-join pushes need a safe group id before auth', async () => {
+  const cases = [
+    { event: 'groupJoinApproved', fromUid: 'member', toUid: 'candidate' },
+    { event: 'groupJoinApproved', fromUid: 'member', toUid: 'candidate', groupId: '' },
+    { event: 'groupJoinApproved', fromUid: 'member', toUid: 'candidate', groupId: 'a/b' },
+    { event: 'groupJoinApproved', fromUid: 'same', toUid: 'same', groupId: 'group-1' },
+  ];
+  for (const payload of cases) {
+    const response = await worker.fetch(new Request('https://worker.example/', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }), env);
+    assert.equal(response.status, 400, JSON.stringify(payload));
+    assert.deepEqual(await body(response), { error: 'invalid-body' });
+  }
+
+  const valid = await worker.fetch(new Request('https://worker.example/', {
+    method: 'POST',
+    body: JSON.stringify({
+      event: 'groupJoinApproved',
+      fromUid: 'member',
+      toUid: 'candidate',
+      groupId: 'group-1',
+    }),
+  }), env);
+  assert.equal(valid.status, 401);
+});

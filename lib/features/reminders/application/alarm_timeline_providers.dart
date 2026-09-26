@@ -4,15 +4,20 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/application/auth_providers.dart';
+import '../../notifications/application/outcome_notifier.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../data/alarm_timeline_repository.dart';
 import 'alarm_timeline_service.dart';
+import 'dismiss_notifying_timeline.dart';
 import 'reminder_providers.dart';
 
 final alarmTimelineRepositoryProvider = Provider<AlarmTimelineRepository>((
   ref,
 ) {
-  return FirestoreAlarmTimelineRepository(FirebaseFirestore.instance);
+  return DismissNotifyingTimelineRepository(
+    FirestoreAlarmTimelineRepository(FirebaseFirestore.instance),
+    ref.watch(notificationEventNotifierProvider),
+  );
 });
 
 final alarmTimelineServiceProvider = Provider<AlarmTimelineService>((ref) {

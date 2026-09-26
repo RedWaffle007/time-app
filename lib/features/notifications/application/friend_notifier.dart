@@ -11,6 +11,8 @@ import '../data/http_friend_notifier.dart';
 ///   planningRequest — the REQUESTER notifies the target of a planning-permission
 ///                     request (#4/#5); carries `kind` (normal/emergency).
 ///   planningApprove — the APPROVER notifies the original requester it was granted.
+///   groupJoinApproved — the member whose approval admitted a candidate
+///                     notifies that candidate; carries `groupId`.
 ///
 /// The wire value is the enum name, which the Worker matches on. The two
 /// planning events ride the same `{fromUid, toUid}` shape plus an optional
@@ -22,6 +24,7 @@ enum FriendNotifyEvent {
   planningRequest,
   planningApprove,
   planRequested,
+  groupJoinApproved,
 }
 
 /// The seam between "a friend-graph action happened" and "the other party gets a
@@ -37,6 +40,7 @@ abstract class FriendEventNotifier {
     // push copy and is validated by the Worker.
     String? kind,
     String? planRequestId,
+    String? groupId,
   });
 }
 
@@ -52,6 +56,7 @@ class NoopFriendEventNotifier implements FriendEventNotifier {
     required String toUid,
     String? kind,
     String? planRequestId,
+    String? groupId,
   }) async {}
 }
 

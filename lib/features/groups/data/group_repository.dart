@@ -126,7 +126,8 @@ class GroupRepository {
 
   /// Invite an existing friend. The invitation is the caller's own approval,
   /// not an admission: all other current members must still approve it.
-  Future<void> inviteFriend({
+  /// Returns whether the friend was admitted at once (a one-member group).
+  Future<bool> inviteFriend({
     required String groupId,
     required String callerUid,
     required String friendUid,
@@ -155,7 +156,7 @@ class GroupRepository {
     });
     // Also completes a one-member group's unanimous decision immediately. For
     // larger groups this is an idempotent normalization of the inviter's vote.
-    await decideJoinRequest(
+    return decideJoinRequest(
       groupId: groupId,
       candidateUid: friendUid,
       callerUid: callerUid,
@@ -180,7 +181,11 @@ class GroupRepository {
   /// the required voter snapshot from the current roster. If this approval
   /// completes that exact roster, the request, group array, and roster document
   /// move together atomically; there is no partially joined state.
-  Future<void> decideJoinRequest({
+  ///
+  /// Returns true only when THIS call's approval admitted the candidate —
+  /// the one caller who should tell them (the Worker re-verifies it and
+  /// dedups on the request, so a wrong `true` could not send twice).
+  Future<bool> decideJoinRequest({
     required String groupId,
     required String candidateUid,
     required String callerUid,
@@ -190,7 +195,7 @@ class GroupRepository {
     final requestRef = groupRef.collection('joinRequests').doc(candidateUid);
     final memberRef = groupRef.collection('members').doc(candidateUid);
 
-    await _db.runTransaction((transaction) async {
+    return _db.runTransaction<bool>((transaction) async {
       final groupSnapshot = await transaction.get(groupRef);
       final requestSnapshot = await transaction.get(requestRef);
       final groupData = groupSnapshot.data();
@@ -208,7 +213,7 @@ class GroupRepository {
           'rejectionUid': callerUid,
           'updatedAt': FieldValue.serverTimestamp(),
         });
-        return;
+        return false;
       }
 
       final currentMembers = List<String>.from(
@@ -241,6 +246,7 @@ class GroupRepository {
           'joinedAt': FieldValue.serverTimestamp(),
         });
       }
+      return unanimous;
     });
   }
 

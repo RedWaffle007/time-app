@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +13,7 @@ import '../../../core/widgets/async_view.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../routing/app_router.dart';
 import '../../auth/application/auth_providers.dart';
+import '../../notifications/application/friend_notifier.dart';
 import '../../scheduling/application/planning_target_picker.dart';
 import '../../scheduling/presentation/group_plan_sheet.dart';
 import '../../social/application/social_providers.dart';
@@ -338,6 +341,23 @@ class GroupDetailScreen extends ConsumerWidget {
     );
   }
 
+  /// Push the admitted candidate. Only the approval that COMPLETED the
+  /// admission calls this; the Worker re-verifies the approved request and the
+  /// roster, and stamps the request so it is sent at most once. Best-effort:
+  /// the membership is already saved.
+  void _tellAdmitted(WidgetRef ref, String myUid, String candidateUid) {
+    unawaited(
+      ref
+          .read(friendEventNotifierProvider)
+          .notify(
+            event: FriendNotifyEvent.groupJoinApproved,
+            fromUid: myUid,
+            toUid: candidateUid,
+            groupId: groupId,
+          ),
+    );
+  }
+
   Future<void> _decideJoinRequest(
     BuildContext context,
     WidgetRef ref,
@@ -357,7 +377,7 @@ class GroupDetailScreen extends ConsumerWidget {
       if (confirmed != true || !context.mounted) return;
     }
     try {
-      await ref
+      final admitted = await ref
           .read(groupRepositoryProvider)
           .decideJoinRequest(
             groupId: groupId,
@@ -365,13 +385,16 @@ class GroupDetailScreen extends ConsumerWidget {
             callerUid: myUid,
             approve: approve,
           );
+      if (admitted) _tellAdmitted(ref, myUid, request.candidateUid);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            approve
-                ? 'Your approval was recorded.'
-                : '${request.candidateName}\'s request was rejected.',
+            !approve
+                ? '${request.candidateName}\'s request was rejected.'
+                : admitted
+                ? '${request.candidateName} joined the group.'
+                : 'Your approval was recorded.',
           ),
         ),
       );
@@ -454,7 +477,7 @@ class GroupDetailScreen extends ConsumerWidget {
     if (selected == null) return;
 
     try {
-      await ref
+      final admitted = await ref
           .read(groupRepositoryProvider)
           .inviteFriend(
             groupId: groupId,
@@ -462,11 +485,15 @@ class GroupDetailScreen extends ConsumerWidget {
             friendUid: selected.uid,
             friendName: selected.name,
           );
+      if (admitted) _tellAdmitted(ref, myUid, selected.uid);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '${selected.name} will join after every current member approves.',
+            admitted
+                ? '${selected.name} joined the group.'
+                : '${selected.name} will join after every current member '
+                      'approves.',
           ),
         ),
       );
