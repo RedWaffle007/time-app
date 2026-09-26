@@ -75,11 +75,18 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
     required void Function(String itemId) onTapItem,
     void Function(Map<String, dynamic> data)? onTapPush,
     AlarmDelivery delivery = const AlarmDelivery(),
+    Future<String> Function(String itemId)? voicePathFor,
   }) : _plugin = plugin,
        _audit = audit,
        _onTapItem = onTapItem,
        _onTapPush = onTapPush,
-       _delivery = delivery;
+       _delivery = delivery,
+       _voicePathFor = voicePathFor;
+
+  /// Where an item's verified voice note lives (32c-2). Known before the file
+  /// arrives, so the alarm is armed once; the native side checks it at ring
+  /// time and rings the ringtone if it is not there.
+  final Future<String> Function(String itemId)? _voicePathFor;
 
   final FlutterLocalNotificationsPlugin _plugin;
   final ReminderAuditLog _audit;
@@ -295,12 +302,19 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
     // dependency. The already-armed notification remains a visible, silent
     // fallback if the companion alarm is refused; AUDIO_ARM_FAILED makes that
     // degraded state explicit in diagnostics instead of pretending it rang.
+    final voice = request.voice;
+    final voicePath = voice == null || _voicePathFor == null
+        ? null
+        : await _voicePathFor(request.itemId);
     final delivery = await _delivery.arm(
       id: notificationId,
       itemId: request.itemId,
       fireAtUtc: request.fireAtUtc,
       exact: exact,
       headline: request.title,
+      voicePath: voicePath,
+      voiceSha256: voicePath == null ? null : voice!.sha256,
+      voiceSizeBytes: voicePath == null ? null : voice!.sizeBytes,
     );
     if (delivery != 'ok') {
       _audit.note(

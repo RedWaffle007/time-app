@@ -55,6 +55,8 @@ class NotificationRouter {
       case 'approvalPending':
       // "Your voice note hasn't reached their phone yet" (item 32c).
       case 'voiceUndelivered':
+      // "Their alarm rang with the normal ringtone" (item 32c-2).
+      case 'voiceFallback':
         _openPlanActivity();
       // Friend-graph pushes: a new request opens the requests inbox; an accept
       // opens the friends list, where the new friend now appears.

@@ -110,10 +110,18 @@ class MissedAlarmService extends ChangeNotifier {
     required MissedAlarmOutcomeRepository outcomes,
     required AlarmTimelineRepository timeline,
     required NotificationEventNotifier notifier,
+    // Item 32c-2: records the fallback fact and tells the planner. Returns
+    // true once the fact is stored, so the native event can be dropped.
+    Future<bool> Function(String uid, String itemId, DateTime atUtc)?
+    reportVoiceFallback,
   }) : _store = store,
        _outcomes = outcomes,
        _timeline = timeline,
-       _notifier = notifier;
+       _notifier = notifier,
+       _reportVoiceFallback = reportVoiceFallback;
+
+  final Future<bool> Function(String uid, String itemId, DateTime atUtc)?
+  _reportVoiceFallback;
 
   final AlarmLifecycleStore _store;
   final MissedAlarmOutcomeRepository _outcomes;
@@ -157,6 +165,18 @@ class MissedAlarmService extends ChangeNotifier {
       if (event.kind == AlarmLifecycleEventKind.dismissed) {
         await _timeline.recordDismissed(uid, item.id, event.occurredAtUtc);
         await _store.remove(event.key);
+        continue;
+      }
+
+      // A voice note that could not play is a fact about the ring, not an
+      // answer: record it for the planner and move on (item 32c-2). Kept
+      // until reported, so an offline phone reports it on its next pass.
+      if (event.kind == AlarmLifecycleEventKind.voiceFallback) {
+        final report = _reportVoiceFallback;
+        if (report == null ||
+            await report(uid, item.id, event.occurredAtUtc)) {
+          await _store.remove(event.key);
+        }
         continue;
       }
 

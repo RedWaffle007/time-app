@@ -1544,7 +1544,11 @@ service cloud.firestore {
           || (
             before is map
             && after is map
-            && after.keys().hasOnly(['rangAt', 'dismissedAt', 'unavailableAt'])
+            && after.keys().hasOnly(
+                 ['rangAt', 'dismissedAt', 'unavailableAt', 'voiceFallbackAt'])
+            // Item 32c-2: the voice note could not play, the ringtone rang.
+            && (!after.keys().hasAny(['voiceFallbackAt'])
+                || after.get('voiceFallbackAt', null) is timestamp)
             && (!after.keys().hasAny(['rangAt'])
                 || after.get('rangAt', null) is timestamp)
             && (!after.keys().hasAny(['dismissedAt'])

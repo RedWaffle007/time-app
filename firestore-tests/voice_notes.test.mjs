@@ -196,6 +196,32 @@ describe('delivery receipt', () => {
   });
 });
 
+describe('voice fallback fact (32c-2)', () => {
+  beforeEach(async () => {
+    await seed();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), itemPath), item({ status: 'approved' }));
+    });
+  });
+
+  it('the target records that the ringtone rang instead', async () => {
+    await assertSucceeds(updateDoc(doc(as(A), itemPath), {
+      'alarm.voiceFallbackAt': new Date(), updatedAt: new Date(),
+    }));
+  });
+
+  it('DENIES a non-timestamp, the planner, or an outsider', async () => {
+    await assertFails(updateDoc(doc(as(A), itemPath), {
+      'alarm.voiceFallbackAt': 'now', updatedAt: new Date(),
+    }));
+    for (const uid of [B, C]) {
+      await assertFails(updateDoc(doc(as(uid), itemPath), {
+        'alarm.voiceFallbackAt': new Date(), updatedAt: new Date(),
+      }));
+    }
+  });
+});
+
 describe('a voice note never blocks the approval decision', () => {
   it('the target approves a pending voice plan', async () => {
     await seed();

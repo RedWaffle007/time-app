@@ -79,6 +79,7 @@ class AlarmSoundService : Service() {
             notificationId: Int,
             itemId: String,
             headline: String = "",
+            voice: VoiceAlarmSpec? = null,
         ): Boolean {
             if (itemId.isNotEmpty() && headline.isNotBlank()) {
                 headlines[itemId] = headline
@@ -88,6 +89,7 @@ class AlarmSoundService : Service() {
                 .putExtra(EXTRA_NOTIFICATION_ID, notificationId)
                 .putExtra(EXTRA_ITEM_ID, itemId)
                 .putExtra(EXTRA_HEADLINE, headline)
+            voice?.putInto(intent, "")
             return try {
                 ContextCompat.startForegroundService(context, intent)
                 true
@@ -152,6 +154,12 @@ class AlarmSoundService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private val ownership = AlarmPlaybackOwnership()
     private val handler = Handler(Looper.getMainLooper())
+    /** Why the alarm ended on its own, for the audit CSV. */
+    private var endNote = "one_minute_cap"
+
+    /** Voice-note plays completed in this ring (item 32c-2). */
+    private var voicePlays = 0
+
     private val autoStop = Runnable {
         val at = System.currentTimeMillis()
         cancelOwningNotifications()
@@ -166,7 +174,7 @@ class AlarmSoundService : Service() {
                 event = "AUDIO_TIMEOUT",
                 itemId = itemId,
                 atEpoch = at,
-                note = "one_minute_cap",
+                note = endNote,
             )
         }
         AlarmLifecycleChannel.notifyChanged()
@@ -211,6 +219,7 @@ class AlarmSoundService : Service() {
                 val notificationId = intent?.getIntExtra(EXTRA_NOTIFICATION_ID, -1) ?: -1
                 val itemId = intent?.getStringExtra(EXTRA_ITEM_ID) ?: ""
                 val headline = intent?.getStringExtra(EXTRA_HEADLINE).orEmpty()
+                val voice = VoiceAlarmSpec.from(intent, "")
                 if (itemId.isNotEmpty() && headline.isNotBlank()) {
                     headlines[itemId] = headline
                 }
@@ -228,7 +237,7 @@ class AlarmSoundService : Service() {
                         ownership.claimUi(itemId)
                     }
                 }
-                startAlarm()
+                startAlarm(itemId, voice)
             }
         }
         // NOT sticky: if the system kills us under memory pressure we do not want
@@ -236,7 +245,7 @@ class AlarmSoundService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun startAlarm() {
+    private fun startAlarm(itemId: String = "", voice: VoiceAlarmSpec? = null) {
         // Idempotent — the UI can call start more than once (mount + resume).
         if (!AlarmSoundPolicy.shouldStartPlayer(player != null)) {
             return
@@ -258,11 +267,69 @@ class AlarmSoundService : Service() {
             acquire(AlarmSoundPolicy.MAX_RING_DURATION_MS + 5_000L)
         }
 
-        // The ringtone starts at once. The ting belongs to app start only
+        // The sound starts at once. The ting belongs to app start only
         // (user-directed 2026-09-26) and stays suppressed while this rings.
         ringing = true
+        if (voice != null) {
+            // A voice-note alarm plays the note exactly three times — but only
+            // the exact file the plan was approved with. Anything else rings
+            // the normal ringtone (never silence) and tells the planner.
+            if (VoiceAlarmPolicy.verify(voice) && startVoiceNow(voice)) return
+            recordVoiceFallback(itemId)
+        }
+        endNote = "one_minute_cap"
         startRingtoneNow()
         handler.postDelayed(autoStop, AlarmSoundPolicy.MAX_RING_DURATION_MS)
+    }
+
+    /** Plays [voice] three times on the alarm stream, then ends the alarm. */
+    private fun startVoiceNow(voice: VoiceAlarmSpec): Boolean = try {
+        voicePlays = 0
+        player = MediaPlayer().apply {
+            setAudioAttributes(alarmAttributes())
+            setDataSource(voice.path)
+            isLooping = false
+            setOnCompletionListener { mp ->
+                voicePlays += 1
+                if (VoiceAlarmPolicy.playAgain(voicePlays)) {
+                    mp.seekTo(0)
+                    mp.start()
+                } else {
+                    // Three plays done: the alarm ends into the missed flow.
+                    endNote = "voice_three_plays"
+                    handler.removeCallbacks(autoStop)
+                    handler.post(autoStop)
+                }
+            }
+            prepare()
+        }
+        val durationMs = player!!.duration.coerceAtLeast(1)
+        endNote = "voice_cap"
+        handler.postDelayed(autoStop, VoiceAlarmPolicy.capMs(durationMs))
+        player!!.start()
+        ReminderAuditLog.write(this, event = "VOICE_PLAYING", note = "${durationMs}ms")
+        true
+    } catch (e: Exception) {
+        Log.e(TAG, "voice note failed, ringing instead: $e")
+        player?.release()
+        player = null
+        handler.removeCallbacks(autoStop)
+        false
+    }
+
+    private fun recordVoiceFallback(itemId: String) {
+        val at = System.currentTimeMillis()
+        if (itemId.isNotEmpty()) {
+            AlarmLifecycleStore.record(this, itemId, AlarmLifecycleStore.KIND_VOICE_FALLBACK, at)
+        }
+        ReminderAuditLog.write(
+            this,
+            event = "VOICE_FALLBACK",
+            itemId = itemId,
+            atEpoch = at,
+            note = "ringtone",
+        )
+        AlarmLifecycleChannel.notifyChanged()
     }
 
     private fun alarmAttributes(): AudioAttributes =

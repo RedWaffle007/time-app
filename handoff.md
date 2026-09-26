@@ -305,8 +305,8 @@ Steps (each its own tests + commit):
 - **32b** — **BUILT, committed; Redmi check deferred.** Recorder in the schedule builder (≤ 20 s, auto-stop, preview,
   discard/re-record, attach; mic permission only after an explanation);
   "Play voice note" on Pending approvals (hear it before consenting).
-- **32c** — split: **32c-1 delivery/receipt/rescue BUILT 2026-09-26 (awaiting
-  Worker deploy + commit)**; **32c-2 native ring-time playback + fallback next.**
+- **32c** — **32c-1 BUILT, deployed, committed; 32c-2 BUILT 2026-09-26
+  (awaiting rules + Worker deploy, commit, and the Redmi audio pass).**
   Target download + receipt, native three-loop playback, reboot /
   process-death via `AlarmDeliveryStore`, fallback + planner notice, pre-due
   rescue push, local cleanup off the reminder mirror. Native unit tests +

@@ -20,6 +20,11 @@ class AlarmDelivery {
     required DateTime fireAtUtc,
     required bool exact,
     String headline = '',
+    // A voice-note alarm (32c-2): the app-private file and what it must match.
+    // The native side re-checks the file at ring time.
+    String? voicePath,
+    String? voiceSha256,
+    int? voiceSizeBytes,
   }) async {
     try {
       return await _channel.invokeMethod<String>('arm', {
@@ -30,6 +35,9 @@ class AlarmDelivery {
             // "{planner} planned {task} for you" travels WITH the alarm, so the
             // native heads-up and missed notice need no Dart at fire time.
             'headline': headline,
+            'voicePath': ?voicePath,
+            'voiceSha256': ?voiceSha256,
+            'voiceSizeBytes': ?voiceSizeBytes,
           }) ??
           'unavailable';
     } on MissingPluginException {

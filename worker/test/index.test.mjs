@@ -188,3 +188,11 @@ test('group-join pushes need a safe group id before auth', async () => {
   }), env);
   assert.equal(valid.status, 401);
 });
+
+test('voiceFallback is an item event that requires a bearer token', async () => {
+  const response = await worker.fetch(new Request('https://worker.example/', {
+    method: 'POST',
+    body: JSON.stringify({ event: 'voiceFallback', targetUid: 'target', itemId: 'item-1' }),
+  }), env);
+  assert.equal(response.status, 401);
+});

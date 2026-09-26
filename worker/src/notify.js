@@ -38,7 +38,9 @@
 // The item is re-read and the sub-type is DERIVED from Firestore — the caller
 // cannot assert an outcome/decision that didn't actually happen.
 
-const EVENTS = new Set(['created', 'decided', 'outcome', 'withdrawn', 'dismissed']);
+const EVENTS = new Set([
+  'created', 'decided', 'outcome', 'withdrawn', 'dismissed', 'voiceFallback',
+]);
 
 // Which party each event notifies. The ACTOR is never the recipient: for a
 // planner-triggered event the recipient is the target, and vice versa — and the
@@ -176,6 +178,13 @@ function deriveEvent(event, item) {
       }
       return { ok: true, subtype: r, field: 'notifiedOutcome', value: r };
     }
+    case 'voiceFallback':
+      // Item 32c-2: the target's phone stamps `alarm.voiceFallbackAt` when a
+      // voice-note alarm had to ring the normal ringtone.
+      if (!item.voiceNote || !item.alarm || !item.alarm.voiceFallbackAt) {
+        return { ok: false, reason: 'no-voice-fallback' };
+      }
+      return { ok: true, subtype: null, field: 'notifiedVoiceFallback', value: true };
     case 'dismissed':
       // The target's device records `alarm.dismissedAt` when the ringing alarm
       // is dismissed; no recorded dismissal, no push.
@@ -249,6 +258,12 @@ export function buildMessage(event, subtype, item, targetUid, itemId, names = {}
         ? { title: `${plan} approved`, body: `${who} approved: ${title}${inGroup}` }
         : { title: `${plan} rejected`, body: `${who} rejected: ${title}${inGroup}` };
       break;
+    case 'voiceFallback':
+      notification = {
+        title: "Voice note didn't play",
+        body: `${who}'s alarm for ${title}${inGroup} rang with the normal ringtone — your voice note couldn't play.`,
+      };
+      break;
     case 'dismissed':
       notification = {
         title: `${noun('alarm')} dismissed`,
@@ -317,6 +332,15 @@ export function buildMessage(event, subtype, item, targetUid, itemId, names = {}
           : 'Tap to mark it done or skip.',
         pushTitle: notification.title,
         pushBody: notification.body,
+        // A voice-note emergency (item 32c-2): the killed-app handler arms the
+        // alarm with the note and fetches it at once. Strings, as FCM needs.
+        ...(item.voiceNote && typeof item.voiceNote.sha256 === 'string'
+          && item.createdByUid !== targetUid
+          ? {
+              voiceSha256: item.voiceNote.sha256,
+              voiceSizeBytes: String(item.voiceNote.sizeBytes || ''),
+            }
+          : {}),
       },
     };
   }

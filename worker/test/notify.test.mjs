@@ -1082,3 +1082,70 @@ test('the emergency alert body and data keep arming the alarm', () => {
   assert.equal(message.data.body, 'With water');
   assert.equal(message.data.pushBody, 'Test Planner planned Meds for you');
 });
+
+// --- item 32c-2: voice-note fallback → planner ------------------------------
+
+function voiceItem(extra = {}) {
+  return {
+    targetUid: 'target',
+    createdByUid: 'planner',
+    groupId: '',
+    title: 'Wake up',
+    status: 'approved',
+    voiceNote: { sha256: 'a'.repeat(64), durationMs: 12000, sizeBytes: 9000 },
+    alarm: { voiceFallbackAt: '2030-01-01T07:00:00Z' },
+    ...extra,
+  };
+}
+
+test('a recorded voice fallback tells the planner, once', async () => {
+  const harness = context({
+    'scheduleItems/target/items/item-1': voiceItem(),
+    'friendships/planner_target/plannerGrants/planner_target': { granted: true },
+    'users/target': { name: 'Test Target' },
+  });
+  const result = await sendEventNotification(harness.ctx, {
+    event: 'voiceFallback', targetUid: 'target', itemId: 'item-1',
+  });
+  assert.equal(result.recipientUid, 'planner');
+  assert.deepEqual(harness.sent[0].notification, {
+    title: "Voice note didn't play",
+    body: "Test Target's alarm for Wake up rang with the normal ringtone — your voice note couldn't play.",
+  });
+  assert.equal(harness.patched[0].fields.notifiedVoiceFallback, true);
+});
+
+test('no voice fallback without the recorded fact, a voice note, or twice', async () => {
+  const docs = (item) => ({
+    'scheduleItems/target/items/item-1': item,
+    'friendships/planner_target/plannerGrants/planner_target': { granted: true },
+  });
+  for (const [item, reason] of [
+    [voiceItem({ alarm: {} }), 'no-voice-fallback'],
+    [voiceItem({ alarm: undefined }), 'no-voice-fallback'],
+    [voiceItem({ voiceNote: undefined }), 'no-voice-fallback'],
+    [voiceItem({ notifiedVoiceFallback: true }), 'already-notified'],
+  ]) {
+    const harness = context(docs(item));
+    const result = await sendEventNotification(harness.ctx, {
+      event: 'voiceFallback', targetUid: 'target', itemId: 'item-1',
+    });
+    assert.equal(result.reason, reason);
+    assert.equal(harness.sent.length, 0);
+  }
+});
+
+test('the emergency alarm command carries the voice note only when there is one', () => {
+  const base = {
+    title: 'Meds', status: 'approved', tier: 'emergency',
+    scheduledInstantUtc: '2030-01-01T10:00:00.000Z', createdByUid: 'planner',
+  };
+  const withVoice = buildMessage('created', null, {
+    ...base, voiceNote: { sha256: 'b'.repeat(64), sizeBytes: 9000 },
+  }, 'target', 'i', { actorName: 'Test Planner', groupName: null });
+  assert.equal(withVoice.data.voiceSha256, 'b'.repeat(64));
+  assert.equal(withVoice.data.voiceSizeBytes, '9000');
+  for (const value of Object.values(withVoice.data)) assert.equal(typeof value, 'string');
+  const plain = buildMessage('created', null, base, 'target', 'i', {});
+  assert.equal(plain.data.voiceSha256, undefined);
+});

@@ -14,12 +14,15 @@ object AlarmDeliveryScheduler {
     private const val EXTRA_SCHEDULED = "delivery_scheduled_epoch"
     private const val EXTRA_HEADLINE = "delivery_headline"
 
+    private const val VOICE_PREFIX = "delivery_"
+
     private fun intent(
         context: Context,
         id: Int,
         itemId: String,
         scheduledEpoch: Long,
         headline: String,
+        voice: VoiceAlarmSpec? = null,
     ) =
         Intent(context, AlarmDeliveryReceiver::class.java).apply {
             action = AlarmDeliveryIdentity.action(id)
@@ -27,6 +30,8 @@ object AlarmDeliveryScheduler {
             putExtra(EXTRA_ITEM, itemId)
             putExtra(EXTRA_SCHEDULED, scheduledEpoch)
             putExtra(EXTRA_HEADLINE, headline)
+            // The voice note travels with the alarm like the headline (32c-2).
+            voice?.putInto(this, VOICE_PREFIX)
         }
 
     private fun pending(
@@ -36,10 +41,11 @@ object AlarmDeliveryScheduler {
         scheduledEpoch: Long,
         flags: Int,
         headline: String = "",
+        voice: VoiceAlarmSpec? = null,
     ): PendingIntent? = PendingIntent.getBroadcast(
         context,
         AlarmDeliveryIdentity.requestCode(id),
-        intent(context, id, itemId, scheduledEpoch, headline),
+        intent(context, id, itemId, scheduledEpoch, headline, voice),
         flags or PendingIntent.FLAG_IMMUTABLE,
     )
 
@@ -64,6 +70,7 @@ object AlarmDeliveryScheduler {
         scheduledEpoch: Long,
         exact: Boolean,
         headline: String = "",
+        voice: VoiceAlarmSpec? = null,
     ): String = try {
         val manager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         // FLAG_UPDATE_CURRENT replaces the extras, so a changed headline (e.g.
@@ -75,6 +82,7 @@ object AlarmDeliveryScheduler {
             scheduledEpoch,
             PendingIntent.FLAG_UPDATE_CURRENT,
             headline,
+            voice,
         ) ?: return "no_pending_intent"
 
         when (alarmDeliveryMode(exact, Build.VERSION.SDK_INT)) {
@@ -93,7 +101,7 @@ object AlarmDeliveryScheduler {
         }
         AlarmDeliveryStore.put(
             context,
-            AlarmDeliveryStore.Pending(id, itemId, scheduledEpoch, exact, headline),
+            AlarmDeliveryStore.Pending(id, itemId, scheduledEpoch, exact, headline, voice),
         )
         "ok"
     } catch (_: SecurityException) {
@@ -135,4 +143,7 @@ object AlarmDeliveryScheduler {
 
     fun readHeadline(intent: Intent): String =
         intent.getStringExtra(EXTRA_HEADLINE) ?: ""
+
+    fun readVoice(intent: Intent): VoiceAlarmSpec? =
+        VoiceAlarmSpec.from(intent, VOICE_PREFIX)
 }

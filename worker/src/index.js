@@ -40,7 +40,9 @@ import {
 } from './voice.js';
 
 const MAX_BODY_BYTES = 2048;
-const EVENTS = new Set(['created', 'decided', 'outcome', 'withdrawn', 'dismissed']);
+const EVENTS = new Set([
+  'created', 'decided', 'outcome', 'withdrawn', 'dismissed', 'voiceFallback',
+]);
 // Planner-triggered events (caller must be the item's CREATOR); the rest are
 // target-triggered (caller must be the target). This is the authz branch the
 // "one endpoint" framing requires — one endpoint, but NOT one authz rule.

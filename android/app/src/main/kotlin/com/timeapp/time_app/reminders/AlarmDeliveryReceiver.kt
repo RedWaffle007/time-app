@@ -24,6 +24,7 @@ class AlarmDeliveryReceiver : BroadcastReceiver() {
             id,
             itemId,
             AlarmDeliveryScheduler.readHeadline(intent),
+            AlarmDeliveryScheduler.readVoice(intent),
         )
         ReminderAuditLog.write(
             context,

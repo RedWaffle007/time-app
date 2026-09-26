@@ -57,6 +57,13 @@ List<ReminderRequest> desiredReminders({
             plannerName: plannerNames[item.createdByUid],
           ),
           body: reminderBody(item),
+          // Someone else's voice note plays instead of the ringtone (32c-2).
+          voice: item.voiceNote != null && item.createdByUid != item.targetUid
+              ? ReminderVoice(
+                  sha256: item.voiceNote!.sha256,
+                  sizeBytes: item.voiceNote!.sizeBytes,
+                )
+              : null,
         ),
   ];
 }

@@ -11,6 +11,10 @@ object AlarmLifecycleStore {
 
     const val KIND_TIMEOUT = "timeout"
     const val KIND_DISMISSED = "dismissed"
+
+    /** A voice-note alarm rang the normal ringtone: the note was missing or
+     *  did not match (item 32c-2). The app tells the planner. */
+    const val KIND_VOICE_FALLBACK = "voice_fallback"
     // Read compatibility for item 21 builds installed before the generalized
     // dismissal event name. Dart accepts both values.
     const val KIND_VOLUME_SILENCED = "volume_silenced"

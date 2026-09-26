@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 
 import '../../auth/application/auth_providers.dart';
@@ -38,11 +39,19 @@ ReminderRequest? reminderRequestFromPushData(Map<String, dynamic> data) {
   }
   final fireAt = DateTime.tryParse(fireAtRaw)?.toUtc();
   if (fireAt == null || !fireAt.isAfter(DateTime.now().toUtc())) return null;
+  // A voice-note emergency (item 32c-2) arms WITH its note.
+  final sha = data['voiceSha256'];
+  final size = int.tryParse('${data['voiceSizeBytes'] ?? ''}');
+  final voice =
+      sha is String && RegExp(r'^[0-9a-f]{64}$').hasMatch(sha) && size != null && size > 0
+      ? ReminderVoice(sha256: sha, sizeBytes: size)
+      : null;
   return ReminderRequest(
     itemId: itemId,
     fireAtUtc: fireAt,
     title: title,
     body: body,
+    voice: voice,
   );
 }
 
@@ -87,12 +96,28 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     plugin: FlutterLocalNotificationsPlugin(),
     audit: const ReminderAuditLog(),
     onTapItem: (_) {},
+    voicePathFor: (itemId) async =>
+        '${(await getApplicationSupportDirectory()).path}/voice-notes/$itemId.m4a',
   );
   await scheduler.initialize();
   final armed = await scheduler.schedule(
     request,
     reminderNotificationId(request.itemId),
   );
+  // Fetch the voice note now rather than waiting for the rescue push.
+  if (request.voice != null) {
+    final target = message.data['targetUid'];
+    if (target is String && target.isNotEmpty) {
+      try {
+        await fetchVoiceNoteInBackground((
+          targetUid: target,
+          itemId: request.itemId,
+        ));
+      } catch (e) {
+        debugPrint('TimeApp: emergency voice fetch failed: $e');
+      }
+    }
+  }
   if (armed) {
     await scheduler.showEmergencyPlanAlert(
       itemId: request.itemId,

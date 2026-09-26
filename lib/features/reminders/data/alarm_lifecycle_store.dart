@@ -1,7 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-enum AlarmLifecycleEventKind { timeout, dismissed }
+/// `voiceFallback` (item 32c-2): a voice-note alarm rang the normal ringtone
+/// because its note was missing or did not match; the planner is told.
+enum AlarmLifecycleEventKind { timeout, dismissed, voiceFallback }
 
 enum MissedAlarmReviewChoice { done, skipped }
 
@@ -38,6 +40,7 @@ class AlarmLifecycleEvent {
     final parsedKind = switch (kind) {
       'timeout' => AlarmLifecycleEventKind.timeout,
       'volume_silenced' || 'dismissed' => AlarmLifecycleEventKind.dismissed,
+      'voice_fallback' => AlarmLifecycleEventKind.voiceFallback,
       _ => null,
     };
     if (parsedKind == null) return null;

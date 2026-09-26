@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/application/auth_providers.dart';
@@ -8,6 +10,7 @@ import '../../scheduling/application/schedule_providers.dart';
 import '../data/alarm_lifecycle_store.dart';
 import 'alarm_timeline_providers.dart';
 import 'missed_alarm_service.dart';
+import '../../voice_notes/application/voice_fallback_reporter.dart';
 
 final alarmLifecycleStoreProvider = Provider<AlarmLifecycleStore>((ref) {
   return const PlatformAlarmLifecycleStore();
@@ -26,6 +29,10 @@ final missedAlarmServiceProvider = Provider<MissedAlarmService>((ref) {
     ),
     timeline: ref.watch(alarmTimelineRepositoryProvider),
     notifier: ref.watch(notificationEventNotifierProvider),
+    reportVoiceFallback: VoiceFallbackReporter(
+      FirebaseFirestore.instance,
+      ref.watch(notificationEventNotifierProvider),
+    ).report,
   );
   store.listen(service.resync);
   ref.onDispose(() {

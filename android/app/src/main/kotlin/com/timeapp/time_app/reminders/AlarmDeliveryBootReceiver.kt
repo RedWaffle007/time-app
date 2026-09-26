@@ -17,6 +17,7 @@ class AlarmDeliveryBootReceiver : BroadcastReceiver() {
                 item.scheduledEpoch,
                 item.exact,
                 item.headline,
+                item.voice,
             )
         }
         AlarmDeliveryStore.save(context, future)

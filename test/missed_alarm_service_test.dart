@@ -25,6 +25,7 @@ import 'package:time_app/features/scheduling/application/item_lapse_policy.dart'
 import 'package:time_app/features/scheduling/domain/schedule_item.dart';
 
 void main() {
+  _voiceFallbackTests();
   setUpAll(tzdata.initializeTimeZones);
 
   test('native dismissal names migrate without becoming false timeouts', () {
@@ -988,4 +989,71 @@ class _NoopDeviceAuth implements DeviceAuth {
 class _NoopSecureWindow implements SecureWindow {
   @override
   Future<void> setSecure(bool enabled) async {}
+}
+
+/// Item 32c-2 (2026-09-26): a voice-note alarm that had to ring the normal
+/// ringtone is reported to the planner, then the native event is dropped.
+void _voiceFallbackTests() {
+  MissedAlarmService service(
+    _MemoryLifecycleStore store,
+    Future<bool> Function(String, String, DateTime)? report,
+  ) => MissedAlarmService(
+    store: store,
+    outcomes: _RecordingOutcomes(),
+    timeline: _RecordingTimeline(),
+    notifier: _RecordingNotifier(),
+    reportVoiceFallback: report,
+  );
+
+  test('a voice fallback is reported and the event dropped', () async {
+    final store = _MemoryLifecycleStore([
+      _event(kind: AlarmLifecycleEventKind.voiceFallback),
+    ]);
+    final reports = <(String, String, DateTime)>[];
+    await service(store, (uid, itemId, at) async {
+      reports.add((uid, itemId, at));
+      return true;
+    }).sync([_item()], 'target');
+    expect(reports, [('target', 'item', _occurred)]);
+    expect(store.events, isEmpty);
+  });
+
+  test('a report that could not be stored keeps the event for later', () async {
+    final store = _MemoryLifecycleStore([
+      _event(kind: AlarmLifecycleEventKind.voiceFallback),
+    ]);
+    await service(store, (_, _, _) async => false).sync([_item()], 'target');
+    expect(store.events, hasLength(1));
+  });
+
+  test(
+    'a voice fallback is never a missed-alarm review or an answer',
+    () async {
+      final store = _MemoryLifecycleStore([
+        _event(kind: AlarmLifecycleEventKind.voiceFallback),
+      ]);
+      final outcomes = _RecordingOutcomes();
+      final svc = MissedAlarmService(
+        store: store,
+        outcomes: outcomes,
+        timeline: _RecordingTimeline(),
+        notifier: _RecordingNotifier(),
+        reportVoiceFallback: (_, _, _) async => true,
+      );
+      await svc.sync([_item()], 'target');
+      expect(svc.reviews, isEmpty);
+      expect(outcomes.done, isEmpty);
+      expect(outcomes.skipped, isEmpty);
+    },
+  );
+
+  test('the native kind string parses', () {
+    final event = AlarmLifecycleEvent.fromMap({
+      'key': 'k',
+      'itemId': 'item',
+      'occurredAtEpoch': 1000,
+      'kind': 'voice_fallback',
+    });
+    expect(event?.kind, AlarmLifecycleEventKind.voiceFallback);
+  });
 }

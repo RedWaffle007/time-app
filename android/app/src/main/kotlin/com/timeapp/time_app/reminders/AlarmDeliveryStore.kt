@@ -16,44 +16,18 @@ object AlarmDeliveryStore {
         val exact: Boolean,
         /** The sentence the alarm shows; survives reboot re-arming. */
         val headline: String = "",
+        /** The voice note to play (32c-2); survives reboot re-arming too. */
+        val voice: VoiceAlarmSpec? = null,
     )
 
     private fun prefs(context: Context) =
         ReminderAuditLog.deviceCtx(context).getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    fun load(context: Context): List<Pending> {
-        val raw = prefs(context).getString(KEY, null) ?: return emptyList()
-        return try {
-            val array = JSONArray(raw)
-            (0 until array.length()).map { index ->
-                val value = array.getJSONObject(index)
-                Pending(
-                    value.getInt("id"),
-                    value.optString("itemId"),
-                    value.getLong("scheduledEpoch"),
-                    value.optBoolean("exact", true),
-                    value.optString("headline", ""),
-                )
-            }
-        } catch (_: Throwable) {
-            emptyList()
-        }
-    }
+    fun load(context: Context): List<Pending> =
+        decode(prefs(context).getString(KEY, null))
 
     fun save(context: Context, items: List<Pending>) {
-        val array = JSONArray()
-        items.forEach { item ->
-            array.put(
-                JSONObject().apply {
-                    put("id", item.id)
-                    put("itemId", item.itemId)
-                    put("scheduledEpoch", item.scheduledEpoch)
-                    put("exact", item.exact)
-                    put("headline", item.headline)
-                },
-            )
-        }
-        prefs(context).edit().putString(KEY, array.toString()).apply()
+        prefs(context).edit().putString(KEY, encode(items)).apply()
     }
 
     fun put(context: Context, item: Pending) {
@@ -66,6 +40,52 @@ object AlarmDeliveryStore {
 
     fun clear(context: Context) {
         prefs(context).edit().remove(KEY).apply()
+    }
+
+    /** Pure JSON codec (JVM-tested): what survives a reboot. */
+    internal fun decode(raw: String?): List<Pending> {
+        if (raw == null) return emptyList()
+        return try {
+            val array = JSONArray(raw)
+            (0 until array.length()).map { index ->
+                val value = array.getJSONObject(index)
+                Pending(
+                    value.getInt("id"),
+                    value.optString("itemId"),
+                    value.getLong("scheduledEpoch"),
+                    value.optBoolean("exact", true),
+                    value.optString("headline", ""),
+                    VoiceAlarmSpec.of(
+                        value.optString("voicePath", "").ifEmpty { null },
+                        value.optString("voiceSha256", "").ifEmpty { null },
+                        value.optLong("voiceSize", 0L),
+                    ),
+                )
+            }
+        } catch (_: Throwable) {
+            emptyList()
+        }
+    }
+
+    internal fun encode(items: List<Pending>): String {
+        val array = JSONArray()
+        items.forEach { item ->
+            array.put(
+                JSONObject().apply {
+                    put("id", item.id)
+                    put("itemId", item.itemId)
+                    put("scheduledEpoch", item.scheduledEpoch)
+                    put("exact", item.exact)
+                    put("headline", item.headline)
+                    item.voice?.let {
+                        put("voicePath", it.path)
+                        put("voiceSha256", it.sha256)
+                        put("voiceSize", it.sizeBytes)
+                    }
+                },
+            )
+        }
+        return array.toString()
     }
 
     /** Pure collection rules used by the scheduler/boot receiver and JVM tests. */

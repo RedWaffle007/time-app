@@ -21,6 +21,10 @@ enum NotifyEvent {
   /// Target dismissed the ringing alarm → notify the planner. Requires the
   /// durable `alarm.dismissedAt`, which the Worker re-reads.
   dismissed,
+
+  /// A voice-note alarm rang the normal ringtone (item 32c-2) → notify the
+  /// planner. Requires `alarm.voiceFallbackAt`, which the Worker re-reads.
+  voiceFallback,
 }
 
 /// The app's seam between "something happened to an item" and "the other party

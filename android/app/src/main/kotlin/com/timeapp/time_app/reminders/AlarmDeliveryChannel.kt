@@ -21,6 +21,11 @@ class AlarmDeliveryChannel(private val appContext: Context) {
                     val fireAt = call.argument<Long>("fireAtMillis")
                     val exact = call.argument<Boolean>("exact") ?: true
                     val headline = call.argument<String>("headline") ?: ""
+                    val voice = VoiceAlarmSpec.of(
+                        call.argument<String>("voicePath"),
+                        call.argument<String>("voiceSha256"),
+                        (call.argument<Number>("voiceSizeBytes") ?: 0).toLong(),
+                    )
                     if (id == null || fireAt == null || itemId.isEmpty()) {
                         result.success("bad_args")
                     } else {
@@ -32,6 +37,7 @@ class AlarmDeliveryChannel(private val appContext: Context) {
                                 fireAt,
                                 exact,
                                 headline,
+                                voice,
                             ),
                         )
                     }

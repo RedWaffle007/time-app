@@ -114,6 +114,9 @@ dependencies {
     // simulated Android runtime. That also avoids coupling our suite to the
     // Robolectric/host-JDK mismatch in flutter_local_notifications' own tests.
     testImplementation("junit:junit:4.13.2")
+    // The real org.json for JVM unit tests (Android's is a stub there): the
+    // alarm reboot store's codec is tested against it (item 32c-2).
+    testImplementation("org.json:json:20240303")
 }
 
 kotlin {

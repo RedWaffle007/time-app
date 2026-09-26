@@ -6,7 +6,18 @@ import 'dart:convert';
 /// Revision 2 removes Android's FLAG_INSISTENT so AlarmSoundService is the sole
 /// owner of whole-tone repetition. Including this in the fingerprint migrates
 /// existing future alarms on the next reconciliation, not just newly made ones.
-const reminderDeliveryRevision = 2;
+///
+/// Revision 3 (2026-09-26): no ting on alarms, and a voice note travels with
+/// the armed alarm (item 32c-2) — re-arm everything once.
+const reminderDeliveryRevision = 3;
+
+/// The voice note an alarm must play (item 32c-2): what the downloaded file
+/// must match. The file's path is resolved by the scheduler at the edge.
+class ReminderVoice {
+  const ReminderVoice({required this.sha256, required this.sizeBytes});
+  final String sha256;
+  final int sizeBytes;
+}
 
 /// The reminder layer's value types. No plugins, no Firestore, no BuildContext —
 /// everything here is pure, so the reconciler that consumes it is unit-testable
@@ -25,9 +36,13 @@ class ReminderRequest {
     required this.fireAtUtc,
     required this.title,
     required this.body,
+    this.voice,
   });
 
   final String itemId;
+
+  /// Set only for someone else's voice-note alarm.
+  final ReminderVoice? voice;
 
   /// The absolute instant. Always UTC; the tz-aware conversion for the OS
   /// happens in the scheduler, at the edge.
@@ -41,7 +56,7 @@ class ReminderRequest {
   /// re-schedule is needed — see [ScheduledReminder.fingerprint].
   String get fingerprint =>
       '$reminderDeliveryRevision|'
-      '${fireAtUtc.millisecondsSinceEpoch}|$title|$body';
+      '${fireAtUtc.millisecondsSinceEpoch}|$title|$body|${voice?.sha256 ?? ''}';
 
   @override
   String toString() => 'ReminderRequest($itemId at $fireAtUtc)';

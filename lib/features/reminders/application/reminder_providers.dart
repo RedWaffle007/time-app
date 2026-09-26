@@ -11,6 +11,7 @@ import '../data/reminder_mirror_store.dart';
 import '../data/reminder_scheduler.dart';
 import 'reminder_policy.dart';
 import 'reminder_service.dart';
+import '../../voice_notes/application/voice_note_cache.dart';
 
 /// One plugin instance for the whole app. It is not a singleton internally
 /// (the package deliberately made it mockable), so two instances would mean two
@@ -47,6 +48,7 @@ final reminderSchedulerProvider = Provider<ReminderScheduler>((ref) {
     onTapItem: (itemId) => ref.read(notificationRouterProvider).openItem(itemId),
     onTapPush: (data) =>
         ref.read(notificationRouterProvider).openForPushEvent(data),
+    voicePathFor: (itemId) => ref.read(voiceNoteCacheProvider).pathFor(itemId),
   );
 });
 

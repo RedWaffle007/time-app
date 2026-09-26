@@ -6494,3 +6494,28 @@ alarm with no 1.5 s lead in front of them.
   10→6) to leave the rescue subrequest budget.
 - The arming path is known before the file exists (`pathFor`), so 32c-2 arms
   the alarm once and the native side checks the file at ring time.
+
+## Voice-note alarms at ring time (2026-09-26, item 32c-2)
+
+- **The note travels with the armed alarm**, exactly like the headline:
+  `ReminderRequest.voice {sha256, sizeBytes}` → the scheduler resolves the
+  app-private path (`voice-notes/{itemId}.m4a`, known before the file
+  arrives) → `AlarmDelivery.arm` → native extras → `AlarmDeliveryStore`
+  (survives reboot; old stores still load) → the receiver → AlarmSoundService.
+  Armed once; `reminderDeliveryRevision` 3 re-arms existing alarms once.
+- **At ring time** the service re-checks the file (exact size + SHA-256). A
+  match plays the note on the ALARM stream exactly **three** times, then the
+  alarm ends into the normal missed-alarm flow (cap = 3 × duration + 1 s as a
+  backstop). Dismiss / Volume-down stop it immediately. Anything else —
+  missing, truncated, altered — rings the **normal ringtone** for the usual
+  minute (never silence) and records a native `voice_fallback` event.
+- **The planner is told:** the app turns that event into the permanent
+  `alarm.voiceFallbackAt` (rules allow it, target only, timestamp) and a
+  Worker `voiceFallback` push — "{name}'s alarm for {task} rang with the
+  normal ringtone — your voice note couldn't play." — re-verified against
+  Firestore, sent once. The event is kept until the fact is stored.
+- **Emergency on a killed app:** the emergency push now carries the note's
+  hash + size, so the background handler arms the voice alarm and fetches the
+  note immediately instead of waiting for the rescue push.
+- Known limit: if the native receiver never ran and the alarm screen starts
+  the sound itself, it rings the ringtone (the screen path carries no voice).
