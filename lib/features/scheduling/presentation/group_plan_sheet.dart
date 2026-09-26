@@ -7,11 +7,11 @@ import '../../../core/format/datetime_format.dart';
 import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
+import '../../../core/timezone/tz_resolver.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../notifications/application/outcome_notifier.dart';
-import '../application/conflict_disclosure.dart';
+import '../application/schedule_clash.dart';
 import '../application/schedule_providers.dart';
-import '../application/target_schedule_providers.dart';
 import 'conflict_warning_dialog.dart';
 
 /// One eligible group-plan recipient: a member the planner selected, plus
@@ -70,10 +70,11 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
 
   /// Everyone who gave me either permission, plus me (F2: one permission).
   List<GroupPlanCandidate> get _recipients => widget.candidates;
-  final _shownConflictFingerprints = <String>{};
-  String? _queuedConflictFingerprint;
-  String? _activeConflictFingerprint;
-  bool _conflictDialogOpen = false;
+
+  /// The (day, time, members) last checked for clashes — each is checked once
+  /// per sheet, and only the latest one may open the warning.
+  String? _clashKey;
+  bool _clashDialogOpen = false;
 
   @override
   void dispose() {
@@ -115,40 +116,35 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
     _time!.minute,
   );
 
-  void _queueConflictDisclosure({
-    required String fingerprint,
-    required List<ConflictDisclosureGroup> groups,
-    required Map<String, String> readErrors,
-  }) {
-    if (_shownConflictFingerprints.contains(fingerprint) ||
-        _queuedConflictFingerprint == fingerprint) {
+  /// Checks every member at the same moment, each in their own zone, and
+  /// shows ONE warning naming whoever already has a plan at that exact minute
+  /// (Batch G1). A member whose schedule still cannot be read after retries is
+  /// left out — the warning is advisory.
+  Future<void> _checkClashes({
+    required String key,
+    required List<({String uid, String name, DateTime instantUtc})> members,
+    required String timeLabel,
+  }) async {
+    final checker = ref.read(scheduleClashCheckerProvider);
+    final results = await Future.wait(
+      members.map(
+        (m) => checker.check(
+          targetUid: m.uid,
+          instantUtc: m.instantUtc,
+          groupId: widget.groupId,
+        ),
+      ),
+    );
+    final busy = [
+      for (var i = 0; i < members.length; i++)
+        if (results[i] == ClashResult.clash) members[i].name,
+    ];
+    if (!mounted || _clashKey != key || busy.isEmpty || _clashDialogOpen) {
       return;
     }
-    _queuedConflictFingerprint = fingerprint;
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) return;
-      if (_queuedConflictFingerprint != fingerprint ||
-          _activeConflictFingerprint != fingerprint) {
-        if (_queuedConflictFingerprint == fingerprint) {
-          _queuedConflictFingerprint = null;
-        }
-        return;
-      }
-      if (_conflictDialogOpen) {
-        _queuedConflictFingerprint = null;
-        return;
-      }
-      _shownConflictFingerprints.add(fingerprint);
-      _queuedConflictFingerprint = null;
-      _conflictDialogOpen = true;
-      await showConflictWarningDialog(
-        context,
-        groups: groups,
-        readErrors: readErrors,
-      );
-      _conflictDialogOpen = false;
-      if (mounted) setState(() {});
-    });
+    _clashDialogOpen = true;
+    await showClashWarningDialog(context, names: busy, timeLabel: timeLabel);
+    _clashDialogOpen = false;
   }
 
   Future<void> _send() async {
@@ -247,79 +243,39 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final recipients = _recipients;
     final count = recipients.length;
-    _activeConflictFingerprint = null;
 
-    // Wait for every candidate's profile + authorized schedule read so the
-    // group flow emits ONE consolidated, name-grouped popup—not a procession of
-    // per-member dialogs. A read failure is part of that same popup.
-    if (_date != null && recipients.isNotEmpty) {
+    // Literal clashes only: once day and time are known and every member's
+    // zone has resolved, each member is checked at that wall time in THEIR
+    // zone. The popup names people and the time, never item content.
+    if (_date != null && _time != null && recipients.isNotEmpty) {
       var allSettled = true;
-      final groups = <ConflictDisclosureGroup>[];
-      final readErrors = <String, String>{};
-      final errorKeys = <String>[];
+      final members = <({String uid, String name, DateTime instantUtc})>[];
       for (final candidate in recipients) {
         final profile = ref.watch(profileByUidProvider(candidate.uid));
         if (profile.isLoading && !profile.hasValue) {
           allSettled = false;
           continue;
         }
-        final person = profile.value;
-        final name = person?.name ?? 'Group member';
-        final timezone = person?.homeTimezone;
-        if (profile.hasError || timezone == null || timezone.isEmpty) {
-          readErrors[candidate.uid] = name;
-          errorKeys.add(
-            '${candidate.uid}:profile:${profile.error.runtimeType}',
-          );
-          continue;
-        }
-
-        final schedule = ref.watch(targetScheduleProvider(candidate.uid));
-        if (schedule.isLoading && !schedule.hasValue && !schedule.hasError) {
-          allSettled = false;
-          continue;
-        }
-        if (schedule.hasError) {
-          readErrors[candidate.uid] = name;
-          errorKeys.add(
-            '${candidate.uid}:schedule:${schedule.error.runtimeType}',
-          );
-          continue;
-        }
-        final items = schedule.value;
-        if (items == null) {
-          allSettled = false;
-          continue;
-        }
-        final instants = conflictInstantsForLocalDay(
-          localDay: _date!,
-          timezone: timezone,
-          items: items,
-        );
-        if (instants.isNotEmpty) {
-          groups.add(
-            ConflictDisclosureGroup(
-              uid: candidate.uid,
-              name: name,
-              timezone: timezone,
-              instantsUtc: instants,
-            ),
-          );
-        }
+        final timezone = profile.value?.homeTimezone;
+        if (timezone == null || timezone.isEmpty) continue;
+        members.add((
+          uid: candidate.uid,
+          name: profile.value?.name ?? 'Group member',
+          instantUtc: resolveWallTimeToUtc(_wall(), timezone),
+        ));
       }
-      if (allSettled && (groups.isNotEmpty || readErrors.isNotEmpty)) {
-        groups.sort((a, b) => a.name.compareTo(b.name));
-        final fingerprint = conflictDisclosureFingerprint(
-          localDay: _date!,
-          groups: groups,
-          errorUids: errorKeys,
-        );
-        _activeConflictFingerprint = fingerprint;
-        _queueConflictDisclosure(
-          fingerprint: fingerprint,
-          groups: groups,
-          readErrors: readErrors,
-        );
+      final key = [
+        _wall().toIso8601String(),
+        for (final m in members)
+          '${m.uid}@${m.instantUtc.millisecondsSinceEpoch}',
+      ].join('|');
+      if (allSettled && members.isNotEmpty && key != _clashKey) {
+        _clashKey = key;
+        final timeLabel = formatTimeOfDay(context, _time!);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _checkClashes(key: key, members: members, timeLabel: timeLabel);
+        });
       }
     }
 

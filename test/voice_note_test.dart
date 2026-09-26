@@ -14,7 +14,7 @@ import 'package:time_app/features/auth/domain/user_profile.dart';
 import 'package:time_app/features/groups/domain/planner_grant.dart';
 import 'package:time_app/features/notifications/application/outcome_notifier.dart';
 import 'package:time_app/features/scheduling/application/schedule_providers.dart';
-import 'package:time_app/features/scheduling/application/target_schedule_providers.dart';
+import 'package:time_app/features/scheduling/application/schedule_clash.dart';
 import 'package:time_app/features/scheduling/data/schedule_repository.dart';
 import 'package:time_app/features/scheduling/domain/schedule_item.dart';
 import 'package:time_app/core/theme/app_tokens.dart';
@@ -529,6 +529,7 @@ void main() {
       String target = 'friend-1',
       bool dark = false,
       List<VoiceLibraryNote> library = const [],
+      ScheduleClashChecker? checker,
     }) async {
       final repo = _Repo();
       final voice = client ?? _Client();
@@ -562,7 +563,13 @@ void main() {
                 ),
               ),
             ),
-            targetScheduleProvider.overrideWith((ref, uid) => Stream.value([])),
+            scheduleClashCheckerProvider.overrideWithValue(
+              checker ??
+                  ScheduleClashChecker(
+                    fetch: (_) async => [],
+                    ensureAccess: (_, _) async {},
+                  ),
+            ),
             scheduleRepositoryProvider.overrideWithValue(repo),
             notificationEventNotifierProvider.overrideWithValue(_Notifier()),
             voiceNoteClientProvider.overrideWithValue(voice),
@@ -624,6 +631,89 @@ void main() {
       await settleIo(tester);
       await tester.pumpAndSettle();
     }
+
+    ScheduleItem existing(DateTime instant, {ScheduleOutcome? outcome}) =>
+        ScheduleItem(
+          id: 'existing',
+          targetUid: 'friend-1',
+          createdByUid: 'someone',
+          groupId: '',
+          title: 'private title',
+          localWallTime: '',
+          timezone: 'Etc/UTC',
+          scheduledInstantUtc: instant,
+          status: ScheduleItemStatus.approved,
+          outcome: outcome,
+        );
+
+    DateTime seededInstant() {
+      final d = DateTime.now().add(const Duration(days: 2));
+      return DateTime.utc(d.year, d.month, d.day, 10);
+    }
+
+    testWidgets('G1: a plan at the SAME minute warns, naming only the time', (
+      tester,
+    ) async {
+      await pumpBuilder(
+        tester,
+        checker: ScheduleClashChecker(
+          fetch: (_) async => [existing(seededInstant())],
+          ensureAccess: (_, _) async {},
+        ),
+      );
+      expect(find.text('Schedule heads-up'), findsOneWidget);
+      expect(
+        find.textContaining('Name friend-1 already has a plan at'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('private title'), findsNothing);
+      await tester.tap(find.text('Got it'));
+      await tester.pumpAndSettle();
+      // Informational only: the form is still there, and it does not re-nag.
+      expect(find.text('Schedule heads-up'), findsNothing);
+      expect(find.byKey(const ValueKey('task-name')), findsOneWidget);
+    });
+
+    testWidgets('G1: an empty schedule never warns', (tester) async {
+      await pumpBuilder(tester);
+      expect(find.text('Schedule heads-up'), findsNothing);
+    });
+
+    testWidgets('G1: a plan one minute away, or settled, never warns', (
+      tester,
+    ) async {
+      final at = seededInstant();
+      await pumpBuilder(
+        tester,
+        checker: ScheduleClashChecker(
+          fetch: (_) async => [
+            existing(at.add(const Duration(minutes: 1))),
+            existing(
+              at,
+              outcome: const ScheduleOutcome(result: OutcomeResult.done),
+            ),
+          ],
+          ensureAccess: (_, _) async {},
+        ),
+      );
+      expect(find.text('Schedule heads-up'), findsNothing);
+    });
+
+    testWidgets('G1: a schedule that cannot be read shows nothing', (
+      tester,
+    ) async {
+      await pumpBuilder(
+        tester,
+        checker: ScheduleClashChecker(
+          fetch: (_) async => throw Exception('permission-denied'),
+          ensureAccess: (_, _) async {},
+          retryDelays: const [Duration.zero],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Schedule heads-up'), findsNothing);
+      expect(find.textContaining('Could not check'), findsNothing);
+    });
 
     testWidgets('the recorder shows for someone else, never for yourself', (
       tester,

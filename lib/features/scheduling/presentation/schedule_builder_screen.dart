@@ -27,9 +27,8 @@ import '../../voice_notes/domain/voice_library_note.dart';
 import '../../voice_notes/presentation/voice_library_picker.dart';
 import '../../voice_notes/presentation/voice_library_screen.dart';
 import '../../voice_notes/presentation/voice_note_recorder.dart';
-import '../application/conflict_disclosure.dart';
+import '../application/schedule_clash.dart';
 import '../application/schedule_providers.dart';
-import '../application/target_schedule_providers.dart';
 import '../domain/schedule_item.dart';
 import 'conflict_warning_dialog.dart';
 
@@ -102,10 +101,10 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
   bool get _showTargetList => _targetUid == null || _changingTarget;
   final _scrollController = ScrollController();
 
-  final _shownConflictFingerprints = <String>{};
-  String? _queuedConflictFingerprint;
-  String? _activeConflictFingerprint;
-  bool _conflictDialogOpen = false;
+  /// The (target, minute) last checked for a clash — each is checked once
+  /// per form session, and only the latest one may open the warning.
+  String? _clashKey;
+  bool _clashDialogOpen = false;
   final _titleController = TextEditingController();
   final _noteController = TextEditingController();
   DateTime? _date;
@@ -191,42 +190,29 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     if (picked != null) setState(() => _time = picked);
   }
 
-  void _queueConflictDisclosure({
-    required String fingerprint,
-    required List<ConflictDisclosureGroup> groups,
-    Map<String, String> readErrors = const {},
-  }) {
-    if (_shownConflictFingerprints.contains(fingerprint) ||
-        _queuedConflictFingerprint == fingerprint) {
+  /// Checks for a literal clash (Batch G1) and warns only on one. A read that
+  /// still fails after the checker's retries says nothing: Send stays
+  /// authoritative through the create rules.
+  Future<void> _checkClash({
+    required String key,
+    required String targetUid,
+    required String? groupId,
+    required DateTime instantUtc,
+    required String name,
+    required String timeLabel,
+  }) async {
+    final result = await ref
+        .read(scheduleClashCheckerProvider)
+        .check(targetUid: targetUid, instantUtc: instantUtc, groupId: groupId);
+    if (!mounted ||
+        _clashKey != key ||
+        result != ClashResult.clash ||
+        _clashDialogOpen) {
       return;
     }
-    _queuedConflictFingerprint = fingerprint;
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) return;
-      if (_queuedConflictFingerprint != fingerprint ||
-          _activeConflictFingerprint != fingerprint) {
-        if (_queuedConflictFingerprint == fingerprint) {
-          _queuedConflictFingerprint = null;
-        }
-        return;
-      }
-      if (_conflictDialogOpen) {
-        _queuedConflictFingerprint = null;
-        return;
-      }
-      _shownConflictFingerprints.add(fingerprint);
-      _queuedConflictFingerprint = null;
-      _conflictDialogOpen = true;
-      await showConflictWarningDialog(
-        context,
-        groups: groups,
-        readErrors: readErrors,
-      );
-      _conflictDialogOpen = false;
-      // A feed/date/target change while the dialog was open gets evaluated
-      // against the latest frame now, without stacking a second popup.
-      if (mounted) setState(() {});
-    });
+    _clashDialogOpen = true;
+    await showClashWarningDialog(context, names: [name], timeLabel: timeLabel);
+    _clashDialogOpen = false;
   }
 
   /// Send is enabled once WHO and WHEN are chosen; what to send is checked
@@ -409,49 +395,35 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
         ? null
         : ref.watch(profileByUidProvider(_targetUid!)).value;
     final timezone = selectedProfile?.homeTimezone;
-    _activeConflictFingerprint = null;
 
-    // A warning exists only after target + day are known, and only when the
-    // authorized live feed contains commitments on that target-local day.
-    // The dialog receives time/date projections, never item content.
-    if (!_isSelf && _targetUid != null && _date != null && timezone != null) {
-      final schedule = ref.watch(targetScheduleProvider(_targetUid!));
-      if (schedule.hasError) {
-        final name = selectedProfile?.name ?? 'Selected friend';
-        final errorKey = '${_targetUid!}:${schedule.error.runtimeType}';
-        final fingerprint = conflictDisclosureFingerprint(
-          localDay: _date!,
-          groups: const [],
-          errorUids: [errorKey],
-        );
-        _activeConflictFingerprint = fingerprint;
-        _queueConflictDisclosure(
-          fingerprint: fingerprint,
-          groups: const [],
-          readErrors: {_targetUid!: name},
-        );
-      } else if (schedule.value case final items?) {
-        final instants = conflictInstantsForLocalDay(
-          localDay: _date!,
-          timezone: timezone,
-          items: items,
-        );
-        if (instants.isNotEmpty) {
-          final groups = [
-            ConflictDisclosureGroup(
-              uid: _targetUid!,
-              name: selectedProfile?.name ?? 'Selected friend',
-              timezone: timezone,
-              instantsUtc: instants,
-            ),
-          ];
-          final fingerprint = conflictDisclosureFingerprint(
-            localDay: _date!,
-            groups: groups,
+    // A warning exists only for a LITERAL clash: once target, date and time
+    // are known, the target's live plans are checked at that exact minute in
+    // the target's own zone. The dialog receives a name and a time, never
+    // item content.
+    if (!_isSelf &&
+        _targetUid != null &&
+        _date != null &&
+        _time != null &&
+        timezone != null) {
+      final targetUid = _targetUid!;
+      final instantUtc = resolveWallTimeToUtc(_wall(), timezone);
+      final key = '$targetUid|${instantUtc.millisecondsSinceEpoch}';
+      if (key != _clashKey) {
+        _clashKey = key;
+        final name = selectedProfile?.name ?? 'This person';
+        final timeLabel = formatTimeOfDay(context, _time!);
+        final groupId = _groupId;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _checkClash(
+            key: key,
+            targetUid: targetUid,
+            groupId: groupId,
+            instantUtc: instantUtc,
+            name: name,
+            timeLabel: timeLabel,
           );
-          _activeConflictFingerprint = fingerprint;
-          _queueConflictDisclosure(fingerprint: fingerprint, groups: groups);
-        }
+        });
       }
     }
 

@@ -54,7 +54,7 @@
 - **International test build (2026-09-26):** the user is building an arm64
   release APK to share with a tester abroad, and may install it on the Redmi
   to check it first. Their results are the next device evidence.
-- Next implementation order: **… F ✓ → 32d ✓ → 24 → 33**. Every phone check
+- Next implementation order: **… F ✓ → 32d ✓ → Batch G → 24 → 33**. Every phone check
   since Batch A is deferred to the device pass (see "Deferred device checks").
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
 
@@ -459,14 +459,65 @@ Steps (each its own tests + commit):
   timestamp default name, newest first, month groups once two months exist),
   attach from library via server-side copy.
 
-### 24 — Stats and product review (NEXT)
+### Batch G — conflict + timezone bugs, rename/nav, Track Time removal (added 2026-09-26) — NEXT
+
+User-reported 2026-09-26. One item at a time, plan → sign-off → build, with
+regression tests each. Bugs first.
+
+- **G1 — False "Schedule heads-up" conflict warning.** — **BUILT 2026-09-27;
+  awaiting test run + commit; phone check deferred.** Warns only on a literal
+  clash (live plan at the same minute, target's zone), checked after date AND
+  time; one-shot read with retries + group hint provisioning; unreadable →
+  silent. Groups: one popup naming who clashes. DECISIONS.md "Literal-clash
+  warning replaces the day-scoped disclosure". No rules change.
+- **G2 — Pick date / Pick time open in the planner's zone, not the
+  recipient's.** Repro: planner's phone in one zone, recipient in Vancouver;
+  the builder correctly says it uses the recipient's local time, but the
+  date/time pickers open on the planner's own "now". They must show the
+  recipient's current local date and time (initial values + the date picker's
+  "today"/range). Tests: planner and target in different zones incl. a
+  date-line split (planner already tomorrow) and a DST day; self-plan
+  unchanged.
+- **G3 — Rename "My Schedule" to "Home."** Every user-facing string (Plan tab
+  label `plan_shell.dart`, `outcome_screen.dart` app bar, tour/"How this app
+  works" copy, notification/deep-link copy, tests). Internal route/provider
+  names may stay; update this handoff's wording after.
+- **G4 — Plans for others stay on Home until Done/Skipped.** Home shows the
+  user's self-plans AND plans they set for others until the recipient marks
+  them Done or Skipped (or they lapse / are cancelled); only then do they move
+  to Activity. Confirm the current behaviour first, then fix. Relates to the
+  test-pinned "History = decided plans only" rule above — keep it, extend it to
+  planner-side items.
+- **G5 — Remove Track Time entirely, code included.** `lib/features/time_tracking/`
+  (track screen, log-time sheet, repository, providers, model), its nav/menu
+  entry points, the voice parser hooks (`voice_parsers.dart`), stats that read
+  tracked time, tests, and the `users/{uid}/trackedTime` rules block (rules
+  change → deploy + byte-verify; existing docs are orphaned, decide whether to
+  leave them). Record in DECISIONS.md first. Supersedes Item 24's "research
+  standalone Log Time" bullet.
+- **G6 — "Request Plan" beside "Plan".** Move the Request Plan button (Item 22)
+  next to the Plan button (bottom-left); make both slightly larger with bold
+  text. Sizes/weights from `lib/core/theme/` (token change → DECISIONS →
+  UI-RULES → code), lint-clean, light + dark.
+
+- **G7 — Bigger Play and X on an imported voice note.** After "Choose from
+  library" attaches a note in the builder, its Play and X (remove) buttons are
+  too small — enlarge both (icon + tap target ≥ 48 dp). Look in
+  `schedule_builder_screen.dart` / `voice_library_picker.dart`. Sizes from
+  `lib/core/theme/` (token change → DECISIONS → UI-RULES → code), lint-clean,
+  light + dark.
+
+Order: **G1 → G2** (bugs) → **G3 + G4** (Home) → **G5** → **G6 + G7** (button
+sizing, together).
+
+### 24 — Stats and product review (after Batch G)
 
 - Last product-surface change: audit/reuse existing stats; prioritize useful,
   privacy-safe signals over surveillance/vanity metrics.
 - Cover minimum samples, permission/relationship changes, timezone ranges,
   trends, empty states, and humane streaks.
-- Research whether standalone Log Time provides enough planned-vs-actual value
-  before changing or removing it (the post-Done Log Time prompt is already gone).
+- ~~Research whether standalone Log Time provides enough planned-vs-actual
+  value~~ — superseded: Track Time is being removed (Batch G5).
 
 ### 33 — Competitor review (last)
 
@@ -492,6 +543,7 @@ Steps (each its own tests + commit):
 1. Collect the user's results from the release APK (their Redmi and the
    tester abroad). Fix anything reported before new work; record verified
    items in CLAUDE.md "Parked & unverified" / DECISIONS.md.
-2. Then Item 24 (stats and product review): research and audit first, present
+2. Batch G (see roadmap), G1 first: plan each item, wait for sign-off, build.
+3. Then Item 24 (stats and product review): research and audit first, present
    findings and a proposal, and wait for sign-off before changing anything.
-3. Item 33 (competitor review) last.
+4. Item 33 (competitor review) last.

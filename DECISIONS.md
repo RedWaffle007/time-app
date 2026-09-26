@@ -6649,3 +6649,45 @@ User-directed redesign of the builder, light and dark.
   alarms already sent with it.
 - Reached from **You → Voice notes** (in You's branch, like Friends).
 
+
+---
+
+## Literal-clash warning replaces the day-scoped disclosure (2026-09-27, G1)
+
+**User-reported:** planning for someone with no tasks still showed "Schedule
+heads-up … You can still save." Two causes, both in the design rather than a
+typo:
+
+1. **The rule was day-scoped** (Item 27): ANY outcome-less plan anywhere on the
+   target's local day warned — including an earlier unanswered alarm or the
+   target's own self-plans the planner never sees. User-directed replacement:
+   warn only on a **literal clash** — a live plan (the same `blocksSlot` policy:
+   outcome-less `pending`/`approved`) at the **same absolute minute** as the one
+   being planned, resolved in the target's own zone. One minute apart, elsewhere
+   in the day, settled, rejected, withdrawn or cancelled never warns. It is
+   checked only once BOTH date and time are picked.
+2. **Read failures looked like conflicts and stuck.** The check watched
+   `targetScheduleProvider`, a non-autoDispose `StreamProvider.family`. A single
+   `permission-denied` (grant seconds old, token refresh, stale deployed rules,
+   or a group target whose `plannerAccess` hint row the reconciler had not
+   written yet) terminated the listener for the rest of the session, and the
+   error rendered in the same "Schedule heads-up" dialog.
+
+**Now:** `ScheduleClashChecker` (`application/schedule_clash.dart`) does a
+one-shot `get()` per check (offline falls back to cache), 8 s timeout per
+attempt, up to 3 retries (0.5 / 1 / 2 s). Before the first retry of a
+group-scoped target it writes the planner's own `plannerAccess` hint — the same
+idempotent write `PlannerAccessReconciler` makes, which the rules re-verify
+against the live grant, so it grants nothing by itself. This is a read-path
+provisioning step, NOT a grant-transition hook, so the reconciler doctrine
+stands. If the schedule still cannot be read, **nothing is shown**: the warning
+is advisory and the create rules remain the authority on Send.
+
+**Groups:** the same rule per member, each at the shared wall time in THEIR
+zone, in one popup naming only the members who clash. Unreadable members are
+left out.
+
+Removed: `conflict_disclosure.dart` (day projection + fingerprints),
+`target_schedule_providers.dart`, and the "Could not check" copy. No rules
+change, no deploy. Tests: `test/schedule_clash_test.dart` plus builder cases in
+`voice_note_test.dart` and group cases in `group_plan_test.dart`.

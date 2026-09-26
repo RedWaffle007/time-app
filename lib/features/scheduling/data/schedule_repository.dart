@@ -161,6 +161,15 @@ class ScheduleRepository {
     ).snapshots().map((s) => s.docs.map(ScheduleItem.fromDoc).toList());
   }
 
+  /// One read of [targetUid]'s items, for the clash check. A `get()`, not a
+  /// listener: a denied listener terminates for good, while a one-shot read can
+  /// simply be retried. The default source falls back to the local cache when
+  /// the device is offline.
+  Future<List<ScheduleItem>> fetchItemsForTarget(String targetUid) async {
+    final snap = await _items(targetUid).get();
+    return snap.docs.map(ScheduleItem.fromDoc).toList();
+  }
+
   /// All items a planner created, across targets — powers their activity view.
   Stream<List<ScheduleItem>> watchItemsByPlanner(String plannerUid) {
     return _db
