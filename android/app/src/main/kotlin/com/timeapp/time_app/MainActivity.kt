@@ -344,8 +344,8 @@ class MainActivity : FlutterFragmentActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SPLASH_SOUND_CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-                    // Never over a ringing alarm: the alarm service plays its own
-                    // ting before the ringtone, in a fixed order.
+                    // Never over a ringing alarm: the ting is app-start only
+                    // (2026-09-26) and must not play on top of an alarm.
                     "play" -> {
                         if (!AlarmSoundService.isRinging()) splash.play()
                         result.success(null)

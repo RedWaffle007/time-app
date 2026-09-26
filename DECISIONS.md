@@ -6405,3 +6405,13 @@ item 20). Tap → Plan activity.
   bounds, code alphabet, encoded/hostile input). One known difference: the app
   also rejects reserved usernames; the Worker page shows them, harmlessly (no
   one can hold one).
+
+## The ting is app-start only — removed from alarms (2026-09-26, item 32-0)
+
+User-directed while planning voice-note alarms: "the ting sound should only be
+played when the app opens, remove it from the alarms totally". Supersedes the
+2026-09-25 "ting then ring" order. `AlarmSoundService` now starts the ringtone
+the instant the alarm fires (`TING_LEAD_MS` / `ringtoneDelayMs` removed); the
+splash ting is unchanged and is still suppressed while an alarm rings. It also
+resolves the voice-note timing clash: three loops of a 20 s note now fit the
+alarm with no 1.5 s lead in front of them.

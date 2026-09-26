@@ -64,17 +64,6 @@ internal object AlarmSoundPolicy {
     fun shouldStartPlayer(playerAlreadyExists: Boolean): Boolean =
         !playerAlreadyExists
 
-    /**
-     * The ting always comes first and the ringtone starts exactly when it ends.
-     * The service owns BOTH (device report 2026-09-25: the app-start ting used
-     * to race the ringtone, so the order varied between launches).
-     * Matches the splash strike's audible length, fade included.
-     */
-    const val TING_LEAD_MS = 1_500L
-
-    fun ringtoneDelayMs(tingStarted: Boolean): Long =
-        if (tingStarted) TING_LEAD_MS else 0L
-
     /** "{planner} planned {task} for you" — the heads-up must say who and what. */
     fun ringingTitle(headline: String?): String =
         headline?.trim()?.takeIf { it.isNotEmpty() } ?: "Alarm"

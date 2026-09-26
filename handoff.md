@@ -70,8 +70,8 @@
   placeholder flash), the unlocked heads-up (Android shows full-screen only when
   locked; user chose a rich heads-up over "display over other apps"), and the
   native missed-alarm notification.
-- **Ting then ring, owned by `AlarmSoundService`**: strike on the alarm stream,
-  ringtone exactly 1.5 s later. The splash ting is suppressed while ringing; an
+- **No ting on alarms (2026-09-26, user-directed):** `AlarmSoundService` starts
+  the ringtone at once; the ting is app-start only. (Was "ting then ring".) The splash ting is suppressed while ringing; an
   alarm cold start opens directly on `/alarm?item=` (`getInitialRoute`).
 - **One notification per ringing alarm**: the service cancels the scheduled
   reminder notification (same id) directly on NotificationManager, at once and
@@ -258,26 +258,60 @@ Batch E — build, one item at a time, thorough regression tests each:
 
 ## Remaining roadmap
 
-### 32 — Custom voice-note alarms (NEXT)
+### 32 — Custom voice-note alarms (NEXT) — PLAN AGREED 2026-09-26, not started
 
-- Planning for another person may attach a per-alarm voice-note override; max
-  20 seconds with preview, discard/re-record, and optional library save.
-- At fire time, play exactly three loops, then end—no fallback/minimum duration.
-  Existing Dismiss/Snooze interrupts immediately; each snoozed occurrence gets
-  its own three loops.
-- Deliver an immutable recipient-side offline snapshot. Sender rename/deletion
-  must not affect scheduled alarms. Define safe lifecycle cleanup.
-- Saved Voice Notes tab: listen/rename/delete, localized timestamp default name,
-  newest-first, month grouping immediately at two distinct months.
-- Keep audio out of Firestore/notifications. Add authenticated storage,
-  server-side MIME/duration/size/ownership checks, idempotent delivery/download,
-  native alarm/reboot/process-death integration, and exhaustive regression plus
-  device audio/lifecycle acceptance.
-- **Integration points from 2026-09-25:** playback belongs in
-  `AlarmSoundService` (after the ting, replacing the ringtone loop; it already
-  owns the ting→ring order and the one-minute cap). The voice note must travel
-  with the native arm call the way the headline does (`AlarmDelivery.arm` →
-  `AlarmDeliveryScheduler` extras → `AlarmDeliveryStore` for reboot).
+Decisions (2026-09-26): storage = private Supabase bucket via the Worker;
+recorder = `record` package, playback = native MediaPlayer; library = You →
+Voice notes (pushed screen, no new nav tab); snooze does not exist (parked), so
+only Dismiss interrupts; group plans excluded from v1.
+
+**The ting is removed from ALARMS entirely (user-directed 2026-09-26)** — it
+plays only when the app opens. Ringtone alarms start the ringtone at once;
+voice alarms start the voice note at once. This supersedes "Ting then ring"
+below and the `ringtoneDelayMs` 1.5 s offset.
+
+**Ring rule:** a voice-note alarm plays the note exactly three times, then
+ends into the normal missed-alarm flow (its cap = 3 × duration + 1 s, since a
+20 s note × 3 is already the full minute). Ringtone alarms keep the 60 s cap.
+
+**"It must never fail" — what is and is not possible, and the design:** no
+code can guarantee a sound on a phone that is off, muted, killed by an OEM
+cleaner, or never online again. The design makes failure rare, visible early,
+and never silent:
+- Download at approval (or emergency creation), not at ring time; retried off
+  the item stream on every emission, resume and connectivity change; the file
+  is hash-verified before it is armed.
+- **Delivery receipt:** after a verified download the target's device stamps
+  `voiceNote.deliveredAt` on the item; the planner's card shows "Voice note on
+  their phone" or "Not on their phone yet".
+- **Pre-due rescue (Worker cron):** undelivered 30 min before due → a
+  high-priority data push asks the target's device to fetch it in the
+  background (works on a killed app, like emergency alarms); still undelivered
+  10 min before due → the planner is told it will ring with the normal
+  ringtone unless it arrives.
+- **At ring time** the native side re-checks the file (size + hash); if it is
+  missing or damaged the alarm rings the normal ringtone (never silent), and a
+  `voice_fallback` lifecycle event makes the app tell the planner "{name}'s
+  alarm rang with the normal ringtone — your voice note couldn't play".
+
+Steps (each its own tests + commit):
+- **32-0** Remove the ting from alarms (native + tests + docs). — **BUILT 2026-09-26; awaiting commit + Redmi check.**
+- **32a** Worker `POST /voice` (auth, active grant, byte-sniffed AAC/M4A, header
+  duration ≤ 20.5 s, ≤ 256 KB, immutable once the item exists), `GET` download
+  (target or planner only), library copy, retention cron (item audio deleted 7
+  days after its scheduled time; orphan uploads after 1 day); private bucket;
+  rules for `voiceNote {durationMs, sha256}` (other-person plans only) and the
+  target-only `deliveredAt` stamp.
+- **32b** Recorder in the schedule builder (≤ 20 s, auto-stop, preview,
+  discard/re-record, attach; mic permission only after an explanation);
+  "Play voice note" on Pending approvals (hear it before consenting).
+- **32c** Target download + receipt, native three-loop playback, reboot /
+  process-death via `AlarmDeliveryStore`, fallback + planner notice, pre-due
+  rescue push, local cleanup off the reminder mirror. Native unit tests +
+  Redmi audio acceptance.
+- **32d** Library: save, You → Voice notes (play, rename, delete, localized
+  timestamp default name, newest first, month groups once two months exist),
+  attach from library via server-side copy.
 
 ### 24 — Stats and product review
 

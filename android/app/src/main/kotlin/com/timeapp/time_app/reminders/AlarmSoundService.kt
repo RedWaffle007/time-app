@@ -149,26 +149,9 @@ class AlarmSoundService : Service() {
     }
 
     private var player: MediaPlayer? = null
-    private var tingPlayer: MediaPlayer? = null
-    private var tingStartedAt = 0L
     private var wakeLock: PowerManager.WakeLock? = null
     private val ownership = AlarmPlaybackOwnership()
     private val handler = Handler(Looper.getMainLooper())
-    private val startRingtone = Runnable { startRingtoneNow() }
-    private val fadeTing = object : Runnable {
-        override fun run() {
-            val ting = tingPlayer ?: return
-            val elapsed = android.os.SystemClock.uptimeMillis() - tingStartedAt
-            val scale = com.timeapp.time_app.SplashSoundPolicy.volumeScale(elapsed)
-            try {
-                ting.setVolume(scale, scale)
-            } catch (_: Exception) {
-            }
-            if (elapsed < AlarmSoundPolicy.TING_LEAD_MS) {
-                handler.postDelayed(this, com.timeapp.time_app.SplashSoundPolicy.FADE_STEP_MS)
-            }
-        }
-    }
     private val autoStop = Runnable {
         val at = System.currentTimeMillis()
         cancelOwningNotifications()
@@ -255,7 +238,7 @@ class AlarmSoundService : Service() {
 
     private fun startAlarm() {
         // Idempotent — the UI can call start more than once (mount + resume).
-        if (!AlarmSoundPolicy.shouldStartPlayer(player != null || tingPlayer != null)) {
+        if (!AlarmSoundPolicy.shouldStartPlayer(player != null)) {
             return
         }
 
@@ -275,12 +258,10 @@ class AlarmSoundService : Service() {
             acquire(AlarmSoundPolicy.MAX_RING_DURATION_MS + 5_000L)
         }
 
-        // Ting first, ringtone exactly when it ends — the same order on every
-        // path (locked, unlocked, app dead or alive). The app-start ting is
-        // suppressed while this rings, so it can no longer race the ringtone.
+        // The ringtone starts at once. The ting belongs to app start only
+        // (user-directed 2026-09-26) and stays suppressed while this rings.
         ringing = true
-        val tingStarted = startTing()
-        handler.postDelayed(startRingtone, AlarmSoundPolicy.ringtoneDelayMs(tingStarted))
+        startRingtoneNow()
         handler.postDelayed(autoStop, AlarmSoundPolicy.MAX_RING_DURATION_MS)
     }
 
@@ -290,48 +271,11 @@ class AlarmSoundService : Service() {
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
 
-    /** The clock strike, on the ALARM stream so it is heard exactly like the ring. */
-    private fun startTing(): Boolean = try {
-        val fd = resources.openRawResourceFd(R.raw.tick)
-        tingPlayer = MediaPlayer().apply {
-            setAudioAttributes(alarmAttributes())
-            setDataSource(fd.fileDescriptor, fd.startOffset, fd.length)
-            fd.close()
-            prepare()
-            start()
-        }
-        tingStartedAt = android.os.SystemClock.uptimeMillis()
-        handler.postDelayed(fadeTing, com.timeapp.time_app.SplashSoundPolicy.FADE_START_MS)
-        true
-    } catch (e: Exception) {
-        Log.e(TAG, "ting failed, ringing without it: $e")
-        releaseTing()
-        false
-    }
-
-    private fun releaseTing() {
-        handler.removeCallbacks(fadeTing)
-        tingPlayer?.let {
-            try {
-                if (it.isPlaying) it.stop()
-            } catch (_: Exception) {
-            }
-            it.release()
-        }
-        tingPlayer = null
-    }
-
     private fun startRingtoneNow() {
-        releaseTing()
         if (player != null) return
         try {
             player = MediaPlayer().apply {
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build(),
-                )
+                setAudioAttributes(alarmAttributes())
                 setDataSource(this@AlarmSoundService, alarmUri())
                 isLooping = AlarmSoundPolicy.LOOP_WHOLE_TONE
                 setOnErrorListener { _, what, extra ->
@@ -444,8 +388,6 @@ class AlarmSoundService : Service() {
 
     private fun stopAlarm() {
         handler.removeCallbacks(autoStop)
-        handler.removeCallbacks(startRingtone)
-        releaseTing()
         player?.let {
             try {
                 if (it.isPlaying) it.stop()

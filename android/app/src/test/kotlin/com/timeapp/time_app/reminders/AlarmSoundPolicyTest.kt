@@ -1,6 +1,5 @@
 package com.timeapp.time_app.reminders
 
-import com.timeapp.time_app.SplashSoundPolicy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -9,17 +8,32 @@ import org.junit.Test
 /** Regressions from the 2026-09-25 device pass. */
 class AlarmSoundPolicyTest {
     @Test
-    fun `the ringtone always starts exactly when the ting ends`() {
-        assertEquals(AlarmSoundPolicy.TING_LEAD_MS, AlarmSoundPolicy.ringtoneDelayMs(true))
-        // The ting's audible length, fade included — never cut early or overlapped.
-        assertEquals(SplashSoundPolicy.MAX_PLAYBACK_MS, AlarmSoundPolicy.TING_LEAD_MS)
-        // A missing ting must not delay the alarm at all.
-        assertEquals(0L, AlarmSoundPolicy.ringtoneDelayMs(false))
-        assertTrue(AlarmSoundPolicy.TING_LEAD_MS < AlarmSoundPolicy.MAX_RING_DURATION_MS)
+    fun `alarms have no ting - the ting belongs to app start only`() {
+        // User-directed 2026-09-26: the ringtone (or, later, the voice note)
+        // starts the moment the alarm fires. The policy no longer has any
+        // ting lead to wait for.
+        val members = AlarmSoundPolicy::class.java.declaredFields.map { it.name } +
+            AlarmSoundPolicy::class.java.declaredMethods.map { it.name }
+        assertFalse(members.any { it.contains("TING", ignoreCase = true) })
+        assertFalse(members.any { it.contains("ringtoneDelay", ignoreCase = true) })
     }
 
     @Test
-    fun `a ting in progress counts as playing, so a second start cannot restart it`() {
+    fun `the alarm service never loads the ting sound`() {
+        val source = java.io.File(
+            "src/main/kotlin/com/timeapp/time_app/reminders/AlarmSoundService.kt",
+        ).readText()
+        assertFalse(source.contains("R.raw.tick"))
+        assertFalse(source.contains("tingPlayer"))
+        // The splash still owns the ting.
+        val splash = java.io.File(
+            "src/main/kotlin/com/timeapp/time_app/SplashSound.kt",
+        ).readText()
+        assertTrue(splash.contains("R.raw.tick"))
+    }
+
+    @Test
+    fun `a ringing player counts as playing, so a second start cannot restart it`() {
         assertFalse(AlarmSoundPolicy.shouldStartPlayer(true))
         assertTrue(AlarmSoundPolicy.shouldStartPlayer(false))
     }

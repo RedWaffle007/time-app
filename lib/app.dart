@@ -80,7 +80,7 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     // An alarm cold start skips the reveal (and its ting) from frame one: the
-    // alarm service owns the ting→ring order, and nothing may flash first.
+    // alarm rings at once, and nothing may flash or strike over it.
     _openedFromNotification = launchSkipsReveal(
       alarmLaunch: alarmLaunchLocation() != null,
     );
