@@ -7,6 +7,7 @@ import {
   MIN_REMINDER_GAP_MS,
   approvalReminderTimes,
   buildApprovalReminderMessage,
+  buildPlannerPendingMessage,
   dueReminderIndex,
   sendDueApprovalReminders,
 } from '../src/approval-reminders.js';
@@ -202,7 +203,9 @@ test('a due reminder is claimed against the queried version, then sent', async (
   const h = harness([pendingRow()]);
   const summary = await sendDueApprovalReminders(h.ctx, at(T0 + 15 * MIN));
 
-  assert.deepEqual(summary, { considered: 1, claimed: 1, sent: 1, cleaned: 0 });
+  assert.deepEqual(summary, {
+    considered: 1, claimed: 1, sent: 1, cleaned: 0, plannerHeadsUps: 0,
+  });
   assert.equal(h.claims[0].path, 'scheduleItems/target/items/item-1');
   assert.equal(h.claims[0].updateTime, 'v1');
   assert.equal(h.claims[0].fields.approvalRemindersSent, 1);
@@ -363,4 +366,96 @@ test('the composite index the query needs is declared', () => {
       { fieldPath: 'scheduledInstantUtc', order: 'ASCENDING' },
     ]));
   assert.ok(found);
+});
+
+// ---------------------------------------------------------------- item 16
+
+function tokensByUser(h) {
+  // Map each sent message back to its recipient via the token lists below.
+  return h.sent.map((s) => s.token);
+}
+
+function headsUpHarness(rows, docs = {}) {
+  const h = harness(rows, {
+    'users/target': { name: 'Test Target' },
+    ...docs,
+  });
+  h.ctx.db.listDocIds = async (path) =>
+    path === 'users/planner/fcmTokens' ? ['planner-token'] : ['target-token'];
+  return h;
+}
+
+test('the FINAL reminder also gives the planner one heads-up', async () => {
+  // 30-minute window: slots at 15 and 27 minutes; 27 is the final one.
+  const h = headsUpHarness([pendingRow({ approvalRemindersSent: 1 })]);
+  const summary = await sendDueApprovalReminders(h.ctx, at(T0 + 27 * MIN));
+
+  assert.equal(summary.plannerHeadsUps, 1);
+  assert.deepEqual(tokensByUser(h), ['target-token', 'planner-token']);
+  assert.deepEqual(h.sent[1].message.notification, {
+    title: 'Still waiting for approval',
+    body: "Test Target hasn't approved Gym yet. It's due soon.",
+  });
+  assert.deepEqual(h.sent[1].message.data, {
+    type: 'approvalPending',
+    event: 'approvalPending',
+    targetUid: 'target',
+    itemId: 'item-1',
+  });
+});
+
+test('earlier reminders never ping the planner', async () => {
+  const h = headsUpHarness([pendingRow()]);
+  const summary = await sendDueApprovalReminders(h.ctx, at(T0 + 15 * MIN));
+  assert.equal(summary.plannerHeadsUps, 0);
+  assert.deepEqual(tokensByUser(h), ['target-token']);
+});
+
+test('a one-reminder window: the only reminder is the final, so the planner hears once', async () => {
+  const short = pendingRow({ scheduledInstantUtc: at(T0 + 5 * MIN).toISOString() });
+  const h = headsUpHarness([short]);
+  const summary = await sendDueApprovalReminders(h.ctx, at(T0 + 3 * MIN));
+  assert.equal(summary.plannerHeadsUps, 1);
+  assert.deepEqual(tokensByUser(h), ['target-token', 'planner-token']);
+});
+
+test('the heads-up never repeats: its slot is already claimed', async () => {
+  const h = headsUpHarness([pendingRow({ approvalRemindersSent: 2 })]);
+  const summary = await sendDueApprovalReminders(h.ctx, at(T0 + 29 * MIN));
+  assert.equal(summary.plannerHeadsUps, 0);
+  assert.equal(h.sent.length, 0);
+});
+
+test('a decision racing the final slot stops the heads-up too', async () => {
+  const h = headsUpHarness([pendingRow({ approvalRemindersSent: 1 })]);
+  h.ctx.db.patchDocIfUnchanged = async () => false;
+  const summary = await sendDueApprovalReminders(h.ctx, at(T0 + 27 * MIN));
+  assert.equal(summary.plannerHeadsUps, 0);
+  assert.equal(h.sent.length, 0);
+});
+
+test('a revoked grant means no reminder and no heads-up', async () => {
+  const h = headsUpHarness([pendingRow({ approvalRemindersSent: 1 })], {
+    'friendships/planner_target/plannerGrants/planner_target': { granted: false },
+  });
+  await sendDueApprovalReminders(h.ctx, at(T0 + 27 * MIN));
+  assert.equal(h.sent.length, 0);
+});
+
+test('heads-up copy: group label, fallbacks, no clock time', () => {
+  const group = buildPlannerPendingMessage({
+    title: 'Gym', targetName: 'Test Target', groupName: 'Team',
+    targetUid: 't', itemId: 'i',
+  }).notification;
+  assert.equal(group.title, 'Group plan still waiting for approval');
+  assert.equal(group.body, "Test Target hasn't approved Gym in Team yet. It's due soon.");
+
+  const bare = buildPlannerPendingMessage({
+    title: '', targetName: null, groupName: null, targetUid: 't', itemId: 'i',
+  });
+  assert.equal(bare.notification.body, "Someone hasn't approved your scheduled item yet. It's due soon.");
+  assert.doesNotMatch(bare.notification.body, /\d/);
+  assert.deepEqual(bare.android, {
+    priority: 'high', notification: { channel_id: ACTIVITY_CHANNEL_ID },
+  });
 });

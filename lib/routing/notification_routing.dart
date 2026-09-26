@@ -51,6 +51,8 @@ class NotificationRouter {
       case 'decided':
       case 'outcome':
       case 'dismissed':
+      // The planner's "still waiting for approval" heads-up (item 16).
+      case 'approvalPending':
         _openPlanActivity();
       // Friend-graph pushes: a new request opens the requests inbox; an accept
       // opens the friends list, where the new friend now appears.

@@ -14,9 +14,11 @@ export const MIN_REMINDER_GAP_MS = 2 * MINUTE_MS;
 const SHORT_WINDOW_MS = 10 * MINUTE_MS;
 const LONG_WINDOW_MS = 2 * 60 * MINUTE_MS;
 
-// Each reminder costs ~6 Firestore/FCM subrequests; Cloudflare's free plan
-// allows 50 per invocation. Anything beyond this waits for the next minute.
-export const MAX_REMINDERS_PER_RUN = 6;
+// Each reminder costs ~6 Firestore/FCM subrequests, ~9 when it is the final
+// one (the planner heads-up adds a name read, a token list and a send);
+// Cloudflare's free plan allows 50 per invocation. Anything beyond this waits
+// for the next minute.
+export const MAX_REMINDERS_PER_RUN = 5;
 export const PENDING_SCAN_LIMIT = 50;
 
 /**
@@ -99,6 +101,37 @@ export function buildApprovalReminderMessage({
 }
 
 /**
+ * The planner's one heads-up (item 16, 2026-09-26), sent with the FINAL
+ * reminder while the plan is still pending. No clock time (decided: push text
+ * cannot follow the recipient's locale).
+ */
+export function buildPlannerPendingMessage({
+  title, targetName, groupName, targetUid, itemId,
+}) {
+  const task = (title || 'your scheduled item').toString();
+  const who = targetName || 'Someone';
+  const where = groupName ? ` in ${groupName}` : '';
+  return {
+    notification: {
+      title: typeof groupName === 'string'
+        ? 'Group plan still waiting for approval'
+        : 'Still waiting for approval',
+      body: `${who} hasn't approved ${task}${where} yet. It's due soon.`,
+    },
+    data: {
+      type: 'approvalPending',
+      event: 'approvalPending',
+      targetUid,
+      itemId,
+    },
+    android: {
+      priority: 'high',
+      notification: { channel_id: ACTIVITY_CHANNEL_ID },
+    },
+  };
+}
+
+/**
  * One cron pass. `ctx.db.listPendingItems(now, limit)` returns pending items
  * due after `now`: `{ path, data, updateTime, createTime }`.
  */
@@ -108,7 +141,9 @@ export async function sendDueApprovalReminders(ctx, now = new Date(), {
 } = {}) {
   const nowMs = now.getTime();
   const rows = await ctx.db.listPendingItems(now, scanLimit);
-  const summary = { considered: rows.length, claimed: 0, sent: 0, cleaned: 0 };
+  const summary = {
+    considered: rows.length, claimed: 0, sent: 0, cleaned: 0, plannerHeadsUps: 0,
+  };
 
   for (const row of rows) {
     if (summary.claimed >= maxReminders) break;
@@ -147,26 +182,47 @@ export async function sendDueApprovalReminders(ctx, now = new Date(), {
 
     const planner = await ctx.db.getDoc(`users/${plannerUid}`);
     const group = item.groupId ? await ctx.db.getDoc(`groups/${item.groupId}`) : null;
+    const groupName = item.groupId
+      ? (group && group.name ? String(group.name) : '')
+      : null;
+    const isFinal = index === times.length - 1;
     const message = buildApprovalReminderMessage({
       title: item.title,
       plannerName: planner && planner.name ? String(planner.name) : null,
-      groupName: item.groupId ? (group && group.name ? String(group.name) : '') : null,
-      isFinal: index === times.length - 1,
+      groupName,
+      isFinal,
       targetUid,
       itemId,
     });
+    await sendToUser(ctx, targetUid, message, summary);
 
-    const tokens = await ctx.db.listDocIds(`users/${targetUid}/fcmTokens`);
-    for (const token of tokens) {
-      const result = await ctx.fcm.send(token, message);
-      if (result.ok) {
-        summary.sent += 1;
-      } else if (result.error === 'UNREGISTERED' || result.error === 'INVALID') {
-        await ctx.db.deleteDoc(`users/${targetUid}/fcmTokens/${token}`);
-        summary.cleaned += 1;
-      }
+    // Riding the same claimed slot, so it can never repeat: the final
+    // reminder's slot is claimed exactly once.
+    if (isFinal) {
+      const target = await ctx.db.getDoc(`users/${targetUid}`);
+      await sendToUser(ctx, plannerUid, buildPlannerPendingMessage({
+        title: item.title,
+        targetName: target && target.name ? String(target.name) : null,
+        groupName,
+        targetUid,
+        itemId,
+      }), summary);
+      summary.plannerHeadsUps += 1;
     }
   }
 
   return summary;
+}
+
+async function sendToUser(ctx, uid, message, summary) {
+  const tokens = await ctx.db.listDocIds(`users/${uid}/fcmTokens`);
+  for (const token of tokens) {
+    const result = await ctx.fcm.send(token, message);
+    if (result.ok) {
+      summary.sent += 1;
+    } else if (result.error === 'UNREGISTERED' || result.error === 'INVALID') {
+      await ctx.db.deleteDoc(`users/${uid}/fcmTokens/${token}`);
+      summary.cleaned += 1;
+    }
+  }
 }

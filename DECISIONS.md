@@ -6356,3 +6356,21 @@ group-level emergency permission.
   "Emergency", then "group" for group plans — "New emergency group plan for
   you", "Emergency plan withdrawn", "Emergency task completed early",
   "Emergency alarm dismissed". Normal items never say it (tested).
+
+## Planner heads-up for a still-pending plan (2026-09-26, item 16)
+
+When the FINAL approval reminder goes out (B2 cron) and the plan is still
+pending, the planner gets one push: "Still waiting for approval" / "{name}
+hasn't approved {task} yet. It's due soon." (group: "Group plan still waiting
+for approval", "… {task} in {group} yet …"). No clock time (same decision as
+item 20). Tap → Plan activity.
+
+- It rides the final slot's conditional claim, so it can never repeat, and a
+  decision racing that claim stops it along with the reminder. A revoked grant
+  stops both. For a one-reminder window (under 10 minutes) the only reminder
+  is the final one, so the heads-up comes at the halfway point.
+- Lapse at the deadline stays silent to the planner for pending plans (item
+  16's original decision); only an approved item that lapses notifies them
+  (item 20).
+- Budget: `MAX_REMINDERS_PER_RUN` lowered 6 → 5, since a final reminder now
+  costs ~9 subrequests.

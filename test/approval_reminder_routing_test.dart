@@ -61,4 +61,24 @@ void main() {
   test('a Done-style fallback never swallows a reminder', () {
     expect(fallbackPresentation(reminder), ForegroundPushPresentation.snackbar);
   });
+
+  testWidgets('the planner heads-up opens Plan activity, not the queue', (
+    tester,
+  ) async {
+    // The queue belongs to the target; the planner reviews their own plan.
+    await open(tester, {
+      'type': 'approvalPending',
+      'event': 'approvalPending',
+      'targetUid': 'TARGET',
+      'itemId': 'item-1',
+    });
+    expect(find.text('Plan'), findsOneWidget);
+    expect(find.text('Approvals'), findsNothing);
+  });
+
+  test('the heads-up is a real notification in the app, on activity', () {
+    const data = {'event': 'approvalPending', 'itemId': 'item-1'};
+    expect(isAnnouncedInApp(data), isFalse);
+    expect(channelIdForPush(data), kPlannerActivityChannelId);
+  });
 }
