@@ -58,6 +58,10 @@ void main() {
       zone: 'Not/AZone',
     );
     expect(endOfScheduledLocalDayUtc(item), DateTime.utc(2026, 8, 26));
-    expect(hasLapsed(item, DateTime.utc(2026, 8, 26)), isTrue);
+    // 23:30 is within two hours of that midnight, so the response deadline is
+    // the two-hour minimum (2026-09-26), still one day — never two.
+    expect(responseDeadlineUtc(item), DateTime.utc(2026, 8, 26, 1, 30));
+    expect(hasLapsed(item, DateTime.utc(2026, 8, 26, 1, 29)), isFalse);
+    expect(hasLapsed(item, DateTime.utc(2026, 8, 26, 1, 30)), isTrue);
   });
 }

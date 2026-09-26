@@ -16,8 +16,9 @@ import 'schedule_providers.dart';
 ///
 /// A pending plan the target never approves, or an approved item they never act
 /// on, would otherwise sit in "next" indefinitely. One rule — [lapsedItems] —
-/// applied to whatever the stream currently says resolves both at end of the
-/// item's own local day: pending → `reject` ("Not approved in time"),
+/// applied to whatever the stream currently says resolves both at the item's
+/// response deadline (`responseDeadlineUtc`: end of its own local day, or two
+/// hours after its scheduled time if later): pending → `reject` ("Not approved in time"),
 /// approved-with-no-outcome → conditional skip ("Did not respond"). Nothing
 /// is deleted; the settled item stays visible to the accountability partner,
 /// and its reason feeds stats. The conditional write prevents this generic

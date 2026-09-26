@@ -1,7 +1,9 @@
 /// **The pure end-of-day lapse rule, kept off the clock and off Firestore.**
 ///
-/// An unaddressed item cannot sit in "next" forever. At the END OF ITS OWN LOCAL
-/// DAY (midnight in `item.timezone`, never the viewer's zone) anything still
+/// An unaddressed item cannot sit in "next" forever. At its RESPONSE DEADLINE
+/// — the end of its own local day (midnight in `item.timezone`, never the
+/// viewer's zone), or [kMinResponseWindow] after the scheduled time if that is
+/// later (2026-09-26: a 23:50 task got only ten minutes) — anything still
 /// unaddressed auto-resolves:
 ///
 ///   * a still-`pending` plan the target never approved  → rejected
@@ -30,6 +32,21 @@ const kLapsedSkipReason = 'Did not respond';
 /// The rejection reason stamped on a pending item nobody approved by end of day.
 const kLapsedRejectReason = 'Not approved in time';
 
+/// The least time anyone gets to respond after an item's scheduled time. Only
+/// items scheduled within this long of local midnight are affected; everything
+/// earlier keeps the end-of-day deadline. The Worker's lapse (item 20) must
+/// use the same rule.
+const kMinResponseWindow = Duration(hours: 2);
+
+/// When [item] lapses if still unaddressed: the later of the end of its local
+/// day and [kMinResponseWindow] after its scheduled time. Applies to BOTH
+/// lapses (pending → rejected, approved → skipped) so there is one deadline.
+DateTime responseDeadlineUtc(ScheduleItem item) {
+  final endOfDay = endOfScheduledLocalDayUtc(item);
+  final minimum = item.scheduledInstantUtc.toUtc().add(kMinResponseWindow);
+  return minimum.isAfter(endOfDay) ? minimum : endOfDay;
+}
+
 /// The instant [item] lapses if still unaddressed: midnight ending its OWN local
 /// day (in `item.timezone`). Until this instant the item stays fully actionable,
 /// so the user has the whole day to respond — and to complete late.
@@ -53,9 +70,10 @@ DateTime endOfScheduledLocalDayUtc(ScheduleItem item) {
   return tz.TZDateTime(location, local.year, local.month, local.day + 1).toUtc();
 }
 
-/// Whether [item]'s local day has ended as of [nowUtc].
+/// Whether [item]'s response deadline ([responseDeadlineUtc]) has passed as
+/// of [nowUtc].
 bool hasLapsed(ScheduleItem item, DateTime nowUtc) =>
-    !nowUtc.toUtc().isBefore(endOfScheduledLocalDayUtc(item));
+    !nowUtc.toUtc().isBefore(responseDeadlineUtc(item));
 
 /// The two auto-resolutions [items] currently imply, as of [nowUtc].
 class LapsedItems {

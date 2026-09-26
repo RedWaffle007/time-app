@@ -183,8 +183,8 @@ Batch D — explored and DECIDED 2026-09-26 (DECISIONS.md "Batch D decisions").
 Batch C is committed (`99420a1`). The four decisions become build Batch E:
 
 Batch E — build, one item at a time, thorough regression tests each:
-18. **Planner in-app outcome pop-up** — **BUILT 2026-09-26; awaiting rules
-    deploy, full suite, commit** (DECISIONS.md "Planner in-app outcome pop-up").
+18. **Planner in-app outcome pop-up** — **BUILT, rules deployed, committed
+    `bc346ae`** (DECISIONS.md "Planner in-app outcome pop-up").
     Planner inside the app: Done → confetti PLUS a pop-up, heading "Your
     planning skills are amazing!", body "{name} completed task: {task}";
     Skipped → same pop-up shape, body "{name} skipped task: {task}", neutral
@@ -202,7 +202,8 @@ Batch E — build, one item at a time, thorough regression tests each:
     "Emergency" in every push about an emergency item (created, decided,
     outcome, dismissed, withdrawn, reminders). Alarm timing unchanged. No DND
     bypass (would need notification-policy access).
-19. **Two-hour minimum response window near midnight** (added 2026-09-26).
+19. **Two-hour minimum response window near midnight** — **BUILT 2026-09-26;
+    awaiting full suite + commit** (no deploy).
     Deadline = the LATER of (a) midnight ending the task's own local day —
     today's rule, still the limit for every task scheduled before 22:00 — and
     (b) the scheduled time + 2 h. So a 23:50 task gets until 01:50, not 10

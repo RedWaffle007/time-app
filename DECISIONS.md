@@ -6266,3 +6266,14 @@ target keeps "Updating {planner}…" and their own confetti.
   one at a time.
 - Known gap: a target on a pre-2026-09-26 build writes no skip record, so an
   in-app planner sees no pop-up for that Skip (and no system notification).
+
+## Two-hour minimum response window (2026-09-26, item 19)
+
+The lapse deadline is now `responseDeadlineUtc` = the LATER of the end of the
+item's own local day (unchanged) and scheduled time + `kMinResponseWindow`
+(2 h). Only items scheduled after 22:00 local are affected: a 23:50 task now
+lapses at 01:50, not after ten minutes. It is absolute time (two real hours
+across DST nights) and applies to BOTH lapses — pending → Rejected "Not
+approved in time" and approved → Skipped "Did not respond" — so there is one
+deadline. `endOfScheduledLocalDayUtc` is unchanged and still the midnight part.
+The Worker lapse (item 20) must implement the same rule.
