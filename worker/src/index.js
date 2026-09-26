@@ -29,6 +29,7 @@ import {
 import { sendDueInactivityNotifications } from './inactivity.js';
 import { sendDueApprovalReminders } from './approval-reminders.js';
 import { settleLapsedItems } from './lapse.js';
+import { rescueUndeliveredVoiceNotes } from './voice-rescue.js';
 import { handleInviteRequest } from './invite.js';
 import {
   MAX_VOICE_BYTES,
@@ -370,6 +371,9 @@ async function runLapseCron(env, now) {
   };
   const result = await settleLapsedItems(context, now);
   console.log(JSON.stringify({ event: 'lapse-cron', ...result }));
+  // Same 2-minute invocation: rescue voice notes not yet on the target's phone.
+  const rescue = await rescueUndeliveredVoiceNotes(context, now);
+  console.log(JSON.stringify({ event: 'voice-rescue', ...rescue }));
 }
 
 async function runApprovalReminderCron(env, now) {

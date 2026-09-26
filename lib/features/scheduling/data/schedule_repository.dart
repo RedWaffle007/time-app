@@ -77,6 +77,14 @@ class ScheduleRepository {
     return itemRef.id;
   }
 
+  /// The TARGET's delivery receipt for a voice note (item 32c): stamped once,
+  /// after a verified copy is on their phone. The rules allow only this field.
+  Future<void> markVoiceNoteDelivered(String targetUid, String itemId) =>
+      _items(targetUid).doc(itemId).update({
+        'voiceNote.deliveredAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
   /// A fresh item id for [targetUid], minted BEFORE the item exists so a voice
   /// note can be uploaded under it first (item 32b).
   String newItemId(String targetUid) => _items(targetUid).doc().id;

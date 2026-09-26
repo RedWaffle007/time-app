@@ -37,6 +37,8 @@ import 'features/theme/application/theme_mode_controller.dart';
 import 'features/time_tracking/application/time_tracking_providers.dart';
 import 'routing/app_router.dart';
 import 'routing/notification_routing.dart';
+import 'features/voice_notes/application/voice_delivery_reconciler.dart';
+import 'features/voice_notes/application/voice_rescue.dart';
 
 /// Root widget. Uses MaterialApp.router so go_router owns navigation.
 ///
@@ -121,6 +123,8 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     if (uid != null) {
       ref.read(messagingServiceProvider).registerForUser(uid);
       ref.read(inactivityTrackerProvider).record(uid);
+      // A voice note that failed to download (offline) is retried on resume.
+      unawaited(ref.read(voiceDeliveryReconcilerProvider).resync());
     }
 
     // RECONCILE ON RESUME. The item stream alone is not enough, because the
@@ -260,6 +264,12 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
 
   Future<void> _showForegroundBanner(RemoteMessage message) async {
     debugPrint('FCM foreground: ${message.data}');
+    // The Worker's voice-note rescue while the app is open: just re-run the
+    // delivery reconciler, which fetches and stamps the receipt (item 32c).
+    if (voiceFetchRequestFromPushData(message.data) != null) {
+      unawaited(ref.read(voiceDeliveryReconcilerProvider).resync());
+      return;
+    }
     // In the foreground the `notification` block is delivered but NOT rendered
     // by the OS; render it ourselves. Data-only messages have nothing to show.
     // Emergency-created messages are data-only so Android invokes the
@@ -447,6 +457,11 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     // stream, never off a transition. Late completions before that boundary are
     // ordinary Done writes and keep their delay (ScheduleItem.completionDelay).
     ref.watch(itemLapseSyncProvider);
+
+    // VOICE-NOTE DELIVERY (item 32c): the same shape again — keep a verified
+    // copy of every upcoming voice alarm on this phone, stamp the receipt the
+    // planner sees, delete copies no longer needed. Off the item stream.
+    ref.watch(voiceDeliverySyncProvider);
 
     // THE STATS LAYER'S ONE WIRE, and it is the same shape as the reminder
     // wire above on purpose: **driven off the item stream, never off

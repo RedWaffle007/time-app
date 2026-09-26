@@ -21,8 +21,10 @@ const LOOKBACK_MS = 50 * 60 * 60 * 1000;
 
 // ~10 subrequests per skip (claim, names, grant, group, tokens, sends), 1 per
 // reject; Cloudflare's free plan allows 50 per invocation.
-export const MAX_SKIPS_PER_RUN = 3;
-export const MAX_REJECTS_PER_RUN = 10;
+// The voice-note rescue shares this invocation (item 32c), so the lapse caps
+// leave it room: 2 × ~10 + 6 × 1 + rescue ~15 stays under 50.
+export const MAX_SKIPS_PER_RUN = 2;
+export const MAX_REJECTS_PER_RUN = 6;
 export const LAPSE_SCAN_LIMIT = 100;
 
 /** Wall-clock parts of [ms] in [timeZone]; throws RangeError for a bad zone. */

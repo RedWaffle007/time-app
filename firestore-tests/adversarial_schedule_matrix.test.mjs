@@ -72,6 +72,8 @@ describe('schedule-item adversarial matrix', () => {
       { approvalRemindersSent: 3 },
       { approvalRemindedAt: new Date() },
       { lapsedByServerAt: new Date() },
+      { voiceRescuePushAt: new Date() },
+      { notifiedVoiceUndelivered: true },
       { notifiedAt: new Date() },
       { unknownInjectedField: 'surprise' },
     ];
@@ -106,6 +108,8 @@ describe('schedule-item adversarial matrix', () => {
       { approvalRemindersSent: 3 },
       { approvalRemindedAt: new Date() },
       { lapsedByServerAt: new Date() },
+      { voiceRescuePushAt: new Date() },
+      { notifiedVoiceUndelivered: true },
     ];
     for (const change of changes) {
       await assertFails(updateDoc(doc(as(TARGET), ITEM), {
@@ -125,6 +129,8 @@ describe('schedule-item adversarial matrix', () => {
         { approvalRemindersSent: 0 },
         { approvalRemindedAt: new Date() },
         { lapsedByServerAt: new Date() },
+        { voiceRescuePushAt: new Date() },
+        { notifiedVoiceUndelivered: true },
         { notifiedDismissed: true },
       ]) {
         await assertFails(updateDoc(doc(as(uid), ITEM), {

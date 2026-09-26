@@ -6469,3 +6469,28 @@ alarm with no 1.5 s lead in front of them.
 - Fixed while testing: a recorder or play button that closed before being used
   crashed in `dispose` (a lazily-created collaborator read `ref` there); both
   are now created in `initState`.
+
+## Voice-note delivery, receipt and pre-alarm rescue (2026-09-26, item 32c-1)
+
+- **Delivery reconciler** (`VoiceDeliveryReconciler`, the sixth stream-driven
+  reconciler, one wire in app.dart): for every approved, unanswered, future
+  alarm of mine that carries someone else's voice note, keep a hash-verified
+  copy at `support/voice-notes/{itemId}.m4a`, then stamp
+  `voiceNote.deliveredAt` once. Re-run on each item emission, on resume, and
+  when the Worker's rescue push arrives. A copy is never claimed delivered
+  without a verified file. Copies are pruned once the item is settled or a day
+  past its alarm. No per-transition hook anywhere.
+- **Planner sees it:** the activity card says "Voice note attached"
+  (pending), "Voice note on their phone" / "…not on their phone yet"
+  (approved), nothing once settled.
+- **Rescue (Worker, inside the 2-minute lapse invocation):** undelivered at
+  ≤ 30 min before the alarm → one high-priority data push `fetchVoiceNote`
+  (the killed-app handler fetches, verifies and stamps; the open app just
+  re-runs the reconciler). Still undelivered at ≤ 10 min → one planner
+  warning: "Your voice note hasn't reached {name}'s phone yet. If it doesn't
+  arrive, {task} will ring with the normal ringtone." Both claimed once
+  (`voiceRescuePushAt`, `notifiedVoiceUndelivered`, Worker-only fields); a
+  revoked grant stops the warning. Lapse caps lowered (skips 3→2, rejects
+  10→6) to leave the rescue subrequest budget.
+- The arming path is known before the file exists (`pathFor`), so 32c-2 arms
+  the alarm once and the native side checks the file at ring time.

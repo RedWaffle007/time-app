@@ -302,10 +302,12 @@ Steps (each its own tests + commit):
   days after its scheduled time; orphan uploads after 1 day); private bucket;
   rules for `voiceNote {durationMs, sha256}` (other-person plans only) and the
   target-only `deliveredAt` stamp.
-- **32b** — **BUILT 2026-09-26; awaiting commit + Redmi check.** Recorder in the schedule builder (≤ 20 s, auto-stop, preview,
+- **32b** — **BUILT, committed; Redmi check deferred.** Recorder in the schedule builder (≤ 20 s, auto-stop, preview,
   discard/re-record, attach; mic permission only after an explanation);
   "Play voice note" on Pending approvals (hear it before consenting).
-- **32c** Target download + receipt, native three-loop playback, reboot /
+- **32c** — split: **32c-1 delivery/receipt/rescue BUILT 2026-09-26 (awaiting
+  Worker deploy + commit)**; **32c-2 native ring-time playback + fallback next.**
+  Target download + receipt, native three-loop playback, reboot /
   process-death via `AlarmDeliveryStore`, fallback + planner notice, pre-due
   rescue push, local cleanup off the reminder mirror. Native unit tests +
   Redmi audio acceptance.

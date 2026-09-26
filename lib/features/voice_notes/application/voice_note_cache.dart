@@ -22,10 +22,43 @@ class VoiceNoteCache {
   final VoiceNoteClient _client;
   final Future<Directory> Function() _dir;
 
-  Future<File> _fileFor(ScheduleItem item) async {
+  Future<Directory> _folder() async {
     final dir = Directory('${(await _dir()).path}/voice-notes');
     if (!await dir.exists()) await dir.create(recursive: true);
-    return File('${dir.path}/${item.id}.m4a');
+    return dir;
+  }
+
+  Future<File> _fileFor(ScheduleItem item) async =>
+      File('${(await _folder()).path}/${item.id}.m4a');
+
+  /// Where [itemId]'s verified copy lives (whether or not it is there yet) —
+  /// the path the alarm is armed with, so it never needs re-arming (32c-2).
+  Future<String> pathFor(String itemId) async =>
+      '${(await _folder()).path}/$itemId.m4a';
+
+  /// Whether a copy that matches [item]'s note is already on this phone.
+  Future<bool> hasVerified(ScheduleItem item) async {
+    final meta = item.voiceNote;
+    if (meta == null) return false;
+    final file = await _fileFor(item);
+    return await file.exists() &&
+        voiceBytesMatch(await file.readAsBytes(), meta);
+  }
+
+  /// Delete every local copy whose id is not in [keepIds]. Returns how many.
+  Future<int> prune(Set<String> keepIds) async {
+    var removed = 0;
+    await for (final entity in (await _folder()).list()) {
+      if (entity is! File || !entity.path.endsWith('.m4a')) continue;
+      final name = entity.uri.pathSegments.last;
+      final id = name.substring(0, name.length - '.m4a'.length);
+      if (keepIds.contains(id)) continue;
+      try {
+        await entity.delete();
+        removed++;
+      } catch (_) {}
+    }
+    return removed;
   }
 
   /// The path of a verified copy, downloading it if needed. Throws

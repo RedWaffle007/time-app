@@ -17,6 +17,7 @@ import '../../reminders/data/reminder_audit_log.dart';
 import '../../reminders/domain/reminder.dart';
 import '../../../firebase_options.dart';
 import '../data/fcm_token_repository.dart';
+import '../../voice_notes/application/voice_rescue.dart';
 
 /// Convert the trusted data payload emitted by the notification Worker into a
 /// local reminder request. Kept pure so malformed or replayed pushes can be
@@ -53,6 +54,24 @@ ReminderRequest? reminderRequestFromPushData(Map<String, dynamic> data) {
 /// harmless and lets the normal reconciler remain the final authority.
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // Voice-note rescue (item 32c): fetch a note that has not reached this
+  // phone yet, while the app is closed. Best effort; the reconciler retries.
+  final voiceFetch = voiceFetchRequestFromPushData(message.data);
+  if (voiceFetch != null) {
+    WidgetsFlutterBinding.ensureInitialized();
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    }
+    try {
+      await fetchVoiceNoteInBackground(voiceFetch);
+    } catch (e) {
+      debugPrint('TimeApp: background voice fetch failed: $e');
+    }
+    return;
+  }
+
   final request = reminderRequestFromPushData(message.data);
   if (request == null) return;
 

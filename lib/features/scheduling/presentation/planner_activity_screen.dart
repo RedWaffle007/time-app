@@ -23,6 +23,7 @@ import '../application/schedule_item_order.dart';
 import '../application/schedule_providers.dart';
 import '../domain/schedule_item.dart';
 import 'planner_item_detail_sheet.dart';
+import '../../voice_notes/application/voice_delivery_policy.dart';
 
 /// The planner's view of everything they created — updates LIVE as the target
 /// approves/rejects and marks Done/Skip (Option B: no push, just a Firestore
@@ -348,6 +349,18 @@ class _ActivityCard extends ConsumerWidget {
                 const SizedBox(height: Space.xs),
                 Text(
                   'Completed ${formatDurationMinutes(context, delay.inMinutes)} late',
+                  style: context.text.bodySmall?.copyWith(
+                    color: context.colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+              // Voice-note delivery (item 32c): whether the planner's note is
+              // safely on the other phone yet. Muted line work, not state.
+              if (plannerVoiceNoteStatus(item) case final voice?) ...[
+                const SizedBox(height: Space.xs),
+                Text(
+                  voice,
+                  key: const ValueKey('planner-voice-status'),
                   style: context.text.bodySmall?.copyWith(
                     color: context.colors.onSurfaceVariant,
                   ),
