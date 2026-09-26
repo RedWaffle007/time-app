@@ -6691,3 +6691,26 @@ Removed: `conflict_disclosure.dart` (day projection + fingerprints),
 `target_schedule_providers.dart`, and the "Could not check" copy. No rules
 change, no deploy. Tests: `test/schedule_clash_test.dart` plus builder cases in
 `voice_note_test.dart` and group cases in `group_plan_test.dart`.
+
+---
+
+## Pickers open in the recipient's time (2026-09-27, G2)
+
+**User-reported:** planning for someone in Vancouver, the builder said it used
+their local time, but Pick date / Pick time opened on the PLANNER's phone date
+and time. The saved plan was already right (the wall time is resolved in the
+target's zone, and the past-guard compares instants); only the pickers'
+starting point was wrong.
+
+**Now:** `wallNowIn(zone)` (`core/timezone/tz_resolver.dart`, `clock`-based so
+tests can fix it) gives what a clock in that zone reads. The builder's date
+picker opens on the recipient's today (its `currentDate` highlight too) with
+the yesterday → +365 d window counted from their date; the time picker opens on
+their current time. An already-chosen date/time is kept; an unknown zone falls
+back to the device. Self-plans use the profile zone the builder already builds
+in. A line under the zone line — "It's now 9:30 PM, Sat, Sep 26, 2026 there."
+(one format helper, refreshes every 20 s) — is shown for other people only.
+
+Group plans are unchanged here: one wall time applies to each member in their
+own zone, so the pickers stay on the planner's time; the per-member time list
+comes with the double-booking item (Batch G item 4).

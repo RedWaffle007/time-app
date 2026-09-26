@@ -459,56 +459,79 @@ Steps (each its own tests + commit):
   timestamp default name, newest first, month groups once two months exist),
   attach from library via server-side copy.
 
-### Batch G — conflict + timezone bugs, rename/nav, Track Time removal (added 2026-09-26) — NEXT
+### Batch G — FINAL execution list (decided with the user 2026-09-27) — NEXT
 
-User-reported 2026-09-26. One item at a time, plan → sign-off → build, with
-regression tests each. Bugs first.
+Supersedes the first Batch G list. One item at a time, plan → sign-off →
+build, regression tests each. Every consent/permission change gets a
+DECISIONS.md entry BEFORE code (they reverse earlier recorded decisions).
+Deploy order whenever rules/Worker change: rules → Worker → app.
 
-- **G1 — False "Schedule heads-up" conflict warning.** — **BUILT 2026-09-27;
-  awaiting test run + commit; phone check deferred.** Warns only on a literal
-  clash (live plan at the same minute, target's zone), checked after date AND
-  time; one-shot read with retries + group hint provisioning; unreadable →
-  silent. Groups: one popup naming who clashes. DECISIONS.md "Literal-clash
-  warning replaces the day-scoped disclosure". No rules change.
-- **G2 — Pick date / Pick time open in the planner's zone, not the
-  recipient's.** Repro: planner's phone in one zone, recipient in Vancouver;
-  the builder correctly says it uses the recipient's local time, but the
-  date/time pickers open on the planner's own "now". They must show the
-  recipient's current local date and time (initial values + the date picker's
-  "today"/range). Tests: planner and target in different zones incl. a
-  date-line split (planner already tomorrow) and a DST day; self-plan
-  unchanged.
-- **G3 — Rename "My Schedule" to "Home."** Every user-facing string (Plan tab
-  label `plan_shell.dart`, `outcome_screen.dart` app bar, tour/"How this app
-  works" copy, notification/deep-link copy, tests). Internal route/provider
-  names may stay; update this handoff's wording after.
-- **G4 — Plans for others stay on Home until Done/Skipped.** Home shows the
-  user's self-plans AND plans they set for others until the recipient marks
-  them Done or Skipped (or they lapse / are cancelled); only then do they move
-  to Activity. Confirm the current behaviour first, then fix. Relates to the
-  test-pinned "History = decided plans only" rule above — keep it, extend it to
-  planner-side items.
-- **G5 — Remove Track Time entirely, code included.** `lib/features/time_tracking/`
-  (track screen, log-time sheet, repository, providers, model), its nav/menu
-  entry points, the voice parser hooks (`voice_parsers.dart`), stats that read
-  tracked time, tests, and the `users/{uid}/trackedTime` rules block (rules
-  change → deploy + byte-verify; existing docs are orphaned, decide whether to
-  leave them). Record in DECISIONS.md first. Supersedes Item 24's "research
-  standalone Log Time" bullet.
-- **G6 — "Request Plan" beside "Plan".** Move the Request Plan button (Item 22)
-  next to the Plan button (bottom-left); make both slightly larger with bold
-  text. Sizes/weights from `lib/core/theme/` (token change → DECISIONS →
-  UI-RULES → code), lint-clean, light + dark.
+**Done:** G1 literal-clash WARNING (`6fe18b0`) — becomes a hard block in G4
+below; its group hint-row retry becomes dead once G2 lands (remove it there).
 
-- **G7 — Bigger Play and X on an imported voice note.** After "Choose from
-  library" attaches a note in the builder, its Play and X (remove) buttons are
-  too small — enlarge both (icon + tap target ≥ 48 dp). Look in
-  `schedule_builder_screen.dart` / `voice_library_picker.dart`. Sizes from
-  `lib/core/theme/` (token change → DECISIONS → UI-RULES → code), lint-clean,
-  light + dark.
+**Cancelled by the 2026-09-27 instructions:** the "Let {name} set alarms for
+me" switch, friend/emergency planner grants, planning-permission requests
+("Ask to plan" + its pushes), `plannerAccess` hint rows, unanimous group-join
+approval, group per-member planning grants, Request Plan's flexible-window
+mode and multi-friend selection.
 
-Order: **G1 → G2** (bugs) → **G3 + G4** (Home) → **G5** → **G6 + G7** (button
-sizing, together).
+1. **G2 — Pickers open in the recipient's time.** — **BUILT 2026-09-27;
+   awaiting test run + commit; phone check deferred** (DECISIONS.md "Pickers
+   open in the recipient's time"). Pick date opens on the
+   recipient's current date (their "today" highlighted; range counted from
+   their date; an already-chosen date kept); Pick time opens on their current
+   time. Add the line "It's now 9:30 PM, Sat 26 Sep there." under the zone line
+   (one format helper; not shown for self-plans). Self-plans use the profile
+   zone. Group sheet pickers stay on the planner's own time (see G4).
+2. **Friends = permission.** Being friends is the ONLY permission: X may plan
+   for Y (and read Y's schedule for the clash check) iff they are friends.
+   Remove the switch, grants, planning requests, emergency grants, hint rows
+   and the reconciler; rules + Worker authz switch to `areFriends`. Y's ways
+   to stop an alarm: mark it Done/Skipped before it rings, unfriend, or block
+   (user-confirmed intent). Reverses "friendship grants nothing".
+3. **Groups, WhatsApp-style.** Creator = admin (existing groups: owner becomes
+   admin); admins can make any number of members admins, and remove members.
+   An admin's invite joins immediately; a non-admin's invite, or a join code
+   entered by an outsider, becomes a join request pushed to EVERY admin — any
+   one admin approves/denies. Any member may plan for the GROUP; there is no
+   individual planning inside a group (plan 1:1 as friends instead). Replaces
+   unanimous approval and group planner grants. Rules + Worker + app.
+4. **Block double-booking** (replaces G1's warning). A live plan at the same
+   minute for the same person blocks the save — self-plans included. Message:
+   "{name} already has a plan scheduled for this time. Please select a
+   different time." (self: "You already have …"). Server-enforced: a
+   create-only per-minute lock doc written in the same batch as the item;
+   client pre-check covers legacy items without a lock. Lock released when the
+   item settles/cancels (stream-driven reconciler, not a transition hook).
+   **Group plans:** pickers show the planner's time, plus a light pop-up
+   listing every member's current local date/time ("Name: Sat 26 Sep, 9:30 PM",
+   one line each) while picking. Busy members are excluded (no alarm) and get:
+   "Group task "{task}" from {planner} wasn't set for you at {time} — you
+   already have a plan then." The planner gets a summary: "Your group task
+   "{task}" is set for {X} members. {Y} ({names}) were busy at that time and
+   won't be alerted."
+5. **Request Plan redesign.** One friend → date + time → "Task for which you
+   need a reminder" → optional note → Send. Friend gets an instant push:
+   "{X} has requested you to plan for them. Click to view details." Reminder
+   pushes (same text, tagged "Reminder") at 50% and 75% of the window W =
+   due − sent (4 PM → 6 PM: 5:00 and 5:30), Worker cron, stop ONLY when the
+   friend creates the plan (viewing does not count); none once past due.
+   Revives the deleted Item 13 cron pattern (git history). The Request Plan
+   button moves beside Plan; both slightly larger, bold (theme tokens).
+6. **"Unavailable" push with a custom tone.** New planner push when the
+   target's alarm auto-stops unanswered (`alarm.unavailableAt`): "{Y} was
+   unavailable to dismiss the task: {task} you planned for them." Plays a
+   bundled "ooh-ooooo" sound on its own new channel (channel sound is fixed at
+   creation). Sound CHOSEN 2026-09-27: "Cartoon - Uh-Oh!" by Breviceps,
+   CC0, 1.3 s — https://freesound.org/people/Breviceps/sounds/445964/ (record
+   source + licence in DECISIONS.md when built).
+7. **G3 + G4 (old numbering) — Home.** Rename "My Schedule" to "Home"
+   everywhere user-facing; plans the user set for others stay on Home until
+   the recipient marks Done/Skipped (or lapse/cancel), then move to Activity.
+8. **Remove Track Time** entirely (feature folder, entry points, voice-parser
+   hooks, stats reading it, tests, `trackedTime` rules block + deploy).
+9. **Bigger Play and X** on a library-attached voice note (≥ 48 dp, theme
+   tokens, light + dark).
 
 ### 24 — Stats and product review (after Batch G)
 
@@ -517,7 +540,7 @@ sizing, together).
 - Cover minimum samples, permission/relationship changes, timezone ranges,
   trends, empty states, and humane streaks.
 - ~~Research whether standalone Log Time provides enough planned-vs-actual
-  value~~ — superseded: Track Time is being removed (Batch G5).
+  value~~ — superseded: Track Time is being removed (Batch G item 8).
 
 ### 33 — Competitor review (last)
 
@@ -543,7 +566,8 @@ sizing, together).
 1. Collect the user's results from the release APK (their Redmi and the
    tester abroad). Fix anything reported before new work; record verified
    items in CLAUDE.md "Parked & unverified" / DECISIONS.md.
-2. Batch G (see roadmap), G1 first: plan each item, wait for sign-off, build.
+2. Batch G final list (see roadmap), item 1 (G2) first: plan each item, wait
+   for sign-off, build.
 3. Then Item 24 (stats and product review): research and audit first, present
    findings and a proposal, and wait for sign-off before changing anything.
 4. Item 33 (competitor review) last.

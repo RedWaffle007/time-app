@@ -1,3 +1,4 @@
+import 'package:clock/clock.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 /// Timezone helpers. The database is loaded once in main() via
@@ -82,6 +83,28 @@ WallTimeResolution resolveWall(DateTime wall, String ianaZone) {
 /// applying the defined DST rule (see [resolveWall]).
 DateTime resolveWallTimeToUtc(DateTime wall, String ianaZone) =>
     resolveWall(wall, ianaZone).utc;
+
+/// The current wall-clock date and time (to the minute) in [ianaZone] — what a
+/// clock on the wall THERE reads right now (Batch G2: the builder's pickers
+/// open on the recipient's day and time, not the planner's). The result is a
+/// zone-less `DateTime`, the same shape the pickers and `_wall()` use. An
+/// unknown zone falls back to the device's own time rather than throwing.
+DateTime wallNowIn(String ianaZone, {DateTime? nowUtc}) {
+  final now = (nowUtc ?? clock.now()).toUtc();
+  DateTime fields;
+  try {
+    fields = tz.TZDateTime.from(now, tz.getLocation(ianaZone));
+  } catch (_) {
+    fields = now.toLocal();
+  }
+  return DateTime(
+    fields.year,
+    fields.month,
+    fields.day,
+    fields.hour,
+    fields.minute,
+  );
+}
 
 /// The wall-clock string we persist alongside the zone, e.g. "2026-07-20T09:00".
 /// This is a stable machine format (not shown to users) — user-facing rendering

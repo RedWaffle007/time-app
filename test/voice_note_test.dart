@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:clock/clock.dart';
 import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -530,6 +531,9 @@ void main() {
       bool dark = false,
       List<VoiceLibraryNote> library = const [],
       ScheduleClashChecker? checker,
+      String zone = 'Etc/UTC',
+      bool seeded = true,
+      DateTime? seedDate,
     }) async {
       final repo = _Repo();
       final voice = client ?? _Client();
@@ -556,11 +560,7 @@ void main() {
             ),
             profileByUidProvider.overrideWith(
               (ref, uid) => Stream.value(
-                UserProfile(
-                  uid: uid,
-                  name: 'Name $uid',
-                  homeTimezone: 'Etc/UTC',
-                ),
+                UserProfile(uid: uid, name: 'Name $uid', homeTimezone: zone),
               ),
             ),
             scheduleClashCheckerProvider.overrideWithValue(
@@ -589,8 +589,12 @@ void main() {
                 initialTargetUid: target,
                 initialIsSelf: target == 'me',
                 initialGroupId: target == 'me' ? null : '',
-                initialDate: DateTime.now().add(const Duration(days: 2)),
-                initialTime: const TimeOfDay(hour: 10, minute: 0),
+                initialDate: seeded
+                    ? (seedDate ?? DateTime.now().add(const Duration(days: 2)))
+                    : null,
+                initialTime: seeded
+                    ? const TimeOfDay(hour: 10, minute: 0)
+                    : null,
               ),
             ),
           ),
@@ -627,6 +631,10 @@ void main() {
     }
 
     Future<void> send(WidgetTester tester) async {
+      // The form can be taller than the test screen (the G2 "It's now …
+      // there" line added a row), so bring Send into view like a user would.
+      await tester.ensureVisible(find.text('Send'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Send'));
       await settleIo(tester);
       await tester.pumpAndSettle();
@@ -713,6 +721,104 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Schedule heads-up'), findsNothing);
       expect(find.textContaining('Could not check'), findsNothing);
+    });
+
+    // Batch G2 — the pickers open in the RECIPIENT's time. Fixed clock:
+    // 2026-09-27 04:30Z = Sat 26 Sep 21:30 in Vancouver = Sun 27 Sep 10:00 in
+    // Kolkata.
+    final g2Now = DateTime.utc(2026, 9, 27, 4, 30);
+
+    Future<(String, String)> pickDefaults(WidgetTester tester) async {
+      await tester.tap(find.byKey(const ValueKey('pick-date')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('pick-time')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      String label(String key) => tester
+          .widgetList<Text>(
+            find.descendant(
+              of: find.byKey(ValueKey(key)),
+              matching: find.byType(Text),
+            ),
+          )
+          .map((t) => t.data ?? '')
+          .join(' ');
+      return (label('pick-date'), label('pick-time'));
+    }
+
+    testWidgets('G2: pickers open on the recipient\'s date and time, not the '
+        'planner\'s', (tester) async {
+      await withClock(Clock.fixed(g2Now), () async {
+        await pumpBuilder(tester, zone: 'America/Vancouver', seeded: false);
+        final (date, time) = await pickDefaults(tester);
+        expect(date, contains('Sat, Sep 26, 2026'));
+        expect(time, contains('9:30'));
+        expect(time, contains('PM'));
+      });
+    });
+
+    testWidgets('G2: planner a day ahead — the picker\'s "today" is theirs', (
+      tester,
+    ) async {
+      await withClock(Clock.fixed(g2Now), () async {
+        await pumpBuilder(tester, zone: 'Pacific/Pago_Pago', seeded: false);
+        // 04:30Z = Sat 26 Sep 17:30 in Pago Pago (-11), while UTC and every
+        // zone east of it is already on Sunday 27.
+        final (date, time) = await pickDefaults(tester);
+        expect(date, contains('Sat, Sep 26, 2026'));
+        expect(time, contains('5:30'));
+      });
+    });
+
+    testWidgets('G2: the "It\'s now … there" line shows their time', (
+      tester,
+    ) async {
+      await withClock(Clock.fixed(g2Now), () async {
+        await pumpBuilder(tester, zone: 'America/Vancouver', seeded: false);
+        final line = tester
+            .widget<Text>(find.byKey(const ValueKey('time-there')))
+            .data!;
+        // The time keeps the locale's own spacing (a narrow no-break space
+        // before PM), so compare it with plain spaces.
+        expect(
+          line.replaceAll('\u202f', ' '),
+          "It's now 9:30 PM, Sat, Sep 26, 2026 there.",
+        );
+      });
+    });
+
+    testWidgets(
+      'G2: a self-plan opens on your own zone, with no "there" line',
+      (tester) async {
+        await withClock(Clock.fixed(g2Now), () async {
+          await pumpBuilder(
+            tester,
+            target: 'me',
+            zone: 'Asia/Kolkata',
+            seeded: false,
+          );
+          expect(find.byKey(const ValueKey('time-there')), findsNothing);
+          final (date, time) = await pickDefaults(tester);
+          expect(date, contains('Sun, Sep 27, 2026'));
+          expect(time, contains('10:00'));
+        });
+      },
+    );
+
+    testWidgets('G2: an already-chosen date and time are kept', (tester) async {
+      await withClock(Clock.fixed(g2Now), () async {
+        await pumpBuilder(
+          tester,
+          zone: 'America/Vancouver',
+          seedDate: DateTime(2026, 10, 20),
+        );
+        final (date, time) = await pickDefaults(tester);
+        expect(date, contains('Tue, Oct 20, 2026'));
+        expect(time, contains('10:00'));
+      });
     });
 
     testWidgets('the recorder shows for someone else, never for yourself', (

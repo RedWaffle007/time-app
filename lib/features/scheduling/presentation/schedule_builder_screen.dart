@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -157,10 +158,27 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     super.dispose();
   }
 
+  /// The selected person's home zone (the zone the plan is built in), or
+  /// null while their profile is loading.
+  String? get _targetZone => _targetUid == null
+      ? null
+      : ref.read(profileByUidProvider(_targetUid!)).value?.homeTimezone;
+
+  /// What the clock reads for the selected person right now (Batch G2): the
+  /// pickers open on THEIR day and time, since the plan is built in their
+  /// zone. Falls back to this device's time until the zone is known.
+  DateTime _nowThere() {
+    final zone = _targetZone;
+    if (zone != null && zone.isNotEmpty) return wallNowIn(zone);
+    final now = clock.now();
+    return DateTime(now.year, now.month, now.day, now.hour, now.minute);
+  }
+
   Future<void> _pickDate() async {
-    final now = DateTime.now();
-    var firstDate = now.subtract(const Duration(days: 1));
-    var lastDate = now.add(const Duration(days: 365));
+    final nowThere = _nowThere();
+    final today = DateTime(nowThere.year, nowThere.month, nowThere.day);
+    var firstDate = today.subtract(const Duration(days: 1));
+    var lastDate = today.add(const Duration(days: 365));
 
     // A date seeded from the calendar can sit outside that window — the grid
     // pages years either way. `showDatePicker` ASSERTS that initialDate is in
@@ -175,7 +193,8 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
 
     final picked = await showDatePicker(
       context: context,
-      initialDate: selected ?? now,
+      initialDate: selected ?? today,
+      currentDate: today,
       firstDate: firstDate,
       lastDate: lastDate,
     );
@@ -183,9 +202,11 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
   }
 
   Future<void> _pickTime() async {
+    final nowThere = _nowThere();
     final picked = await showTimePicker(
       context: context,
-      initialTime: _time ?? TimeOfDay.now(),
+      initialTime:
+          _time ?? TimeOfDay(hour: nowThere.hour, minute: nowThere.minute),
     );
     if (picked != null) setState(() => _time = picked);
   }
@@ -451,15 +472,21 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
                 color: context.colors.surfaceContainer,
                 borderRadius: Radii.sm,
               ),
-              child: Text(
-                _isSelf
-                    ? "You're building in your local time — $timezone."
-                    : "You're building in "
-                          '${possessive(selectedProfile?.name)} local time '
-                          '— $timezone.',
-                style: context.text.bodySmall?.copyWith(
-                  color: context.colors.onSurfaceVariant,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _isSelf
+                        ? "You're building in your local time — $timezone."
+                        : "You're building in "
+                              '${possessive(selectedProfile?.name)} local time '
+                              '— $timezone.',
+                    style: context.text.bodySmall?.copyWith(
+                      color: context.colors.onSurfaceVariant,
+                    ),
+                  ),
+                  if (!_isSelf) TimeThereLine(timezone: timezone),
+                ],
               ),
             ),
           const SizedBox(height: Space.lg),
@@ -897,4 +924,52 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
 String possessive(String? name) {
   final n = name?.trim() ?? '';
   return n.isEmpty ? 'their' : "$n's";
+}
+
+/// "It's now 9:30 PM, Sat, Sep 26, 2026 there." (Batch G2) — the recipient's
+/// current time and date, through the one format helper, so the planner sees
+/// at a glance whether it is evening (or still yesterday) for them. Refreshes
+/// every 20 s; its own widget so the refresh rebuilds only this line.
+class TimeThereLine extends StatefulWidget {
+  const TimeThereLine({super.key, required this.timezone});
+
+  final String timezone;
+
+  @override
+  State<TimeThereLine> createState() => _TimeThereLineState();
+}
+
+class _TimeThereLineState extends State<TimeThereLine> {
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    _tick = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final nowUtc = clock.now().toUtc();
+    final there = wallNowIn(widget.timezone, nowUtc: nowUtc);
+    return Padding(
+      padding: const EdgeInsets.only(top: Space.xs),
+      child: Text(
+        "It's now ${formatWallTimeOfDay(context, there)}, "
+        '${formatWallDate(context, there)} there.',
+        key: const ValueKey('time-there'),
+        style: context.text.bodySmall?.copyWith(
+          color: context.colors.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
 }
