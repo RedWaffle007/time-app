@@ -14,8 +14,9 @@ function context(rawDocs, {
   tokens = ['token-1'],
   tokenResults = {},
 } = {}) {
-  // F2: a friendship grant only counts while the friendship exists (as in
-  // the rules), so seed the friendship wherever a test seeds its grant.
+  // Friendship is the permission (2026-09-27). Older tests seed a retired
+  // friendship grant doc to mean "these two are friends", so seed the
+  // friendship itself wherever one appears; the grant doc is ignored.
   const docs = { ...rawDocs };
   for (const key of Object.keys(rawDocs)) {
     const m = /^friendships\/([^/]+)\/(plannerGrants|emergencyGrants)\//.exec(key);
@@ -53,7 +54,7 @@ function context(rawDocs, {
   };
 }
 
-test('normal friendship plans authorize through plannerGrants with empty groupId', async () => {
+test('a friend\'s plan (empty groupId) is authorized by the friendship', async () => {
   const item = {
     targetUid: 'target',
     createdByUid: 'planner',
@@ -458,14 +459,10 @@ test('all failed device sends leave the event unstamped for a later retry', asyn
   assert.equal(harness.deleted.length, 0);
 });
 
-test('friend and planning notifications preserve actor, recipient, and kind', async () => {
+test('friend notifications preserve actor and recipient', async () => {
   const cases = [
     ['friendRequest', undefined, 'sender', 'recipient', 'New friend request'],
     ['friendAccept', undefined, 'recipient', 'sender', 'Friend request accepted'],
-    ['planningRequest', 'normal', 'sender', 'recipient', 'Planning request'],
-    ['planningRequest', 'emergency', 'sender', 'recipient', 'Emergency planning request'],
-    ['planningApprove', 'normal', 'recipient', 'sender', 'Planning approved'],
-    ['planningApprove', 'emergency', 'recipient', 'sender', 'Emergency planning approved'],
   ];
 
   for (const [event, kind, actor, recipient, title] of cases) {
@@ -968,27 +965,37 @@ test('a friendship plan with an empty groupId is never dropped as malformed', as
 
 // --- item 15: group emergency plans (2026-09-26) ------------------------------
 
-test('one permission: either friendship grant, or a group grant between non-friends', async () => {
+test('friendship is the permission; a group grant covers non-friends only', async () => {
   const item = { groupId: '' };
   const db = (docs) => ({ getDoc: async (p) => docs[p] ?? null });
   const friends = { 'friendships/planner_target': {} };
+  // Friends: yes, with no grant document at all.
+  assert.equal(await hasActiveItemGrant(db(friends), item, 'planner', 'target'), true);
+  // A leftover granted:false doc takes nothing away.
   assert.equal(await hasActiveItemGrant(db({ ...friends,
-    'friendships/planner_target/plannerGrants/planner_target': { granted: true } }), item, 'planner', 'target'), true);
-  assert.equal(await hasActiveItemGrant(db({ ...friends,
-    'friendships/planner_target/emergencyGrants/planner_target': { granted: true } }), item, 'planner', 'target'), true);
-  assert.equal(await hasActiveItemGrant(db({ ...friends,
-    'friendships/planner_target/plannerGrants/planner_target': { granted: false } }), item, 'planner', 'target'), false);
-  // A grant without the friendship (unfriended) counts for nothing.
+    'friendships/planner_target/plannerGrants/planner_target': { granted: false } }), item, 'planner', 'target'), true);
+  // Not friends: no — a leftover granted:true doc counts for nothing.
+  assert.equal(await hasActiveItemGrant(db({}), item, 'planner', 'target'), false);
   assert.equal(await hasActiveItemGrant(db({
     'friendships/planner_target/plannerGrants/planner_target': { granted: true } }), item, 'planner', 'target'), false);
   // Group grant between members who are not friends.
   assert.equal(await hasActiveItemGrant(db({
     'groups/g1/plannerGrants/planner_target': { granted: true } }), { groupId: 'g1' }, 'planner', 'target'), true);
-  // Between friends a group-tagged item rides the friendship grant instead.
-  assert.equal(await hasActiveItemGrant(db({ ...friends,
-    'groups/g1/plannerGrants/planner_target': { granted: true } }), { groupId: 'g1' }, 'planner', 'target'), false);
-  assert.equal(await hasActiveItemGrant(db({ ...friends,
-    'friendships/planner_target/plannerGrants/planner_target': { granted: true } }), { groupId: 'g1' }, 'planner', 'target'), true);
+  assert.equal(await hasActiveItemGrant(db({
+    'groups/g1/plannerGrants/planner_target': { granted: false } }), { groupId: 'g1' }, 'planner', 'target'), false);
+  // Friends with a group-tagged item: the friendship covers it.
+  assert.equal(await hasActiveItemGrant(db(friends), { groupId: 'g1' }, 'planner', 'target'), true);
+});
+
+test('the retired planning-permission events are not friend events', async () => {
+  for (const event of ['planningRequest', 'planningApprove']) {
+    const harness = context({ 'users/sender': { name: 'Test Person' } });
+    const result = await sendFriendNotification(harness.ctx, {
+      event, fromUid: 'sender', toUid: 'recipient', kind: 'normal',
+    });
+    assert.equal(result.reason, 'bad-args', event);
+    assert.equal(harness.sent.length, 0, event);
+  }
 });
 
 test('a group emergency plan reaches the target as a group-labelled alarm command', async () => {

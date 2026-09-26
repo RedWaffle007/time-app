@@ -14,7 +14,6 @@ import '../../../core/widgets/async_view.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../routing/app_router.dart';
 import '../../auth/application/auth_providers.dart';
-import '../../groups/application/group_providers.dart';
 import '../../notifications/application/friend_notifier.dart';
 import '../../notifications/application/outcome_notifier.dart';
 import '../../social/application/social_providers.dart';
@@ -158,23 +157,16 @@ class _CreatePlanRequestScreenState
   Widget build(BuildContext context) {
     final uid = ref.watch(currentUidProvider);
     final profile = ref.watch(profileProvider).value;
-    final grants = ref.watch(grantsOverMeProvider);
-    final friends = ref.watch(myFriendUidsProvider).value?.toSet() ?? const {};
+    // Friendship is the planning permission (2026-09-27): any friend may be
+    // asked.
+    final friendsAsync = ref.watch(myFriendUidsProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Request a plan')),
       body: AsyncView(
-        value: grants,
-        onRetry: () => ref.invalidate(grantsOverMeProvider),
-        builder: (context, values) {
-          final eligible = values
-              .where(
-                (grant) =>
-                    grant.granted &&
-                    grant.groupId.isEmpty &&
-                    friends.contains(grant.plannerUid),
-              )
-              .toList();
+        value: friendsAsync,
+        onRetry: () => ref.invalidate(myFriendshipsProvider),
+        builder: (context, eligible) {
           if (uid == null || profile == null) {
             return const Center(child: CircularProgressIndicator());
           }
@@ -184,20 +176,20 @@ class _CreatePlanRequestScreenState
               const SectionHeader('Ask'),
               if (eligible.isEmpty)
                 Text(
-                  'First let a friend plan for you from their profile.',
+                  'Add a friend first — any friend can plan for you.',
                   style: context.text.bodyMedium?.copyWith(
                     color: context.colors.onSurfaceVariant,
                   ),
                 )
               else
-                for (final grant in eligible)
+                for (final friendUid in eligible)
                   _PlannerChoice(
-                    uid: grant.plannerUid,
-                    selected: _selected.contains(grant.plannerUid),
+                    uid: friendUid,
+                    selected: _selected.contains(friendUid),
                     onChanged: (value) => setState(() {
                       value
-                          ? _selected.add(grant.plannerUid)
-                          : _selected.remove(grant.plannerUid);
+                          ? _selected.add(friendUid)
+                          : _selected.remove(friendUid);
                     }),
                   ),
               const SectionHeader('Request'),

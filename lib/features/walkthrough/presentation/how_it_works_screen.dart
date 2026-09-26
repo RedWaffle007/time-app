@@ -88,10 +88,11 @@ class HowItWorksScreen extends ConsumerWidget {
           ),
           const _Feature(
             icon: AppIcons.permissions,
-            title: 'Consent to be planned for',
+            title: 'Friends plan for each other',
             body:
-                'Nobody can plan for you until you allow it — per person, and '
-                'revocable any time. A friendship alone grants nothing.',
+                'Friends can set alarms for each other — no extra permission. '
+                'To stop one, mark it Done or Skip before it rings, or '
+                'unfriend.',
           ),
           const _Feature(
             icon: AppIcons.navSchedule,

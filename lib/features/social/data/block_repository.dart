@@ -203,6 +203,10 @@ class BlockRepository {
           .get();
       for (final doc in snap.docs) {
         if (doc.data()[counterpart] != otherUid) continue;
+        // Leftover FRIENDSHIP grants (`groupId == ''`) are retired and can no
+        // longer be written (2026-09-27: friendship is the permission, and the
+        // block removes the friendship anyway). Only group grants need revoking.
+        if ((doc.data()['groupId'] ?? '') == '') continue;
         await doc.reference.update({
           'granted': false,
           'updatedAt': FieldValue.serverTimestamp(),

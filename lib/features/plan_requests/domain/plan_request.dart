@@ -2,9 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// A request to create actual schedule items for the requester.
 ///
-/// This is deliberately unrelated to `PlanningRequest`, which asks for a
-/// durable planning grant. A [PlanRequest] never grants authority: fulfilling
-/// one still requires an active friendship and normal planning grant.
+/// A [PlanRequest] never grants authority: fulfilling one still requires the
+/// two to be friends (friendship is the planning permission, 2026-09-27).
 enum PlanRequestMode { onePlan, flexibleWindow }
 
 enum PlanRequestStatus { pending, inProgress, fulfilled, declined, cancelled }

@@ -170,18 +170,15 @@ class PlanRequestRepository {
     final friendshipRef = _db
         .collection('friendships')
         .doc(friendshipId(plannerUid, request.requesterUid));
-    final grantRef = friendshipRef
-        .collection('plannerGrants')
-        .doc('${plannerUid}_${request.requesterUid}');
     final itemRef = _items(request.requesterUid).doc();
 
     await _db.runTransaction((transaction) async {
       final requestSnapshot = await transaction.get(requestRef);
       final live = PlanRequest.fromDoc(requestSnapshot);
+      // Friendship is the planning permission (2026-09-27).
       final friendship = await transaction.get(friendshipRef);
-      final grant = await transaction.get(grantRef);
-      if (!friendship.exists || grant.data()?['granted'] != true) {
-        throw StateError('Planning permission is no longer active.');
+      if (!friendship.exists) {
+        throw StateError('You are no longer friends.');
       }
       if (live.plannerUid != plannerUid ||
           live.requesterUid != request.requesterUid ||

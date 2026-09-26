@@ -223,7 +223,7 @@ test('attaching copies the note to the plan and records it like an upload', asyn
 });
 
 test('attach is refused without permission, for yourself, or when not yours', async () => {
-  assert.equal((await attach(await attachHarness({ 'friendships/A_B/plannerGrants/B_A': null }))).status, 403);
+  assert.equal((await attach(await attachHarness({ 'friendships/A_B': null }))).status, 403);
   assert.equal((await attach(await attachHarness(), { targetUid: 'B' })).status, 403);
   assert.equal((await attach(await attachHarness(), { callerUid: 'C' })).status, 404);
   assert.equal((await attach(await attachHarness({ [`scheduleItems/A/items/${ITEM}`]: { targetUid: 'A' } }))).status, 409);

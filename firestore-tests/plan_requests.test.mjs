@@ -6,7 +6,7 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
+import { deleteDoc, doc, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
 
 const TARGET = 'target';
 const PLANNER = 'planner';
@@ -68,7 +68,14 @@ const request = (overrides = {}) => ({
   ...overrides,
 });
 
-async function seedGrant(granted = true) {
+async function unfriend() {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await deleteDoc(doc(ctx.firestore(), `friendships/${PAIR}`));
+  });
+}
+
+/** A pre-2026-09-27 friendship grant doc, now inert. */
+async function seedRetiredGrant(granted = true) {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), GRANT_PATH), {
       plannerUid: PLANNER,
@@ -130,24 +137,25 @@ async function fulfill(db, itemId, {
 }
 
 describe('plan request creation is consent-scoped', () => {
-  it('allows the target to ask a friend who already has a normal grant', async () => {
-    await seedGrant();
+  it('allows the target to ask a friend (friendship is the permission)', async () => {
     await assertSucceeds(setDoc(doc(as(TARGET), REQUEST_PATH), request()));
   });
 
-  it('denies a request when the normal grant is absent or revoked', async () => {
-    await assertFails(setDoc(doc(as(TARGET), REQUEST_PATH), request()));
-    await seedGrant(false);
+  it('denies a request to someone who is not a friend', async () => {
+    await unfriend();
     await assertFails(setDoc(doc(as(TARGET), REQUEST_PATH), request()));
   });
 
+  it('a retired grant document with granted:false no longer matters', async () => {
+    await seedRetiredGrant(false);
+    await assertSucceeds(setDoc(doc(as(TARGET), REQUEST_PATH), request()));
+  });
+
   it('denies the planner creating an ask on the target behalf', async () => {
-    await seedGrant();
     await assertFails(setDoc(doc(as(PLANNER), REQUEST_PATH), request()));
   });
 
   it('denies malformed bounds, duration, and deterministic id mismatch', async () => {
-    await seedGrant();
     await assertFails(setDoc(doc(as(TARGET), REQUEST_PATH), request({
       windowEndUtc: new Date('2030-11-03T04:00:00Z'),
     })));
@@ -160,19 +168,17 @@ describe('plan request creation is consent-scoped', () => {
 
 describe('fulfillment rechecks authority and lifecycle atomically', () => {
   it('creates a pending normal item and fulfills one-plan in one batch', async () => {
-    await seedGrant();
     await seedRequest();
     await assertSucceeds(fulfill(as(PLANNER), 'item-1'));
   });
 
-  it('the request alone grants no authority after grant revocation', async () => {
-    await seedGrant(false);
+  it('the request alone grants no authority after unfriending', async () => {
     await seedRequest();
+    await unfriend();
     await assertFails(fulfill(as(PLANNER), 'item-1'));
   });
 
   it('denies an item without the matching request update', async () => {
-    await seedGrant();
     await seedRequest();
     await assertFails(setDoc(
       doc(as(PLANNER), `scheduleItems/${TARGET}/items/item-1`),
@@ -181,7 +187,6 @@ describe('fulfillment rechecks authority and lifecycle atomically', () => {
   });
 
   it('denies fulfillment outside the absolute UTC window', async () => {
-    await seedGrant();
     await seedRequest();
     await assertFails(fulfill(as(PLANNER), 'item-1', {
       start: '2030-11-03T08:45:00Z',
@@ -189,7 +194,6 @@ describe('fulfillment rechecks authority and lifecycle atomically', () => {
   });
 
   it('denies replay once the request is fulfilled', async () => {
-    await seedGrant();
     await seedRequest({
       status: 'fulfilled',
       fulfilledSpans: [{
@@ -205,7 +209,6 @@ describe('fulfillment rechecks authority and lifecycle atomically', () => {
   });
 
   it('only the requester cancels and only the selected planner declines', async () => {
-    await seedGrant();
     await seedRequest();
     await assertFails(updateDoc(doc(as(OUTSIDER), REQUEST_PATH), {
       status: 'cancelled',
@@ -222,7 +225,6 @@ describe('fulfillment rechecks authority and lifecycle atomically', () => {
 
 describe('flexible requests accept multiple adjacent items', () => {
   it('keeps the request open, then closes it with a second item', async () => {
-    await seedGrant();
     await seedRequest({ mode: 'flexibleWindow' });
     const firstSpan = {
       itemId: 'item-1',
@@ -241,7 +243,6 @@ describe('flexible requests accept multiple adjacent items', () => {
   });
 
   it('denies overlap with the previously appended span', async () => {
-    await seedGrant();
     const firstSpan = {
       itemId: 'item-1',
       startUtc: new Date('2030-11-03T06:00:00Z'),

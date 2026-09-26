@@ -441,12 +441,6 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     // There is deliberately NO mirror write inside `setPlannerGrant()`.
     ref.watch(plannerAccessSyncProvider);
 
-    // Group planning permission is only for non-friend group members. When an
-    // existing pair becomes friends, preserve the target's consent by moving
-    // the live grant to their profile relationship, then revoke the duplicate
-    // group copy. This is stream-driven so older installs self-migrate.
-    ref.watch(planningPermissionMigrationSyncProvider);
-
     // LEGACY SLOT-LOCK CLEANUP. New plans no longer create 30-minute locks:
     // schedule entries are point alarms and may share a half-hour. Keep this
     // stream-driven cleanup wired while existing installations delete locks

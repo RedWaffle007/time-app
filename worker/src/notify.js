@@ -136,25 +136,19 @@ export async function sendEventNotification(ctx, { event, targetUid, itemId }) {
 }
 
 // Does the planner CURRENTLY hold permission over the target for [item]?
-// F2 (2026-09-26): ONE permission, mirroring the create rule — a group grant
-// for the tagged group (members who are not friends), or while friends the
-// friendship planning grant OR the merged emergency grant. Every item push,
-// the lapse notices and the voice rescue ask this; a revoked permission means
-// no push, whichever way it flows.
+// Mirrors the create rule. Batch G item 2 (2026-09-27): FRIENDSHIP is the
+// permission — no grant document. Non-friends need a group grant for the
+// tagged group (until item 3 reworks groups). Every item push, the lapse
+// notices and the voice rescue ask this; a lost permission means no push,
+// whichever way it flows.
 export async function hasActiveItemGrant(db, item, plannerUid, targetUid) {
-  const grantId = `${plannerUid}_${targetUid}`;
   const pairId = [plannerUid, targetUid].sort().join('_');
-  const friends = Boolean(await db.getDoc(`friendships/${pairId}`));
-  if (item.groupId && !friends) {
-    const g = await db.getDoc(`groups/${item.groupId}/plannerGrants/${grantId}`);
-    return Boolean(g && g.granted === true);
-  }
-  if (!friends) return false;
-  for (const sub of ['plannerGrants', 'emergencyGrants']) {
-    const g = await db.getDoc(`friendships/${pairId}/${sub}/${grantId}`);
-    if (g && g.granted === true) return true;
-  }
-  return false;
+  if (await db.getDoc(`friendships/${pairId}`)) return true;
+  if (!item.groupId) return false;
+  const g = await db.getDoc(
+    `groups/${item.groupId}/plannerGrants/${plannerUid}_${targetUid}`,
+  );
+  return Boolean(g && g.granted === true);
 }
 
 // Verify the event against the item's ACTUAL Firestore state and return this
@@ -387,25 +381,21 @@ function result(sent, cleaned, recipientUid, reason) {
 //   ---------------  ----------------   -----------------------------
 //   friendRequest    sender (fromUid)   recipient (toUid)
 //   friendAccept     accepter (toUid)   original sender (fromUid)
-//   planningRequest  requester (fromUid) recipient (toUid)      [#4/#5]
-//   planningApprove  approver (toUid)   original requester (fromUid)
 //
-// The two planning events (a request for permission to PLAN, and its approval)
-// ride the SAME wire shape and the SAME two directions as the friend events;
-// they carry an extra `kind` (`normal`/`emergency`) that only changes the copy.
+// (The planningRequest / planningApprove events were retired with the
+// planning-permission requests on 2026-09-27: friendship is the permission.)
 //
 // The actor's display name is read from Firestore, never trusted from the
 // caller, so the push body cannot be spoofed. Authorization (that the caller is
 // the actor, and that the request/friendship/grant actually exists) is enforced
 // by the transport shell BEFORE this runs — see index.js handleFriendEvent.
 export const FRIEND_EVENTS = new Set([
-  'friendRequest', 'friendAccept', 'planningRequest', 'planningApprove',
-  'planRequested', 'groupJoinApproved',
+  'friendRequest', 'friendAccept', 'planRequested', 'groupJoinApproved',
 ]);
 
 // Events whose recipient is the `toUid` (the other two notify the `fromUid`).
 const NOTIFIES_TO_UID = new Set([
-  'friendRequest', 'planningRequest', 'planRequested', 'groupJoinApproved',
+  'friendRequest', 'planRequested', 'groupJoinApproved',
 ]);
 
 export async function sendFriendNotification(
@@ -508,7 +498,6 @@ export async function sendFriendNotification(
 function buildFriendMessage(
   event, who, fromUid, toUid, kind, planRequestId, groupInfo = {},
 ) {
-  const emergency = kind === 'emergency';
   let notification;
   switch (event) {
     case 'friendRequest':
@@ -522,28 +511,6 @@ function buildFriendMessage(
         title: 'Friend request accepted',
         body: `${who} accepted your friend request`,
       };
-      break;
-    case 'planningRequest':
-      notification = emergency
-        ? {
-            title: 'Emergency planning request',
-            body: `${who} wants to set emergency alarms for you`,
-          }
-        : {
-            title: 'Planning request',
-            body: `${who} wants to plan for you`,
-          };
-      break;
-    case 'planningApprove':
-      notification = emergency
-        ? {
-            title: 'Emergency planning approved',
-            body: `${who} let you set emergency alarms for them`,
-          }
-        : {
-            title: 'Planning approved',
-            body: `${who} let you plan for them`,
-          };
       break;
     case 'planRequested':
       notification = {

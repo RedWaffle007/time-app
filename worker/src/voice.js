@@ -103,22 +103,18 @@ export async function sha256Hex(bytes) {
 
 /**
  * May [plannerUid] plan for [targetUid] right now? The item does not exist
- * yet, so this mirrors the create rule: a group grant for the stated group,
- * or (while friends) the friendship planning OR emergency grant.
+ * yet, so this mirrors the create rule: friends may (Batch G item 2 —
+ * friendship is the permission), and a non-friend needs a group grant for the
+ * stated group.
  */
 export async function callerMayPlanFor(db, plannerUid, targetUid, groupId) {
-  const grantId = `${plannerUid}_${targetUid}`;
-  if (groupId) {
-    const g = await db.getDoc(`groups/${groupId}/plannerGrants/${grantId}`);
-    if (g && g.granted === true) return true;
-  }
   const pair = [plannerUid, targetUid].sort().join('_');
-  if (!(await db.getDoc(`friendships/${pair}`))) return false;
-  for (const sub of ['plannerGrants', 'emergencyGrants']) {
-    const g = await db.getDoc(`friendships/${pair}/${sub}/${grantId}`);
-    if (g && g.granted === true) return true;
-  }
-  return false;
+  if (await db.getDoc(`friendships/${pair}`)) return true;
+  if (!groupId) return false;
+  const g = await db.getDoc(
+    `groups/${groupId}/plannerGrants/${plannerUid}_${targetUid}`,
+  );
+  return Boolean(g && g.granted === true);
 }
 
 const reply = (status, body) => ({ status, body });

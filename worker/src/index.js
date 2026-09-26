@@ -448,10 +448,6 @@ async function handleFriendEvent(request, env, body) {
   ) {
     return json({ error: 'invalid-body' }, 400);
   }
-  const isPlanning = event === 'planningRequest' || event === 'planningApprove';
-  if (isPlanning && kind !== 'normal' && kind !== 'emergency') {
-    return json({ error: 'invalid-body' }, 400);
-  }
   if (
     event === 'groupJoinApproved' &&
     (typeof groupId !== 'string' || !groupId || groupId.includes('/'))
@@ -499,20 +495,6 @@ async function handleFriendEvent(request, env, body) {
       const pairId = [fromUid, toUid].sort().join('_');
       const friendship = await db.getDoc(`friendships/${pairId}`);
       if (!friendship) return json({ error: 'forbidden' }, 403);
-    } else if (event === 'planningRequest') {
-      // The requester notifies the target — only with a real pending planning
-      // request they own, of the stated kind. No request, no push.
-      if (callerUid !== fromUid) return json({ error: 'forbidden' }, 403);
-      const req = await db.getDoc(`planningRequests/${fromUid}_${toUid}_${kind}`);
-      if (!req) return json({ error: 'request-not-found' }, 404);
-      if (
-        req.fromUid !== fromUid ||
-        req.toUid !== toUid ||
-        req.kind !== kind ||
-        req.status !== 'pending'
-      ) {
-        return json({ error: 'forbidden' }, 403);
-      }
     } else if (event === 'planRequested') {
       if (callerUid !== fromUid || typeof planRequestId !== 'string') {
         return json({ error: 'forbidden' }, 403);
@@ -526,30 +508,17 @@ async function handleFriendEvent(request, env, body) {
       ) {
         return json({ error: 'forbidden' }, 403);
       }
-    } else if (event === 'groupJoinApproved') {
-      // A current member (the approver) tells the admitted candidate. The
-      // request's approved state and the roster are re-verified in notify.js;
-      // here the caller must be a member other than the candidate.
+    } else {
+      // groupJoinApproved (the only other FRIEND_EVENTS member): a current
+      // member (the approver) tells the admitted candidate. The request's
+      // approved state and the roster are re-verified in notify.js; here the
+      // caller must be a member other than the candidate.
       if (callerUid !== fromUid) return json({ error: 'forbidden' }, 403);
       const group = await db.getDoc(`groups/${groupId}`);
       const members = group && Array.isArray(group.memberUids)
         ? group.memberUids
         : [];
       if (!members.includes(callerUid)) return json({ error: 'forbidden' }, 403);
-    } else {
-      // planningApprove: the approver (toUid) notifies the original requester
-      // (fromUid) — only once the GRANT actually exists (the approval wrote it).
-      // planner=fromUid, target=toUid; normal → plannerGrants, emergency →
-      // emergencyGrants, at the sorted friendship pair.
-      if (callerUid !== toUid) return json({ error: 'forbidden' }, 403);
-      const pairId = [fromUid, toUid].sort().join('_');
-      const sub = kind === 'emergency' ? 'emergencyGrants' : 'plannerGrants';
-      const grant = await db.getDoc(
-        `friendships/${pairId}/${sub}/${fromUid}_${toUid}`,
-      );
-      if (!grant || grant.granted !== true) {
-        return json({ error: 'forbidden' }, 403);
-      }
     }
 
     const ctx = {

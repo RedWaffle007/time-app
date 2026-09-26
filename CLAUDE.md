@@ -200,9 +200,11 @@ is two-device-DEFERRED — see the single checklist at the end of this section.*
    the parties, delete by either party. A's self-plans reflect live in B's
    preview via the existing stream.
 
-2. **#4 — Friendship planning grants** (DECISIONS.md "Friendship-scoped planning
-   grants"). Planning permission can originate from a FRIENDSHIP, target-
-   controlled, per-direction; **the friendship still grants nothing by itself.**
+2. **#4 — Friendship planning grants — SUPERSEDED 2026-09-27** (DECISIONS.md
+   "Friendship is the planning permission": friendship itself is now the
+   permission; the grants, switch and requests below are retired). Was:
+   Planning permission can originate from a FRIENDSHIP, target-
+   controlled, per-direction; the friendship still granted nothing by itself.
    Grant at `friendships/{sortedPair}/plannerGrants/{planner}_{target}`,
    `groupId:''`, authorized DIRECTLY by `callerHasFriendGrant` (a computed pair
    id, no mirror), which **also requires `areFriends`** so a grant is void the
@@ -619,12 +621,12 @@ planning your schedule and triggering your alarms was already built — groups +
 `plannerGrants` + the `pending → approved` machine + FCM + the reminder layer.
 The social layer does NOT replace or extend it.
 
-**Friends sit ALONGSIDE groups, and grant NOTHING.** Being someone's friend does
-not let them plan your day; planning permission remains
-`groups/{id}/plannerGrants`, target-granted and revocable. Do not collapse the
-two. If a friendship should ever carry planning permission, the escape hatch is
-`friendships/{pairId}/plannerGrants/{id}` — `watchTargetsFor()` is a
-**collection-group** query, so it would pick those up with **no client change**.
+**Friendship IS the planning permission (2026-09-27, user-directed — reverses
+the old "friends grant NOTHING" rule).** Friends may set alarms for each other
+and read each other's schedule for the clash check; there is no grant, switch or
+request. Unfriend/block ends it at once (every check is live against
+`friendships/{pair}`). The target's other way out of one alarm is Done/Skip
+before it rings. DECISIONS.md "Friendship is the planning permission".
 
 **The one design rule, and do not undo it: every social document id is COMPUTED
 from the two uids.** Rules can `exists()` a path they can construct and cannot

@@ -294,13 +294,15 @@ void main() {
     }
   });
 
-  test('the group screen merges both permissions into one list', () {
+  test('the group screen offers every member I may plan for (friends need '
+      'no grant, 2026-09-27)', () {
     final source = File(
       'lib/features/groups/presentation/group_detail_screen.dart',
     ).readAsStringSync();
-    expect(
-      source,
-      contains('(iPlanFor(m.uid) || emergencyUids.contains(m.uid))'),
-    );
+    expect(source, contains('if (m.uid != myUid && iPlanFor(m.uid))'));
+    expect(source, isNot(contains('emergencyUids')));
+    expect(source, isNot(contains('managed on their profile')));
+    expect(source, isNot(contains('managed permanently on profiles')));
   });
+
 }

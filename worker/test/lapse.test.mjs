@@ -264,9 +264,9 @@ test('a self-planned lapse tells only the person', async () => {
   );
 });
 
-test('a revoked grant still settles the item and tells the person, not the planner', async () => {
+test('an ended friendship still settles the item and tells the person, not the planner', async () => {
   const h = harness({ approved: [row('approved')] }, {
-    'friendships/planner_target/plannerGrants/planner_target': { granted: false },
+    'friendships/planner_target': null,
   });
   const summary = await settleLapsedItems(h.ctx, AFTER);
   assert.equal(summary.skipped, 1);

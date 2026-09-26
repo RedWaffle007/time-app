@@ -28,9 +28,6 @@ void main() {
     overrides: [
       authRepositoryProvider.overrideWithValue(_FakeAuthRepository()),
       effectivePlanningTargetsProvider.overrideWithValue(AsyncData(grants)),
-      iCanEmergencyPlanForProvider.overrideWith(
-        (ref, uid) => const AsyncData(false),
-      ),
       profileByUidProvider.overrideWith(
         (ref, uid) => Stream.value(
           UserProfile(
@@ -135,9 +132,6 @@ void main() {
         overrides: [
           authRepositoryProvider.overrideWithValue(_FakeAuthRepository()),
           effectivePlanningTargetsProvider.overrideWithValue(AsyncData(grants)),
-          iCanEmergencyPlanForProvider.overrideWith(
-            (ref, uid) => const AsyncData(false),
-          ),
           profileByUidProvider.overrideWith(
             (ref, uid) => const Stream<UserProfile?>.empty(),
           ),

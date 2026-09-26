@@ -128,12 +128,16 @@ test('a granted planner uploads; the Worker records what it checked', async () =
   assert.equal(record.expiresAt.getTime(), h.ctx.now.getTime() + ORPHAN_TTL_MS);
 });
 
-test('the emergency grant or a group grant also allows it', async () => {
-  const emergency = harness({
+test('friendship alone, or a group grant between non-friends, allows it', async () => {
+  const friendsOnly = harness({
     'friendships/A_B/plannerGrants/B_A': null,
-    'friendships/A_B/emergencyGrants/B_A': { granted: true },
+    'friendships/A_B/emergencyGrants/B_A': null,
   });
-  assert.equal((await upload(emergency)).status, 200);
+  assert.equal((await upload(friendsOnly)).status, 200);
+  const leftoverRevoked = harness({
+    'friendships/A_B/plannerGrants/B_A': { granted: false },
+  });
+  assert.equal((await upload(leftoverRevoked)).status, 200);
   const group = harness({
     'friendships/A_B': null,
     'friendships/A_B/plannerGrants/B_A': null,
@@ -142,14 +146,16 @@ test('the emergency grant or a group grant also allows it', async () => {
   assert.equal((await upload(group, { groupId: 'group00000001' })).status, 200);
 });
 
-test('no permission, a revoked grant, or an ended friendship is refused', async () => {
+test('an ended friendship, or a revoked group grant, is refused', async () => {
   const cases = [
-    harness({ 'friendships/A_B/plannerGrants/B_A': { granted: false } }),
-    harness({ 'friendships/A_B': null }),
-    harness({ 'friendships/A_B/plannerGrants/B_A': null }),
+    [harness({ 'friendships/A_B': null }), {}],
+    [harness({
+      'friendships/A_B': null,
+      'groups/group00000001/plannerGrants/B_A': { granted: false },
+    }), { groupId: 'group00000001' }],
   ];
-  for (const h of cases) {
-    const res = await upload(h);
+  for (const [h, o] of cases) {
+    const res = await upload(h, o);
     assert.equal(res.status, 403);
     assert.equal(Object.keys(h.objects).length, 0, 'nothing stored');
   }

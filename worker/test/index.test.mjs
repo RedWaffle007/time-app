@@ -117,7 +117,7 @@ test('valid item-shaped requests require a bearer token', async () => {
   assert.deepEqual(await body(response), { error: 'missing-token' });
 });
 
-test('friend events validate distinct parties and planning kind before auth', async () => {
+test('friend events validate distinct parties; retired planning events are refused', async () => {
   const sameParty = await worker.fetch(new Request('https://worker.example/', {
     method: 'POST',
     body: JSON.stringify({
@@ -126,12 +126,15 @@ test('friend events validate distinct parties and planning kind before auth', as
       toUid: 'same',
     }),
   }), env);
+  // 2026-09-27: friendship is the permission, so the planning-permission
+  // events no longer exist — even a well-formed one is an invalid body.
   const missingKind = await worker.fetch(new Request('https://worker.example/', {
     method: 'POST',
     body: JSON.stringify({
       event: 'planningRequest',
       fromUid: 'sender',
       toUid: 'recipient',
+      kind: 'normal',
     }),
   }), env);
 

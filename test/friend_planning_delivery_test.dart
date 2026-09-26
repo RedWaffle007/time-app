@@ -2,7 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:time_app/features/groups/domain/planner_grant.dart';
 import 'package:time_app/features/notifications/data/http_event_notifier.dart';
 import 'package:time_app/features/scheduling/application/planning_target_picker.dart';
-import 'package:time_app/features/social/application/planning_permission_migrator.dart';
 
 void main() {
   PlannerGrant grant(String target, String group) => PlannerGrant(
@@ -24,7 +23,21 @@ void main() {
       );
     });
 
-    test('shows a friend only once across friendship and group grants', () {
+    test('every friend is a target, with no grant at all', () {
+      final targets = effectivePlanningTargets(
+        const [],
+        friendUids: {'friend-a', 'friend-b'},
+        plannerUid: 'me',
+      );
+
+      expect(
+        {for (final t in targets) t.targetUid: t.groupId},
+        {'friend-a': '', 'friend-b': ''},
+      );
+      expect(targets.every((t) => t.granted && t.plannerUid == 'me'), isTrue);
+    });
+
+    test('shows a friend only once across leftover and group grants', () {
       final targets = effectivePlanningTargets(
         [
           grant('friend', 'group-a'),
@@ -32,6 +45,7 @@ void main() {
           grant('friend', 'group-b'),
         ],
         friendUids: {'friend'},
+        plannerUid: 'me',
       );
 
       expect(targets, hasLength(1));
@@ -39,94 +53,53 @@ void main() {
       expect(targets.single.groupId, isEmpty);
     });
 
-    test('keeps distinct people and ignores revoked grants', () {
-      final targets = effectivePlanningTargets([
-        grant('friend-a', 'group-a'),
-        grant('friend-b', 'group-a'),
-        const PlannerGrant(
-          plannerUid: 'me',
-          targetUid: 'revoked',
-          groupId: '',
-          granted: false,
-        ),
-      ], friendUids: const {});
-
-      expect(targets.map((g) => g.targetUid), ['friend-a', 'friend-b']);
-    });
-
-    test(
-      'ignores group grants for friends and friendship grants for strangers',
-      () {
-        final targets = effectivePlanningTargets(
-          [
-            grant('friend', 'group-a'),
-            grant('friend', ''),
-            grant('stranger', ''),
-            grant('stranger', 'group-a'),
-          ],
-          friendUids: {'friend'},
-        );
-
-        expect(
-          {for (final target in targets) target.targetUid: target.groupId},
-          {'friend': '', 'stranger': 'group-a'},
-        );
-      },
-    );
-  });
-
-  group('group permission migration', () {
-    test('moves only active group grants whose planners are now friends', () {
-      final migrations = groupGrantsToMigrate(
-        grantsOverTarget: [
-          const PlannerGrant(
-            plannerUid: 'friend',
-            targetUid: 'me',
-            groupId: 'group-a',
-            granted: true,
-          ),
-          const PlannerGrant(
-            plannerUid: 'stranger',
-            targetUid: 'me',
-            groupId: 'group-a',
-            granted: true,
-          ),
-          const PlannerGrant(
-            plannerUid: 'friend',
-            targetUid: 'me',
+    test('a leftover revoked friendship grant does not remove a friend', () {
+      final targets = effectivePlanningTargets(
+        const [
+          PlannerGrant(
+            plannerUid: 'me',
+            targetUid: 'friend',
             groupId: '',
-            granted: true,
+            granted: false,
           ),
         ],
         friendUids: {'friend'},
+        plannerUid: 'me',
       );
 
-      expect(migrations, hasLength(1));
-      expect(migrations.single.plannerUid, 'friend');
-      expect(migrations.single.friendshipGrantAlreadyExists, isTrue);
+      expect(targets.map((g) => g.targetUid), ['friend']);
     });
 
-    test('writes the profile grant before revoking the group copy', () async {
-      final actions = <String>[];
-      await PlanningPermissionMigrator().migrate(
-        grantsOverTarget: [
+    test('a non-friend needs a live GROUP grant; a leftover friendship grant '
+        'adds nobody', () {
+      final targets = effectivePlanningTargets(
+        [
+          grant('stranger', ''),
+          grant('member', 'group-a'),
           const PlannerGrant(
-            plannerUid: 'friend',
-            targetUid: 'me',
+            plannerUid: 'me',
+            targetUid: 'revoked',
             groupId: 'group-a',
-            granted: true,
+            granted: false,
           ),
         ],
-        friendUids: {'friend'},
-        ensureFriendshipGrant: (planner, target) async {
-          actions.add('grant:$planner:$target');
-        },
-        revokeGroupGrant: (group, planner, target) async {
-          actions.add('revoke:$group:$planner:$target');
-        },
+        friendUids: const {},
+        plannerUid: 'me',
       );
 
-      expect(actions, ['grant:friend:me', 'revoke:group-a:friend:me']);
+      expect(
+        {for (final t in targets) t.targetUid: t.groupId},
+        {'member': 'group-a'},
+      );
+    });
+
+    test('never lists yourself', () {
+      final targets = effectivePlanningTargets(
+        const [],
+        friendUids: {'me', 'friend'},
+        plannerUid: 'me',
+      );
+      expect(targets.map((g) => g.targetUid), ['friend']);
     });
   });
 

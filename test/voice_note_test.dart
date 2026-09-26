@@ -555,9 +555,6 @@ void main() {
                 ),
               ]),
             ),
-            iCanEmergencyPlanForProvider.overrideWith(
-              (ref, uid) => const AsyncData(false),
-            ),
             profileByUidProvider.overrideWith(
               (ref, uid) => Stream.value(
                 UserProfile(uid: uid, name: 'Name $uid', homeTimezone: zone),

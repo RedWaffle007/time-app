@@ -483,7 +483,11 @@ mode and multi-friend selection.
    time. Add the line "It's now 9:30 PM, Sat 26 Sep there." under the zone line
    (one format helper; not shown for self-plans). Self-plans use the profile
    zone. Group sheet pickers stay on the planner's own time (see G4).
-2. **Friends = permission.** Being friends is the ONLY permission: X may plan
+2. **Friends = permission.** — **BUILT 2026-09-27; awaiting test run →
+   rules deploy → Worker deploy → commit; phone check deferred** (DECISIONS.md
+   "Friendship is the planning permission"). Rules tests:
+   `firestore-tests/friendship_permission.test.mjs` (replaces
+   `friend_grants.test.mjs`). Being friends is the ONLY permission: X may plan
    for Y (and read Y's schedule for the clash check) iff they are friends.
    Remove the switch, grants, planning requests, emergency grants, hint rows
    and the reconciler; rules + Worker authz switch to `areFriends`. Y's ways

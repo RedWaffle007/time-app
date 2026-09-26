@@ -135,20 +135,13 @@ void main() {
       expect(fanOut, isNot(contains('ScheduleItemStatus.pending')));
     });
 
-    test('turning the one permission off revokes BOTH grants', () {
+    test('there is no permission switch any more (friendship is the '
+        'permission, 2026-09-27)', () {
       final profile = _read(
         'lib/features/social/presentation/user_profile_screen.dart',
       );
-      final section = profile.substring(
-        profile.indexOf('planning-permission-switch'),
-      );
-      expect(section, contains('value: canPlanForMe || canEmergencyForMe'));
-      expect(section, contains('if (!v && canEmergencyForMe)'));
-      expect(section, contains('kind: PlanningKind.emergency'));
-      expect(
-        profile,
-        isNot(contains('Let \${widget.name} set emergency alarms')),
-      );
+      expect(profile, isNot(contains('planning-permission-switch')));
+      expect(profile, isNot(contains('set alarms for me')));
     });
 
     test('plans still waiting become alarms on the target\'s phone', () {

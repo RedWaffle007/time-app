@@ -18,10 +18,9 @@ import {
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 
 const A = 'uidA'; // target
-const B = 'uidB'; // planner (friend with a planning grant)
+const B = 'uidB'; // planner (a friend — friendship is the permission)
 const C = 'uidC'; // outsider
 const PAIR = [A, B].sort().join('_');
-const GRANT = `${B}_${A}`;
 const ITEM = 'itemVoice000000000001';
 const itemPath = `scheduleItems/${A}/items/${ITEM}`;
 const SHA = 'a'.repeat(64);
@@ -46,10 +45,6 @@ async function seed({ upload = {} } = {}) {
     }
     await setDoc(doc(db, 'friendships', PAIR), {
       uidA: A, uidB: B, participants: [A, B], createdAt: new Date(),
-    });
-    await setDoc(doc(db, `friendships/${PAIR}/plannerGrants/${GRANT}`), {
-      plannerUid: B, targetUid: A, groupId: '', granted: true,
-      grantedByUid: A, updatedAt: new Date(),
     });
     if (upload !== null) {
       await setDoc(doc(db, `voiceUploads/${ITEM}`), {

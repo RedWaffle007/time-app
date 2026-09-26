@@ -184,19 +184,12 @@ class GroupDetailScreen extends ConsumerWidget {
               if (group != null && myUid != null)
                 Builder(
                   builder: (context) {
-                    // F2 (2026-09-26): ONE permission — a member who gave me
-                    // either the planning or the (merged) emergency grant.
-                    final emergencyUids = <String>{
-                      for (final g
-                          in ref.watch(myEmergencyTargetsProvider).value ??
-                              const <PlannerGrant>[])
-                        if (g.granted) g.targetUid,
-                    };
+                    // Every member I may plan for: friends (friendship is the
+                    // permission) and non-friends who granted me here.
                     final candidates = <GroupPlanCandidate>[
                       (uid: myUid, isSelf: true),
                       for (final m in members)
-                        if (m.uid != myUid &&
-                            (iPlanFor(m.uid) || emergencyUids.contains(m.uid)))
+                        if (m.uid != myUid && iPlanFor(m.uid))
                           (uid: m.uid, isSelf: false),
                     ];
                     final others = candidates.where((c) => !c.isSelf).length;
@@ -234,7 +227,7 @@ class GroupDetailScreen extends ConsumerWidget {
                 ),
                 child: Text(
                   'For non-friend members, turn on "can plan for me" here. '
-                  'Friend permissions are managed permanently on profiles.',
+                  'Friends can always plan for each other.',
                   style: context.text.bodySmall?.copyWith(
                     color: context.colors.onSurfaceVariant,
                   ),
@@ -268,7 +261,7 @@ class GroupDetailScreen extends ConsumerWidget {
                       ? null
                       : Text(
                           friendUids.contains(m.uid)
-                              ? 'Planning permission is managed on their profile'
+                              ? 'A friend — can always plan for you'
                               : 'can plan for me',
                         ),
                   trailing: m.uid == myUid || myUid == null

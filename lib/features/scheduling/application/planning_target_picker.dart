@@ -1,33 +1,40 @@
 import '../../groups/domain/planner_grant.dart';
 
 /// Whether the group-detail permission control belongs beside this member.
-/// Friends manage the same consent on their profile instead.
+/// Friends need no permission at all (friendship is the permission).
 bool groupPlanningPermissionApplies(
   String memberUid, {
   required Set<String> friendUids,
 }) => !friendUids.contains(memberUid);
 
-/// The currently effective targets after applying relationship scope.
+/// Everyone [plannerUid] may plan for right now, one row per person.
 ///
-/// A friendship grant is valid only while the pair are friends. A group grant
-/// is valid only while they are not friends: once friendship exists, planning
-/// consent lives permanently on the profile instead of having two independent
-/// switches. One target row is returned even while old duplicate documents are
-/// being migrated in the background.
+/// Batch G item 2 (2026-09-27, DECISIONS.md "Friendship is the planning
+/// permission"): every FRIEND is a target, with no grant — their row is
+/// synthesised with an empty `groupId` (a friendship plan). A GROUP grant still
+/// counts for someone who is not a friend (until groups are reworked). Leftover
+/// friendship grant documents (`groupId == ''`) are ignored either way: they
+/// neither add a non-friend nor remove a friend.
 List<PlannerGrant> effectivePlanningTargets(
   Iterable<PlannerGrant> grants, {
   required Set<String> friendUids,
+  required String plannerUid,
 }) {
-  final byTarget = <String, PlannerGrant>{};
+  final byTarget = <String, PlannerGrant>{
+    for (final friend in friendUids)
+      if (friend.isNotEmpty && friend != plannerUid)
+        friend: PlannerGrant(
+          plannerUid: plannerUid,
+          targetUid: friend,
+          groupId: '',
+          granted: true,
+        ),
+  };
   for (final grant in grants) {
     if (!grant.granted || grant.targetUid.isEmpty) continue;
-    final isFriend = friendUids.contains(grant.targetUid);
-    final friendshipScoped = grant.groupId.isEmpty;
-    if (isFriend != friendshipScoped) continue;
-    final existing = byTarget[grant.targetUid];
-    if (existing == null) {
-      byTarget[grant.targetUid] = grant;
-    }
+    if (grant.groupId.isEmpty) continue;
+    if (friendUids.contains(grant.targetUid)) continue;
+    byTarget.putIfAbsent(grant.targetUid, () => grant);
   }
   return byTarget.values.toList(growable: false);
 }

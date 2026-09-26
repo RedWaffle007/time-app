@@ -75,7 +75,7 @@ service cloud.firestore {
 
     // Does the caller hold an ACTIVE planner grant over `targetUid` in `groupId`?
     // Group permission exists only for non-friends. Once the pair are friends,
-    // the profile/friendship grant below is their sole planning authority.
+    // friendship itself is their sole planning authority (callerIsFriendOf).
     // Grant id is deterministic: `{plannerUid}_{targetUid}` (PlannerGrant.docId).
     function callerHasActiveGrant(targetUid, groupId) {
       let grant = /databases/$(database)/documents/groups/$(groupId)/plannerGrants/$(request.auth.uid + '_' + targetUid);
@@ -144,49 +144,15 @@ service cloud.firestore {
       return exists(/databases/$(database)/documents/friendships/$(sortedPairId(a, b)));
     }
 
-    // Does the CALLER hold an active FRIENDSHIP planning grant over `targetUid`?
-    //
-    // Planning permission may originate from a friendship as well as a group
-    // (DECISIONS.md "Friendship-scoped planning grants"). Unlike a group grant,
-    // a friendship grant lives at a COMPUTED pair id the rules can construct, so
-    // it authorizes reads and item-creates DIRECTLY — no `plannerAccess` hint
-    // row is needed for the friend path. The grant is at
-    // `friendships/{sortedPair}/plannerGrants/{caller}_{target}` and consent is
-    // the target's (only they write `granted: true`).
-    // Also requires the friendship to still EXIST: a grant is void the moment
-    // the friendship ends (unfriend or block, which cascades the friendship
-    // away). Without this, a lingering grant doc would keep an ex-friend able to
-    // plan — the same stale-power hole the live grant check closes for groups.
-    function callerHasFriendGrant(targetUid) {
-      let g = /databases/$(database)/documents/friendships/$(sortedPairId(request.auth.uid, targetUid))/plannerGrants/$(request.auth.uid + '_' + targetUid);
-      return areFriends(request.auth.uid, targetUid)
-        && exists(g) && get(g).data.granted == true;
-    }
-
-    // Same fact with explicit parties, for a plan-request authored by the
-    // TARGET. A plan request is never permission: its create rule requires this
-    // target-authored normal grant already to exist, and item fulfillment
-    // re-checks it again through callerHasFriendGrant.
-    function friendGrantIsActive(plannerUid, targetUid) {
-      let g = /databases/$(database)/documents/friendships/$(sortedPairId(plannerUid, targetUid))/plannerGrants/$(plannerUid + '_' + targetUid);
-      return areFriends(plannerUid, targetUid)
-        && exists(g) && get(g).data.granted == true;
-    }
-
-    // Does the CALLER hold an active EMERGENCY grant over `targetUid`? (#5)
-    //
-    // A SEPARATE, independent grant at `.../emergencyGrants/{caller}_{target}`.
-    // It is what lets a planner create an AUTO-APPROVED emergency item that
-    // fires without per-item consent — so it is deliberately NOT the normal
-    // `plannerGrants` grant. A normal grant NEVER satisfies this, and this
-    // NEVER satisfies the normal-planner branch: the two are checked against
-    // two distinct documents, so neither implies the other (the both-way
-    // invariant — DECISIONS.md "Emergency item tier"). Also gated on the
-    // friendship existing, like the normal friend grant.
-    function callerHasEmergencyGrant(targetUid) {
-      let g = /databases/$(database)/documents/friendships/$(sortedPairId(request.auth.uid, targetUid))/emergencyGrants/$(request.auth.uid + '_' + targetUid);
-      return areFriends(request.auth.uid, targetUid)
-        && exists(g) && get(g).data.granted == true;
+    // Is the CALLER a friend of `targetUid`? That is the whole planning
+    // permission between two people (Batch G item 2, 2026-09-27, user-directed:
+    // DECISIONS.md "Friendship is the planning permission"). There is no
+    // separate grant, switch or request: friends may set alarms for each other
+    // and read each other's schedule for the clash check. Unfriending or
+    // blocking (which cascades the friendship away) ends it immediately. The
+    // target's other ways out of one alarm are Done/Skip before it rings.
+    function callerIsFriendOf(targetUid) {
+      return areFriends(request.auth.uid, targetUid);
     }
 
     // Blocking is recorded one-way and ENFORCED BOTH WAYS. A one-directional
@@ -1012,152 +978,28 @@ service cloud.firestore {
       allow delete: if signedIn() && isParty();
     }
 
-    // ---- friendships/{pairId}/plannerGrants/{grantId} ----
-    // The FRIENDSHIP-scoped planning grant (DECISIONS.md "Friendship-scoped
-    // planning grants"). Same shape and consent model as the group grant, but
-    // anchored to a friendship rather than a group, so it needs no group
-    // membership — only that the two are friends. `groupId` is pinned to '' so
-    // it never collides with a group grant and so the item it authorizes is a
-    // friendship item (empty group). Consent is the TARGET's: only they write
-    // `granted: true`; a planner may only relinquish their own to `false`.
-    //
-    // Reads are also served by the bottom `/{path=**}/plannerGrants` rule, which
-    // is what `watchTargetsFor` / `watchGrantsOverTarget` (collection-group)
-    // match — so a friendship grant appears in the planner's target picker with
-    // no client change.
+    // ---- RETIRED: friendship plannerGrants / emergencyGrants, planningRequests
+    // Friendship itself is the permission now (see `callerIsFriendOf`). These
+    // documents authorize nothing and can no longer be written; the parties may
+    // still read and delete leftovers, so an older installed build's unfriend
+    // cleanup keeps working. (DECISIONS.md "Friendship is the planning
+    // permission".)
     match /friendships/{pairId}/plannerGrants/{grantId} {
-      allow read: if signedIn()
-        && (resource.data.plannerUid == request.auth.uid
-            || resource.data.targetUid == request.auth.uid);
-
-      allow create: if signedIn()
-        && request.resource.data.keys().hasOnly(
-             ['plannerUid', 'targetUid', 'groupId', 'granted', 'grantedByUid', 'updatedAt'])
-        && request.resource.data.targetUid == request.auth.uid
-        && request.resource.data.grantedByUid == request.auth.uid
-        && request.resource.data.groupId == ''
-        && grantId == request.resource.data.plannerUid + '_' + request.auth.uid
-        && pairId == sortedPairId(request.resource.data.plannerUid, request.auth.uid)
-        // The two must actually be friends — the friendship is the scope.
-        && areFriends(request.auth.uid, request.resource.data.plannerUid);
-
-      allow update: if signedIn()
-        && request.resource.data.groupId == ''
-        && pairId == sortedPairId(request.resource.data.plannerUid, request.resource.data.targetUid)
-        && grantId == request.resource.data.plannerUid + '_' + request.resource.data.targetUid
-        && (
-          // The target sets it either way and stays the recorded granter.
-          (request.resource.data.targetUid == request.auth.uid
-            && request.resource.data.grantedByUid == request.auth.uid)
-          // The planner may only turn their OWN grant OFF (relinquish).
-          || (request.resource.data.plannerUid == request.auth.uid
-            && request.resource.data.granted == false
-            && changedKeys().hasOnly(['granted', 'updatedAt']))
-        );
-
-      // Either party may delete — cleanup on unfriend. Inert to security: the
-      // grant is void without the friendship anyway (see callerHasFriendGrant).
-      allow delete: if signedIn()
+      allow read, delete: if signedIn()
         && (resource.data.plannerUid == request.auth.uid
             || resource.data.targetUid == request.auth.uid);
     }
 
-    // ---- friendships/{pairId}/emergencyGrants/{grantId} ----
-    // The EMERGENCY planning grant (#5) — SEPARATE from the normal plannerGrants
-    // subtree above, so a normal grant never implies emergency and vice versa
-    // (checked against two distinct documents). Same consent model: only the
-    // TARGET writes `granted: true`; a planner may only relinquish to `false`.
-    // Same shape (`groupId: ''`). Holding this lets the planner create an
-    // auto-approved emergency item (see the item-create emergency branch and
-    // `callerHasEmergencyGrant`). Reads via the /{path=**}/emergencyGrants rule
-    // below, which powers the planner's emergency-targets collection-group query.
     match /friendships/{pairId}/emergencyGrants/{grantId} {
-      allow read: if signedIn()
-        && (resource.data.plannerUid == request.auth.uid
-            || resource.data.targetUid == request.auth.uid);
-
-      allow create: if signedIn()
-        && request.resource.data.keys().hasOnly(
-             ['plannerUid', 'targetUid', 'groupId', 'granted', 'grantedByUid', 'updatedAt'])
-        && request.resource.data.targetUid == request.auth.uid
-        && request.resource.data.grantedByUid == request.auth.uid
-        && request.resource.data.groupId == ''
-        && grantId == request.resource.data.plannerUid + '_' + request.auth.uid
-        && pairId == sortedPairId(request.resource.data.plannerUid, request.auth.uid)
-        && areFriends(request.auth.uid, request.resource.data.plannerUid);
-
-      allow update: if signedIn()
-        && request.resource.data.groupId == ''
-        && pairId == sortedPairId(request.resource.data.plannerUid, request.resource.data.targetUid)
-        && grantId == request.resource.data.plannerUid + '_' + request.resource.data.targetUid
-        && (
-          (request.resource.data.targetUid == request.auth.uid
-            && request.resource.data.grantedByUid == request.auth.uid)
-          || (request.resource.data.plannerUid == request.auth.uid
-            && request.resource.data.granted == false
-            && changedKeys().hasOnly(['granted', 'updatedAt']))
-        );
-
-      allow delete: if signedIn()
+      allow read, delete: if signedIn()
         && (resource.data.plannerUid == request.auth.uid
             || resource.data.targetUid == request.auth.uid);
     }
 
-    // ---- planningRequests/{fromUid}_{toUid}_{kind} ----
-    // A request for PLANNING PERMISSION — distinct from a friendRequest (that is
-    // the friendship itself) and from the per-item pending queue (that is
-    // approving one plan). `fromUid` asks to plan for `toUid`; only `toUid`
-    // grants, by writing the friendship grant separately (this row never mints a
-    // grant — approval is the target authoring the grant doc). `kind` is
-    // `normal` (#4) or `emergency` (#5), in the id so both can be pending at
-    // once. Lifecycle mirrors friendRequests: sender creates pending; recipient
-    // decides; either party deletes. (DECISIONS.md "Friendship-scoped planning
-    // grants".)
     match /planningRequests/{requestId} {
-      function fromUid() { return resource.data.fromUid; }
-      function toUid()   { return resource.data.toUid; }
-      function isParty() {
-        return request.auth.uid == fromUid() || request.auth.uid == toUid();
-      }
-
-      allow read: if signedIn() && isParty();
-
-      allow create: if signedIn()
-        && request.resource.data.keys().hasOnly([
-             'fromUid', 'toUid', 'kind', 'participants', 'status',
-             'createdAt', 'updatedAt'
-           ])
-        && request.resource.data.fromUid == request.auth.uid
-        && request.resource.data.toUid is string
-        && request.resource.data.toUid != request.auth.uid
-        && request.resource.data.kind in ['normal', 'emergency']
-        && requestId == request.resource.data.fromUid + '_'
-             + request.resource.data.toUid + '_' + request.resource.data.kind
-        && request.resource.data.participants.hasOnly([
-             request.resource.data.fromUid, request.resource.data.toUid
-           ])
-        && request.resource.data.status == 'pending'
-        && !blocked(request.auth.uid, request.resource.data.toUid)
-        // You ask a FRIEND for planning permission; friendship is the scope.
-        && areFriends(request.auth.uid, request.resource.data.toUid);
-
-      allow update: if signedIn()
-        && isParty()
-        && request.resource.data.fromUid == fromUid()
-        && request.resource.data.toUid == toUid()
-        && request.resource.data.kind == resource.data.kind
-        && changedKeys().hasOnly(['status', 'decidedAt', 'updatedAt'])
-        && (
-          // The recipient decides, once, on a still-open request.
-          (request.auth.uid == toUid()
-            && resource.data.status == 'pending'
-            && request.resource.data.status in ['approved', 'declined'])
-          // Either party clears it; never revives a decided one to pending.
-          || (request.resource.data.status == 'cancelled'
-            && resource.data.status in ['pending', 'declined'])
-        );
-
-      allow delete: if signedIn() && isParty();
+      allow read, delete: if signedIn()
+        && (resource.data.fromUid == request.auth.uid
+            || resource.data.toUid == request.auth.uid);
     }
 
     // ---- planRequests/{batchId}_{plannerUid} ----
@@ -1225,10 +1067,9 @@ service cloud.firestore {
         && (!('message' in request.resource.data)
             || (request.resource.data.message is string
                 && request.resource.data.message.size() <= 500))
-        // Friendship + an EXISTING normal grant are prerequisites. The request
-        // grants nothing and cannot be sent as a way around consent.
-        && friendGrantIsActive(
-             request.resource.data.plannerUid, request.auth.uid);
+        // You ask a FRIEND. The request grants nothing: friendship is already
+        // the planning permission (callerIsFriendOf).
+        && areFriends(request.resource.data.plannerUid, request.auth.uid);
 
       allow update: if signedIn()
         && isParty()
@@ -1669,8 +1510,7 @@ service cloud.firestore {
       allow read: if signedIn()
         && (request.auth.uid == targetUid
             || callerHasPlannerAccess(targetUid)
-            || callerHasFriendGrant(targetUid)
-            || callerHasEmergencyGrant(targetUid));
+            || callerIsFriendOf(targetUid));
 
       allow create: if signedIn()
         // The full key set a creator may write (note/decidedAt/tier optional).
@@ -1721,25 +1561,23 @@ service cloud.firestore {
           // Self-planning: consent is inherent. Any tier, pending or approved.
           (request.auth.uid == targetUid
               && request.resource.data.status in ['pending', 'approved'])
-          // A PLANNER (F2, 2026-09-26 — the per-item approval step is gone):
-          // ONE permission lets someone set alarms that ring directly. It is a
-          // GROUP grant for the tagged group, or — while friends — the
-          // friendship planning grant OR the (merged) emergency grant. Consent
-          // is that permission: target-granted, revocable, re-checked live.
+          // A PLANNER (F2, 2026-09-26 — the per-item approval step is gone;
+          // Batch G item 2, 2026-09-27 — friendship IS the permission): someone
+          // may set alarms that ring directly if they hold a GROUP grant for the
+          // tagged group, or are the target's FRIEND. Re-checked live on every
+          // create, so unfriending or blocking ends it at once.
           //
           // `approved` is what new clients write. `pending` is still accepted
           // so an older installed build keeps working; the target's device
           // turns such items into alarms (LegacyPendingReconciler).
           //
           // The group tag must be honest: '' (a friendship plan), or a group
-          // whose grant authorises it, or — for the friendship/emergency path —
-          // a group BOTH parties belong to (the group label on a plan made
-          // through the friendship grant).
+          // whose grant authorises it, or — for the friendship path — a group
+          // BOTH parties belong to (the group label on a plan made by a friend).
           || (request.resource.data.status in ['pending', 'approved']
               && request.resource.data.get('tier', 'normal') in ['normal', 'emergency']
               && (callerHasActiveGrant(targetUid, request.resource.data.groupId)
-                  || ((callerHasFriendGrant(targetUid)
-                        || callerHasEmergencyGrant(targetUid))
+                  || (callerIsFriendOf(targetUid)
                       && (request.resource.data.groupId == ''
                           || (callerInGroup(request.resource.data.groupId)
                               && uidInGroup(request.resource.data.groupId, targetUid))))))
@@ -1892,8 +1730,7 @@ service cloud.firestore {
       allow read: if signedIn()
         && (request.auth.uid == targetUid
             || callerHasPlannerAccess(targetUid)
-            || callerHasFriendGrant(targetUid)
-            || callerHasEmergencyGrant(targetUid));
+            || callerIsFriendOf(targetUid));
 
       allow create: if signedIn()
         && request.resource.data.keys().hasOnly(
@@ -1916,8 +1753,7 @@ service cloud.firestore {
         // See DECISIONS.md "Cross-device relationship + planning denials".
         && (request.auth.uid == targetUid
             || callerHasActiveGrant(targetUid, request.resource.data.groupId)
-            || callerHasFriendGrant(targetUid)
-            || callerHasEmergencyGrant(targetUid));
+            || callerIsFriendOf(targetUid));
 
       allow update: if false;
 
@@ -1932,16 +1768,6 @@ service cloud.firestore {
     }
 
     match /{path=**}/plannerGrants/{grantId} {
-      allow read: if signedIn()
-        && (resource.data.plannerUid == request.auth.uid
-            || resource.data.targetUid == request.auth.uid);
-    }
-
-    // The emergency-grant collection-group read (#5) — powers the planner's
-    // "targets I may emergency-plan for" and "who may emergency-plan for me"
-    // queries. Resource-scoped to the caller, so the query MUST filter on the
-    // same field, exactly like plannerGrants above.
-    match /{path=**}/emergencyGrants/{grantId} {
       allow read: if signedIn()
         && (resource.data.plannerUid == request.auth.uid
             || resource.data.targetUid == request.auth.uid);

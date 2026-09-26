@@ -6714,3 +6714,48 @@ in. A line under the zone line — "It's now 9:30 PM, Sat, Sep 26, 2026 there."
 Group plans are unchanged here: one wall time applies to each member in their
 own zone, so the pickers stay on the planner's time; the per-member time list
 comes with the double-booking item (Batch G item 4).
+
+---
+
+## Friendship is the planning permission (2026-09-27, Batch G item 2)
+
+**User-directed, reverses recorded decisions.** Supersedes "Friendship-scoped
+planning grants" (2026-08-26), the emergency grant (#5, merged in F2) and the
+planning-permission requests, and retires the long-standing "friendship grants
+nothing" rule (CLAUDE.md social layer). Being friends is now the ONLY
+permission between two people: X may set alarms for Y, and read Y's schedule
+for the clash check, iff they are friends. No switch, no ask, no grant doc.
+
+**Consent, restated.** Consent is now given once, by accepting the friend
+request. The user confirmed that a friend's alarm can ring with no further
+step; Y's ways out are marking it Done/Skip before it rings, unfriending, or
+blocking (which removes the friendship). Both unfriend and block end the
+permission at once because every check is live against `friendships/{pair}`.
+Applies retroactively: every existing friend pair can plan for each other the
+moment the rules deploy, including pairs whose switch was off.
+
+**Rules:** `callerHasFriendGrant` / `callerHasEmergencyGrant` /
+`friendGrantIsActive` → `callerIsFriendOf` (= `areFriends`) in item read, item
+create, legacy slot-lock read/create and plan-request create. The friendship
+`plannerGrants` / `emergencyGrants` and `planningRequests` blocks keep only
+party read + delete (leftovers are inert; an older build's unfriend cleanup
+still works); every write is refused. The emergency collection-group read is
+gone. Group grants are unchanged and still cover NON-friends only, until item 3
+reworks groups.
+
+**Worker:** `hasActiveItemGrant` / `callerMayPlanFor` = friends, or a live group
+grant for the tagged group. `planningRequest` / `planningApprove` removed from
+`FRIEND_EVENTS` (a request for either is now `invalid-body`).
+
+**App:** removed the "Let {name} set alarms for me" switch, "Ask to set alarms
+for {name}", the Requests inbox's permission section, the repository, request
+model, migrator and their providers/events. `effectivePlanningTargets` = every
+friend (synthesised row, `groupId ''`) + non-friend group grants; leftover
+friendship grant docs are ignored both ways. Request Plan lists friends;
+plan-request fulfilment checks the friendship only. Blocking's grant revoke
+skips retired friendship grants (their update is now denied). The profile shows
+"You and {name} can set alarms for each other. To stop one, mark it Done or
+Skip before it rings, or unfriend."; "How this app works" says the same.
+
+**Deploy order:** rules → Worker → app. An older app against the new rules:
+its switch/ask writes fail (harmless); planning for friends works.

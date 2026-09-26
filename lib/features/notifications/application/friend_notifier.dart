@@ -8,21 +8,15 @@ import '../data/http_friend_notifier.dart';
 ///
 ///   friendRequest   — the SENDER notifies the RECIPIENT that a request arrived.
 ///   friendAccept    — the ACCEPTER notifies the original SENDER it was accepted.
-///   planningRequest — the REQUESTER notifies the target of a planning-permission
-///                     request (#4/#5); carries `kind` (normal/emergency).
-///   planningApprove — the APPROVER notifies the original requester it was granted.
 ///   groupJoinApproved — the member whose approval admitted a candidate
 ///                     notifies that candidate; carries `groupId`.
 ///
-/// The wire value is the enum name, which the Worker matches on. The two
-/// planning events ride the same `{fromUid, toUid}` shape plus an optional
-/// `kind`. See DECISIONS.md "Friend-request push (2026-08-24)" and
-/// "Friendship-scoped planning grants".
+/// The wire value is the enum name, which the Worker matches on. (The
+/// planning-permission events were retired on 2026-09-27: friendship is the
+/// permission.) See DECISIONS.md "Friend-request push (2026-08-24)".
 enum FriendNotifyEvent {
   friendRequest,
   friendAccept,
-  planningRequest,
-  planningApprove,
   planRequested,
   groupJoinApproved,
 }
@@ -36,8 +30,8 @@ abstract class FriendEventNotifier {
     required FriendNotifyEvent event,
     required String fromUid,
     required String toUid,
-    // Only the planning events carry it (normal/emergency); it just changes the
-    // push copy and is validated by the Worker.
+    // Carried only by the retired planning-permission events; no current
+    // event sets it.
     String? kind,
     String? planRequestId,
     String? groupId,

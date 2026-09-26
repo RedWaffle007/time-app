@@ -134,10 +134,10 @@ test('a receipt racing the claim wins: nothing is sent', async () => {
   assert.equal(h.sent.length, 0);
 });
 
-test('a revoked grant means no planner warning', async () => {
+test('an ended friendship means no planner warning', async () => {
   const h = harness(
     [row({ scheduledInstantUtc: at(8), voiceRescuePushAt: at(-5) })],
-    { 'friendships/planner_target/plannerGrants/planner_target': { granted: false } },
+    { 'friendships/planner_target': null },
   );
   await rescueUndeliveredVoiceNotes(h.ctx, NOW);
   assert.equal(h.claims.length, 0);
