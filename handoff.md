@@ -44,7 +44,7 @@
 - Latest profile build installed on the Redmi; the third-pass fixes await the
   user's device check.
 - Next implementation order (revised 2026-09-26 after the in-person device
-  check): **Batch A → B → C → D (explore) → 32 → 24 → 33**. See "Device-check
+  check): **Batch A ✓ → B ✓ → B2 → C → D (explore) → 32 → 24 → 33**. See "Device-check
   backlog (2026-09-26)" below.
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
 
@@ -120,10 +120,47 @@ Batch A (one Worker deploy + client) — **BUILT, committed `68921ad`, Worker
    Task: {task} before time" when `completedAt`/`skippedAt` < scheduled instant.
 4. Group items say they are group tasks (normal and emergency), all events.
 
-Batch B — **BUILT 2026-09-26, no rules change needed; Worker deploy +
-device check pending** (DECISIONS.md "Dismiss and group-join pushes").
+Batch B — **BUILT, committed `ccd8e00`, Worker deployed 2026-09-26; device
+check deferred by the user** (DECISIONS.md "Dismiss and group-join pushes").
 5. Dismiss notifies the planner (new `dismissed` event, gated on the existing
 `alarm.dismissedAt`). 6. Group join approved notifies the candidate.
+
+Batch B2 — pending approvals: visibility + reminders (added 2026-09-26) —
+**BUILT 2026-09-26; awaiting full suite, index deploy, Worker deploy, commit**
+(DECISIONS.md "Pending-approvals badge moves…" and "Approval reminders").
+Mechanism chosen for 13: **A, server-side Worker cron** (every minute).
+Every item ships with thorough regression tests (listed per item).
+10. **Badge on the right icon.** Bug: `plan_shell.dart` puts
+    `planAttentionCountProvider` on the "My Schedule" TAB label; the Pending
+    approvals app-bar icon (beside the overflow/Archive) has no badge. Move the
+    count onto that icon, showing the real number (2 pending → "2"). Keep the
+    Plan bottom-bar pillar badge (same provider — they can never disagree).
+    Tests: widget test — N pending → icon badge shows N, tab label has none;
+    0 → no badge; decide one → count drops; pillar and icon always equal.
+11. **Glow on the Pending approvals icon** while ≥1 pending, until all are
+    decided. Themed glow from `lib/core/theme/` (new recipe: DECISIONS →
+    UI-RULES → code, lint-clean), visible in light AND dark; any pulse honours
+    reduced-motion. Tests: glow present iff count > 0, both themes, disappears
+    on last decision, `ui_rules_lint_test` passes, reduced-motion = static.
+12. **Verify the initial "new plan for you" push reaches the target** (X plans
+    for Y, due in ~30 min). Batch A/B fixed the likely cause (stale Worker
+    dropped all friendship-plan pushes). Add a Worker test matrix for
+    `created`: friendship/group/emergency × tokens/no-tokens × dedup, and a
+    device check with `wrangler tail`.
+13. **Approval reminders** while a plan stays pending: "Task: {task} planned
+    by {planner} is waiting for your approval." Timing scales with the window
+    W = due − created (proposal, needs sign-off):
+    - W < 10 min → 1 reminder at W/2 (5-min plan → ~2.5 min).
+    - 10 min ≤ W < 2 h → 2: at W/2, and a final one at due − 10% of W
+      (clamped to 3–10 min before).
+    - W ≥ 2 h → 3: at W/2, due − 1 h, and a final one at due − 10 min.
+    - Never more than 3; drop one that is already past or < 2 min after the
+      previous; stop at once on approve/reject/withdraw/lapse.
+    Mechanism DECIDED 2026-09-26: server-side Worker cron (claims each slot
+    against the item's updateTime, so a decision anywhere stops it).
+    Tests: pure schedule function over many windows (1 min … 24 h, DST day,
+    past-due, clock skew), cap and spacing invariants, stop-on-each-decision,
+    dedup per reminder slot, self-plans never remind, copy with/without names.
 
 Batch C (client, plus a Worker check for 9): 7. Startup-sound toggle (splash
 only, not alarms). 8. Slightly larger left content inset — one theme token,

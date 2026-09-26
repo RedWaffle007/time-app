@@ -86,6 +86,63 @@ export function makeFirestoreDb(projectId, accessToken) {
       return true;
     },
 
+    // Pending schedule items due after `now`, soonest first, across every
+    // target (collection group; composite index status+scheduledInstantUtc).
+    async listPendingItems(now, limit = 50) {
+      const resp = await fetch(`${base}:runQuery`, {
+        method: 'POST',
+        headers: { ...authHeader, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          structuredQuery: {
+            from: [{ collectionId: 'items', allDescendants: true }],
+            where: {
+              compositeFilter: {
+                op: 'AND',
+                filters: [
+                  {
+                    fieldFilter: {
+                      field: { fieldPath: 'status' },
+                      op: 'EQUAL',
+                      value: { stringValue: 'pending' },
+                    },
+                  },
+                  {
+                    fieldFilter: {
+                      field: { fieldPath: 'scheduledInstantUtc' },
+                      op: 'GREATER_THAN',
+                      value: { timestampValue: now.toISOString() },
+                    },
+                  },
+                ],
+              },
+            },
+            orderBy: [{
+              field: { fieldPath: 'scheduledInstantUtc' },
+              direction: 'ASCENDING',
+            }],
+            limit,
+          },
+        }),
+      });
+      if (!resp.ok) throw new Error(`Firestore pending-items query → ${resp.status}`);
+      const rows = await resp.json();
+      const marker = '/documents/';
+      return rows
+        .filter((row) => row.document)
+        .map((row) => {
+          const name = row.document.name;
+          const at = name.indexOf(marker);
+          return {
+            path: at >= 0
+              ? name.slice(at + marker.length).split('/').map(decodeURIComponent).join('/')
+              : '',
+            data: decodeFields(row.document.fields),
+            updateTime: row.document.updateTime,
+            createTime: row.document.createTime,
+          };
+        });
+    },
+
     async listDueInactivityStates(now, limit = 100) {
       const resp = await fetch(`${base}:runQuery`, {
         method: 'POST',

@@ -853,3 +853,82 @@ test('group-join pushes fail closed on unapproved, non-member, missing or replay
     event: 'groupJoinApproved', fromUid: 'member', toUid: 'candidate',
   })).reason, 'bad-args');
 });
+
+test('created delivery matrix: friendship, group and emergency reach the target', async () => {
+  const future = '2030-01-01T10:00:00.000Z';
+  const cases = [
+    ['friendship', { groupId: '', status: 'pending' },
+      'friendships/planner_target/plannerGrants/planner_target', 'New plan for you'],
+    ['group', { groupId: 'g1', status: 'pending' },
+      'groups/g1/plannerGrants/planner_target', 'New group plan for you'],
+    ['emergency', { groupId: '', status: 'approved', tier: 'emergency' },
+      'friendships/planner_target/emergencyGrants/planner_target', null],
+  ];
+  for (const [name, shape, grantPath, title] of cases) {
+    const harness = context({
+      'scheduleItems/target/items/item-1': {
+        targetUid: 'target', createdByUid: 'planner', title: 'Gym',
+        scheduledInstantUtc: future, ...shape,
+      },
+      [grantPath]: { granted: true },
+      'users/planner': { name: 'Test Planner' },
+      'groups/g1': { name: 'Team' },
+    });
+    const result = await sendEventNotification(harness.ctx, {
+      event: 'created', targetUid: 'target', itemId: 'item-1',
+    });
+    assert.equal(result.reason, 'sent', name);
+    assert.deepEqual(harness.listed, ['users/target/fcmTokens'], name);
+    assert.equal(harness.patched[0].fields.notifiedCreated, true, name);
+    if (title) {
+      assert.equal(harness.sent[0].notification.title, title, name);
+      assert.equal(harness.sent[0].android.priority, 'high', name);
+      assert.match(harness.sent[0].notification.body, /^Test Planner planned Gym for you/, name);
+    } else {
+      assert.equal(harness.sent[0].data.command, 'scheduleReminder', name);
+    }
+
+    // No token: nothing sent, nothing stamped, so a later retry can deliver.
+    const noTokens = context({
+      'scheduleItems/target/items/item-1': {
+        targetUid: 'target', createdByUid: 'planner', title: 'Gym', ...shape,
+      },
+      [grantPath]: { granted: true },
+    }, { tokens: [] });
+    const none = await sendEventNotification(noTokens.ctx, {
+      event: 'created', targetUid: 'target', itemId: 'item-1',
+    });
+    assert.equal(none.reason, 'no-tokens', name);
+    assert.equal(noTokens.patched.length, 0, name);
+
+    // Replay after delivery is a no-op.
+    const replay = context({
+      'scheduleItems/target/items/item-1': {
+        targetUid: 'target', createdByUid: 'planner', title: 'Gym',
+        notifiedCreated: true, ...shape,
+      },
+      [grantPath]: { granted: true },
+    });
+    const again = await sendEventNotification(replay.ctx, {
+      event: 'created', targetUid: 'target', itemId: 'item-1',
+    });
+    assert.equal(again.reason, 'already-notified', name);
+    assert.equal(replay.sent.length, 0, name);
+  }
+});
+
+test('a friendship plan with an empty groupId is never dropped as malformed', async () => {
+  // Regression for the stale Worker (2026-09-19) that required a truthy
+  // groupId and silently dropped every friendship-plan push.
+  const harness = context({
+    'scheduleItems/target/items/item-1': {
+      targetUid: 'target', createdByUid: 'planner', groupId: '', status: 'pending',
+    },
+    'friendships/planner_target/plannerGrants/planner_target': { granted: true },
+  });
+  const result = await sendEventNotification(harness.ctx, {
+    event: 'created', targetUid: 'target', itemId: 'item-1',
+  });
+  assert.notEqual(result.reason, 'item-missing-fields');
+  assert.equal(result.sent, 1);
+});

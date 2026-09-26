@@ -147,11 +147,6 @@ class _PlanShellState extends ConsumerState<PlanShell>
     });
 
     // The Plan aggregate attention count — a documented sum; today it equals the
-    // My Schedule pending-approval count (see `planAttentionCountProvider`). It
-    // rides the My Schedule sub-tab here and will ride the Plan bottom-bar pillar
-    // at S5, from the SAME provider so the two can never disagree.
-    final planAttention = ref.watch(planAttentionCountProvider);
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Plan'),
@@ -161,12 +156,9 @@ class _PlanShellState extends ConsumerState<PlanShell>
           // §6.12: understated text tabs, soft sage underline (from the central
           // `tabBarTheme`), swipeable. No fill.
           tabs: [
-            Tab(
-              child: PendingCountBadge(
-                count: planAttention,
-                child: const Text('My Schedule'),
-              ),
-            ),
+            // No badge here: the pending count belongs on the Pending
+            // approvals icon, the control that resolves it (2026-09-26).
+            const Tab(text: 'My Schedule'),
             const Tab(text: 'Activity'),
             const Tab(text: 'Groups'),
           ],
@@ -224,9 +216,10 @@ class _PlanShellState extends ConsumerState<PlanShell>
   List<Widget> _actionsFor(int index) {
     final contextual = <Widget>[
       switch (index) {
-        _mySchedule => IconButton(
-          tooltip: 'Pending approvals',
-          icon: const Icon(AppIcons.approvals),
+        // The pending count and glow ride THIS icon — the one that opens the
+        // queue — from the same provider as the Plan pillar badge.
+        _mySchedule => PendingApprovalsAction(
+          count: ref.watch(planAttentionCountProvider),
           onPressed: () => context.push('${Routes.plan}/approvals'),
         ),
         // Manual planning lives on the always-present bottom-right PLAN button,

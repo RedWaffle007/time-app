@@ -397,6 +397,7 @@ anything that sits *in* the flow does not.
 | Dialogs | level 3 |
 | Bottom sheets | level 3 |
 | Snackbar | level 3 |
+| Pending-approvals attention glow (§6.2a) | not elevation — an `attention` halo, the one in-flow shadow |
 
 `Card` must never be constructed bare — use the recipe in §6.1, which sets
 elevation 0 and the border. A bare `Card` inherits Material's default shadow.
@@ -430,6 +431,20 @@ Always via `statusStyle(status)` from `status_style.dart` — never a local
 `switch`. Padding `symmetric(horizontal: Space.md, vertical: Space.xs)`, radius
 `Radii.pill`, text `labelSmall`. Neutral variants carry a 1px `outline` border;
 tinted and solid variants carry no border.
+
+### 6.2a Pending count badge + attention glow
+
+A count of things waiting on the user sits ON the control that resolves them
+(the Pending approvals icon), never on a neighbouring label. Always
+`PendingCountBadge` (real number, hidden at zero), wrapped in
+`PendingAttentionGlow(active: count > 0)` from `status_style.dart`:
+
+- Halo colour: `context.attention` at `AttentionGlow.alphaFor(brightness)`
+  (45% light, 60% dark); blur `Sizes.attentionGlowBlur`, spread
+  `Sizes.attentionGlowSpread`; circular, behind the icon.
+- **Static.** No pulse — calm, and nothing to gate on reduced motion.
+- Supplementary only: the badge and the tooltip ("Pending approvals, N
+  waiting") carry the meaning (§2.6).
 
 ### 6.3 Warning panel
 

@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/format/datetime_format.dart';
-import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/theme/status_style.dart';
@@ -277,13 +276,8 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
           : AppBar(
               title: const Text('My Schedule'),
               actions: [
-                IconButton(
-                  tooltip: 'Pending approvals',
-                  icon: Badge(
-                    isLabelVisible: pendingCount > 0,
-                    label: Text('$pendingCount'),
-                    child: const Icon(AppIcons.approvals),
-                  ),
+                PendingApprovalsAction(
+                  count: pendingCount,
                   onPressed: () => context.push(Routes.approvals),
                 ),
               ],

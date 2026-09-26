@@ -27,6 +27,7 @@ import {
   handleGroupAvatarDelete,
 } from './avatar.js';
 import { sendDueInactivityNotifications } from './inactivity.js';
+import { sendDueApprovalReminders } from './approval-reminders.js';
 
 const MAX_BODY_BYTES = 2048;
 const EVENTS = new Set(['created', 'decided', 'outcome', 'withdrawn', 'dismissed']);
@@ -186,7 +187,10 @@ export default {
     }
   },
   async scheduled(controller, env, ctx) {
-    const run = runInactivityCron(env, new Date(controller.scheduledTime));
+    const now = new Date(controller.scheduledTime);
+    const run = cronJobFor(controller.cron) === 'approvalReminders'
+      ? runApprovalReminderCron(env, now)
+      : runInactivityCron(env, now);
     ctx.waitUntil(run);
   },
 };
@@ -234,6 +238,30 @@ export function groupAvatarAuthorization(group, uid) {
   if (!group) return { error: 'group-not-found', status: 404 };
   if (group.ownerUid !== uid) return { error: 'forbidden', status: 403 };
   return null;
+}
+
+// wrangler.toml declares both schedules; each invocation carries its own cron
+// string. Anything unrecognised keeps the original inactivity behaviour.
+export const APPROVAL_REMINDER_CRON = '* * * * *';
+export function cronJobFor(cron) {
+  return cron === APPROVAL_REMINDER_CRON ? 'approvalReminders' : 'inactivity';
+}
+
+async function runApprovalReminderCron(env, now) {
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
+  } catch {
+    throw new Error('server-misconfigured');
+  }
+  const accessToken = await getAccessToken(serviceAccount);
+  const context = {
+    projectId: env.PROJECT_ID,
+    db: makeFirestoreDb(env.PROJECT_ID, accessToken),
+    fcm: makeFcm(env.PROJECT_ID, accessToken),
+  };
+  const result = await sendDueApprovalReminders(context, now);
+  console.log(JSON.stringify({ event: 'approval-reminder-cron', ...result }));
 }
 
 async function runInactivityCron(env, now) {

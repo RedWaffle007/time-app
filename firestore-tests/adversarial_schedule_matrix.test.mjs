@@ -68,6 +68,9 @@ describe('schedule-item adversarial matrix', () => {
       { outcome: { result: 'done' } },
       { notifiedCreated: true },
       { notifiedOutcome: 'done' },
+      { notifiedDismissed: true },
+      { approvalRemindersSent: 3 },
+      { approvalRemindedAt: new Date() },
       { notifiedAt: new Date() },
       { unknownInjectedField: 'surprise' },
     ];
@@ -98,11 +101,68 @@ describe('schedule-item adversarial matrix', () => {
       { groupId: 'other-group' },
       { tier: 'emergency' },
       { notifiedOutcome: 'done' },
+      { notifiedDismissed: true },
+      { approvalRemindersSent: 3 },
+      { approvalRemindedAt: new Date() },
     ];
     for (const change of changes) {
       await assertFails(updateDoc(doc(as(TARGET), ITEM), {
         ...change, updatedAt: new Date(),
       }));
     }
+  });
+
+  // Worker-only fields (2026-09-26): the target can never forge or reset the
+  // approval-reminder counter or the dismiss dedup to silence a push, and the
+  // planner cannot pre-stamp them to suppress one.
+  it('only the Worker can write reminder and dismiss dedup fields', async () => {
+    await setDoc(doc(as(PLANNER), ITEM), payload());
+    for (const uid of [TARGET, PLANNER, OUTSIDER]) {
+      for (const change of [
+        { approvalRemindersSent: 3 },
+        { approvalRemindersSent: 0 },
+        { approvalRemindedAt: new Date() },
+        { notifiedDismissed: true },
+      ]) {
+        await assertFails(updateDoc(doc(as(uid), ITEM), {
+          ...change, updatedAt: new Date(),
+        }));
+      }
+    }
+  });
+
+  // The Worker stamps these onto live items. Their presence must never block
+  // the ordinary transitions (rules compare changed keys, not the whole doc).
+  it('Worker-stamped fields never block approve, reject, withdraw or outcome', async () => {
+    const stamps = {
+      approvalRemindersSent: 2,
+      approvalRemindedAt: new Date(),
+      notifiedCreated: true,
+      notifiedDismissed: true,
+    };
+    const seed = async (overrides) => env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), ITEM), payload({ ...stamps, ...overrides }));
+    });
+
+    await seed({});
+    await assertSucceeds(updateDoc(doc(as(TARGET), ITEM), {
+      status: 'approved', decidedAt: new Date(), updatedAt: new Date(),
+    }));
+
+    await seed({});
+    await assertSucceeds(updateDoc(doc(as(TARGET), ITEM), {
+      status: 'rejected', decidedAt: new Date(), updatedAt: new Date(),
+    }));
+
+    await seed({});
+    await assertSucceeds(updateDoc(doc(as(PLANNER), ITEM), {
+      status: 'withdrawn', withdrawnAt: new Date(), updatedAt: new Date(),
+    }));
+
+    await seed({ status: 'approved' });
+    await assertSucceeds(updateDoc(doc(as(TARGET), ITEM), {
+      outcome: { result: 'done', completedAt: new Date() },
+      updatedAt: new Date(),
+    }));
   });
 });

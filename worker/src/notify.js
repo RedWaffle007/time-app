@@ -87,18 +87,8 @@ export async function sendEventNotification(ctx, { event, targetUid, itemId }) {
   const recipientUid = NOTIFIES_TARGET.has(event) ? targetUid : plannerUid;
 
   // Active grant required in BOTH directions — a revoked grant means no push,
-  // whichever way the notification flows. Group plans carry a group id;
-  // friendship plans deliberately carry an empty one and use the sorted-pair
-  // friendship subtree. Emergency permission is independent from normal
-  // friendship permission, so its item tier selects emergencyGrants.
-  const grantId = `${plannerUid}_${targetUid}`;
-  const pairId = [plannerUid, targetUid].sort().join('_');
-  const grantPath = groupId
-    ? `groups/${groupId}/plannerGrants/${grantId}`
-    : `friendships/${pairId}/${item.tier === 'emergency'
-        ? 'emergencyGrants'
-        : 'plannerGrants'}/${grantId}`;
-  const grant = await ctx.db.getDoc(grantPath);
+  // whichever way the notification flows (see itemGrantPath).
+  const grant = await ctx.db.getDoc(itemGrantPath(item, plannerUid, targetUid));
   if (!grant || grant.granted !== true) {
     return result(0, 0, recipientUid, 'no-active-grant');
   }
@@ -142,6 +132,20 @@ export async function sendEventNotification(ctx, { event, targetUid, itemId }) {
   }
 
   return result(sent, cleaned, recipientUid, sent > 0 ? 'sent' : 'no-delivery');
+}
+
+// The grant that authorizes pushes about [item]. Group plans carry a group id;
+// friendship plans deliberately carry an empty one and use the sorted-pair
+// friendship subtree. Emergency permission is independent from normal
+// friendship permission, so its item tier selects emergencyGrants.
+export function itemGrantPath(item, plannerUid, targetUid) {
+  const grantId = `${plannerUid}_${targetUid}`;
+  const pairId = [plannerUid, targetUid].sort().join('_');
+  return item.groupId
+    ? `groups/${item.groupId}/plannerGrants/${grantId}`
+    : `friendships/${pairId}/${item.tier === 'emergency'
+        ? 'emergencyGrants'
+        : 'plannerGrants'}/${grantId}`;
 }
 
 // Verify the event against the item's ACTUAL Firestore state and return this

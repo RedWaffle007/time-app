@@ -114,6 +114,10 @@ abstract final class Sizes {
   /// Icon inside a status badge, sized to `labelSmall`.
   static const double badgeIcon = 14;
 
+  /// The pending-approvals attention halo (UI-RULES §6.2a).
+  static const double attentionGlowBlur = 14;
+  static const double attentionGlowSpread = 1;
+
   /// The spinner that replaces a button's label while it is working. Sized to
   /// the label, so the button doesn't change height mid-action.
   static const double buttonSpinner = 20;

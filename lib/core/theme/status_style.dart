@@ -170,6 +170,81 @@ class PendingCountBadge extends StatelessWidget {
   }
 }
 
+/// Alpha of the attention halo per brightness (UI-RULES.md §6.2a): the dark
+/// ground needs more to read as a glow rather than a smudge.
+abstract final class AttentionGlow {
+  static double alphaFor(Brightness brightness) =>
+      brightness == Brightness.dark ? 0.6 : 0.45;
+}
+
+/// A soft `attention` halo behind a control while something waits on it
+/// (UI-RULES.md §6.2a). Static by design. Lives here because it expresses
+/// attention STATE, like [PendingCountBadge] which it always accompanies.
+class PendingAttentionGlow extends StatelessWidget {
+  const PendingAttentionGlow({
+    super.key,
+    required this.active,
+    required this.child,
+  });
+
+  static const glowKey = ValueKey('pending-attention-glow');
+
+  final bool active;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!active) return child;
+    final alpha = AttentionGlow.alphaFor(Theme.of(context).brightness);
+    return DecoratedBox(
+      key: glowKey,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: context.attention.withValues(alpha: alpha),
+            blurRadius: Sizes.attentionGlowBlur,
+            spreadRadius: Sizes.attentionGlowSpread,
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+}
+
+/// The Pending approvals app-bar action: the icon carries the real count and
+/// glows while anything is pending (UI-RULES.md §6.2a). One widget so every
+/// place that opens the queue looks and reads the same.
+class PendingApprovalsAction extends StatelessWidget {
+  const PendingApprovalsAction({
+    super.key,
+    required this.count,
+    required this.onPressed,
+  });
+
+  final int count;
+  final VoidCallback onPressed;
+
+  static String tooltipFor(int count) =>
+      count > 0 ? 'Pending approvals, $count waiting' : 'Pending approvals';
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: tooltipFor(count),
+      onPressed: onPressed,
+      icon: PendingAttentionGlow(
+        active: count > 0,
+        child: PendingCountBadge(
+          count: count,
+          child: const Icon(AppIcons.approvals),
+        ),
+      ),
+    );
+  }
+}
+
 /// The canonical status badge (UI-RULES.md §6.2).
 ///
 /// Always carries its text label: colour reinforces state, it never informs on

@@ -42,6 +42,7 @@ class NotificationRouter {
     switch (data['event']) {
       case 'created':
       case 'withdrawn':
+      case 'approvalReminder':
         router.go(Routes.approvals);
       case 'decided':
       case 'outcome':

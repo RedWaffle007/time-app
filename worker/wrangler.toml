@@ -3,7 +3,9 @@ main = "src/index.js"
 compatibility_date = "2025-01-01"
 
 [triggers]
-crons = ["*/5 * * * *"]
+# */5: six-hour inactivity nudges. Every minute: approval reminders (a 5-minute
+# plan needs minute resolution). index.js `cronJobFor` routes by this string.
+crons = ["*/5 * * * *", "* * * * *"]
 
 # Non-secret config. The project id is a public identifier.
 [vars]

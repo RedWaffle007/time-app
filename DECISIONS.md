@@ -6109,3 +6109,69 @@ Batch B was expected to need a rules deploy; it does not.
   "Added to a group / You're now a member of {group}". Tap opens the group.
 - The approver's snackbar now says "{name} joined the group." when their
   approval (or a one-member-group invite) admitted the candidate.
+
+## Pending-approvals badge moves to its icon, which glows (2026-09-26)
+
+Device report: a plan needing approval put "1" on the **My Schedule tab
+label**, where there was nothing to act on. The embedded Plan shell badged the
+tab with `planAttentionCountProvider`; the Pending approvals app-bar icon (the
+one that opens the queue) had no badge. (The un-embedded OutcomeScreen app bar
+did badge the icon, which is why it looked right in code.)
+
+- **The count lives on the Pending approvals icon**, with the real number, via
+  the one `PendingCountBadge`. The tab label carries no badge. The Plan
+  bottom-bar pillar keeps its badge — same provider, so the two cannot differ.
+- **New token/recipe: the attention glow** (UI-RULES §6.2a). A soft halo in
+  the `attention` line role behind the icon while ≥1 plan is pending; gone when
+  the last is decided. Light `#B4400C` at 45% alpha, dark `#F0A56E` at 60% (the
+  dark ground needs more to read), blur `Sizes.attentionGlowBlur` 14, spread
+  `Sizes.attentionGlowSpread` 1. **Static, not pulsing** — a repeating
+  animation spends calm (§4 Motion) and never settles in widget tests; a
+  static halo needs no reduced-motion branch.
+- **Contrast:** the glow is supplementary, never the only signal — the count
+  badge (`onAttentionContainer` on `attentionContainerStrong`, 7.08:1 light /
+  4.55:1 dark, §7) and the tooltip ("Pending approvals, N waiting") carry the
+  meaning. The icon's own contrast is unchanged because the halo sits behind
+  it.
+- **Firewall (§2.7):** the halo is the `attention` role (line/text), not an
+  `attention*Container` fill, and lives in `status_style.dart` beside the badge
+  — attention state is owned there. It is a shadow, so §5 lists it as an
+  explicit exception to "flat by default".
+
+## Approval reminders — server-side Worker cron (2026-09-26, user chose option A)
+
+While a plan someone made for you stays `pending`, the Worker reminds you:
+"Task: {task} planned by {planner} is waiting for your approval." (group:
+"Group task: {task} planned by {planner} in {group} is waiting…"). The final
+slot's title is "Due soon: waiting for your approval". Tap → Pending approvals.
+
+**Timing** (`approvalReminderTimes`, W = due − `createdAt`, falling back to the
+document create time): W < 10 min → one at W/2; 10 min ≤ W < 2 h → W/2 and a
+final at due − clamp(W/10, 3, 10 min); W ≥ 2 h → W/2, due − 1 h, due − 10 min.
+At most 3; the final is always kept; others closer than 2 min to the next are
+dropped (so exactly 2 h gives two). Absolute UTC instants — DST cannot shift
+them. If the Worker misses several slots it sends only the latest, never a
+burst.
+
+**Why server-side:** the user's rule is "stop immediately once decided". Each
+reminder is claimed with a conditional write (`approvalRemindersSent`,
+`approvalRemindedAt`) against the item's `updateTime` from the query, so any
+approve/reject/withdraw — on any device — makes the claim fail and nothing is
+sent. No phone-side scheduling or cancel path exists to go stale. Residual: a
+decision landing in the sub-second between claim and FCM send can still let
+that one reminder out.
+
+**Mechanics:** a second cron, `* * * * *` (wrangler.toml; `cronJobFor` routes by
+cron string; `*/5` stays inactivity-only). Collection-group query on `items`
+(`status == pending`, `scheduledInstantUtc > now`, soonest first, limit 50) —
+**needs the new composite index in `firestore.indexes.json`; deploy indexes
+before the Worker.** Revoked grant → no reminder (shared `itemGrantPath`).
+Self-plans never remind. At most 6 reminders per run (≈6 subrequests each;
+Cloudflare free plan allows 50/invocation); the rest go next minute.
+
+**Rules:** no change. `approvalRemindersSent`/`approvalRemindedAt`/
+`notifiedDismissed` are in no client whitelist, so only the service account
+writes them; item updates compare `changedKeys()`, so their presence never
+blocks approve/reject/withdraw/outcome — both pinned in
+`adversarial_schedule_matrix.test.mjs`. Scale limit to revisit: >50 pending
+future items across all users means later ones wait until earlier ones clear.
