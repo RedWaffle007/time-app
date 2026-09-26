@@ -631,7 +631,7 @@ test('group emergency creates keep the alarm command and say group', () => {
   }, 't', 'i', { actorName: 'Test Person', groupName: 'Family' });
   assert.equal(message.data.command, 'scheduleReminder');
   assert.equal(message.data.title, 'Evacuate');
-  assert.equal(message.data.pushTitle, 'New group emergency plan for you');
+  assert.equal(message.data.pushTitle, 'New emergency group plan for you');
   assert.equal(message.data.pushBody, 'Test Person planned Evacuate for you in Family');
 });
 
@@ -980,7 +980,7 @@ test('a group emergency plan reaches the target as a group-labelled alarm comman
   });
   assert.equal(result.reason, 'sent');
   assert.equal(harness.sent[0].data.command, 'scheduleReminder');
-  assert.equal(harness.sent[0].data.pushTitle, 'New group emergency plan for you');
+  assert.equal(harness.sent[0].data.pushTitle, 'New emergency group plan for you');
   assert.equal(
     harness.sent[0].data.pushBody,
     'Test Planner planned Evacuate for you in Family',
@@ -1007,4 +1007,78 @@ test('a normal GROUP grant never authorizes pushes about a group emergency', asy
     assert.equal(result.reason, 'no-active-grant', event);
   }
   assert.equal(harness.sent.length, 0);
+});
+
+// --- item 14: "Emergency" on every push about an emergency item -------------
+
+test('every event about an emergency item says Emergency in the title', () => {
+  const base = { title: 'Meds', status: 'approved', tier: 'emergency' };
+  const cases = [
+    ['created', null, {}, 'New emergency plan for you'],
+    ['withdrawn', null, {}, 'Emergency plan withdrawn'],
+    ['decided', 'approved', {}, 'Emergency plan approved'],
+    ['outcome', 'done', {}, 'Emergency task completed'],
+    ['outcome', 'skipped', {}, 'Emergency task skipped'],
+    ['outcome', 'done', { alarm: { unavailableAt: '2030-01-01T00:00:00Z' } },
+      'Emergency task completed late'],
+    ['outcome', 'done', {
+      scheduledInstantUtc: '2030-01-01T10:00:00Z',
+      outcome: { result: 'done', completedAt: '2030-01-01T09:00:00Z' },
+    }, 'Emergency task completed early'],
+    ['dismissed', null, {}, 'Emergency alarm dismissed'],
+  ];
+  for (const [event, subtype, extra, title] of cases) {
+    const message = buildMessage(event, subtype, { ...base, ...extra }, 't', 'i', {
+      actorName: 'Test Person', groupName: null,
+    });
+    const shown = message.notification
+      ? message.notification.title
+      : message.data.pushTitle;
+    assert.equal(shown, title, `${event}/${subtype}`);
+  }
+});
+
+test('an emergency group item says both, emergency first', () => {
+  const names = { actorName: 'Test Person', groupName: 'Family' };
+  const item = { title: 'Meds', status: 'approved', tier: 'emergency' };
+  assert.equal(
+    buildMessage('outcome', 'done', item, 't', 'i', names).notification.title,
+    'Emergency group task completed',
+  );
+  assert.equal(
+    buildMessage('dismissed', null, item, 't', 'i', names).notification.title,
+    'Emergency group alarm dismissed',
+  );
+  assert.equal(
+    buildMessage('created', null, item, 't', 'i', names).data.pushTitle,
+    'New emergency group plan for you',
+  );
+});
+
+test('normal items never say Emergency', () => {
+  const item = { title: 'Walk', status: 'approved' };
+  for (const [event, subtype] of [
+    ['created', null], ['withdrawn', null], ['decided', 'approved'],
+    ['outcome', 'done'], ['outcome', 'skipped'], ['dismissed', null],
+  ]) {
+    for (const groupName of [null, 'Team']) {
+      const n = buildMessage(event, subtype, item, 't', 'i', {
+        actorName: 'Test Person', groupName,
+      }).notification;
+      assert.doesNotMatch(`${n.title} ${n.body}`, /emergency/i, `${event} ${groupName}`);
+    }
+  }
+});
+
+test('the emergency alert body and data keep arming the alarm', () => {
+  const message = buildMessage('created', null, {
+    title: 'Meds', note: 'With water', status: 'approved', tier: 'emergency',
+    scheduledInstantUtc: '2030-01-01T10:00:00.000Z',
+  }, 't', 'i', { actorName: 'Test Planner', groupName: null });
+  assert.equal(message.notification, undefined, 'data-only, so a killed app arms it');
+  assert.equal(message.android.priority, 'high');
+  assert.equal(message.data.command, 'scheduleReminder');
+  assert.equal(message.data.title, 'Meds');
+  assert.equal(message.data.body, 'With water');
+  assert.equal(message.data.pushBody, 'Test Planner planned Meds for you');
 });

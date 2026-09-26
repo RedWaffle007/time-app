@@ -114,7 +114,11 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
   /// old one is deleted in [initialize].
   static const _legacyChannelId = 'time_app_reminders';
   static const channelId = 'time_app_reminders_alert';
-  static const receivedPlanChannelId = 'time_app_received_plans';
+
+  /// Retired 2026-09-26: the emergency alert moved to its own max-importance
+  /// channel (`kEmergencyPlansChannelId`); channel settings are frozen, so the
+  /// old one is deleted in [initialize].
+  static const _legacyReceivedPlanChannelId = 'time_app_received_plans';
   static final _channel = AndroidNotificationChannel(
     channelId,
     'Reminders',
@@ -139,24 +143,6 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
     android: buildAlarmNotificationDetails(channelId),
   );
 
-  static const _receivedPlanChannel = AndroidNotificationChannel(
-    receivedPlanChannelId,
-    'Plans from friends',
-    description: 'Alerts when a friend adds a plan for you.',
-    importance: Importance.high,
-  );
-
-  static const _receivedPlanDetails = NotificationDetails(
-    android: AndroidNotificationDetails(
-      receivedPlanChannelId,
-      'Plans from friends',
-      channelDescription: 'Alerts when a friend adds a plan for you.',
-      importance: Importance.high,
-      priority: Priority.high,
-      icon: 'ic_notification',
-    ),
-  );
-
   @override
   Future<void> initialize() async {
     await _plugin.initialize(
@@ -179,7 +165,10 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
     // never created (a fresh install).
     await android?.deleteNotificationChannel(channelId: _legacyChannelId);
     await android?.createNotificationChannel(_channel);
-    await android?.createNotificationChannel(_receivedPlanChannel);
+    await android?.deleteNotificationChannel(
+      channelId: _legacyReceivedPlanChannelId,
+    );
+    await android?.createNotificationChannel(emergencyPlansChannel);
   }
 
   @visibleForTesting
@@ -203,16 +192,19 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
   /// displaying this alert prevents FCM from treating repeated silent commands
   /// as abuse and deprioritising later alarms. The due-time alarm remains a
   /// separate notification on the alarm channel.
-  Future<void> showReceivedPlan({
+  Future<void> showEmergencyPlanAlert({
     required String itemId,
     required String title,
     required String body,
+    required Map<String, dynamic> data,
   }) {
     return _plugin.show(
       id: reminderNotificationId('received:$itemId'),
       title: title,
       body: body,
-      notificationDetails: _receivedPlanDetails,
+      notificationDetails: emergencyPlanAlertDetails(),
+      // Tapping routes like the push itself (to the item in My Schedule).
+      payload: encodePushTapPayload(data),
     );
   }
 

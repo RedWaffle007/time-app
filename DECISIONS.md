@@ -6337,3 +6337,22 @@ group-level emergency permission.
   pushes (including the data push that arms the alarm on a killed app) would
   be refused — or wrongly allowed by a normal grant. The lapse and reminder
   crons inherit the fix.
+
+## Emergency notification — its own channel + "Emergency" labels (2026-09-26, item 14)
+
+- **"Emergency plans" channel** (`time_app_emergency_plans`): max importance,
+  the system alarm tone as its sound, a distinct urgent vibration. Used ONLY
+  for the immediate alert when someone places an emergency plan for you — from
+  the killed-app handler (`showEmergencyPlanAlert`) and the foreground
+  presenter, which share one channel definition. No DND bypass (decided). The
+  alarm itself still rings at the due time on the reminder channel, unchanged.
+- Replaces `time_app_received_plans` ("Plans from friends"), which only ever
+  carried this alert; it is deleted on start (channel settings are frozen, so
+  a new id was required).
+- The alert is now tappable and opens My Schedule on that item (an emergency
+  is born approved, so the approval queue — where a normal "new plan" push
+  goes — would show nothing).
+- **Labels:** every Worker push about an emergency item leads with
+  "Emergency", then "group" for group plans — "New emergency group plan for
+  you", "Emergency plan withdrawn", "Emergency task completed early",
+  "Emergency alarm dismissed". Normal items never say it (tested).

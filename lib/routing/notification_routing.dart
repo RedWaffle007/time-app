@@ -40,6 +40,10 @@ class NotificationRouter {
   void openForPushEvent(Map<String, dynamic> data) {
     final router = _ref.read(routerProvider);
     switch (data['event']) {
+      // An EMERGENCY plan is born approved, so it is never in the approval
+      // queue: open My Schedule on that item instead (item 14).
+      case 'created' when data['command'] == 'scheduleReminder':
+        _openItemInSchedule(data['itemId']);
       case 'created':
       case 'withdrawn':
       case 'approvalReminder':
@@ -83,6 +87,15 @@ class NotificationRouter {
           _openPlanActivity();
         }
     }
+  }
+
+  /// Open My Schedule with [itemId] singled out — the same highlight intent
+  /// the calendar and alarm screens use.
+  void _openItemInSchedule(Object? itemId) {
+    if (itemId is String && itemId.isNotEmpty) {
+      _ref.read(planIntentProvider.notifier).highlightItem(itemId);
+    }
+    _ref.read(routerProvider).go(Routes.plan);
   }
 
   /// Open the Plan pillar on its Activity sub-tab. Sets the intent BEFORE `go`,

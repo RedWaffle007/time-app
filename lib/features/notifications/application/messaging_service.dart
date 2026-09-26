@@ -75,11 +75,12 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     reminderNotificationId(request.itemId),
   );
   if (armed) {
-    await scheduler.showReceivedPlan(
+    await scheduler.showEmergencyPlanAlert(
       itemId: request.itemId,
       title: message.data['pushTitle'] as String? ??
           'New emergency plan for you',
       body: message.data['pushBody'] as String? ?? request.title,
+      data: message.data,
     );
   }
 }

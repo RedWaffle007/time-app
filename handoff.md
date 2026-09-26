@@ -197,7 +197,8 @@ Batch E — build, one item at a time, thorough regression tests each:
     Done/Skipped pushes are NOT also posted as system notifications (the
     pop-up is the announcement); every other push still is. Only the planner
     sees the pop-up — the target keeps "Updating {planner}…" + confetti.
-14. **Emergency notification.** A dedicated "Emergency plans" channel (max
+14. **Emergency notification.** — **BUILT 2026-09-26; awaiting Worker deploy +
+    commit** (DECISIONS.md "Emergency notification — its own channel"). A dedicated "Emergency plans" channel (max
     importance, own sound/vibration) for the immediate alert on the target, and
     "Emergency" in every push about an emergency item (created, decided,
     outcome, dismissed, withdrawn, reminders). Alarm timing unchanged. No DND
@@ -230,8 +231,8 @@ Batch E — build, one item at a time, thorough regression tests each:
       respond to {task}, so it was marked Skipped."
     - Group: add " in {group}" and "Group task" in the title; emergency:
       "Emergency task" in the title. Own dedup field per recipient.
-15. **Group emergency plan — per-person grants only.** — **BUILT 2026-09-26;
-    awaiting rules deploy, Worker deploy, commit** (DECISIONS.md "Group
+15. **Group emergency plan — per-person grants only.** — **BUILT, rules +
+    Worker deployed, committed** (DECISIONS.md "Group
     emergency plans"). "Plan for the group"
     gains an Emergency switch when the planner holds at least one member's
     FRIENDSHIP emergency grant; it fans out only to those members (born

@@ -220,14 +220,21 @@ export function buildMessage(event, subtype, item, targetUid, itemId, names = {}
   const who = names.actorName || 'Someone';
   const isGroup = typeof names.groupName === 'string';
   const inGroup = isGroup && names.groupName ? ` in ${names.groupName}` : '';
-  const task = isGroup ? 'Group task' : 'Task';
-  const plan = isGroup ? 'Group plan' : 'Plan';
+  // "Emergency" leads every title about an emergency item (item 14), then
+  // "group" for a group plan: "Emergency group task completed".
+  const emergency = item.tier === 'emergency';
+  const noun = (word) => {
+    const phrase = `${emergency ? 'emergency ' : ''}${isGroup ? 'group ' : ''}${word}`;
+    return phrase[0].toUpperCase() + phrase.slice(1);
+  };
+  const task = noun('task');
+  const plan = noun('plan');
 
   let notification;
   switch (event) {
     case 'created':
       notification = {
-        title: isGroup ? 'New group plan for you' : 'New plan for you',
+        title: `New ${noun('plan').toLowerCase()} for you`,
         body: `${who} planned ${title} for you${inGroup}`,
       };
       break;
@@ -244,7 +251,7 @@ export function buildMessage(event, subtype, item, targetUid, itemId, names = {}
       break;
     case 'dismissed':
       notification = {
-        title: isGroup ? 'Group alarm dismissed' : 'Alarm dismissed',
+        title: `${noun('alarm')} dismissed`,
         body: `${who} dismissed the alarm for ${title}${inGroup}`,
       };
       break;
@@ -308,9 +315,7 @@ export function buildMessage(event, subtype, item, targetUid, itemId, names = {}
         body: item.note
           ? String(item.note)
           : 'Tap to mark it done or skip.',
-        pushTitle: isGroup
-          ? 'New group emergency plan for you'
-          : 'New emergency plan for you',
+        pushTitle: notification.title,
         pushBody: notification.body,
       },
     };
