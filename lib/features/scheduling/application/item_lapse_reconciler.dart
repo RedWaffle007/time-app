@@ -49,25 +49,33 @@ class ItemLapseReconciler {
   /// real clock). Idempotent — a settled item is never re-touched — so it is
   /// safe on every emission and at app start. Returns the counts actually
   /// written, so a test asserts the effect rather than the calls.
-  Future<({int rejected, int skipped})> reconcile({
+  Future<({int approved, int skipped})> reconcile({
     required String targetUid,
     required List<ScheduleItem> items,
     DateTime? now,
   }) async {
-    if (_running) return (rejected: 0, skipped: 0);
+    if (_running) return (approved: 0, skipped: 0);
     _running = true;
     try {
       final lapsed = lapsedItems(items, (now ?? DateTime.now()).toUtc());
-      var rejected = 0;
+      var approved = 0;
       var skipped = 0;
-      for (final item in lapsed.toReject) {
-        await _repository.reject(
+      // F2: a legacy pending plan becomes an alarm (the reminder reconciler
+      // arms it off the next emission) …
+      for (final item in lapsed.toApprove) {
+        await _repository.approve(targetUid, item.id);
+        approved++;
+      }
+      // … or, already past its deadline, is settled as skipped.
+      for (final item in lapsed.toApproveAndSkip) {
+        await _repository.approve(targetUid, item.id);
+        approved++;
+        final recorded = await _repository.markSkippedIfUnsettled(
           targetUid,
           item.id,
-          reason: kLapsedRejectReason,
-          item: item,
+          reason: kLapsedSkipReason,
         );
-        rejected++;
+        if (recorded) skipped++;
       }
       for (final item in lapsed.toSkip) {
         final recorded = await _repository.markSkippedIfUnsettled(
@@ -77,7 +85,7 @@ class ItemLapseReconciler {
         );
         if (recorded) skipped++;
       }
-      return (rejected: rejected, skipped: skipped);
+      return (approved: approved, skipped: skipped);
     } finally {
       _running = false;
     }
@@ -108,7 +116,7 @@ final itemLapseSyncProvider = Provider<void>((ref) {
     unawaited(
       reconciler
           .reconcile(targetUid: uid, items: items)
-          .catchError((_) => (rejected: 0, skipped: 0)),
+          .catchError((_) => (approved: 0, skipped: 0)),
     );
   }, fireImmediately: true);
 });

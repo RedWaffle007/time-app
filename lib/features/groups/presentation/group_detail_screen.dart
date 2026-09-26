@@ -184,37 +184,31 @@ class GroupDetailScreen extends ConsumerWidget {
               if (group != null && myUid != null)
                 Builder(
                   builder: (context) {
-                    final candidates = <GroupPlanCandidate>[
-                      (uid: myUid, isSelf: true),
-                      for (final m in members)
-                        if (m.uid != myUid && iPlanFor(m.uid))
-                          (uid: m.uid, isSelf: false),
-                    ];
-                    // Members who gave ME their own emergency permission —
-                    // the only people an emergency group plan can reach.
+                    // F2 (2026-09-26): ONE permission — a member who gave me
+                    // either the planning or the (merged) emergency grant.
                     final emergencyUids = <String>{
                       for (final g
                           in ref.watch(myEmergencyTargetsProvider).value ??
                               const <PlannerGrant>[])
-                        if (g.granted &&
-                            g.targetUid != myUid &&
-                            members.any((m) => m.uid == g.targetUid))
-                          g.targetUid,
+                        if (g.granted) g.targetUid,
                     };
+                    final candidates = <GroupPlanCandidate>[
+                      (uid: myUid, isSelf: true),
+                      for (final m in members)
+                        if (m.uid != myUid &&
+                            (iPlanFor(m.uid) || emergencyUids.contains(m.uid)))
+                          (uid: m.uid, isSelf: false),
+                    ];
                     final others = candidates.where((c) => !c.isSelf).length;
-                    if (others == 0 && emergencyUids.isEmpty) {
-                      return const SizedBox.shrink();
-                    }
-                    final reach = others > 0 ? others : emergencyUids.length;
+                    if (others == 0) return const SizedBox.shrink();
                     return Card(
                       child: ListTile(
                         leading: const Icon(AppIcons.navPlan),
                         title: const Text('Plan for the group'),
                         subtitle: Text(
-                          'One item for $reach '
-                          '${reach == 1 ? 'member' : 'members'} you can plan '
-                          'for, plus you'
-                          '${emergencyUids.isNotEmpty ? ' · emergency available' : ''}',
+                          'One alarm for $others '
+                          '${others == 1 ? 'member' : 'members'} you can plan '
+                          'for, plus you',
                         ),
                         onTap: () => showGroupPlanSheet(
                           context,
@@ -222,7 +216,6 @@ class GroupDetailScreen extends ConsumerWidget {
                           groupId: groupId,
                           groupName: group.name,
                           candidates: candidates,
-                          emergencyUids: emergencyUids,
                         ),
                       ),
                     );

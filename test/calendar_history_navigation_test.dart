@@ -96,7 +96,8 @@ void main() {
           ),
           side: CalendarSide.mine,
         ),
-        'Open in Approvals',
+        // F2: there is no approvals queue; a legacy pending item is yours.
+        'Open in My Schedule',
       ),
       (
         CalendarEntry(

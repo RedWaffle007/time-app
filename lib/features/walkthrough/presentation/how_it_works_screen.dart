@@ -30,8 +30,9 @@ class HowItWorksScreen extends ConsumerWidget {
         padding: Space.screenFormSafe(context),
         children: [
           Text(
-            'Checkmate lets people you trust build your schedule and set your '
-            'reminders — always with your approval. Here is every part of it.',
+            'Checkmate lets people you trust set alarms on your phone — only '
+            'people you have allowed, and you can stop it at any time. Here is '
+            'every part of it.',
             style: context.text.bodyMedium?.copyWith(
               color: context.colors.onSurfaceVariant,
             ),
@@ -98,22 +99,15 @@ class HowItWorksScreen extends ConsumerWidget {
             body:
                 'From You → Friends → Plan requests, ask one or more trusted '
                 'friends to plan one item or fill a time window. They still '
-                'need your normal planning permission, and every item still '
-                'comes back to you for approval.',
+                'need your permission to set alarms for you.',
           ),
           const _Feature(
             icon: AppIcons.approved,
-            title: 'Approve or reject',
+            title: 'Your permission',
             body:
-                'Every item a planner creates lands pending. It only fires '
-                'after you approve it; reject or withdraw removes it.',
-          ),
-          const _Feature(
-            icon: AppIcons.emergency,
-            title: 'Emergency items',
-            body:
-                'A separate grant lets a trusted friend place an item that '
-                'skips the queue and rings straight away. Off by default.',
+                'Only friends you allow (on their profile) or members of a '
+                'group you allow can set alarms for you. Their alarms ring at '
+                'the time they choose; turn the permission off to stop them.',
           ),
 
           const SizedBox(height: Space.md),
@@ -122,7 +116,7 @@ class HowItWorksScreen extends ConsumerWidget {
             icon: AppIcons.reminders,
             title: 'Reminders',
             body:
-                'Approved items notify you when they are due — on this device, '
+                'Alarms ring when they are due — scheduled on this device, '
                 'nothing leaving it.',
           ),
           const _Feature(

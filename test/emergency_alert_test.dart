@@ -210,11 +210,17 @@ void main() {
       expect(container.read(planIntentProvider)?.itemId, 'item-1');
     });
 
-    testWidgets('a normal new plan still opens Pending approvals', (
+    // F2: every new alarm opens that alarm in My Schedule.
+    testWidgets('a normal new alarm opens that alarm in My Schedule', (
       tester,
     ) async {
-      await open(tester, {'event': 'created', 'itemId': 'item-2'});
-      expect(find.text('Approvals'), findsOneWidget);
+      final container = await open(tester, {
+        'event': 'created',
+        'itemId': 'item-2',
+      });
+      expect(find.text('Plan'), findsOneWidget);
+      expect(find.text('Approvals'), findsNothing);
+      expect(container.read(planIntentProvider)?.itemId, 'item-2');
     });
   });
 }

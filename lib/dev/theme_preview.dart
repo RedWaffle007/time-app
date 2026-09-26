@@ -138,7 +138,7 @@ class PanelPreview extends StatelessWidget {
           _heading(context, 'Warning panel — on background'),
           const WarningPanel(
             'This falls in their quiet hours (10:00 pm–7:00 am). '
-            'You can still send it — they approve every item.',
+            'You can still send it — it will ring at that time.',
           ),
           const WarningPanel(
             "That clock time doesn't exist on this date — clocks spring "
@@ -187,7 +187,7 @@ class PanelPreview extends StatelessWidget {
                   ),
                   const WarningPanel(
                     'This falls in late night (11pm–6am). You can still send '
-                    'it — they approve every item.',
+                    'it — it will ring at that time.',
                   ),
                 ],
               ),

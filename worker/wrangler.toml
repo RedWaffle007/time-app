@@ -3,13 +3,12 @@ main = "src/index.js"
 compatibility_date = "2025-01-01"
 
 [triggers]
-# */5: six-hour inactivity nudges. Every minute: approval reminders (a 5-minute
-# plan needs minute resolution). */2: server-side lapse (settle unanswered
-# items at their response deadline and notify both people). index.js
-# `cronJobFor` routes by this string; each invocation has its own budget.
-# 7 * * * *: hourly voice-note cleanup (orphan uploads after a day; used
-# notes 7 days after their plan's scheduled time).
-crons = ["*/5 * * * *", "* * * * *", "*/2 * * * *", "7 * * * *"]
+# */5: six-hour inactivity nudges. */2: server-side lapse (settle unanswered
+# items at their response deadline and notify both people) + the voice-note
+# rescue. 7 * * * *: hourly voice-note cleanup. index.js `cronJobFor` routes by
+# this string; each invocation has its own budget. (The every-minute
+# approval-reminder cron went with the approval step, F2 2026-09-26.)
+crons = ["*/5 * * * *", "*/2 * * * *", "7 * * * *"]
 
 # Non-secret config. The project id is a public identifier.
 [vars]

@@ -4,11 +4,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/theme/status_style.dart';
 import '../../../routing/app_router.dart';
 import '../../groups/presentation/groups_screen.dart';
 import '../../outcomes/presentation/outcome_screen.dart';
-import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/presentation/planner_activity_screen.dart';
 import '../application/plan_intent.dart';
 import '../../../core/widgets/tab_body_inset.dart';
@@ -219,12 +217,6 @@ class _PlanShellState extends ConsumerState<PlanShell>
   List<Widget> _actionsFor(int index) {
     final contextual = <Widget>[
       switch (index) {
-        // The pending count and glow ride THIS icon — the one that opens the
-        // queue — from the same provider as the Plan pillar badge.
-        _mySchedule => PendingApprovalsAction(
-          count: ref.watch(planAttentionCountProvider),
-          onPressed: () => context.push('${Routes.plan}/approvals'),
-        ),
         // Manual planning lives on the always-present bottom-right PLAN button,
         // so it is not duplicated as an Activity app-bar action.
         _groups => IconButton(

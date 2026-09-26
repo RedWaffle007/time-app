@@ -8,7 +8,7 @@
 //                    ringtone unless the note arrives.
 // Each step is claimed once with a conditional write, so it never repeats.
 
-import { ACTIVITY_CHANNEL_ID, itemGrantPath } from './notify.js';
+import { ACTIVITY_CHANNEL_ID, hasActiveItemGrant } from './notify.js';
 
 const MIN = 60 * 1000;
 export const RESCUE_PUSH_WINDOW_MS = 30 * MIN;
@@ -94,8 +94,7 @@ export async function rescueUndeliveredVoiceNotes(ctx, now = new Date(), {
 
     if (dueMs - nowMs > PLANNER_NOTICE_WINDOW_MS || item.notifiedVoiceUndelivered) continue;
     if (summary.notices >= maxNotices) continue;
-    const grant = await ctx.db.getDoc(itemGrantPath(item, plannerUid, targetUid));
-    if (!grant || grant.granted !== true) continue;
+    if (!(await hasActiveItemGrant(ctx.db, item, plannerUid, targetUid))) continue;
     const claimed = await ctx.db.patchDocIfUnchanged(path, { notifiedVoiceUndelivered: true }, row.updateTime);
     if (!claimed) continue;
     summary.notices += 1;

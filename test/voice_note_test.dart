@@ -8,8 +8,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_app/core/theme/app_theme.dart';
-import 'package:time_app/features/approvals/presentation/pending_approvals_screen.dart';
-import 'package:time_app/features/voice_notes/presentation/voice_note_play_button.dart';
 import 'package:time_app/features/auth/application/auth_providers.dart';
 import 'package:time_app/features/auth/data/auth_repository.dart';
 import 'package:time_app/features/auth/domain/user_profile.dart';
@@ -137,6 +135,8 @@ class _Repo implements ScheduleRepository {
       'targetUid': targetUid,
       'itemId': itemId,
       'voiceNote': voiceNote,
+      'status': status,
+      'tier': tier,
     });
     return itemId ?? 'auto-id';
   }
@@ -507,7 +507,7 @@ void main() {
     }
 
     Future<void> send(WidgetTester tester) async {
-      await tester.tap(find.text('Send for approval'));
+      await tester.tap(find.text('Send'));
       await settleIo(tester);
       await tester.pumpAndSettle();
     }
@@ -541,10 +541,7 @@ void main() {
         (created['voiceNote'] as VoiceNoteMeta?)?.sha256,
         _metaFor(_audio).sha256,
       );
-      expect(
-        find.text('Item with your voice note sent for approval.'),
-        findsOneWidget,
-      );
+      expect(find.text('Voice alarm sent.'), findsOneWidget);
       // The draft is gone and the recorder is fresh for the next plan.
       expect(find.text('Record'), findsOneWidget);
     });
@@ -577,96 +574,11 @@ void main() {
       expect(client.uploads, isEmpty);
       expect(repo.created.single['itemId'], isNull);
       expect(repo.created.single['voiceNote'], isNull);
-      expect(find.text('Item sent for approval.'), findsOneWidget);
-    });
-  });
-
-  group('approvals', () {
-    ScheduleItem pending({VoiceNoteMeta? meta, String id = 'item-1'}) =>
-        ScheduleItem(
-          id: id,
-          targetUid: 'me',
-          createdByUid: 'PLANNER',
-          groupId: '',
-          title: 'Wake up $id',
-          localWallTime: '',
-          timezone: 'Etc/UTC',
-          scheduledInstantUtc: DateTime.utc(2030),
-          status: ScheduleItemStatus.pending,
-          voiceNote: meta,
-        );
-
-    Future<(_Client, _Player)> pumpApprovals(
-      WidgetTester tester,
-      List<ScheduleItem> items, {
-      _Client? client,
-    }) async {
-      final voice = client ?? _Client();
-      final player = _Player();
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            myItemsAsTargetProvider.overrideWithValue(AsyncData(items)),
-            profileByUidProvider.overrideWith(
-              (ref, uid) => Stream.value(
-                UserProfile(
-                  uid: uid,
-                  name: 'Test Planner',
-                  homeTimezone: 'UTC',
-                ),
-              ),
-            ),
-            voiceNoteClientProvider.overrideWithValue(voice),
-            voicePlayerProvider.overrideWithValue(player),
-            voiceNoteCacheDirProvider.overrideWithValue(() async => temp),
-          ],
-          child: MaterialApp(
-            theme: AppTheme.light,
-            home: const PendingApprovalsScreen(),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      return (voice, player);
-    }
-
-    testWidgets('only a plan with a voice note offers to play it', (
-      tester,
-    ) async {
-      await pumpApprovals(tester, [
-        pending(meta: _metaFor(_audio), id: 'a'),
-        pending(id: 'b'),
-      ]);
-      expect(find.byType(VoiceNotePlayButton), findsOneWidget);
-      expect(find.text('Play voice note · 0:12'), findsOneWidget);
-    });
-
-    testWidgets('playing fetches the verified copy and plays it', (
-      tester,
-    ) async {
-      final (client, player) = await pumpApprovals(tester, [
-        pending(meta: _metaFor(_audio)),
-      ]);
-      await tester.tap(find.byType(VoiceNotePlayButton));
-      await settleIo(tester);
-      expect(client.downloads, 1);
-      expect(player.played.single, endsWith('/voice-notes/item-1.m4a'));
-      expect(find.text('Stop voice note'), findsOneWidget);
-      player.finish();
-      await tester.pump();
-      expect(find.text('Play voice note · 0:12'), findsOneWidget);
-    });
-
-    testWidgets('a note that fails its check is not played, and says so', (
-      tester,
-    ) async {
-      final (_, player) = await pumpApprovals(tester, [
-        pending(meta: _metaFor(_audio)),
-      ], client: _Client(downloadBytes: Uint8List.fromList([1, 2, 3])));
-      await tester.tap(find.byType(VoiceNotePlayButton));
-      await settleIo(tester);
-      expect(player.played, isEmpty);
-      expect(find.textContaining("didn't arrive intact"), findsOneWidget);
+      // F2: every alarm is saved approved — it rings with no approval step.
+      expect(repo.created.single['status'], ScheduleItemStatus.approved);
+      expect(repo.created.single['tier'], ItemTier.normal);
+      expect(find.text('Emergency'), findsNothing);
+      expect(find.text('Alarm sent.'), findsOneWidget);
     });
   });
 }

@@ -44,7 +44,7 @@
 - Latest profile build installed on the Redmi; the third-pass fixes await the
   user's device check.
 - Next implementation order (revised 2026-09-26 after the in-person device
-  check): **Batch A ✓ → B ✓ → B2 ✓ → C ✓ → D ✓ (decided) → E (18 → 19 → 20 → 15 → 14 → 16 → 17) ✓ → 32-0…32c ✓ → F (F1+F6 → F2 → F3+F5 → F4) → 32d → 24 → 33**. See "Device-check
+  check): **Batch A ✓ → B ✓ → B2 ✓ → C ✓ → D ✓ (decided) → E (18 → 19 → 20 → 15 → 14 → 16 → 17) ✓ → 32-0…32c ✓ → F (F1+F6 ✓ → F2 ✓ built → F3+F5 → F4) → 32d → 24 → 33**. See "Device-check
   backlog (2026-09-26)" below.
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
 
@@ -272,7 +272,20 @@ entirely on the planning permission (still target-granted and revocable).
   `DateFormat.is24HourFormat` natively (startup + resume) and apply it to the
   picker AND the one format helper, both ways. Tests for both settings in a
   24-hour-default locale.
-- **F2 — Remove approval entirely (groups too).** Every alarm anyone sets
+- **F2 — BUILT 2026-09-26 (awaiting user test/deploy/commit; phone check
+  deferred).** Rules: create = one permission (planning grant, emergency grant
+  merged in), `approved` or legacy `pending`; planner may cancel any
+  unanswered alarm — 258/258. Worker: `hasActiveItemGrant`, every new alarm
+  is an alarm command, "Alarm cancelled", Emergency label retired,
+  approval-reminder cron + module deleted, stale legacy pending → skipped —
+  131/131. App: approvals screen/route/badge/glow removed; builder + group
+  fan-out save `approved` with a "Send" button; planner "Cancel alarm";
+  legacy pending → alarms (past → skipped) via the lapse reconciler; ONE
+  "Let {name} set alarms for me" switch (off revokes both grants); copy
+  rewritten; `test/f2_no_approval_test.dart` — full suite 715. DECISIONS.md
+  "Approval removed". Deploy order: rules → Worker → app. The "Emergency
+  plans" channel survives until F3. Original item:
+  - **F2 — Remove approval entirely (groups too).** Every alarm anyone sets
   through the app rings directly (what "emergency" did); the Emergency
   switch/label goes. One permission: the existing planning permission
   (friend or group) now authorises direct alarms; the separate emergency

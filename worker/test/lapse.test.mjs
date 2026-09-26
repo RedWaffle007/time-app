@@ -117,11 +117,11 @@ test('group and emergency items say so in both messages', () => {
   const emergency = buildPlannerLapseMessage(item({ tier: 'emergency' }), {
     targetName: 'Test Target', groupName: null,
   }, 'target', 'i1').notification;
-  assert.equal(emergency.title, 'Emergency task skipped automatically');
+  assert.equal(emergency.title, 'Task skipped automatically', 'the Emergency label is retired (F2)');
   const both = buildTargetLapseMessage(item({ tier: 'emergency', groupId: 'g1' }), {
     plannerName: null, groupName: '', selfPlanned: false,
   }, 'target', 'i1').notification;
-  assert.equal(both.title, 'Emergency group task skipped automatically');
+  assert.equal(both.title, 'Group task skipped automatically');
   assert.match(both.body, /planned by Someone,/);
 });
 
@@ -148,6 +148,7 @@ function harness({ pending = [], approved = [] } = {}, docs = {}, {
   const sent = [];
   const queries = [];
   const store = {
+    'friendships/planner_target': { participants: ['planner', 'target'] },
     'friendships/planner_target/plannerGrants/planner_target': { granted: true },
     'users/planner': { name: 'Test Planner' },
     'users/target': { name: 'Test Target' },
@@ -238,13 +239,18 @@ test('items that already have an outcome, or the wrong shape, are left alone', a
   }
 });
 
-test('an unapproved plan is rejected silently at the same deadline', async () => {
+// F2: a legacy pending plan (an older client sent it) that is already past
+// its deadline is settled as skipped — silently, since it never rang.
+test('a stale legacy pending plan is settled as skipped, silently', async () => {
   const h = harness({ pending: [row('pending')] });
   const summary = await settleLapsedItems(h.ctx, AFTER);
   assert.equal(summary.rejected, 1);
-  assert.equal(h.claims[0].fields.status, 'rejected');
-  assert.equal(h.claims[0].fields.rejectionReason, LAPSED_REJECT_REASON);
-  assert.equal(h.sent.length, 0, 'the planner is not told about a lapsed approval');
+  assert.equal(h.claims[0].fields.status, 'approved');
+  assert.equal(h.claims[0].fields.outcome.result, 'skipped');
+  assert.equal(h.claims[0].fields.outcome.skipReason, LAPSED_SKIP_REASON);
+  assert.equal(h.claims[0].fields.rejectionReason, undefined);
+  assert.equal(h.sent.length, 0);
+  assert.notEqual(LAPSED_REJECT_REASON, h.claims[0].fields.outcome.skipReason);
 });
 
 test('a self-planned lapse tells only the person', async () => {

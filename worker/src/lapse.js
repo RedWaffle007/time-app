@@ -8,7 +8,7 @@
 // lib/features/scheduling/application/item_lapse_policy.dart: the later of
 // midnight ending the item's own local day and scheduled time + 2 h.
 
-import { ACTIVITY_CHANNEL_ID, itemGrantPath } from './notify.js';
+import { ACTIVITY_CHANNEL_ID, hasActiveItemGrant } from './notify.js';
 
 export const MIN_RESPONSE_WINDOW_MS = 2 * 60 * 60 * 1000;
 export const LAPSED_SKIP_REASON = 'Did not respond';
@@ -94,7 +94,7 @@ function taskTitle(item) {
 function label(item, groupName) {
   const isGroup = typeof groupName === 'string';
   const noun = isGroup ? 'group task' : 'task';
-  const title = item.tier === 'emergency' ? `Emergency ${noun}` : noun;
+  const title = noun; // the "Emergency" label is retired (F2)
   return `${title[0].toUpperCase()}${title.slice(1)} skipped automatically`;
 }
 
@@ -168,7 +168,10 @@ export async function settleLapsedItems(ctx, now = new Date(), {
   const to = new Date(nowMs - MIN_RESPONSE_WINDOW_MS).toISOString();
   const summary = { rejected: 0, skipped: 0, sent: 0, cleaned: 0 };
 
-  // Pending → Rejected "Not approved in time". Silent, as on the client.
+  // A LEGACY pending plan (an older client sent it; F2 removed approval)
+  // past its deadline: settled as Skipped "Did not respond" — "plans still
+  // waiting become alarms; past ones are skipped" — silently, since it never
+  // rang. (It used to be Rejected "Not approved in time".)
   const pending = await ctx.db.listItemsScheduledBetween('pending', from, to, LAPSE_SCAN_LIMIT);
   for (const row of pending) {
     if (summary.rejected >= maxRejects) break;
@@ -176,10 +179,11 @@ export async function settleLapsedItems(ctx, now = new Date(), {
     if (!parsed) continue;
     if (responseDeadlineMs(parsed.scheduledMs, parsed.item.timezone) > nowMs) continue;
     const ok = await ctx.db.patchDocIfUnchanged(parsed.path, {
-      status: 'rejected',
-      rejectionReason: LAPSED_REJECT_REASON,
+      status: 'approved',
       decidedAt: now,
+      outcome: { result: 'skipped', skippedAt: now, skipReason: LAPSED_SKIP_REASON },
       updatedAt: now,
+      lapsedByServerAt: now,
     }, row.updateTime);
     if (ok) summary.rejected += 1;
   }
@@ -223,8 +227,7 @@ export async function settleLapsedItems(ctx, now = new Date(), {
 
     if (selfPlanned) continue;
     // Like every item push: a revoked grant means the planner is not told.
-    const grant = await ctx.db.getDoc(itemGrantPath(item, plannerUid, targetUid));
-    if (!grant || grant.granted !== true) continue;
+    if (!(await hasActiveItemGrant(ctx.db, item, plannerUid, targetUid))) continue;
     const target = await ctx.db.getDoc(`users/${targetUid}`);
     await sendToUser(ctx, plannerUid, buildPlannerLapseMessage(item, {
       targetName: target && target.name ? String(target.name) : null,

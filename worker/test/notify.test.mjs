@@ -4,16 +4,23 @@ import test from 'node:test';
 import {
   ACTIVITY_CHANNEL_ID,
   buildMessage,
-  itemGrantPath,
+  hasActiveItemGrant,
   outcomeTiming,
   sendEventNotification,
   sendFriendNotification,
 } from '../src/notify.js';
 
-function context(docs, {
+function context(rawDocs, {
   tokens = ['token-1'],
   tokenResults = {},
 } = {}) {
+  // F2: a friendship grant only counts while the friendship exists (as in
+  // the rules), so seed the friendship wherever a test seeds its grant.
+  const docs = { ...rawDocs };
+  for (const key of Object.keys(rawDocs)) {
+    const m = /^friendships\/([^/]+)\/(plannerGrants|emergencyGrants)\//.exec(key);
+    if (m && !(`friendships/${m[1]}` in docs)) docs[`friendships/${m[1]}`] = { participants: [] };
+  }
   const sent = [];
   const sentTokens = [];
   const deleted = [];
@@ -73,7 +80,7 @@ test('normal friendship plans authorize through plannerGrants with empty groupId
   assert.equal(sent[0].notification.title, 'New plan for you');
 });
 
-test('emergency friendship plans authorize separately and carry an alarm command', async () => {
+test('an alarm set through the (merged) emergency grant carries the alarm command', async () => {
   const fireAtUtc = '2030-01-02T03:04:05.000Z';
   const item = {
     targetUid: 'target',
@@ -111,12 +118,14 @@ test('emergency friendship plans authorize separately and carry an alarm command
     fireAtUtc,
     title: 'Take medicine',
     body: 'With water',
-    pushTitle: 'New emergency plan for you',
-    pushBody: 'Someone planned Take medicine for you',
+    pushTitle: 'New alarm for you',
+    pushBody: 'Someone set Take medicine for you',
   });
 });
 
-test('a normal friendship grant cannot authorize an emergency item', async () => {
+// F2: one permission — the normal friendship grant now authorises any alarm,
+// including a legacy emergency-tier one.
+test('a normal friendship grant authorises an emergency-tier item too', async () => {
   const item = {
     targetUid: 'target',
     createdByUid: 'planner',
@@ -139,8 +148,8 @@ test('a normal friendship grant cannot authorize an emergency item', async () =>
     itemId: 'item-3',
   });
 
-  assert.equal(result.reason, 'no-active-grant');
-  assert.equal(sent.length, 0);
+  assert.equal(result.reason, 'sent');
+  assert.equal(sent[0].data.command, 'scheduleReminder');
 });
 
 test('only approved emergency creates become background alarm commands', () => {
@@ -171,10 +180,12 @@ test('only approved emergency creates become background alarm commands', () => {
 });
 
 test('all ordinary item-event payloads keep their audience routing data', () => {
-  const item = { title: 'Morning walk', status: 'approved', tier: 'normal' };
+  // `created` here is a LEGACY pending plan (an approved one is an alarm
+  // command — see the F2 tests); withdrawn is the planner's Cancel.
+  const item = { title: 'Morning walk', status: 'pending', tier: 'normal' };
   const cases = [
     ['created', null, 'New plan for you', 'Test Person planned Morning walk for you'],
-    ['withdrawn', null, 'Plan withdrawn', 'Test Person withdrew: Morning walk'],
+    ['withdrawn', null, 'Alarm cancelled', 'Test Person cancelled: Morning walk'],
     ['decided', 'approved', 'Plan approved', 'Test Person approved: Morning walk'],
     ['decided', 'rejected', 'Plan rejected', 'Test Person rejected: Morning walk'],
     ['outcome', 'done', 'Task completed', 'Test Person completed the task: Morning walk'],
@@ -598,10 +609,10 @@ test('a done outcome never renders skipped copy and vice versa', () => {
 });
 
 test('group plans are labelled on every event, named or not', () => {
-  const item = { title: 'Standup', status: 'approved' };
+  const item = { title: 'Standup', status: 'pending' };
   const cases = [
     ['created', null, 'New group plan for you'],
-    ['withdrawn', null, 'Group plan withdrawn'],
+    ['withdrawn', null, 'Group alarm cancelled'],
     ['decided', 'approved', 'Group plan approved'],
     ['decided', 'rejected', 'Group plan rejected'],
     ['outcome', 'done', 'Group task completed'],
@@ -622,7 +633,7 @@ test('group plans are labelled on every event, named or not', () => {
   }
 });
 
-test('group emergency creates keep the alarm command and say group', () => {
+test('a new group alarm keeps the alarm command and says group', () => {
   const message = buildMessage('created', null, {
     title: 'Evacuate',
     status: 'approved',
@@ -631,8 +642,8 @@ test('group emergency creates keep the alarm command and say group', () => {
   }, 't', 'i', { actorName: 'Test Person', groupName: 'Family' });
   assert.equal(message.data.command, 'scheduleReminder');
   assert.equal(message.data.title, 'Evacuate');
-  assert.equal(message.data.pushTitle, 'New emergency group plan for you');
-  assert.equal(message.data.pushBody, 'Test Person planned Evacuate for you in Family');
+  assert.equal(message.data.pushTitle, 'New group alarm for you');
+  assert.equal(message.data.pushBody, 'Test Person set Evacuate for you in Family');
 });
 
 test('the actor name and group name are read from Firestore per event', async () => {
@@ -936,28 +947,27 @@ test('a friendship plan with an empty groupId is never dropped as malformed', as
 
 // --- item 15: group emergency plans (2026-09-26) ------------------------------
 
-test('emergency items always authorize through the friendship emergency grant', () => {
-  assert.equal(
-    itemGrantPath({ tier: 'emergency', groupId: 'g1' }, 'planner', 'target'),
-    'friendships/planner_target/emergencyGrants/planner_target',
-  );
-  assert.equal(
-    itemGrantPath({ tier: 'emergency', groupId: '' }, 'planner', 'target'),
-    'friendships/planner_target/emergencyGrants/planner_target',
-  );
-  assert.equal(
-    itemGrantPath({ tier: 'normal', groupId: 'g1' }, 'planner', 'target'),
-    'groups/g1/plannerGrants/planner_target',
-  );
-  assert.equal(
-    itemGrantPath({ groupId: '' }, 'planner', 'target'),
-    'friendships/planner_target/plannerGrants/planner_target',
-  );
-  // Sorted pair regardless of which side is lexically first.
-  assert.equal(
-    itemGrantPath({ tier: 'emergency', groupId: 'g1' }, 'zed', 'amy'),
-    'friendships/amy_zed/emergencyGrants/zed_amy',
-  );
+test('one permission: either friendship grant, or a group grant between non-friends', async () => {
+  const item = { groupId: '' };
+  const db = (docs) => ({ getDoc: async (p) => docs[p] ?? null });
+  const friends = { 'friendships/planner_target': {} };
+  assert.equal(await hasActiveItemGrant(db({ ...friends,
+    'friendships/planner_target/plannerGrants/planner_target': { granted: true } }), item, 'planner', 'target'), true);
+  assert.equal(await hasActiveItemGrant(db({ ...friends,
+    'friendships/planner_target/emergencyGrants/planner_target': { granted: true } }), item, 'planner', 'target'), true);
+  assert.equal(await hasActiveItemGrant(db({ ...friends,
+    'friendships/planner_target/plannerGrants/planner_target': { granted: false } }), item, 'planner', 'target'), false);
+  // A grant without the friendship (unfriended) counts for nothing.
+  assert.equal(await hasActiveItemGrant(db({
+    'friendships/planner_target/plannerGrants/planner_target': { granted: true } }), item, 'planner', 'target'), false);
+  // Group grant between members who are not friends.
+  assert.equal(await hasActiveItemGrant(db({
+    'groups/g1/plannerGrants/planner_target': { granted: true } }), { groupId: 'g1' }, 'planner', 'target'), true);
+  // Between friends a group-tagged item rides the friendship grant instead.
+  assert.equal(await hasActiveItemGrant(db({ ...friends,
+    'groups/g1/plannerGrants/planner_target': { granted: true } }), { groupId: 'g1' }, 'planner', 'target'), false);
+  assert.equal(await hasActiveItemGrant(db({ ...friends,
+    'friendships/planner_target/plannerGrants/planner_target': { granted: true } }), { groupId: 'g1' }, 'planner', 'target'), true);
 });
 
 test('a group emergency plan reaches the target as a group-labelled alarm command', async () => {
@@ -980,14 +990,16 @@ test('a group emergency plan reaches the target as a group-labelled alarm comman
   });
   assert.equal(result.reason, 'sent');
   assert.equal(harness.sent[0].data.command, 'scheduleReminder');
-  assert.equal(harness.sent[0].data.pushTitle, 'New emergency group plan for you');
+  assert.equal(harness.sent[0].data.pushTitle, 'New group alarm for you');
   assert.equal(
     harness.sent[0].data.pushBody,
-    'Test Planner planned Evacuate for you in Family',
+    'Test Planner set Evacuate for you in Family',
   );
 });
 
-test('a normal GROUP grant never authorizes pushes about a group emergency', async () => {
+// F2: one permission — between members who are not friends, the group grant
+// authorises pushes about any alarm in that group (legacy emergency tier too).
+test('a group grant authorises pushes about a group alarm between non-friends', async () => {
   const harness = context({
     'scheduleItems/target/items/item-1': {
       targetUid: 'target',
@@ -1004,83 +1016,50 @@ test('a normal GROUP grant never authorizes pushes about a group emergency', asy
     const result = await sendEventNotification(harness.ctx, {
       event, targetUid: 'target', itemId: 'item-1',
     });
-    assert.equal(result.reason, 'no-active-grant', event);
+    assert.equal(result.reason, 'sent', event);
   }
-  assert.equal(harness.sent.length, 0);
+  assert.equal(harness.sent.length, 2);
 });
 
-// --- item 14: "Emergency" on every push about an emergency item -------------
+// --- F2: the "Emergency" label is retired ------------------------------------
 
-test('every event about an emergency item says Emergency in the title', () => {
-  const base = { title: 'Meds', status: 'approved', tier: 'emergency' };
-  const cases = [
-    ['created', null, {}, 'New emergency plan for you'],
-    ['withdrawn', null, {}, 'Emergency plan withdrawn'],
-    ['decided', 'approved', {}, 'Emergency plan approved'],
-    ['outcome', 'done', {}, 'Emergency task completed'],
-    ['outcome', 'skipped', {}, 'Emergency task skipped'],
-    ['outcome', 'done', { alarm: { unavailableAt: '2030-01-01T00:00:00Z' } },
-      'Emergency task completed late'],
-    ['outcome', 'done', {
-      scheduledInstantUtc: '2030-01-01T10:00:00Z',
-      outcome: { result: 'done', completedAt: '2030-01-01T09:00:00Z' },
-    }, 'Emergency task completed early'],
-    ['dismissed', null, {}, 'Emergency alarm dismissed'],
-  ];
-  for (const [event, subtype, extra, title] of cases) {
-    const message = buildMessage(event, subtype, { ...base, ...extra }, 't', 'i', {
-      actorName: 'Test Person', groupName: null,
-    });
-    const shown = message.notification
-      ? message.notification.title
-      : message.data.pushTitle;
-    assert.equal(shown, title, `${event}/${subtype}`);
-  }
-});
-
-test('an emergency group item says both, emergency first', () => {
-  const names = { actorName: 'Test Person', groupName: 'Family' };
-  const item = { title: 'Meds', status: 'approved', tier: 'emergency' };
-  assert.equal(
-    buildMessage('outcome', 'done', item, 't', 'i', names).notification.title,
-    'Emergency group task completed',
-  );
-  assert.equal(
-    buildMessage('dismissed', null, item, 't', 'i', names).notification.title,
-    'Emergency group alarm dismissed',
-  );
-  assert.equal(
-    buildMessage('created', null, item, 't', 'i', names).data.pushTitle,
-    'New emergency group plan for you',
-  );
-});
-
-test('normal items never say Emergency', () => {
-  const item = { title: 'Walk', status: 'approved' };
-  for (const [event, subtype] of [
-    ['created', null], ['withdrawn', null], ['decided', 'approved'],
-    ['outcome', 'done'], ['outcome', 'skipped'], ['dismissed', null],
-  ]) {
-    for (const groupName of [null, 'Team']) {
-      const n = buildMessage(event, subtype, item, 't', 'i', {
-        actorName: 'Test Person', groupName,
-      }).notification;
-      assert.doesNotMatch(`${n.title} ${n.body}`, /emergency/i, `${event} ${groupName}`);
+test('no push ever says Emergency — not even for a legacy emergency-tier item', () => {
+  for (const tier of ['emergency', 'normal', undefined]) {
+    for (const status of ['approved', 'pending']) {
+      for (const groupName of [null, 'Team']) {
+        for (const [event, subtype] of [
+          ['created', null], ['withdrawn', null], ['decided', 'approved'],
+          ['outcome', 'done'], ['outcome', 'skipped'], ['dismissed', null],
+        ]) {
+          const message = buildMessage(event, subtype, {
+            title: 'Meds', status, tier, scheduledInstantUtc: '2030-01-01T10:00:00Z',
+          }, 't', 'i', { actorName: 'Test Person', groupName });
+          const text = message.notification
+            ? `${message.notification.title} ${message.notification.body}`
+            : `${message.data.pushTitle} ${message.data.pushBody}`;
+          assert.doesNotMatch(text, /emergency/i, `${tier}/${status}/${event}/${groupName}`);
+        }
+      }
     }
   }
 });
 
-test('the emergency alert body and data keep arming the alarm', () => {
+test('every NEW alarm is an alarm command, so a killed app still arms it', () => {
   const message = buildMessage('created', null, {
-    title: 'Meds', note: 'With water', status: 'approved', tier: 'emergency',
+    title: 'Meds', note: 'With water', status: 'approved', tier: 'normal',
     scheduledInstantUtc: '2030-01-01T10:00:00.000Z',
   }, 't', 'i', { actorName: 'Test Planner', groupName: null });
-  assert.equal(message.notification, undefined, 'data-only, so a killed app arms it');
+  assert.equal(message.notification, undefined, 'data-only');
   assert.equal(message.android.priority, 'high');
   assert.equal(message.data.command, 'scheduleReminder');
   assert.equal(message.data.title, 'Meds');
   assert.equal(message.data.body, 'With water');
-  assert.equal(message.data.pushBody, 'Test Planner planned Meds for you');
+  assert.equal(message.data.pushTitle, 'New alarm for you');
+  assert.equal(message.data.pushBody, 'Test Planner set Meds for you');
+  // A legacy pending plan is still a visible notification.
+  const legacy = buildMessage('created', null, { title: 'Meds', status: 'pending' }, 't', 'i', {});
+  assert.equal(legacy.data.command, undefined);
+  assert.equal(legacy.notification.title, 'New plan for you');
 });
 
 // --- item 32c-2: voice-note fallback → planner ------------------------------

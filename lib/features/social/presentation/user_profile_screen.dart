@@ -362,44 +362,40 @@ class _PlanningPermissionSectionState
             padding: const EdgeInsets.symmetric(vertical: Space.sm),
             child: Text('Planning', style: context.text.titleSmall),
           ),
-          // Target-controlled: I decide whether this friend may plan for me.
+          // Target-controlled, and the ONLY consent now (F2, 2026-09-26: no
+          // per-item approval). ONE switch: either the planning or the old
+          // emergency grant counts as "on", and turning it off revokes BOTH —
+          // a leftover emergency grant must never keep someone able to set
+          // alarms on this phone.
           SwitchListTile(
+            key: const ValueKey('planning-permission-switch'),
             contentPadding: EdgeInsets.zero,
-            title: Text('Let ${widget.name} plan for me'),
+            title: Text('Let ${widget.name} set alarms for me'),
             subtitle: const Text(
-                'They can propose items — you still approve each one.'),
-            value: canPlanForMe,
+              'Their alarms ring on your phone at the time they choose. '
+              'Turn this off at any time.',
+            ),
+            value: canPlanForMe || canEmergencyForMe,
             onChanged: _busy
                 ? null
-                : (v) => _run(() => repo.setGrant(
+                : (v) => _run(() async {
+                    await repo.setGrant(
                       plannerUid: widget.uid,
                       targetUid: me,
                       granted: v,
-                    )),
+                    );
+                    if (!v && canEmergencyForMe) {
+                      await repo.setGrant(
+                        plannerUid: widget.uid,
+                        targetUid: me,
+                        granted: false,
+                        kind: PlanningKind.emergency,
+                      );
+                    }
+                  }),
           ),
           const SizedBox(height: Space.sm),
           _askControl(context, me, repo, PlanningKind.normal),
-          const SizedBox(height: Space.md),
-          // A SEPARATE, higher-stakes grant: emergency items fire WITHOUT your
-          // per-item approval. Independent of the normal toggle — granting it
-          // never implies normal permission and vice versa.
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text('Let ${widget.name} set emergency alarms for me'),
-            subtitle: const Text(
-                'Emergency items fire immediately, without your approval.'),
-            value: canEmergencyForMe,
-            onChanged: _busy
-                ? null
-                : (v) => _run(() => repo.setGrant(
-                      plannerUid: widget.uid,
-                      targetUid: me,
-                      granted: v,
-                      kind: PlanningKind.emergency,
-                    )),
-          ),
-          const SizedBox(height: Space.sm),
-          _askControl(context, me, repo, PlanningKind.emergency),
         ],
       ),
     );
@@ -411,11 +407,10 @@ class _PlanningPermissionSectionState
   Widget _askControl(BuildContext context, String me,
       PlanningPermissionRepository repo, PlanningKind kind) {
     final emergency = kind == PlanningKind.emergency;
-    final iCan = (emergency
-            ? ref.watch(iCanEmergencyPlanForProvider(widget.uid))
-            : ref.watch(iCanPlanForProvider(widget.uid)))
-        .value ??
-        false;
+    // F2: either grant lets me set alarms for them.
+    final iCan =
+        (ref.watch(iCanPlanForProvider(widget.uid)).value ?? false) ||
+        (ref.watch(iCanEmergencyPlanForProvider(widget.uid)).value ?? false);
     if (iCan) {
       return Row(
         children: [
@@ -424,9 +419,7 @@ class _PlanningPermissionSectionState
           const SizedBox(width: Space.sm),
           Expanded(
             child: Text(
-                emergency
-                    ? 'You can set emergency alarms for ${widget.name}.'
-                    : 'You can plan for ${widget.name}.',
+                'You can set alarms for ${widget.name}.',
                 style: context.text.bodyMedium),
           ),
         ],
@@ -455,9 +448,7 @@ class _PlanningPermissionSectionState
     final notifier = ref.read(friendEventNotifierProvider);
     return _Action(
       icon: emergency ? AppIcons.emergency : AppIcons.navPlan,
-      label: emergency
-          ? 'Ask to set emergency alarms for ${widget.name}'
-          : 'Ask to plan for ${widget.name}',
+      label: 'Ask to set alarms for ${widget.name}',
       filled: false,
       busy: false,
       onPressed: () => _run(() async {

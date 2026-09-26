@@ -283,14 +283,14 @@ void main() {
       Set<String> dueAt(DateTime now) {
         final due = lapsedItems(items, now);
         expect(
-          due.toReject
+          due.toApproveAndSkip
               .map((e) => e.id)
               .toSet()
               .intersection(due.toSkip.map((e) => e.id).toSet()),
           isEmpty,
         );
         return {
-          ...due.toReject.map((e) => e.id),
+          ...due.toApproveAndSkip.map((e) => e.id),
           ...due.toSkip.map((e) => e.id),
         };
       }

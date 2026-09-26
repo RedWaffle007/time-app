@@ -8,8 +8,13 @@ import 'package:timezone/data/latest_all.dart' as tzdata;
 /// The reconciler applies the one deadline rule (item 19, 2026-09-26): a plan
 /// scheduled just before midnight is not settled at midnight.
 class _Repo implements ScheduleRepository {
+  final approved = <String>[];
   final rejected = <String>[];
   final skipped = <(String, String?)>[];
+
+  @override
+  Future<void> approve(String targetUid, String itemId) async =>
+      approved.add(itemId);
 
   @override
   Future<void> reject(
@@ -68,9 +73,12 @@ void main() {
         _item('am-approved', morning, ScheduleItemStatus.approved),
       ],
     );
-    expect(repo.rejected, ['am-pending']);
-    expect(repo.skipped.map((e) => e.$1), ['am-approved']);
-    expect(result, (rejected: 1, skipped: 1));
+    // F2: nothing is ever rejected. The late legacy pending plan becomes an
+    // alarm; the morning one (past its deadline) is approved and skipped.
+    expect(repo.rejected, isEmpty);
+    expect(repo.approved, ['late-pending', 'am-pending']);
+    expect(repo.skipped.map((e) => e.$1), ['am-pending', 'am-approved']);
+    expect(result, (approved: 2, skipped: 2));
   });
 
   test('two hours after a 23:50 plan, it settles', () async {
@@ -83,8 +91,9 @@ void main() {
         _item('late-approved', late, ScheduleItemStatus.approved),
       ],
     );
-    expect(repo.rejected, ['late-pending']);
-    expect(repo.skipped.map((e) => e.$1), ['late-approved']);
+    expect(repo.rejected, isEmpty);
+    expect(repo.approved, ['late-pending']);
+    expect(repo.skipped.map((e) => e.$1), ['late-pending', 'late-approved']);
   });
 
   test('an automatic lapse never writes the planner pop-up record', () async {

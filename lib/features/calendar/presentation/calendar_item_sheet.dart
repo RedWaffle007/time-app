@@ -151,8 +151,6 @@ class _CalendarItemSheet extends ConsumerWidget {
               label: Text(
                 !isMine
                     ? 'Open in Activity'
-                    : item.status == ScheduleItemStatus.pending
-                    ? 'Open in Approvals'
                     : isHistoryPlan(item, DateTime.now().toUtc())
                     ? 'Open in History'
                     : 'Open in My Schedule',
@@ -175,15 +173,13 @@ class _CalendarItemSheet extends ConsumerWidget {
     ScheduleItem item, {
     required bool isMine,
   }) {
-    // A pending item targeted at you belongs in the approvals queue, where
-    // Approve/Reject live; an approved one belongs on My Schedule, singled out
-    // (highlight → scroll + outline). Both are inside the Plan pillar. The
+    // Yours belongs on My Schedule, singled out (highlight → scroll +
+    // outline); a settled one in History. (There is no approval queue any
+    // more — F2, 2026-09-26.) Both are inside the Plan pillar. The
     // sub-tab/highlight is set on `planIntentProvider` BEFORE `go` — the
     // deterministic signal the shell listens to (query params were unreliable).
     if (isMine) {
-      if (item.status == ScheduleItemStatus.pending) {
-        context.go(Routes.approvals);
-      } else if (isHistoryPlan(item, DateTime.now().toUtc())) {
+      if (isHistoryPlan(item, DateTime.now().toUtc())) {
         ref.read(historyIntentProvider.notifier).highlightItem(item.id);
         context.go(Routes.history);
       } else {

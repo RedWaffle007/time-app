@@ -6538,3 +6538,33 @@ alarm with no 1.5 s lead in front of them.
   was already deleted in `8b0b3e6`; its explanation copy ("How this app
   works", first-run tour), chatbot-only icons and unused test fixtures are
   now gone, and old installs' ~143 MB model folder is deleted at startup.
+
+## Approval removed — every alarm rings directly (2026-09-26, F2)
+
+**A user-directed change to the core loop.** The loop was "B builds A's
+timetable → A approves each item → alarms fire". The user removed the
+per-item approval step entirely, groups included: an alarm set by someone
+A has permitted rings at its time with no queue.
+
+- **Consent now rests on ONE revocable permission,** not per item. The
+  planning grant and the old emergency grant are merged: holding either
+  authorizes a direct (`approved`) alarm. The profile shows one switch, "Let
+  {name} set alarms for me"; turning it off revokes BOTH grant docs, so no
+  hidden second permission survives. Group grants still cover members who
+  are not friends; between friends the friendship grant rules.
+- **Rules:** item create accepts `approved` (and `pending`, for old clients
+  still in the field), tier `normal` or `emergency`, under that one
+  permission. The planner may cancel (withdraw) any alarm that has no outcome
+  — the new safety valve now that the target no longer reviews first.
+- **Migration:** the target's device turns any legacy `pending` item into an
+  alarm when it is still ahead; one already past its time is recorded as
+  approved + skipped ("did not respond"). The Worker's lapse cron does the
+  same for past ones server-side. Nothing is rejected.
+- **Retired:** the Pending approvals screen, badge and glow, the approval
+  reminder cron, the Emergency switch and every "Emergency" label. The
+  `emergency` tier value still exists in stored data and in the rules; the
+  UI never sets it. The "Emergency plans" notification channel goes in F3.
+- **Push:** every new alarm is sent as an alarm command ("New alarm for you");
+  a cancel reads "Alarm cancelled". Tapping `created` opens My Schedule on the
+  item.
+

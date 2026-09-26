@@ -68,7 +68,7 @@ void main() {
     expect(find.widgetWithText(OutlinedButton, 'Add photo'), findsOneWidget);
     expect(find.text('Plan for the group'), findsOneWidget);
     expect(
-      find.text('One item for 1 member you can plan for, plus you'),
+      find.text('One alarm for 1 member you can plan for, plus you'),
       findsOneWidget,
     );
 
@@ -76,6 +76,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Plan for Testmates'), findsOneWidget);
-    expect(find.textContaining('Goes to 2 members'), findsOneWidget);
+    expect(find.textContaining('Rings for 2 members'), findsOneWidget);
   });
 }

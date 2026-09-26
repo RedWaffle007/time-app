@@ -62,9 +62,11 @@ describe('schedule-item adversarial matrix', () => {
       { targetUid: OUTSIDER },
       { createdByUid: OUTSIDER },
       { groupId: 'other-group' },
-      { status: 'approved' },
+      // F2: 'approved' and the legacy 'emergency' tier are no longer
+      // forgeries — a granted planner's alarms ring directly.
       { status: 'withdrawn' },
-      { tier: 'emergency' },
+      { status: 'rejected' },
+      { tier: 'urgent' },
       { outcome: { result: 'done' } },
       { notifiedCreated: true },
       { notifiedOutcome: 'done' },

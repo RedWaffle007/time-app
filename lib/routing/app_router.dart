@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../dev/dev_menu_screen.dart';
-import '../features/approvals/presentation/pending_approvals_screen.dart';
 import '../features/archive/presentation/archived_screen.dart';
 import '../features/auth/application/auth_providers.dart';
 import '../features/auth/presentation/auth_screen.dart';
@@ -188,7 +187,7 @@ class Routes {
   /// here). It hosts the keep-alive inner TabBar: My Schedule / Activity /
   /// Groups (DECISIONS.md → "UI redesign — S4" and "— S5").
   ///
-  /// Its detail screens are SUB-ROUTES ([scheduleBuilder], [approvals],
+  /// Its detail screens are SUB-ROUTES ([scheduleBuilder],
   /// `groups/:groupId`) so each pushes into the Plan branch's own stack and Back
   /// returns here. The sub-tab to show and the item to highlight are NOT encoded
   /// in the URL — they come from `planIntentProvider`, set by the call site
@@ -277,9 +276,6 @@ class Routes {
     return TimeOfDay(hour: h, minute: m);
   }
 
-  /// The target's pending-approvals inbox — a Plan sub-route. (Was
-  /// `/outcome/approvals` before the S5 cutover.)
-  static const approvals = '$plan/approvals';
 
   /// Debug-only. The route itself is registered only in debug builds — see the
   /// `if (kDebugMode)` guard below. In release this path resolves to nothing.
@@ -406,12 +402,6 @@ final routerProvider = Provider<GoRouter>((ref) {
                         ),
                       );
                     },
-                  ),
-                  // The target's inbox — the AppBar shortcut and the
-                  // `created`/`withdrawn` notifications both land here.
-                  GoRoute(
-                    path: 'approvals',
-                    builder: (context, state) => const PendingApprovalsScreen(),
                   ),
                   GoRoute(
                     path: 'history',

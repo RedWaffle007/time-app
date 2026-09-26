@@ -178,9 +178,11 @@ describe('friendship planning grant — what it authorizes', () => {
     }));
   });
 
-  it('a granted friend may NOT create an already-approved item', async () => {
+  // F2 (2026-09-26): approval is gone — a granted friend sets an alarm that
+  // rings directly.
+  it('a granted friend creates an alarm that is approved at once', async () => {
     await seedGrant();
-    await assertFails(setDoc(doc(as(B), `scheduleItems/${A}/items/new2`), {
+    await assertSucceeds(setDoc(doc(as(B), `scheduleItems/${A}/items/new2`), {
       targetUid: A, createdByUid: B, groupId: '', title: 'Study',
       localWallTime: '2026-08-25 19:00', timezone: 'Asia/Kolkata',
       scheduledInstantUtc: new Date('2026-08-25T13:30:00Z'),
@@ -293,36 +295,46 @@ describe('emergency grant — who may write it', () => {
   });
 });
 
-describe('emergency tier — the both-way invariant', () => {
-  it('a NORMAL grant CANNOT create an emergency item', async () => {
-    await seedGrant(true); // normal only
-    await assertFails(setDoc(doc(as(B), `scheduleItems/${A}/items/e1`), emgItem()));
+// F2 (2026-09-26): ONE permission. The old both-way invariant (a normal
+// grant could never make an emergency item and vice versa) is retired on
+// purpose: approval is gone, every alarm rings directly, and either grant
+// lets a friend set alarms. Revoking, unfriending and outsiders still deny.
+describe('one merged planning permission', () => {
+  it('a normal grant creates an approved alarm', async () => {
+    await seedGrant(true);
+    await assertSucceeds(setDoc(doc(as(B), `scheduleItems/${A}/items/e1`),
+      emgItem({ tier: 'normal' })));
   });
 
-  it('an EMERGENCY grant CANNOT create a normal PENDING item', async () => {
-    await seedEmergencyGrant(true); // emergency only, no normal grant
-    await assertFails(setDoc(doc(as(B), `scheduleItems/${A}/items/n1`),
+  it('an emergency grant alone also creates one', async () => {
+    await seedEmergencyGrant(true);
+    await assertSucceeds(setDoc(doc(as(B), `scheduleItems/${A}/items/n1`),
+      emgItem({ tier: 'normal' })));
+  });
+
+  it('an older client may still write pending or emergency-tier items', async () => {
+    await seedGrant(true);
+    await assertSucceeds(setDoc(doc(as(B), `scheduleItems/${A}/items/n2`),
       emgItem({ tier: 'normal', status: 'pending' })));
+    await assertSucceeds(setDoc(doc(as(B), `scheduleItems/${A}/items/n3`),
+      emgItem({ tier: 'emergency' })));
   });
 
-  it('an EMERGENCY grant CANNOT create a normal APPROVED item', async () => {
-    await seedEmergencyGrant(true);
-    await assertFails(setDoc(doc(as(B), `scheduleItems/${A}/items/n2`),
-      emgItem({ tier: 'normal', status: 'approved' })));
+  it('no grant, a revoked grant, or an unknown tier/status is denied', async () => {
+    await assertFails(setDoc(doc(as(B), `scheduleItems/${A}/items/x1`), emgItem()));
+    await seedGrant(false);
+    await assertFails(setDoc(doc(as(B), `scheduleItems/${A}/items/x2`), emgItem()));
+    await seedGrant(true);
+    await assertFails(setDoc(doc(as(B), `scheduleItems/${A}/items/x3`),
+      emgItem({ tier: 'urgent' })));
+    await assertFails(setDoc(doc(as(B), `scheduleItems/${A}/items/x4`),
+      emgItem({ status: 'withdrawn' })));
+    await assertFails(setDoc(doc(as(C), `scheduleItems/${A}/items/x5`),
+      emgItem({ createdByUid: C })));
   });
 
-  it('an EMERGENCY grant creates an approved emergency item', async () => {
-    await seedEmergencyGrant(true);
-    await assertSucceeds(setDoc(doc(as(B), `scheduleItems/${A}/items/e2`), emgItem()));
-  });
-
-  it('an emergency item CANNOT be born pending (must be approved)', async () => {
-    await seedEmergencyGrant(true);
-    await assertFails(setDoc(doc(as(B), `scheduleItems/${A}/items/e3`),
-      emgItem({ status: 'pending' })));
-  });
-
-  it('unfriending voids the emergency grant', async () => {
+  it('unfriending voids both grants', async () => {
+    await seedGrant(true);
     await seedEmergencyGrant(true);
     await unfriend();
     await assertFails(setDoc(doc(as(B), `scheduleItems/${A}/items/e4`), emgItem()));
@@ -339,10 +351,13 @@ describe('emergency tier — group emergency plans', () => {
     await assertSucceeds(setDoc(doc(as(B), `scheduleItems/${A}/items/g1`), groupEmg()));
   });
 
-  it('a group-tagged emergency without the emergency grant is denied', async () => {
-    await seedLegacyGroupGrant(); // a normal GROUP grant is not emergency permission
-    await seedGrant(true);
+  it('between friends a group-tagged alarm rides the friendship grant', async () => {
+    // Group grants apply only to members who are NOT friends (unchanged); a
+    // friend's alarm in a shared group is authorised by the friendship grant.
+    await seedLegacyGroupGrant();
     await assertFails(setDoc(doc(as(B), `scheduleItems/${A}/items/g2`), groupEmg()));
+    await seedGrant(true);
+    await assertSucceeds(setDoc(doc(as(B), `scheduleItems/${A}/items/g2`), groupEmg()));
   });
 
   it('DENIES tagging a group the target is not in', async () => {
@@ -373,9 +388,9 @@ describe('emergency tier — group emergency plans', () => {
       groupEmg({ groupId: 'no_such_group' })));
   });
 
-  it('a group emergency is still born approved, never pending', async () => {
+  it('an older client may still send it pending', async () => {
     await seedEmergencyGrant(true);
-    await assertFails(setDoc(doc(as(B), `scheduleItems/${A}/items/g6`),
+    await assertSucceeds(setDoc(doc(as(B), `scheduleItems/${A}/items/g6`),
       groupEmg({ status: 'pending' })));
   });
 
@@ -400,12 +415,34 @@ describe('emergency tier — read + recall', () => {
       { merge: true }));
   });
 
-  it('the creator may NOT withdraw an approved NORMAL item', async () => {
+  // F2: every alarm rings directly, so the planner may cancel any alarm they
+  // set until it is answered — never after.
+  it('the creator may cancel an approved alarm nobody has answered', async () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), `scheduleItems/${A}/items/e6`),
         emgItem({ tier: 'normal', status: 'approved' }));
     });
-    await assertFails(setDoc(doc(as(B), `scheduleItems/${A}/items/e6`),
+    await assertSucceeds(setDoc(doc(as(B), `scheduleItems/${A}/items/e6`),
+      { status: 'withdrawn', withdrawnAt: new Date(), updatedAt: new Date() },
+      { merge: true }));
+  });
+
+  it('the creator may NOT cancel an alarm that was already answered', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `scheduleItems/${A}/items/e7`),
+        emgItem({ tier: 'normal', status: 'approved', outcome: { result: 'done' } }));
+    });
+    await assertFails(setDoc(doc(as(B), `scheduleItems/${A}/items/e7`),
+      { status: 'withdrawn', withdrawnAt: new Date(), updatedAt: new Date() },
+      { merge: true }));
+  });
+
+  it('nobody else may cancel it', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `scheduleItems/${A}/items/e8`),
+        emgItem({ tier: 'normal', status: 'approved' }));
+    });
+    await assertFails(setDoc(doc(as(C), `scheduleItems/${A}/items/e8`),
       { status: 'withdrawn', withdrawnAt: new Date(), updatedAt: new Date() },
       { merge: true }));
   });

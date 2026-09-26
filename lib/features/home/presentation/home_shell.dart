@@ -8,7 +8,6 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/theme/status_style.dart';
 import '../../../routing/app_router.dart';
-import '../../scheduling/application/schedule_providers.dart';
 import '../../time_tracking/presentation/log_time_sheet.dart';
 import '../../voice/application/voice_parsers.dart';
 import '../../voice/presentation/plan_target_picker.dart';
@@ -149,9 +148,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
-    // The Plan aggregate attention count (redesign S4/S5) — the one always-
-    // legitimate orange on the bar (§2.7); renders nothing at zero.
-    final planAttention = ref.watch(planAttentionCountProvider);
     final shell = widget.navigationShell;
 
     // First run on this device: auto-show the orientation tour once, after the
@@ -203,7 +199,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                 label: 'Plan',
                 icon: AppIcons.navPlan,
                 selectedIcon: AppIcons.navPlanSelected,
-                badgeCount: planAttention,
+                // No approval queue any more (F2), so nothing waits on Plan.
+                badgeCount: 0,
                 shell: shell,
                 spotlightKey: _planKey,
               ),

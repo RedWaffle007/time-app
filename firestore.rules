@@ -1705,31 +1705,28 @@ service cloud.firestore {
           // Self-planning: consent is inherent. Any tier, pending or approved.
           (request.auth.uid == targetUid
               && request.resource.data.status in ['pending', 'approved'])
-          // NORMAL planner: a GROUP grant OR a FRIENDSHIP grant, PENDING only,
-          // NORMAL tier only (target approves per item). The friendship grant
-          // carries no group, so the item's groupId is '' and the group check
-          // fails harmlessly — the friend check is what authorizes it.
-          || ((callerHasActiveGrant(targetUid, request.resource.data.groupId)
-                || callerHasFriendGrant(targetUid))
-              && request.resource.data.get('tier', 'normal') == 'normal'
-              && request.resource.data.status == 'pending')
-          // EMERGENCY planner: the separate EMERGENCY grant, EMERGENCY tier,
-          // AUTO-APPROVED (skips the queue and fires). This is the ONLY branch
-          // that admits tier=='emergency' or a non-self 'approved', and it
-          // requires `callerHasEmergencyGrant` — so a normal grant can never
-          // create an emergency item, and an emergency-only grant can never
-          // create or queue a normal one. (DECISIONS.md "Emergency item tier".)
+          // A PLANNER (F2, 2026-09-26 — the per-item approval step is gone):
+          // ONE permission lets someone set alarms that ring directly. It is a
+          // GROUP grant for the tagged group, or — while friends — the
+          // friendship planning grant OR the (merged) emergency grant. Consent
+          // is that permission: target-granted, revocable, re-checked live.
           //
-          // A GROUP emergency plan (2026-09-26) is the same per-person grant —
-          // there is no group-level emergency permission — tagged with the
-          // group for labelling. The tag must be honest: '' (a friendship
-          // plan) or a group BOTH parties belong to.
-          || (callerHasEmergencyGrant(targetUid)
-              && request.resource.data.tier == 'emergency'
-              && request.resource.data.status == 'approved'
-              && (request.resource.data.groupId == ''
-                  || (callerInGroup(request.resource.data.groupId)
-                      && uidInGroup(request.resource.data.groupId, targetUid))))
+          // `approved` is what new clients write. `pending` is still accepted
+          // so an older installed build keeps working; the target's device
+          // turns such items into alarms (LegacyPendingReconciler).
+          //
+          // The group tag must be honest: '' (a friendship plan), or a group
+          // whose grant authorises it, or — for the friendship/emergency path —
+          // a group BOTH parties belong to (the group label on a plan made
+          // through the friendship grant).
+          || (request.resource.data.status in ['pending', 'approved']
+              && request.resource.data.get('tier', 'normal') in ['normal', 'emergency']
+              && (callerHasActiveGrant(targetUid, request.resource.data.groupId)
+                  || ((callerHasFriendGrant(targetUid)
+                        || callerHasEmergencyGrant(targetUid))
+                      && (request.resource.data.groupId == ''
+                          || (callerInGroup(request.resource.data.groupId)
+                              && uidInGroup(request.resource.data.groupId, targetUid))))))
         );
 
       // Missed-alarm review is the sole settled-outcome correction. Keep this
@@ -1779,17 +1776,16 @@ service cloud.firestore {
                   && request.resource.data.status in ['approved', 'rejected'])
             )
           )
-          // Planner withdraw: the creator flips their item to `withdrawn`,
-          // touching only these three keys. Normally only a STILL-pending item
-          // (a normal plan awaiting the target). ALSO an APPROVED EMERGENCY item
-          // they created — an emergency skipped the queue and is `approved`, so
-          // "recall the emergency I placed" needs this one extra case (#5,
-          // directed). Still cannot alter title/time/anything else.
+          // Planner CANCEL (was "withdraw"): the creator flips an alarm they
+          // set to `withdrawn`, touching only these three keys — a pending
+          // (legacy) plan, or any approved alarm nobody has answered yet
+          // (F2: every alarm now rings directly, so any can be cancelled
+          // before it is done). Still cannot alter title/time/anything else.
           || (
             request.auth.uid == resource.data.createdByUid
             && (resource.data.status == 'pending'
                 || (resource.data.status == 'approved'
-                    && resource.data.get('tier', 'normal') == 'emergency'))
+                    && !('outcome' in resource.data)))
             && request.resource.data.status == 'withdrawn'
             && request.resource.data.diff(resource.data)
                 .affectedKeys().hasOnly(['status', 'withdrawnAt', 'updatedAt'])

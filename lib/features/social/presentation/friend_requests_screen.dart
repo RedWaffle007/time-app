@@ -193,12 +193,10 @@ class _PlanningRowState extends ConsumerState<_PlanningRow> {
     // disposes this row, so reading the notifier after the await would run on a
     // dead widget. Same pattern as the friend-accept row above.
     final notifier = ref.read(friendEventNotifierProvider);
-    final emergency = widget.request.kind == PlanningKind.emergency;
+    // F2: one permission — an old emergency request reads the same.
     return UserRow(
       uid: widget.request.fromUid,
-      subtitle: emergency
-          ? 'Wants to set emergency alarms for you'
-          : 'Wants to plan for you',
+      subtitle: 'Wants to set alarms for you',
       trailing: _busy
           ? const SizedBox(
               height: Sizes.buttonSpinner,

@@ -264,24 +264,11 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
   @override
   Widget build(BuildContext context) {
     final itemsAsync = ref.watch(myItemsAsTargetProvider);
-    final pendingCount =
-        itemsAsync.value
-            ?.where((i) => i.status == ScheduleItemStatus.pending)
-            .length ??
-        0;
 
     return Scaffold(
       appBar: widget.embedded
           ? null
-          : AppBar(
-              title: const Text('My Schedule'),
-              actions: [
-                PendingApprovalsAction(
-                  count: pendingCount,
-                  onPressed: () => context.push(Routes.approvals),
-                ),
-              ],
-            ),
+          : AppBar(title: const Text('My Schedule')),
       body: AsyncView<List<ScheduleItem>>(
         value: itemsAsync,
         // Retry the SOURCE stream — see the note in planner_activity_screen.

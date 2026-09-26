@@ -38,6 +38,7 @@ function harness(rows, docs = {}, { claim = () => true } = {}) {
   const claims = [];
   const queries = [];
   const store = {
+    'friendships/planner_target': { participants: ['planner', 'target'] },
     'friendships/planner_target/plannerGrants/planner_target': { granted: true },
     'users/target': { name: 'Test Target' },
     ...docs,

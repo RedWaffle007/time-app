@@ -89,9 +89,8 @@ export async function sendEventNotification(ctx, { event, targetUid, itemId }) {
   const recipientUid = NOTIFIES_TARGET.has(event) ? targetUid : plannerUid;
 
   // Active grant required in BOTH directions — a revoked grant means no push,
-  // whichever way the notification flows (see itemGrantPath).
-  const grant = await ctx.db.getDoc(itemGrantPath(item, plannerUid, targetUid));
-  if (!grant || grant.granted !== true) {
+  // whichever way the notification flows (see hasActiveItemGrant).
+  if (!(await hasActiveItemGrant(ctx.db, item, plannerUid, targetUid))) {
     return result(0, 0, recipientUid, 'no-active-grant');
   }
 
@@ -136,21 +135,26 @@ export async function sendEventNotification(ctx, { event, targetUid, itemId }) {
   return result(sent, cleaned, recipientUid, sent > 0 ? 'sent' : 'no-delivery');
 }
 
-// The grant that authorizes pushes about [item]. EMERGENCY permission is
-// always the per-person friendship emergency grant — also for a group
-// emergency plan, whose groupId is only a label (there is no group-level
-// emergency grant; 2026-09-26). Otherwise group plans use the group's
-// plannerGrants and friendship plans (empty groupId) the sorted-pair
-// friendship subtree.
-export function itemGrantPath(item, plannerUid, targetUid) {
+// Does the planner CURRENTLY hold permission over the target for [item]?
+// F2 (2026-09-26): ONE permission, mirroring the create rule — a group grant
+// for the tagged group (members who are not friends), or while friends the
+// friendship planning grant OR the merged emergency grant. Every item push,
+// the lapse notices and the voice rescue ask this; a revoked permission means
+// no push, whichever way it flows.
+export async function hasActiveItemGrant(db, item, plannerUid, targetUid) {
   const grantId = `${plannerUid}_${targetUid}`;
   const pairId = [plannerUid, targetUid].sort().join('_');
-  if (item.tier === 'emergency') {
-    return `friendships/${pairId}/emergencyGrants/${grantId}`;
+  const friends = Boolean(await db.getDoc(`friendships/${pairId}`));
+  if (item.groupId && !friends) {
+    const g = await db.getDoc(`groups/${item.groupId}/plannerGrants/${grantId}`);
+    return Boolean(g && g.granted === true);
   }
-  return item.groupId
-    ? `groups/${item.groupId}/plannerGrants/${grantId}`
-    : `friendships/${pairId}/plannerGrants/${grantId}`;
+  if (!friends) return false;
+  for (const sub of ['plannerGrants', 'emergencyGrants']) {
+    const g = await db.getDoc(`friendships/${pairId}/${sub}/${grantId}`);
+    if (g && g.granted === true) return true;
+  }
+  return false;
 }
 
 // Verify the event against the item's ACTUAL Firestore state and return this
@@ -229,11 +233,11 @@ export function buildMessage(event, subtype, item, targetUid, itemId, names = {}
   const who = names.actorName || 'Someone';
   const isGroup = typeof names.groupName === 'string';
   const inGroup = isGroup && names.groupName ? ` in ${names.groupName}` : '';
-  // "Emergency" leads every title about an emergency item (item 14), then
-  // "group" for a group plan: "Emergency group task completed".
-  const emergency = item.tier === 'emergency';
+  // "group" for a group plan: "Group task completed". The "Emergency" label
+  // is retired (F2, 2026-09-26): every alarm now rings directly, so there is
+  // nothing left to single out — even on a legacy emergency-tier item.
   const noun = (word) => {
-    const phrase = `${emergency ? 'emergency ' : ''}${isGroup ? 'group ' : ''}${word}`;
+    const phrase = `${isGroup ? 'group ' : ''}${word}`;
     return phrase[0].toUpperCase() + phrase.slice(1);
   };
   const task = noun('task');
@@ -242,15 +246,23 @@ export function buildMessage(event, subtype, item, targetUid, itemId, names = {}
   let notification;
   switch (event) {
     case 'created':
-      notification = {
-        title: `New ${noun('plan').toLowerCase()} for you`,
-        body: `${who} planned ${title} for you${inGroup}`,
-      };
+      // An approved (F2: every new) alarm is announced as an alarm; a legacy
+      // pending plan from an older client is still a plan.
+      notification = item.status === 'approved'
+        ? {
+            title: `New ${noun('alarm').toLowerCase()} for you`,
+            body: `${who} set ${title} for you${inGroup}`,
+          }
+        : {
+            title: `New ${noun('plan').toLowerCase()} for you`,
+            body: `${who} planned ${title} for you${inGroup}`,
+          };
       break;
     case 'withdrawn':
+      // F2: the planner's Cancel.
       notification = {
-        title: `${plan} withdrawn`,
-        body: `${who} withdrew: ${title}${inGroup}`,
+        title: `${noun('alarm')} cancelled`,
+        body: `${who} cancelled: ${title}${inGroup}`,
       };
       break;
     case 'decided':
@@ -316,9 +328,9 @@ export function buildMessage(event, subtype, item, targetUid, itemId, names = {}
   // Send this one as HIGH-priority data so the registered background handler
   // runs and installs the local alarm. Every data value must be a string for
   // FCM HTTP v1.
-  const isRemoteAlarm = event === 'created'
-    && item.status === 'approved'
-    && item.tier === 'emergency';
+  // F2: EVERY approved new alarm arms the target's phone from this data
+  // message (it used to be emergency-only), so a killed app still rings.
+  const isRemoteAlarm = event === 'created' && item.status === 'approved';
   if (isRemoteAlarm) {
     return {
       android: { priority: 'high' },

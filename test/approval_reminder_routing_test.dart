@@ -45,9 +45,12 @@ void main() {
     'itemId': 'item-1',
   };
 
-  testWidgets('a tray tap opens Pending approvals', (tester) async {
+  // F2: there is no approvals queue; a legacy approval reminder (an older
+  // Worker may still send one) lands on My Schedule.
+  testWidgets('a legacy approval reminder opens My Schedule', (tester) async {
     await open(tester, reminder);
-    expect(find.text('Approvals'), findsOneWidget);
+    expect(find.text('Plan'), findsOneWidget);
+    expect(find.text('Approvals'), findsNothing);
   });
 
   testWidgets('a foreground-notification tap routes the same way', (
@@ -55,7 +58,7 @@ void main() {
   ) async {
     final decoded = decodePushTapPayload(encodePushTapPayload(reminder))!;
     await open(tester, decoded);
-    expect(find.text('Approvals'), findsOneWidget);
+    expect(find.text('Plan'), findsOneWidget);
   });
 
   test('a Done-style fallback never swallows a reminder', () {

@@ -111,6 +111,17 @@ class ScheduleAlarmTimeline {
   }
 }
 
+/// Whether the PLANNER may still cancel [item] (F2, 2026-09-26): a legacy
+/// pending plan, or an approved alarm that has not rung-and-been-answered and
+/// is still in the future. Mirrors the rules' cancel branch (which also allows
+/// a past unanswered one — the UI does not offer that: it already rang).
+bool plannerCanCancel(ScheduleItem item, DateTime nowUtc) {
+  if (item.status == ScheduleItemStatus.pending) return true;
+  return item.status == ScheduleItemStatus.approved &&
+      item.outcome == null &&
+      item.scheduledInstantUtc.isAfter(nowUtc.toUtc());
+}
+
 /// The planner's voice note on someone else's alarm (item 32). Only metadata:
 /// the audio lives in the Worker's private bucket and is fetched by the
 /// target's device, which checks it against [sha256].

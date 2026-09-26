@@ -53,7 +53,6 @@ class DevMenuScreen extends ConsumerWidget {
       // sub-routes. All `go` (in-shell).
       ('Plan (My Schedule / stances)', Routes.plan, true),
       ('Schedule Builder (planner)', Routes.scheduleBuilder, true),
-      ('Pending Approvals (target)', Routes.approvals, true),
       // The reminder layer's instrument: permissions, what the app believes it
       // armed, and the natively-written fire log with real delivery delays.
       // First stop when a reminder did not arrive.

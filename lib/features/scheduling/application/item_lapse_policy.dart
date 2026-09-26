@@ -75,18 +75,32 @@ DateTime endOfScheduledLocalDayUtc(ScheduleItem item) {
 bool hasLapsed(ScheduleItem item, DateTime nowUtc) =>
     !nowUtc.toUtc().isBefore(responseDeadlineUtc(item));
 
-/// The two auto-resolutions [items] currently imply, as of [nowUtc].
+/// What [items] currently imply, as of [nowUtc].
+///
+/// F2 (2026-09-26): there is no approval step, so a `pending` item can only be
+/// a LEGACY plan an older client sent. Such a plan becomes an alarm
+/// ([toApprove]) — or, if its deadline has already passed, is settled as
+/// skipped "Did not respond" ([toApproveAndSkip]); it is never rejected now.
 class LapsedItems {
-  const LapsedItems({required this.toReject, required this.toSkip});
+  const LapsedItems({
+    required this.toApprove,
+    required this.toApproveAndSkip,
+    required this.toSkip,
+  });
 
-  /// Pending items past their local day — to be rejected "not approved in time".
-  final List<ScheduleItem> toReject;
+  /// Legacy pending plans still before their deadline — turned into alarms.
+  final List<ScheduleItem> toApprove;
 
-  /// Approved, outcome-less items past their local day — to be skipped
+  /// Legacy pending plans past their deadline — approved and skipped.
+  final List<ScheduleItem> toApproveAndSkip;
+
+  /// Approved, outcome-less items past their deadline — to be skipped
   /// "did not respond".
+
   final List<ScheduleItem> toSkip;
 
-  bool get isEmpty => toReject.isEmpty && toSkip.isEmpty;
+  bool get isEmpty =>
+      toApprove.isEmpty && toApproveAndSkip.isEmpty && toSkip.isEmpty;
 }
 
 /// Classify [items] into the lapse actions due as of [nowUtc]. Only pending and
@@ -94,16 +108,22 @@ class LapsedItems {
 /// (rejected, withdrawn, done, skipped) is skipped, which is what makes applying
 /// this on every stream emission idempotent.
 LapsedItems lapsedItems(List<ScheduleItem> items, DateTime nowUtc) {
-  final toReject = <ScheduleItem>[];
+  final toApprove = <ScheduleItem>[];
+  final toApproveAndSkip = <ScheduleItem>[];
   final toSkip = <ScheduleItem>[];
   for (final item in items) {
-    if (!hasLapsed(item, nowUtc)) continue;
+    final lapsed = hasLapsed(item, nowUtc);
     if (item.status == ScheduleItemStatus.pending) {
-      toReject.add(item);
-    } else if (item.status == ScheduleItemStatus.approved &&
+      (lapsed ? toApproveAndSkip : toApprove).add(item);
+    } else if (lapsed &&
+        item.status == ScheduleItemStatus.approved &&
         item.outcome == null) {
       toSkip.add(item);
     }
   }
-  return LapsedItems(toReject: toReject, toSkip: toSkip);
+  return LapsedItems(
+    toApprove: toApprove,
+    toApproveAndSkip: toApproveAndSkip,
+    toSkip: toSkip,
+  );
 }

@@ -375,15 +375,16 @@ class _ActivityCard extends ConsumerWidget {
                   ),
                 ),
               ],
-              // A plan can be withdrawn only while it's still pending — once the
-              // target has decided, it's theirs to keep or reject.
-              if (item.status == ScheduleItemStatus.pending) ...[
+              // F2: the planner may cancel an alarm they set until it rings
+              // or is answered (every alarm rings directly now).
+              if (plannerCanCancel(item, DateTime.now().toUtc())) ...[
                 const SizedBox(height: Space.xs),
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
+                    key: const ValueKey('planner-cancel-alarm'),
                     onPressed: () => _withdraw(context, ref),
-                    child: const Text('Withdraw'),
+                    child: const Text('Cancel alarm'),
                   ),
                 ),
               ],
@@ -394,22 +395,19 @@ class _ActivityCard extends ConsumerWidget {
     );
   }
 
-  /// Withdraw a still-pending plan, then notify the target it's gone. The write
-  /// is the source of truth; the push is additive (a failed push never blocks
-  /// the withdrawal).
+  /// Cancel an alarm I set, then tell the target. The write is the source of
+  /// truth (their phone stops arming it off the item stream); the push is
+  /// additive — a failed push never blocks the cancel.
   Future<void> _withdraw(BuildContext context, WidgetRef ref) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Withdraw this plan?'),
-        content: const Text(
-          "It will be removed from the target's pending queue before they "
-          'decide on it.',
-        ),
+        title: const Text('Cancel this alarm?'),
+        content: const Text("It won't ring on their phone."),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: const Text('Keep it'),
           ),
           // Destructive — one of the rationed uses of red (UI-RULES.md §2.5).
           FilledButton(
@@ -418,7 +416,7 @@ class _ActivityCard extends ConsumerWidget {
               foregroundColor: ctx.colors.onError,
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Withdraw'),
+            child: const Text('Cancel alarm'),
           ),
         ],
       ),

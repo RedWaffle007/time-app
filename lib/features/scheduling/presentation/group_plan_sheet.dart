@@ -10,10 +10,8 @@ import '../../../core/theme/app_tokens.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../notifications/application/outcome_notifier.dart';
 import '../application/conflict_disclosure.dart';
-import '../application/group_plan_recipients.dart';
 import '../application/schedule_providers.dart';
 import '../application/target_schedule_providers.dart';
-import '../domain/schedule_item.dart';
 import 'conflict_warning_dialog.dart';
 
 /// One eligible group-plan recipient: a member the planner selected, plus
@@ -34,9 +32,6 @@ Future<void> showGroupPlanSheet(
   required String groupId,
   required String groupName,
   required List<GroupPlanCandidate> candidates,
-  // Other members who gave ME their emergency permission (item 15). Non-empty
-  // shows the Emergency switch.
-  Set<String> emergencyUids = const {},
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -46,7 +41,6 @@ Future<void> showGroupPlanSheet(
       groupId: groupId,
       groupName: groupName,
       candidates: candidates,
-      emergencyUids: emergencyUids,
     ),
   );
 }
@@ -56,13 +50,11 @@ class _GroupPlanSheet extends ConsumerStatefulWidget {
     required this.groupId,
     required this.groupName,
     required this.candidates,
-    required this.emergencyUids,
   });
 
   final String groupId;
   final String groupName;
   final List<GroupPlanCandidate> candidates;
-  final Set<String> emergencyUids;
 
   @override
   ConsumerState<_GroupPlanSheet> createState() => _GroupPlanSheetState();
@@ -74,15 +66,10 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
   DateTime? _date;
   TimeOfDay? _time;
   bool _saving = false;
-  bool _emergency = false;
   String? _error;
 
-  ({List<GroupPlanCandidate> recipients, List<String> skippedUids}) get _plan =>
-      groupPlanRecipients(
-        candidates: widget.candidates,
-        emergencyUids: widget.emergencyUids,
-        emergency: _emergency,
-      );
+  /// Everyone who gave me either permission, plus me (F2: one permission).
+  List<GroupPlanCandidate> get _recipients => widget.candidates;
   final _shownConflictFingerprints = <String>{};
   String? _queuedConflictFingerprint;
   String? _activeConflictFingerprint;
@@ -183,7 +170,7 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
       // resolve is skipped, never a freeze.
       final repo = ref.read(profileRepositoryProvider);
       final resolved = await Future.wait(
-        _plan.recipients.map((c) async {
+        _recipients.map((c) async {
           try {
             final p = await repo
                 .watchProfile(c.uid)
@@ -210,7 +197,6 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
             title: _title.text,
             note: _note.text,
             wall: _wall(),
-            tier: _emergency ? ItemTier.emergency : ItemTier.normal,
           );
 
       // Tell each non-self recipient a plan was created for them — best-effort
@@ -233,8 +219,7 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
 
       if (!mounted) return;
       final n = result.sent.length;
-      final skipped =
-          result.skippedPast + result.skippedOther + _plan.skippedUids.length;
+      final skipped = result.skippedPast + result.skippedOther;
       final String message;
       if (n == 0 && result.skippedPast > 0 && result.skippedOther == 0) {
         // The single most common miss: a time already gone. Say so, rather than
@@ -244,7 +229,7 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
         message = 'No one could be planned for right now.';
       } else {
         message =
-            '${_emergency ? 'Emergency planned' : 'Planned'} for $n '
+            'Alarm set for $n '
             '${n == 1 ? 'member' : 'members'}'
             '${skipped > 0 ? ' · $skipped skipped' : ''}.';
       }
@@ -260,20 +245,19 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-    final plan = _plan;
-    final count = plan.recipients.length;
-    final canEmergency = widget.emergencyUids.isNotEmpty;
+    final recipients = _recipients;
+    final count = recipients.length;
     _activeConflictFingerprint = null;
 
     // Wait for every candidate's profile + authorized schedule read so the
     // group flow emits ONE consolidated, name-grouped popup—not a procession of
     // per-member dialogs. A read failure is part of that same popup.
-    if (_date != null && plan.recipients.isNotEmpty) {
+    if (_date != null && recipients.isNotEmpty) {
       var allSettled = true;
       final groups = <ConflictDisclosureGroup>[];
       final readErrors = <String, String>{};
       final errorKeys = <String>[];
-      for (final candidate in plan.recipients) {
+      for (final candidate in recipients) {
         final profile = ref.watch(profileByUidProvider(candidate.uid));
         if (profile.isLoading && !profile.hasValue) {
           allSettled = false;
@@ -360,37 +344,13 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
               count == 0
                   ? "You can't plan for anyone in this group yet — members grant "
                         'you permission first.'
-                  : _emergency
-                  ? 'Emergency for $count ${count == 1 ? 'member' : 'members'} '
+                  : 'Rings for $count ${count == 1 ? 'member' : 'members'} '
                         '(you included), each at this time in their own local '
-                        'zone. It skips approval and rings at the time.'
-                  : 'Goes to $count ${count == 1 ? 'member' : 'members'}, each at '
-                        'this time in their own local zone. Everyone still approves '
-                        'it (you added yourself directly).',
+                        'zone.',
               style: context.text.bodySmall?.copyWith(
                 color: context.colors.onSurfaceVariant,
               ),
             ),
-            if (canEmergency) ...[
-              const SizedBox(height: Space.sm),
-              SwitchListTile(
-                key: const ValueKey('group-plan-emergency'),
-                contentPadding: EdgeInsets.zero,
-                secondary: const Icon(AppIcons.emergency),
-                title: const Text('Emergency'),
-                subtitle: const Text(
-                  'Only members who gave you emergency permission.',
-                ),
-                value: _emergency,
-                onChanged: _saving
-                    ? null
-                    : (v) => setState(() => _emergency = v),
-              ),
-            ],
-            if (plan.skippedUids.isNotEmpty) ...[
-              const SizedBox(height: Space.xs),
-              _SkippedMembers(uids: plan.skippedUids),
-            ],
             const SizedBox(height: Space.lg),
             TextField(
               controller: _title,
@@ -449,37 +409,10 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
                       width: Sizes.buttonSpinner,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : Text(
-                      _emergency
-                          ? 'Plan emergency for the group'
-                          : 'Plan for the group',
-                    ),
+                  : const Text('Send to the group'),
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// Members an emergency group plan will NOT reach, by name, so nobody is
-/// silently left out (item 15).
-class _SkippedMembers extends ConsumerWidget {
-  const _SkippedMembers({required this.uids});
-
-  final List<String> uids;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final names = [
-      for (final uid in uids)
-        ref.watch(profileByUidProvider(uid)).value?.name ?? kProfileNameLoading,
-    ];
-    return Text(
-      "Won't reach ${names.join(', ')} — no emergency permission.",
-      key: const ValueKey('group-plan-skipped'),
-      style: context.text.bodySmall?.copyWith(
-        color: context.colors.onSurfaceVariant,
       ),
     );
   }

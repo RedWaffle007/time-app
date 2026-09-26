@@ -9,7 +9,7 @@ import 'app_router.dart';
 /// on an item of yours) and a local reminder (your own item is due) — and they
 /// arrive through completely different plugin callbacks. Without this, each
 /// callback would grow its own copy of the routing rules, and the two copies
-/// would drift the first time a route moved. `Routes.approvals` and
+/// would drift the first time a route moved. The approvals route and
 /// `Routes.plannerActivity` have already moved once, in the Session 3 shell
 /// refactor.
 ///
@@ -40,14 +40,14 @@ class NotificationRouter {
   void openForPushEvent(Map<String, dynamic> data) {
     final router = _ref.read(routerProvider);
     switch (data['event']) {
-      // An EMERGENCY plan is born approved, so it is never in the approval
-      // queue: open My Schedule on that item instead (item 14).
-      case 'created' when data['command'] == 'scheduleReminder':
-        _openItemInSchedule(data['itemId']);
+      // F2 (2026-09-26): there is no approval queue. A new alarm opens that
+      // alarm in My Schedule; a cancelled one, and the legacy approval pushes
+      // an older Worker may still send, open My Schedule.
       case 'created':
+        _openItemInSchedule(data['itemId']);
       case 'withdrawn':
       case 'approvalReminder':
-        router.go(Routes.approvals);
+        router.go(Routes.plan);
       case 'decided':
       case 'outcome':
       case 'dismissed':

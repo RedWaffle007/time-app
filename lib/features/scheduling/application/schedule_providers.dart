@@ -88,28 +88,6 @@ final myItemsAsPlannerProvider = Provider<AsyncValue<List<ScheduleItem>>>((ref) 
       .whenData((items) => _visible(items, archived));
 });
 
-/// The Plan pillar's aggregate attention count (redesign slice S4).
-///
-/// It is a **sum** of the per-sub-tab attention signals inside Plan, so the one
-/// orange the bar may carry (UI-RULES.md §2.7) is honest about how much is
-/// waiting across the whole hub. Today only **My Schedule** contributes one —
-/// items awaiting this user's approval (`status == pending`); Activity and
-/// Groups have no attention signal, so they add 0 and the aggregate currently
-/// equals the My Schedule count. Kept as a sum so that if either ever gains one,
-/// this is the single place it is added. Renders nothing at zero.
-///
-/// The same provider drives the **My Schedule sub-tab** badge in the Plan shell
-/// now, and will ride the **Plan bottom-bar pillar** at S5 — one derivation, two
-/// consumers, so they can never disagree.
-final planAttentionCountProvider = Provider<int>((ref) {
-  final mySchedulePending = ref.watch(myItemsAsTargetProvider).maybeWhen(
-        data: (items) =>
-            items.where((i) => i.status == ScheduleItemStatus.pending).length,
-        orElse: () => 0,
-      );
-  // + Activity attention (none today) + Groups attention (none today).
-  return mySchedulePending;
-});
 
 /// Everything hidden from this user's feeds, by either route, newest first.
 ///

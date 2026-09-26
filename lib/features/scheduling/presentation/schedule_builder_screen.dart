@@ -48,7 +48,7 @@ class ScheduleBuilderScreen extends ConsumerStatefulWidget {
   ///
   /// **The date only.** Not a time: a date is what the user actually indicated
   /// by tapping a cell, and pre-filling a time they never chose would let an
-  /// item be sent for approval at an hour nobody selected. `_canSave` still
+  /// alarm be sent for an hour nobody selected. `_canSave` still
   /// requires a time, so the form cannot be submitted straight through.
   ///
   /// This one optional parameter is the whole of the calendar's integration
@@ -94,11 +94,6 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
   TimeOfDay? _time;
   bool _saving = false;
 
-  /// Emergency tier (#5): when the selected target is a friend who granted me
-  /// the SEPARATE emergency permission, this creates the item already-approved
-  /// so it fires without their per-item approval. Reset whenever the target
-  /// changes — the grant is per-target.
-  bool _emergency = false;
 
   /// The recorded-but-unsent voice note for someone else's alarm (item 32b).
   RecordedVoiceNote? _voiceDraft;
@@ -235,13 +230,6 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       return;
     }
 
-    // Emergency is re-checked against the live grant at save time, so a grant
-    // revoked while the form sat open cannot slip an auto-approved item through.
-    final isEmergency =
-        !_isSelf &&
-        _emergency &&
-        (ref.read(iCanEmergencyPlanForProvider(_targetUid!)).value ?? false);
-
     setState(() => _saving = true);
     try {
       // A voice note is uploaded FIRST, under an id minted for this plan; the
@@ -290,10 +278,9 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
         note: _noteController.text,
         wall: wall,
         timezone: timezone,
-        status: (_isSelf || isEmergency)
-            ? ScheduleItemStatus.approved
-            : ScheduleItemStatus.pending,
-        tier: isEmergency ? ItemTier.emergency : ItemTier.normal,
+        // F2 (2026-09-26): there is no approval step — every alarm rings
+        // directly; the rules re-check the planning permission live.
+        status: ScheduleItemStatus.approved,
       );
       // The draft was uploaded and is now the plan's; drop the local copy.
       if (draft != null) unawaited(_deleteQuietly(draft.path));
@@ -319,11 +306,9 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
                       'Checkmate, then try again.'
                 : _isSelf
                 ? 'Added to your schedule.'
-                : isEmergency
-                ? 'Emergency item added — it will fire without approval.'
                 : voiceNote != null
-                ? 'Item with your voice note sent for approval.'
-                : 'Item sent for approval.',
+                ? 'Voice alarm sent.'
+                : 'Alarm sent.',
           ),
         ),
       );
@@ -333,7 +318,6 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
         _noteController.clear();
         _date = null;
         _time = null;
-        _emergency = false;
         _voiceDraft = null;
         _voiceRecorderGen++;
       });
@@ -419,13 +403,6 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       }
     }
 
-    // Whether I hold the SEPARATE emergency grant over this (non-self) target.
-    final canEmergency =
-        !_isSelf &&
-        _targetUid != null &&
-        (ref.watch(iCanEmergencyPlanForProvider(_targetUid!)).value ?? false);
-    final isEmergency = canEmergency && _emergency;
-
     return ListView(
       controller: _scrollController,
       padding: Space.screenListSafe(context),
@@ -509,22 +486,6 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
               onChanged: (note) => _voiceDraft = note,
             ),
           ],
-          // Emergency tier — only when this friend granted me the SEPARATE
-          // emergency permission. An emergency item skips their approval queue
-          // and fires directly, so it is opt-in per plan and clearly labelled.
-          if (canEmergency) ...[
-            const SizedBox(height: Space.sm),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Emergency'),
-              subtitle: Text(
-                'Fires immediately — ${selectedProfile?.name ?? 'they'} '
-                "won't need to approve it.",
-              ),
-              value: _emergency,
-              onChanged: (v) => setState(() => _emergency = v),
-            ),
-          ],
           if (timezone != null && _date != null && _time != null) ...[
             const SizedBox(height: Space.lg),
             Text(
@@ -551,13 +512,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
                     width: Sizes.buttonSpinner,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : Text(
-                    _isSelf
-                        ? 'Add to my schedule'
-                        : isEmergency
-                        ? 'Add emergency item'
-                        : 'Send for approval',
-                  ),
+                : Text(_isSelf ? 'Add to my schedule' : 'Send'),
           ),
         ],
       ],
@@ -592,7 +547,6 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
           _isSelf = true;
           _targetUid = me.uid;
           _groupId = null;
-          _emergency = false;
           _voiceDraft = null;
           _voiceRecorderGen++;
         }),
@@ -615,7 +569,6 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
           _isSelf = false;
           _targetUid = grant.targetUid;
           _groupId = grant.groupId;
-          _emergency = false;
           _voiceDraft = null;
           _voiceRecorderGen++;
         }),
@@ -701,7 +654,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
 
     return WarningPanel(
       'This falls in ${reasons.join(' and ')}. '
-      '${_isSelf ? 'You can still add it.' : 'You can still send it — they approve every item.'}',
+      '${_isSelf ? 'You can still add it.' : 'You can still send it — it will ring at that time.'}',
     );
   }
 

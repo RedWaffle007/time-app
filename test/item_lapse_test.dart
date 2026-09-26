@@ -58,18 +58,28 @@ void main() {
     // "Now" is 27 Aug ~12:00 Karachi — the day after the items below.
     final now = DateTime.utc(2026, 8, 27, 7);
 
-    test('a pending item past its day is to be rejected', () {
+    // F2: a pending item can only be a legacy plan; it is never rejected.
+    test('a legacy pending item past its day is approved and skipped', () {
       final result = lapsedItems([
         item(year: 2026, month: 8, day: 26, status: ScheduleItemStatus.pending),
       ], now);
-      expect(result.toReject, hasLength(1));
+      expect(result.toApproveAndSkip, hasLength(1));
+      expect(result.toApprove, isEmpty);
       expect(result.toSkip, isEmpty);
+    });
+
+    test('a legacy pending item before its deadline becomes an alarm', () {
+      final result = lapsedItems([
+        item(year: 2026, month: 8, day: 28, status: ScheduleItemStatus.pending),
+      ], now);
+      expect(result.toApprove, hasLength(1));
+      expect(result.toApproveAndSkip, isEmpty);
     });
 
     test('an approved outcome-less item past its day is to be skipped', () {
       final result = lapsedItems([item(year: 2026, month: 8, day: 26)], now);
       expect(result.toSkip, hasLength(1));
-      expect(result.toReject, isEmpty);
+      expect(result.toApproveAndSkip, isEmpty);
     });
 
     test('already-settled items are never re-touched (idempotent)', () {
@@ -95,7 +105,10 @@ void main() {
         item(year: 2026, month: 8, day: 27, status: ScheduleItemStatus.pending),
         item(year: 2026, month: 8, day: 27),
       ], now);
-      expect(result.isEmpty, isTrue);
+      // Nothing is settled; the legacy pending one just becomes an alarm (F2).
+      expect(result.toSkip, isEmpty);
+      expect(result.toApproveAndSkip, isEmpty);
+      expect(result.toApprove, hasLength(1));
     });
   });
 
@@ -230,12 +243,15 @@ void main() {
         pending,
         approved,
       ], midnight.add(const Duration(minutes: 30)));
-      expect(early.isEmpty, isTrue);
+      // Before the deadline the legacy pending plan just becomes an alarm.
+      expect(early.toApprove.map((e) => e.id), [pending.id]);
+      expect(early.toApproveAndSkip, isEmpty);
+      expect(early.toSkip, isEmpty);
       final late = lapsedItems([
         pending,
         approved,
       ], midnight.add(const Duration(hours: 1, minutes: 30)));
-      expect(late.toReject.map((e) => e.id), [pending.id]);
+      expect(late.toApproveAndSkip.map((e) => e.id), [pending.id]);
       expect(late.toSkip.map((e) => e.id), [approved.id]);
     });
 
