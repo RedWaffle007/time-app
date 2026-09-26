@@ -9,6 +9,7 @@ import '../application/celebration_providers.dart';
 import '../application/celebration_queue.dart';
 import '../domain/completion_celebration.dart';
 import 'completion_confetti.dart';
+import 'outcome_announcement.dart';
 
 /// App-wide overlay host. Firestore is the delivery queue, so it covers the
 /// target immediately, an online planner live, and an offline planner on their
@@ -36,6 +37,12 @@ class _CompletionCelebrationHostState
   late CompletionConfettiBurst _burst;
   bool _playing = false;
   bool _paused = false;
+
+  /// One queued event can need two things: confetti (Done only) and the
+  /// planner's pop-up (planner only). It finishes — and is acknowledged — when
+  /// both are over, so the pop-up is never lost to the confetti's timer.
+  bool _confettiDone = true;
+  bool _cardVisible = false;
   bool _resumed = true;
   String? _sessionUid;
 
@@ -112,11 +119,26 @@ class _CompletionCelebrationHostState
     }
     _playing = true;
     _paused = false;
-    _burst = CompletionConfettiBurst.seeded(
-      CompletionConfettiBurst.seedForEvent(event.id),
-    );
-    _animation.forward(from: 0);
+    _cardVisible = showsPlannerAnnouncement(event, _sessionUid);
+    _confettiDone = !event.isDone;
+    if (event.isDone) {
+      _burst = CompletionConfettiBurst.seeded(
+        CompletionConfettiBurst.seedForEvent(event.id),
+      );
+      _animation.forward(from: 0);
+    } else if (!_cardVisible) {
+      // Nothing to show on this device (not the planner of a Skip).
+      _finish(event);
+      return;
+    }
     setState(() {});
+  }
+
+  void _dismissCard() {
+    final event = _queue.current;
+    if (!_cardVisible || event == null) return;
+    setState(() => _cardVisible = false);
+    if (_confettiDone) _finish(event);
   }
 
   void _pauseCurrent({bool notify = true}) {
@@ -146,13 +168,21 @@ class _CompletionCelebrationHostState
   void _animationStatusChanged(AnimationStatus status) {
     if (status != AnimationStatus.completed) return;
     final event = _queue.current;
-    if (event != null) _finish(event);
+    if (event == null) return;
+    _confettiDone = true;
+    if (_cardVisible) {
+      setState(() {}); // confetti gone; the pop-up waits for its button
+      return;
+    }
+    _finish(event);
   }
 
   void _finish(CompletionCelebration event) {
     if (!mounted || !_playing || _queue.current?.id != event.id) return;
     _playing = false;
     _paused = false;
+    _cardVisible = false;
+    _confettiDone = true;
     _animation.reset();
     _queue.complete(event.id);
     setState(() {});
@@ -178,6 +208,8 @@ class _CompletionCelebrationHostState
       _queue.clear();
       _playing = false;
       _paused = false;
+      _cardVisible = false;
+      _confettiDone = true;
       _animation.reset();
     }
     ref.listen(unseenCompletionCelebrationsProvider, (_, next) {
@@ -210,7 +242,14 @@ class _CompletionCelebrationHostState
           fit: StackFit.expand,
           children: [
             widget.child,
-            if (_playing)
+            if (_playing && _cardVisible && _queue.current != null)
+              Positioned.fill(
+                child: OutcomeAnnouncementCard(
+                  event: _queue.current!,
+                  onDismiss: _dismissCard,
+                ),
+              ),
+            if (_playing && !_confettiDone)
               Positioned.fill(
                 key: ValueKey('completion-celebration-${_queue.current?.id}'),
                 child: IgnorePointer(

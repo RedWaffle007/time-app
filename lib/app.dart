@@ -271,8 +271,11 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
         message.notification?.body ?? (message.data['pushBody'] as String?);
     if (title == null && body == null) return;
 
-    // A Done ALSO plays the celebration (its own host, de-duplicated by id);
-    // the notification is what names who did what, so both show.
+    // Done/Skipped are announced by the in-app pop-up (CompletionCelebration
+    // Host, from the durable Firestore record) — posting the push too would
+    // announce the same outcome twice.
+    if (isAnnouncedInApp(message.data)) return;
+
     final shown = await ref
         .read(foregroundPushPresenterProvider)
         .show(title: title, body: body, data: message.data);

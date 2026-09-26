@@ -6209,3 +6209,60 @@ future items across all users means later ones wait until earlier ones clear.
   planner activity so nudges can be muted alone. Not changed: nudges still
   fire at night (quiet-hours enforcement is parked), and a user who never
   granted notifications cannot receive it (the primer is the repair path).
+
+## Batch D decisions — four explorations settled (2026-09-26)
+
+All four took the recommended option; they are build Batch E (handoff.md
+items 14–17).
+
+- **Emergency notification → distinct channel + labels.** An "Emergency
+  plans" channel (max importance, its own sound/vibration) for the immediate
+  alert, and "Emergency" in the copy of every push about an emergency item.
+  Not chosen: DND bypass (needs notification-policy access, another
+  onboarding step); labels only.
+- **Group emergency plan → per-person grants only.** No new consent type:
+  fan out only to members whose FRIENDSHIP emergency grant the planner holds,
+  and say who was skipped. Found while exploring: the emergency create rule
+  does not constrain `groupId`, and the Worker's `itemGrantPath` checks the
+  group's `plannerGrants` whenever `groupId` is set — so a group-tagged
+  emergency item's pushes would be refused today. Both are fixed as part of
+  item 15. Not chosen: a group-level emergency grant; mixing emergency and
+  normal in one fan-out.
+- **Pending-approvals notification → tell the planner too.** B2 covers the
+  target. Add one planner heads-up when the final reminder goes out and the
+  plan is still pending. Not chosen: also notifying at the end-of-day lapse.
+- **WhatsApp invite → real tap-to-open link**, served by the Worker (landing
+  page + `assetlinks.json`) with Android App Links, carrying the existing
+  username or join code — no new collection. Not chosen: share text only;
+  single-use tokens (new collection, rules, cleanup).
+
+## Planner in-app outcome pop-up (2026-09-26, item 18)
+
+While the planner is in the app, a Done shows confetti PLUS a pop-up —
+"Your planning skills are amazing!" / "{name} completed task: {task}" — and a
+Skip shows the same pop-up shape without confetti: "Plan skipped" / "{name}
+skipped task: {task}". Only the planner of someone else's item sees it; the
+target keeps "Updating {planner}…" and their own confetti.
+
+- **Driven by the durable Firestore record, not the push.** The existing
+  `completionCelebrations` queue (seen-once per participant, survives offline)
+  now carries `result`. Done keeps its id `{t}_{i}` and both parties; a Skip
+  writes `{t}_{i}_skipped` with the planner as the only participant, in the
+  same transaction as the person's own Skip (card or missed-alarm review).
+  Separate ids because the missed-alarm "Skip → Done" correction must still
+  be able to CREATE the Done record (an existing doc only accepts
+  `seenByUids` updates). Automatic lapses write no record — the Worker
+  announces those (item 20).
+- **Rules** (deploy before install): create now allows `result`; a skip record
+  requires the `_skipped` id, planner-only audience, planner ≠ target, a
+  first-write Skip in the same write. Old clients' Done records (no
+  `result`) still validate.
+- **One announcement, not two:** in the foreground, Done/Skipped pushes are no
+  longer posted as system notifications (`isAnnouncedInApp`); the pop-up is
+  the announcement. Every other push is still posted. Outside the app the
+  Batch A push is unchanged.
+- The host finishes (and acknowledges) an event only when the confetti has
+  ended AND the pop-up was dismissed (button or tap outside). Events queue
+  one at a time.
+- Known gap: a target on a pre-2026-09-26 build writes no skip record, so an
+  in-app planner sees no pop-up for that Skip (and no system notification).

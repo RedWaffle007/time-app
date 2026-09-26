@@ -736,6 +736,110 @@ describe('durable completion celebrations', () => {
   it('DENIES an outsider enumerating celebration events', async () => {
     await assertFails(getDocs(collection(as(OUTSIDER), 'completionCelebrations')));
   });
+
+  // --- planner outcome pop-up (2026-09-26) --------------------------------
+  const skipPath = `completionCelebrations/${TARGET}_${APPROVED_ITEM}_skipped`;
+  const skipRecord = (overrides = {}) => ({
+    itemId: APPROVED_ITEM,
+    targetUid: TARGET,
+    plannerUid: PLANNER,
+    participantUids: [PLANNER],
+    seenByUids: [],
+    createdAt: serverTimestamp(),
+    result: 'skipped',
+    ...overrides,
+  });
+  const skipOutcome = (reason) => ({
+    outcome: {
+      result: 'skipped',
+      skippedAt: serverTimestamp(),
+      ...(reason ? { skipReason: reason } : {}),
+    },
+    updatedAt: serverTimestamp(),
+  });
+  const commitWith = async (itemFields, path, record) => {
+    const db = as(TARGET);
+    const batch = writeBatch(db);
+    batch.set(itemRef(db, APPROVED_ITEM), itemFields, { merge: true });
+    batch.set(doc(db, path), record);
+    return batch.commit();
+  };
+
+  it('creates a planner-only skip record atomically with a first Skip', async () => {
+    await assertSucceeds(commitWith(skipOutcome('Busy'), skipPath, skipRecord()));
+    await assertSucceeds(getDoc(doc(as(PLANNER), skipPath)));
+    await assertFails(getDoc(doc(as(OUTSIDER), skipPath)));
+    // Single participant: the planner's acknowledgement deletes it.
+    await assertSucceeds(deleteDoc(doc(as(PLANNER), skipPath)));
+  });
+
+  it('DENIES a skip record without a Skip in the same write', async () => {
+    await assertFails(setDoc(doc(as(TARGET), skipPath), skipRecord()));
+    await assertFails(commitWith(
+      { outcome: { result: 'done', completedAt: serverTimestamp() }, updatedAt: serverTimestamp() },
+      skipPath,
+      skipRecord(),
+    ));
+  });
+
+  it('DENIES a forged skip record: wrong id, audience, author or result', async () => {
+    const forgeries = [
+      [`completionCelebrations/${TARGET}_${APPROVED_ITEM}`, skipRecord()],
+      [skipPath, skipRecord({ participantUids: [TARGET, PLANNER] })],
+      [skipPath, skipRecord({ participantUids: [OUTSIDER] })],
+      [skipPath, skipRecord({ plannerUid: OUTSIDER, participantUids: [OUTSIDER] })],
+      [skipPath, skipRecord({ result: 'done' })],
+      [skipPath, skipRecord({ result: 'whatever' })],
+      [skipPath, skipRecord({ seenByUids: [PLANNER] })],
+      [skipPath, skipRecord({ title: 'injected' })],
+    ];
+    for (const [path, record] of forgeries) {
+      await assertFails(commitWith(skipOutcome(), path, record));
+    }
+    // Only the target may author it.
+    const planner = as(PLANNER);
+    await assertFails(setDoc(doc(planner, skipPath), skipRecord()));
+  });
+
+  it('DENIES a skip record for an item that was already settled', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(itemRef(ctx.firestore(), APPROVED_ITEM), {
+        outcome: { result: 'skipped', skippedAt: Timestamp.now() },
+      }, { merge: true });
+    });
+    await assertFails(setDoc(doc(as(TARGET), skipPath), skipRecord()));
+  });
+
+  it('a Done record may say result: done explicitly; old clients may omit it', async () => {
+    const done = { outcome: { result: 'done', completedAt: serverTimestamp() }, updatedAt: serverTimestamp() };
+    await assertSucceeds(commitWith(done, celebrationPath, { ...celebration(), result: 'done' }));
+  });
+
+  it('a skip record never blocks the missed-alarm Skip → Done correction', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(itemRef(db, APPROVED_ITEM), {
+        alarm: { unavailableAt: Timestamp.now() },
+        outcome: {
+          result: 'skipped',
+          skippedAt: Timestamp.now(),
+          skipReason: 'User unavailable',
+        },
+      }, { merge: true });
+      await setDoc(doc(db, skipPath), {
+        ...skipRecord(),
+        createdAt: Timestamp.now(),
+      });
+    });
+    const db = as(TARGET);
+    const batch = writeBatch(db);
+    batch.update(itemRef(db, APPROVED_ITEM), {
+      outcome: { result: 'done', completedAt: serverTimestamp() },
+      updatedAt: serverTimestamp(),
+    });
+    batch.set(doc(db, celebrationPath), celebration());
+    await assertSucceeds(batch.commit());
+  });
 });
 
 // --- ISSUE 2: notification suppression ------------------------------------

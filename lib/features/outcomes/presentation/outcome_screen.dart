@@ -726,6 +726,7 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
             item.targetUid,
             item.id,
             reason: reason,
+            announceToPlannerUid: item.createdByUid,
           );
           if (ok) _notifyPlanner(item);
           return ok;

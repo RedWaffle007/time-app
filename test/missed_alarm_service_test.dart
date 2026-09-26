@@ -269,6 +269,8 @@ void main() {
       ]);
       expect(outcomes.done, isEmpty);
       expect(notifier.calls, [('target', 'item')]);
+      // The in-app Skip pop-up goes to the item's planner (2026-09-26).
+      expect(outcomes.skipAnnouncedTo, [_item().createdByUid]);
 
       await service.sync([
         _item(
@@ -829,6 +831,7 @@ class _RecordingOutcomes implements MissedAlarmOutcomeRepository {
   final void Function()? onWrite;
   final _decided = <String>{};
   final skipped = <(String, String, String)>[];
+  final skipAnnouncedTo = <String?>[];
   final done = <(String, String, String)>[];
   final legacyDone = <(String, String, String)>[];
 
@@ -853,9 +856,11 @@ class _RecordingOutcomes implements MissedAlarmOutcomeRepository {
     String targetUid,
     String itemId, {
     required String reason,
+    String? plannerUid,
   }) async {
     if (!_firstWrite(itemId)) return false;
     skipped.add((targetUid, itemId, reason));
+    skipAnnouncedTo.add(plannerUid);
     return true;
   }
 

@@ -42,6 +42,13 @@ Map<String, dynamic>? decodePushTapPayload(String? payload) {
   }
 }
 
+/// Done/Skipped reach a planner who is IN the app as the in-app pop-up (the
+/// durable `completionCelebrations` record, 2026-09-26), so the matching push
+/// is not also posted as a system notification — one announcement, not two.
+/// Every other push is still posted.
+bool isAnnouncedInApp(Map<String, dynamic> data) =>
+    (data['event'] ?? data['type']) == 'outcome';
+
 /// How a push that arrives while the app is OPEN is presented. FCM draws
 /// nothing in the foreground, so without this the planner — the person most
 /// likely to be looking at the app — saw at most a transient snackbar.

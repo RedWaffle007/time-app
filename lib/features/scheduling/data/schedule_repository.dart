@@ -247,8 +247,17 @@ class ScheduleRepository {
     });
   }
 
-  Future<bool> markSkipped(String targetUid, String itemId, {String? reason}) =>
-      markSkippedIfUnsettled(targetUid, itemId, reason: reason?.trim() ?? '');
+  Future<bool> markSkipped(
+    String targetUid,
+    String itemId, {
+    String? reason,
+    String? announceToPlannerUid,
+  }) => markSkippedIfUnsettled(
+    targetUid,
+    itemId,
+    reason: reason?.trim() ?? '',
+    announceToPlannerUid: announceToPlannerUid,
+  );
 
   /// Timeout-only outcome write. Unlike the interactive Skip action, this can
   /// race a person pressing Done, so it must prove `outcome` is still absent in
@@ -258,8 +267,19 @@ class ScheduleRepository {
     String itemId, {
     required String reason,
     DateTime? atUtc,
+    // A person's own Skip (card or missed-alarm review) tells a planner who is
+    // someone else, via the durable pop-up record written in this same
+    // transaction. Automatic lapses pass null: the Worker announces those.
+    String? announceToPlannerUid,
   }) async {
     final ref = _items(targetUid).doc(itemId);
+    final announce =
+        announceToPlannerUid != null &&
+        announceToPlannerUid.isNotEmpty &&
+        announceToPlannerUid != targetUid;
+    final eventRef = _db
+        .collection('completionCelebrations')
+        .doc(CompletionCelebration.skippedEventId(targetUid, itemId));
     return _db.runTransaction((transaction) async {
       final snapshot = await transaction.get(ref);
       final data = snapshot.data();
@@ -285,6 +305,17 @@ class ScheduleRepository {
               : Timestamp.fromDate(atUtc.toUtc()),
         'updatedAt': FieldValue.serverTimestamp(),
       });
+      if (announce && data['createdByUid'] == announceToPlannerUid) {
+        transaction.set(eventRef, {
+          'itemId': itemId,
+          'targetUid': targetUid,
+          'plannerUid': announceToPlannerUid,
+          'participantUids': [announceToPlannerUid],
+          'seenByUids': <String>[],
+          'createdAt': FieldValue.serverTimestamp(),
+          'result': 'skipped',
+        });
+      }
       return true;
     });
   }

@@ -44,7 +44,7 @@
 - Latest profile build installed on the Redmi; the third-pass fixes await the
   user's device check.
 - Next implementation order (revised 2026-09-26 after the in-person device
-  check): **Batch A ✓ → B ✓ → B2 ✓ → C → D (explore) → 32 → 24 → 33**. See "Device-check
+  check): **Batch A ✓ → B ✓ → B2 ✓ → C ✓ → D ✓ (decided) → E (18 → 19 → 20 → 15 → 14 → 16 → 17) → 32 → 24 → 33**. See "Device-check
   backlog (2026-09-26)" below.
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
 
@@ -163,7 +163,8 @@ Every item ships with thorough regression tests (listed per item).
     past-due, clock skew), cap and spacing invariants, stop-on-each-decision,
     dedup per reminder slot, self-plans never remind, copy with/without names.
 
-Batch C — **BUILT 2026-09-26; awaiting full suite, Worker deploy, commit**
+Batch C — **BUILT, committed `99420a1`, Worker deployed 2026-09-26; device
+check deferred**
 (DECISIONS.md "Batch C: startup sound, tab gutter…"). Push taps now keep
 the startup screen (only alarm launches skip it). Originally: 7. Startup-sound toggle (splash
 only, not alarms). 8. Slightly larger left content inset — one theme token,
@@ -178,10 +179,76 @@ Also re-audit that the inactivity push reliably reaches ALL users: the
 handling, dedup, and that it was not live until Worker `8229568f`
 (2026-09-26) — it had never been deployed before that.
 
-Batch D (explore, decision each, no build): emergency notification channel/tone;
-group emergency plan (per-member emergency grant, tier invariant holds);
-pending-approvals reminder (no Cloud Functions → Worker cron or client);
-WhatsApp friend-invite link (invite token + landing page + deep link).
+Batch D — explored and DECIDED 2026-09-26 (DECISIONS.md "Batch D decisions").
+Batch C is committed (`99420a1`). The four decisions become build Batch E:
+
+Batch E — build, one item at a time, thorough regression tests each:
+18. **Planner in-app outcome pop-up** — **BUILT 2026-09-26; awaiting rules
+    deploy, full suite, commit** (DECISIONS.md "Planner in-app outcome pop-up").
+    Planner inside the app: Done → confetti PLUS a pop-up, heading "Your
+    planning skills are amazing!", body "{name} completed task: {task}";
+    Skipped → same pop-up shape, body "{name} skipped task: {task}", neutral
+    heading, NO confetti. Planner outside the app: the Batch A push already
+    does this (named Done/Skipped copy) — device check still deferred.
+    Approach (recommended, pending sign-off): the pop-up rides the existing
+    durable Firestore queue (`completionCelebrations`, seen-once per
+    participant), generalised to carry `result: done|skipped` so a Skip also
+    writes one — a rules change + deploy. While the planner is in the app,
+    Done/Skipped pushes are NOT also posted as system notifications (the
+    pop-up is the announcement); every other push still is. Only the planner
+    sees the pop-up — the target keeps "Updating {planner}…" + confetti.
+14. **Emergency notification.** A dedicated "Emergency plans" channel (max
+    importance, own sound/vibration) for the immediate alert on the target, and
+    "Emergency" in every push about an emergency item (created, decided,
+    outcome, dismissed, withdrawn, reminders). Alarm timing unchanged. No DND
+    bypass (would need notification-policy access).
+19. **Two-hour minimum response window near midnight** (added 2026-09-26).
+    Deadline = the LATER of (a) midnight ending the task's own local day —
+    today's rule, still the limit for every task scheduled before 22:00 — and
+    (b) the scheduled time + 2 h. So a 23:50 task gets until 01:50, not 10
+    minutes. One change in `endOfScheduledLocalDayUtc` / `hasLapsed`
+    (`item_lapse_policy.dart`), applied to BOTH lapses (approved → Skipped "Did
+    not respond"; pending → Rejected "Not approved in time") so there is one
+    deadline. Tests: before/after 22:00, exactly 22:00, DST nights, unknown
+    zone, the lapse reconciler, and the calendar/My Schedule "still
+    actionable" state.
+20. **Auto-skip notifies both people** (added 2026-09-26). When an item lapses
+    to Skipped "Did not respond", push to the target AND the planner (self-
+    plans: target only). Recommended with it: move the lapse itself to the
+    Worker cron (it already scans items every minute), because today it only
+    happens when the target next opens the app — a user who never opens it is
+    never skipped and nobody is told. The client reconciler stays as an
+    idempotent fallback. **DECIDED 2026-09-26: the Worker does the lapse.** No
+    clock time in the text (decided: overkill now — it would need each
+    recipient's locale + 12/24h stored with their token; the task name plus a
+    tap into the locale-correct app is enough). Proposed copy:
+    - Target — title "Task skipped automatically"; body "{task}, planned by
+      {planner}, was marked Skipped because you didn't respond in time."
+      Self-plan: "{task} was marked Skipped because you didn't respond in
+      time."
+    - Planner — title "Task skipped automatically"; body "{name} didn't
+      respond to {task}, so it was marked Skipped."
+    - Group: add " in {group}" and "Group task" in the title; emergency:
+      "Emergency task" in the title. Own dedup field per recipient.
+15. **Group emergency plan — per-person grants only.** "Plan for the group"
+    gains an Emergency switch when the planner holds at least one member's
+    FRIENDSHIP emergency grant; it fans out only to those members (born
+    approved, as today) and reports who was skipped and why. Fixes needed
+    first: the Worker's `itemGrantPath` must select `emergencyGrants` for
+    `tier == 'emergency'` even when `groupId` is set; rules: the emergency
+    create branch must require `groupId == ''` OR both parties be members of
+    that group (today it does not check `groupId`). Rules deploy + byte-verify.
+16. **Planner heads-up for pending plans.** When the FINAL approval reminder
+    goes out and the plan is still pending, the planner gets one push: "{name}
+    hasn't approved {task} yet". Rides the B2 cron and its claim; own dedup
+    field. Lapse stays silent to the planner.
+17. **WhatsApp invite link — real tap-to-open.** https link served by the
+    Worker (`/i/u/{username}` add-friend, `/i/g/{joinCode}` join-group) with a
+    small fallback landing page, `/.well-known/assetlinks.json`, an Android App
+    Links `intent-filter` (autoVerify) and a router route that opens add-friend
+    or join-group prefilled. Uses existing usernames/join codes — no new data.
+    Share buttons send the link. Needs the signing SHA-256 fingerprints (debug
+    now; release when a release key exists) for assetlinks.
 
 ## Remaining roadmap
 

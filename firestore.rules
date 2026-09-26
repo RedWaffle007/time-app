@@ -1399,10 +1399,14 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // ---- completionCelebrations/{targetUid_itemId} ----
-    // Durable, per-participant delivery for the 1.4-second completion effect.
-    // The target creates it atomically with the DONE outcome. Each participant
-    // may acknowledge only themselves; the last unseen participant deletes it.
+    // ---- completionCelebrations/{targetUid_itemId}[_skipped] ----
+    // Durable, per-participant delivery for the 1.4-second completion effect
+    // AND the planner's in-app outcome pop-up (2026-09-26). The target creates
+    // it atomically with the outcome: a DONE record (`{t}_{i}`, both parties,
+    // confetti + the planner's pop-up) or a SKIPPED record (`{t}_{i}_skipped`,
+    // planner only, pop-up without confetti). Separate ids so the missed-alarm
+    // "Skip → Done" correction can still create its Done record. Each
+    // participant may acknowledge only themselves; the last unseen deletes it.
     match /completionCelebrations/{celebrationId} {
       function itemBefore() {
         return get(/databases/$(database)/documents/scheduleItems/$(request.resource.data.targetUid)/items/$(request.resource.data.itemId));
@@ -1415,8 +1419,33 @@ service cloud.firestore {
       function exactKeys() {
         return request.resource.data.keys().hasOnly([
           'itemId', 'targetUid', 'plannerUid', 'participantUids',
-          'seenByUids', 'createdAt'
+          'seenByUids', 'createdAt', 'result'
         ]);
+      }
+
+      // Absent = a Done record written by a pre-2026-09-26 client.
+      function isDoneRecord() {
+        return request.resource.data.get('result', 'done') == 'done'
+          && celebrationId == request.resource.data.targetUid + '_' + request.resource.data.itemId
+          && request.resource.data.participantUids is list
+          && request.resource.data.participantUids.toSet().size()
+               == request.resource.data.participantUids.size()
+          && request.resource.data.targetUid in request.resource.data.participantUids
+          && request.resource.data.plannerUid in request.resource.data.participantUids
+          && request.resource.data.participantUids.size()
+               == (request.resource.data.targetUid == request.resource.data.plannerUid ? 1 : 2)
+          && priorItemAllowsDone()
+          && itemAfter().data.outcome.result == 'done';
+      }
+
+      // A first-write Skip, announced to a planner who is someone else.
+      function isSkipRecord() {
+        return request.resource.data.get('result', 'done') == 'skipped'
+          && celebrationId == request.resource.data.targetUid + '_' + request.resource.data.itemId + '_skipped'
+          && request.resource.data.plannerUid != request.resource.data.targetUid
+          && request.resource.data.participantUids == [request.resource.data.plannerUid]
+          && !itemBefore().data.keys().hasAny(['outcome'])
+          && itemAfter().data.outcome.result == 'skipped';
       }
 
       function priorItemAllowsDone() {
@@ -1437,20 +1466,11 @@ service cloud.firestore {
 
       allow create: if signedIn()
         && exactKeys()
-        && celebrationId == request.resource.data.targetUid + '_' + request.resource.data.itemId
         && request.auth.uid == request.resource.data.targetUid
         && request.resource.data.seenByUids == []
-        && request.resource.data.participantUids is list
-        && request.resource.data.participantUids.toSet().size()
-             == request.resource.data.participantUids.size()
-        && request.resource.data.targetUid in request.resource.data.participantUids
-        && request.resource.data.plannerUid in request.resource.data.participantUids
-        && request.resource.data.participantUids.size()
-             == (request.resource.data.targetUid == request.resource.data.plannerUid ? 1 : 2)
-        && priorItemAllowsDone()
         && itemAfter().data.targetUid == request.resource.data.targetUid
         && itemAfter().data.createdByUid == request.resource.data.plannerUid
-        && itemAfter().data.outcome.result == 'done';
+        && (isDoneRecord() || isSkipRecord());
 
       allow update: if signedIn()
         && request.auth.uid in resource.data.participantUids

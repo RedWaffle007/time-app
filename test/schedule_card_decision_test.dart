@@ -171,6 +171,9 @@ void main() {
       expect(find.text('Updating your schedule…'), findsNothing);
       expect(repository.markSkippedCalls, 1);
       expect(container.read(committedCelebrationProvider), isNull);
+      // The card always names the item's creator; the repository decides not
+      // to write a pop-up record when that is the person themselves.
+      expect(repository.skipAnnouncedTo, ['me']);
     },
   );
 
@@ -267,14 +270,17 @@ class _FakeScheduleRepository implements ScheduleRepository {
   final Completer<bool>? result;
   var markDoneCalls = 0;
   var markSkippedCalls = 0;
+  final skipAnnouncedTo = <String?>[];
 
   @override
   Future<bool> markSkipped(
     String targetUid,
     String itemId, {
     String? reason,
+    String? announceToPlannerUid,
   }) async {
     markSkippedCalls++;
+    skipAnnouncedTo.add(announceToPlannerUid);
     return true;
   }
 

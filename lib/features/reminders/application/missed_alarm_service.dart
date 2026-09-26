@@ -23,11 +23,13 @@ abstract interface class MissedAlarmOutcomeRepository {
     required String plannerUid,
   });
 
-  /// First-write-wins Skip, chosen by the person in the review.
+  /// First-write-wins Skip, chosen by the person in the review. A non-null
+  /// [plannerUid] (someone else) gets the in-app Skip pop-up.
   Future<bool> markSkippedIfUnsettled(
     String targetUid,
     String itemId, {
     required String reason,
+    String? plannerUid,
   });
 
   /// Legacy correction: builds before 2026-09-25 wrote an automatic
@@ -58,7 +60,13 @@ class ScheduleMissedAlarmOutcomeRepository
     String targetUid,
     String itemId, {
     required String reason,
-  }) => _repository.markSkippedIfUnsettled(targetUid, itemId, reason: reason);
+    String? plannerUid,
+  }) => _repository.markSkippedIfUnsettled(
+    targetUid,
+    itemId,
+    reason: reason,
+    announceToPlannerUid: plannerUid,
+  );
 
   @override
   Future<bool> replaceMissedAlarmSkipWithDone(
@@ -303,6 +311,7 @@ class MissedAlarmService extends ChangeNotifier {
         uid,
         item.id,
         reason: kMissedAlarmSkipReason,
+        plannerUid: item.createdByUid,
       );
     }
     // The planner push can take two 10-second timeouts; it must not hold the

@@ -175,18 +175,33 @@ void main() {
     );
   });
 
-  test('a foreground Done is no longer swallowed before the notification', () {
-    // Regression pin for 2026-09-26: `_showForegroundBanner` returned early
-    // on outcome/done, so an open planner app never announced a completion.
-    final app = File('lib/app.dart').readAsStringSync();
-    final start = app.indexOf('_showForegroundBanner(RemoteMessage');
-    final showAt = app.indexOf('foregroundPushPresenterProvider', start);
-    final doneAt = app.indexOf("'done'", start);
-    expect(showAt, greaterThan(start));
-    expect(
-      doneAt == -1 || doneAt > showAt,
-      isTrue,
-      reason: 'no Done early-return may precede the system notification',
-    );
-  });
+  test(
+    'in the app, Done/Skipped are the pop-up, never a second notification',
+    () {
+      // 2026-09-26: the planner's in-app pop-up is the announcement for an
+      // outcome; every other push is still posted as a system notification.
+      expect(isAnnouncedInApp(_outcomeDone), isTrue);
+      expect(isAnnouncedInApp({..._outcomeDone, 'subtype': 'skipped'}), isTrue);
+      expect(isAnnouncedInApp({'type': 'outcome'}), isTrue, reason: 'legacy');
+      for (final event in [
+        'created',
+        'decided',
+        'withdrawn',
+        'dismissed',
+        'approvalReminder',
+        'inactivity',
+        'friendRequest',
+        'groupJoinApproved',
+      ]) {
+        expect(isAnnouncedInApp({'event': event}), isFalse, reason: event);
+      }
+
+      final app = File('lib/app.dart').readAsStringSync();
+      final start = app.indexOf('_showForegroundBanner(RemoteMessage');
+      final gate = app.indexOf('isAnnouncedInApp(message.data)', start);
+      final post = app.indexOf('foregroundPushPresenterProvider', start);
+      expect(gate, greaterThan(start));
+      expect(gate, lessThan(post), reason: 'the gate must precede posting');
+    },
+  );
 }
