@@ -363,6 +363,11 @@ back to the system font, preserving the app's locale coverage.
 Conventions: screen padding `xl` for forms, `lg` for lists. Card margin
 `symmetric(horizontal: md, vertical: sm)`. Card interior padding `lg`.
 
+**Main-tab gutter.** Every main-tab body (Plan's sub-tab view, Track, Stats,
+You) sits inside `TabBodyInset`, which adds `Space.tabBodyInset` — symmetric
+horizontal `sm` — on top of the screen's own padding. Change the gutter there,
+never per screen (DECISIONS.md 2026-09-26).
+
 ### Radius — `Radii` in `app_tokens.dart`
 
 | Token | Value | Use |

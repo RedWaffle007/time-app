@@ -10,6 +10,8 @@ import 'app.dart';
 import 'features/applock/application/app_lock_providers.dart';
 import 'features/applock/data/app_lock_store.dart';
 import 'features/notifications/application/messaging_service.dart';
+import 'features/splash/application/startup_sound_providers.dart';
+import 'features/splash/data/startup_sound_store.dart';
 import 'firebase_options.dart';
 
 Future<void> main() async {
@@ -47,16 +49,31 @@ Future<void> main() async {
   // by the time the first frame builds — see appLockInitiallyEnabledProvider for
   // why an async read is not acceptable here.
   final appLockEnabled = await _readAppLockSetting();
+  final startupSoundEnabled = await _readStartupSoundSetting();
 
   // ProviderScope is the root of Riverpod — every provider lives under it.
   runApp(
     ProviderScope(
       overrides: [
         appLockInitiallyEnabledProvider.overrideWithValue(appLockEnabled),
+        startupSoundInitiallyEnabledProvider.overrideWithValue(
+          startupSoundEnabled,
+        ),
       ],
       child: const TimeApp(),
     ),
   );
+}
+
+/// Reads the startup-sound setting. A failed read keeps the shipped default
+/// (ON): a strike the user turned off plays once, which is harmless.
+Future<bool> _readStartupSoundSetting() async {
+  try {
+    return await const SharedPrefsStartupSoundStore().isEnabled();
+  } catch (e, stack) {
+    FirebaseCrashlytics.instance.recordError(e, stack, fatal: false);
+    return true;
+  }
 }
 
 /// Reads the persisted app-lock flag, **failing SECURE**.

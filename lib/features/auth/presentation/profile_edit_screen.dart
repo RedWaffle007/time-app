@@ -12,6 +12,7 @@ import '../../social/data/username_repository.dart';
 import '../../social/domain/username.dart';
 import '../../social/presentation/profile_avatar_editor.dart';
 import '../../social/presentation/social_profile_editor.dart';
+import '../../splash/presentation/startup_sound_tile.dart';
 import '../application/auth_providers.dart';
 import 'timezone_picker.dart';
 
@@ -406,6 +407,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
               // see my stats').
               const SectionHeader('This device'),
               const AppLockTile(),
+              const StartupSoundTile(),
             ],
           ),
         ),

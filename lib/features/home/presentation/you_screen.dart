@@ -15,6 +15,7 @@ import '../../notifications/application/messaging_service.dart';
 import '../../social/application/social_providers.dart';
 import '../../social/presentation/avatar_image.dart';
 import '../../theme/application/theme_mode_controller.dart';
+import '../../../core/widgets/tab_body_inset.dart';
 
 /// **The You hub** (migration slice S3) — the account popup promoted to a real
 /// screen, which resolves the audit's most overloaded surface: the junk-drawer
@@ -37,57 +38,62 @@ class YouScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('You')),
-      body: ListView(
-        padding: Space.screenList,
-        children: [
-          // Profile header — avatar + name, tapping through to the edit form.
-          Card(
-            child: ListTile(
-              leading: AvatarImage(profile: profile, size: Sizes.avatarRow),
-              title: Text(profile?.name ?? '', style: context.text.titleMedium),
-              subtitle: profile?.username == null
-                  ? null
-                  : Text('@${profile!.username}'),
-              trailing: const Icon(AppIcons.openRow),
-              onTap: () => context.push(Routes.profile),
+      body: TabBodyInset(
+        child: ListView(
+          padding: Space.screenList,
+          children: [
+            // Profile header — avatar + name, tapping through to the edit form.
+            Card(
+              child: ListTile(
+                leading: AvatarImage(profile: profile, size: Sizes.avatarRow),
+                title: Text(
+                  profile?.name ?? '',
+                  style: context.text.titleMedium,
+                ),
+                subtitle: profile?.username == null
+                    ? null
+                    : Text('@${profile!.username}'),
+                trailing: const Icon(AppIcons.openRow),
+                onTap: () => context.push(Routes.profile),
+              ),
             ),
-          ),
 
-          const SectionHeader('Places'),
-          _YouTile(
-            icon: AppIcons.friends,
-            label: 'Friends',
-            badgeCount: pendingRequests,
-            onTap: () => context.push(Routes.friends),
-          ),
-          const SectionHeader('Account & device'),
-          _YouTile(
-            icon: AppIcons.walkthrough,
-            label: 'How this app works',
-            // The complete guide — one blurb per page/feature. It carries a
-            // "Replay the guided tour" button for the first-run coach marks, so
-            // the tour is still reachable without this tile owning it.
-            onTap: () => context.push(Routes.howItWorks),
-          ),
-          _YouTile(
-            icon: AppIcons.permissions,
-            label: 'Reminders & permissions',
-            onTap: () => context.push(Routes.permissions),
-          ),
-          const _ThemeModeTile(),
-          if (kDebugMode)
+            const SectionHeader('Places'),
             _YouTile(
-              icon: AppIcons.devMenu,
-              label: 'Dev menu (debug)',
-              onTap: () => context.push(Routes.devMenu),
+              icon: AppIcons.friends,
+              label: 'Friends',
+              badgeCount: pendingRequests,
+              onTap: () => context.push(Routes.friends),
             ),
-          _YouTile(
-            icon: AppIcons.signOut,
-            label: 'Sign out',
-            showChevron: false,
-            onTap: () => signOutWithTokenCleanup(ref),
-          ),
-        ],
+            const SectionHeader('Account & device'),
+            _YouTile(
+              icon: AppIcons.walkthrough,
+              label: 'How this app works',
+              // The complete guide — one blurb per page/feature. It carries a
+              // "Replay the guided tour" button for the first-run coach marks, so
+              // the tour is still reachable without this tile owning it.
+              onTap: () => context.push(Routes.howItWorks),
+            ),
+            _YouTile(
+              icon: AppIcons.permissions,
+              label: 'Reminders & permissions',
+              onTap: () => context.push(Routes.permissions),
+            ),
+            const _ThemeModeTile(),
+            if (kDebugMode)
+              _YouTile(
+                icon: AppIcons.devMenu,
+                label: 'Dev menu (debug)',
+                onTap: () => context.push(Routes.devMenu),
+              ),
+            _YouTile(
+              icon: AppIcons.signOut,
+              label: 'Sign out',
+              showChevron: false,
+              onTap: () => signOutWithTokenCleanup(ref),
+            ),
+          ],
+        ),
       ),
     );
   }

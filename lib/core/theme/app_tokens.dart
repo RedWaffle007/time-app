@@ -42,6 +42,10 @@ abstract final class Space {
   static double systemBottomInset(BuildContext context) =>
       MediaQuery.viewPaddingOf(context).bottom;
 
+  /// Extra horizontal gutter around every main-tab body (UI-RULES.md §4),
+  /// applied once by `TabBodyInset`. Symmetric so cards stay centred.
+  static const EdgeInsets tabBodyInset = EdgeInsets.symmetric(horizontal: sm);
+
   /// The canonical card margin (UI-RULES.md §6.1).
   static const EdgeInsets cardMargin = EdgeInsets.symmetric(
     horizontal: md,

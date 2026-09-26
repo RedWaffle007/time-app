@@ -32,8 +32,13 @@ class SplashOverlay extends StatefulWidget {
     super.key,
     required this.child,
     this.skipReveal = false,
+    this.playSound = true,
     this.onRevealComplete,
   });
+
+  /// The user's startup-sound setting (You → Edit profile → This device). Off
+  /// means the reveal plays silently; it never affects alarm audio.
+  final bool playSound;
 
   /// The whole app (the app-lock gate + router) rendered beneath the reveal.
   final Widget child;
@@ -159,7 +164,7 @@ class _SplashOverlayState extends State<SplashOverlay>
 
     // Ring the pendulum strike once as the black reveal mounts — before the logo.
     // Native owns the one-shot + the mute check; fire-and-forget.
-    SplashSound.instance.play();
+    if (widget.playSound) SplashSound.instance.play();
 
     _intro.forward();
   }

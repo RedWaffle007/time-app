@@ -4,6 +4,16 @@
 export const INACTIVITY_DELAY_MS = 6 * 60 * 60 * 1000;
 const LEASE_MS = 5 * 60 * 1000;
 
+// Each user costs ~7-8 Firestore/FCM subrequests; Cloudflare's free plan
+// allows 50 per invocation, and exceeding it throws mid-run. Users beyond this
+// cap stay due and are taken by the next 5-minute run (soonest-due first).
+export const MAX_INACTIVITY_USERS_PER_RUN = 5;
+
+// The app's own nudge channel — deliberately NOT the planner-activity channel,
+// so a user can mute nudges without muting their people. Keep in step with
+// `kNudgeChannelId` in foreground_push_presenter.dart.
+export const NUDGE_CHANNEL_ID = 'app_nudges';
+
 // Kept short so the notification is useful at a glance. The cursor advances
 // only after at least one device receives the push; modulo wrap means no copy
 // repeats until all fifty have been delivered in order.
@@ -60,94 +70,114 @@ export const INACTIVITY_MESSAGES = [
   'Ready when you are—plan one next step.',
 ];
 
-export async function sendDueInactivityNotifications(ctx, now = new Date()) {
-  const due = await ctx.db.listDueInactivityStates(now, 100);
-  const summary = { considered: due.length, claimed: 0, sent: 0, cleaned: 0 };
+export async function sendDueInactivityNotifications(ctx, now = new Date(), {
+  maxUsers = MAX_INACTIVITY_USERS_PER_RUN,
+} = {}) {
+  const due = await ctx.db.listDueInactivityStates(now, maxUsers * 4);
+  const summary = {
+    considered: due.length, claimed: 0, sent: 0, cleaned: 0, failed: 0,
+  };
 
   for (const row of due) {
-    const uid = row.id;
-    const state = row.data || {};
-    if (!uid || state.uid !== uid || !row.updateTime) continue;
-
-    const leaseUntil = parseDate(state.leaseUntil);
-    if (leaseUntil && leaseUntil > now) continue;
-
-    const lastActivity = parseDate(state.lastActivityAt);
-    if (!lastActivity) continue;
-    const genuinelyDueAt = new Date(lastActivity.getTime() + INACTIVITY_DELAY_MS);
-    if (genuinelyDueAt > now) {
-      // Repairs a stale due time without claiming or sending.
-      await ctx.db.patchDocIfUnchanged(
-        `inactivityStates/${uid}`,
-        { nextNotificationAt: genuinelyDueAt },
-        row.updateTime,
-      );
-      continue;
-    }
-
-    const claimed = await ctx.db.patchDocIfUnchanged(
-      `inactivityStates/${uid}`,
-      { leaseUntil: new Date(now.getTime() + LEASE_MS) },
-      row.updateTime,
-    );
-    if (!claimed) continue;
-    summary.claimed += 1;
-
-    // Re-read after claiming. An app interaction that raced the claim updates
-    // lastActivityAt/nextNotificationAt; in that case it wins and no push goes.
-    const current = await ctx.db.getDoc(`inactivityStates/${uid}`);
-    const currentActivity = parseDate(current?.lastActivityAt);
-    if (!current || !currentActivity ||
-        currentActivity.getTime() + INACTIVITY_DELAY_MS > now.getTime()) {
-      await ctx.db.patchDoc(`inactivityStates/${uid}`, { leaseUntil: null });
-      continue;
-    }
-
-    const rawIndex = Number.isInteger(current.sequenceIndex)
-      ? current.sequenceIndex
-      : 0;
-    const index = ((rawIndex % INACTIVITY_MESSAGES.length) +
-      INACTIVITY_MESSAGES.length) % INACTIVITY_MESSAGES.length;
-    const tokens = await ctx.db.listDocIds(`users/${uid}/fcmTokens`);
-    let delivered = 0;
-    let cleaned = 0;
-    for (const token of tokens) {
-      const result = await ctx.fcm.send(token, buildInactivityMessage(index));
-      if (result.ok) {
-        delivered += 1;
-      } else if (result.error === 'UNREGISTERED' || result.error === 'INVALID') {
-        await ctx.db.deleteDoc(`users/${uid}/fcmTokens/${token}`);
-        cleaned += 1;
-      }
-    }
-
-    summary.sent += delivered;
-    summary.cleaned += cleaned;
-    const deliveredAt = new Date(now);
-    await ctx.db.patchDoc(`inactivityStates/${uid}`, {
-      leaseUntil: null,
-      nextNotificationAt: new Date(now.getTime() + INACTIVITY_DELAY_MS),
-      ...(delivered > 0 ? {
-        sequenceIndex: (index + 1) % INACTIVITY_MESSAGES.length,
-        lastNotifiedAt: deliveredAt,
-      } : {}),
-    });
-
-    // If opening/tapping the app raced the network sends, its newer activity
-    // must remain the timer anchor. Repair after finalization so the Worker's
-    // `now + 6h` write cannot shorten that fresh six-hour window.
-    const afterDelivery = await ctx.db.getDoc(`inactivityStates/${uid}`);
-    const activityAfterDelivery = parseDate(afterDelivery?.lastActivityAt);
-    if (activityAfterDelivery && activityAfterDelivery > now) {
-      await ctx.db.patchDoc(`inactivityStates/${uid}`, {
-        nextNotificationAt: new Date(
-          activityAfterDelivery.getTime() + INACTIVITY_DELAY_MS,
-        ),
-      });
+    if (summary.claimed + summary.failed >= maxUsers) break;
+    // One user's transient failure must not abort everyone after them in the
+    // run (the old loop threw out of the whole pass). Their lease expires and
+    // they are retried on a later run.
+    try {
+      await processInactivityRow(ctx, row, now, summary);
+    } catch (error) {
+      summary.failed += 1;
+      console.log(JSON.stringify({
+        event: 'inactivity-user-failed',
+        detail: String(error && error.message),
+      }));
     }
   }
 
   return summary;
+}
+
+async function processInactivityRow(ctx, row, now, summary) {
+  const uid = row.id;
+  const state = row.data || {};
+  if (!uid || state.uid !== uid || !row.updateTime) return;
+
+  const leaseUntil = parseDate(state.leaseUntil);
+  if (leaseUntil && leaseUntil > now) return;
+
+  const lastActivity = parseDate(state.lastActivityAt);
+  if (!lastActivity) return;
+  const genuinelyDueAt = new Date(lastActivity.getTime() + INACTIVITY_DELAY_MS);
+  if (genuinelyDueAt > now) {
+    // Repairs a stale due time without claiming or sending.
+    await ctx.db.patchDocIfUnchanged(
+      `inactivityStates/${uid}`,
+      { nextNotificationAt: genuinelyDueAt },
+      row.updateTime,
+    );
+    return;
+  }
+
+  const claimed = await ctx.db.patchDocIfUnchanged(
+    `inactivityStates/${uid}`,
+    { leaseUntil: new Date(now.getTime() + LEASE_MS) },
+    row.updateTime,
+  );
+  if (!claimed) return;
+  summary.claimed += 1;
+
+  // Re-read after claiming. An app interaction that raced the claim updates
+  // lastActivityAt/nextNotificationAt; in that case it wins and no push goes.
+  const current = await ctx.db.getDoc(`inactivityStates/${uid}`);
+  const currentActivity = parseDate(current?.lastActivityAt);
+  if (!current || !currentActivity ||
+      currentActivity.getTime() + INACTIVITY_DELAY_MS > now.getTime()) {
+    await ctx.db.patchDoc(`inactivityStates/${uid}`, { leaseUntil: null });
+    return;
+  }
+
+  const rawIndex = Number.isInteger(current.sequenceIndex)
+    ? current.sequenceIndex
+    : 0;
+  const index = ((rawIndex % INACTIVITY_MESSAGES.length) +
+    INACTIVITY_MESSAGES.length) % INACTIVITY_MESSAGES.length;
+  const tokens = await ctx.db.listDocIds(`users/${uid}/fcmTokens`);
+  let delivered = 0;
+  let cleaned = 0;
+  for (const token of tokens) {
+    const result = await ctx.fcm.send(token, buildInactivityMessage(index));
+    if (result.ok) {
+      delivered += 1;
+    } else if (result.error === 'UNREGISTERED' || result.error === 'INVALID') {
+      await ctx.db.deleteDoc(`users/${uid}/fcmTokens/${token}`);
+      cleaned += 1;
+    }
+  }
+
+  summary.sent += delivered;
+  summary.cleaned += cleaned;
+  const deliveredAt = new Date(now);
+  await ctx.db.patchDoc(`inactivityStates/${uid}`, {
+    leaseUntil: null,
+    nextNotificationAt: new Date(now.getTime() + INACTIVITY_DELAY_MS),
+    ...(delivered > 0 ? {
+      sequenceIndex: (index + 1) % INACTIVITY_MESSAGES.length,
+      lastNotifiedAt: deliveredAt,
+    } : {}),
+  });
+
+  // If opening/tapping the app raced the network sends, its newer activity
+  // must remain the timer anchor. Repair after finalization so the Worker's
+  // `now + 6h` write cannot shorten that fresh six-hour window.
+  const afterDelivery = await ctx.db.getDoc(`inactivityStates/${uid}`);
+  const activityAfterDelivery = parseDate(afterDelivery?.lastActivityAt);
+  if (activityAfterDelivery && activityAfterDelivery > now) {
+    await ctx.db.patchDoc(`inactivityStates/${uid}`, {
+      nextNotificationAt: new Date(
+        activityAfterDelivery.getTime() + INACTIVITY_DELAY_MS,
+      ),
+    });
+  }
 }
 
 export function buildInactivityMessage(index) {
@@ -157,6 +187,12 @@ export function buildInactivityMessage(index) {
       body: INACTIVITY_MESSAGES[index],
     },
     data: { type: 'inactivity', event: 'inactivity' },
+    // HIGH: a normal-priority message can be held for hours under Doze, so a
+    // "six-hour" nudge would arrive whenever the phone next woke.
+    android: {
+      priority: 'high',
+      notification: { channel_id: NUDGE_CHANNEL_ID },
+    },
   };
 }
 

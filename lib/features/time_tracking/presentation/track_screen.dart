@@ -12,6 +12,7 @@ import '../../auth/application/auth_providers.dart';
 import '../application/time_tracking_providers.dart';
 import '../domain/tracked_entry.dart';
 import 'log_time_sheet.dart';
+import '../../../core/widgets/tab_body_inset.dart';
 
 /// **The Track pillar** (migration slice S1) — personal, manual time-tracking's
 /// first real home. Free-form logging that owes nothing to planning, plus the
@@ -41,26 +42,28 @@ class TrackScreen extends ConsumerWidget {
         onPressed: () => showLogTimeSheet(context, ref),
         child: const Icon(AppIcons.add),
       ),
-      body: Column(
-        children: [
-          const ExplainerCard('Track the time you spend.'),
-          Expanded(
-            child: AsyncView<List<TrackedEntry>>(
-              value: entriesAsync,
-              onRetry: () => ref.invalidate(myTrackedEntriesProvider),
-              isEmpty: (entries) => entries.isEmpty,
-              emptyIcon: AppIcons.emptyTrack,
-              emptyMessage:
-                  "You haven't logged any time yet.\n"
-                  'Tap + to log time you spent on anything — it need not be a plan.',
-              builder: (context, entries) => CollapsibleDayGroups(
-                padding: Space.screenList,
-                initiallyExpandedKeys: {_todayKey()},
-                groups: _grouped(context, entries),
+      body: TabBodyInset(
+        child: Column(
+          children: [
+            const ExplainerCard('Track the time you spend.'),
+            Expanded(
+              child: AsyncView<List<TrackedEntry>>(
+                value: entriesAsync,
+                onRetry: () => ref.invalidate(myTrackedEntriesProvider),
+                isEmpty: (entries) => entries.isEmpty,
+                emptyIcon: AppIcons.emptyTrack,
+                emptyMessage:
+                    "You haven't logged any time yet.\n"
+                    'Tap + to log time you spent on anything — it need not be a plan.',
+                builder: (context, entries) => CollapsibleDayGroups(
+                  padding: Space.screenList,
+                  initiallyExpandedKeys: {_todayKey()},
+                  groups: _grouped(context, entries),
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

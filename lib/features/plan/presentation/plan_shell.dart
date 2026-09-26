@@ -11,6 +11,7 @@ import '../../outcomes/presentation/outcome_screen.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/presentation/planner_activity_screen.dart';
 import '../application/plan_intent.dart';
+import '../../../core/widgets/tab_body_inset.dart';
 
 /// **The Plan pillar** (redesign slice S4) — the delegation hub that collapses
 /// the three old stance tabs (My Schedule / Activity / Groups) into ONE branch
@@ -181,30 +182,32 @@ class _PlanShellState extends ConsumerState<PlanShell>
           style: context.text.labelLarge?.copyWith(fontWeight: FontWeight.bold),
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        // Order matches the tabs above. Each wrapped so its state survives a
-        // swipe (see the class doc). `embedded: true` suppresses each screen's
-        // own app bar + FAB; the shell provides them. The My Schedule child
-        // takes the deep-link `highlightItemId` — kept alive, so its own
-        // didUpdateWidget handles a highlight that arrives after first build.
-        children: [
-          _KeepAlivePage(
-            child: OutcomeScreen(
-              embedded: true,
-              highlightItemId: _highlightItemId,
-              highlightToken: _highlightSeq,
+      body: TabBodyInset(
+        child: TabBarView(
+          controller: _tabController,
+          // Order matches the tabs above. Each wrapped so its state survives a
+          // swipe (see the class doc). `embedded: true` suppresses each screen's
+          // own app bar + FAB; the shell provides them. The My Schedule child
+          // takes the deep-link `highlightItemId` — kept alive, so its own
+          // didUpdateWidget handles a highlight that arrives after first build.
+          children: [
+            _KeepAlivePage(
+              child: OutcomeScreen(
+                embedded: true,
+                highlightItemId: _highlightItemId,
+                highlightToken: _highlightSeq,
+              ),
             ),
-          ),
-          _KeepAlivePage(
-            child: PlannerActivityScreen(
-              embedded: true,
-              highlightItemId: _activityHighlightId,
-              highlightToken: _activityHighlightSeq,
+            _KeepAlivePage(
+              child: PlannerActivityScreen(
+                embedded: true,
+                highlightItemId: _activityHighlightId,
+                highlightToken: _activityHighlightSeq,
+              ),
             ),
-          ),
-          const _KeepAlivePage(child: GroupsScreen(embedded: true)),
-        ],
+            const _KeepAlivePage(child: GroupsScreen(embedded: true)),
+          ],
+        ),
       ),
     );
   }

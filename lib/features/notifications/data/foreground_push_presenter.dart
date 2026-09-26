@@ -11,6 +11,17 @@ import '../../reminders/domain/reminder.dart';
 /// silencing their own reminders. Never a reminder channel.
 const kPlannerActivityChannelId = 'planner_activity';
 
+/// The app's own re-engagement nudges (the six-hour inactivity prompt). Kept
+/// apart from [kPlannerActivityChannelId] so muting nudges never mutes your
+/// people. The Worker names it as `NUDGE_CHANNEL_ID` in `inactivity.js`.
+const kNudgeChannelId = 'app_nudges';
+
+/// Which channel a push belongs on, foreground and background alike.
+String channelIdForPush(Map<String, dynamic> data) =>
+    (data['event'] ?? data['type']) == 'inactivity'
+    ? kNudgeChannelId
+    : kPlannerActivityChannelId;
+
 const _kPushPayloadPrefix = 'push:';
 
 /// Encode a push's routing data as a local-notification payload. The prefix is
@@ -54,38 +65,55 @@ class ForegroundPushPresenter {
 
   final FlutterLocalNotificationsPlugin _plugin;
 
-  static const _channel = AndroidNotificationChannel(
-    kPlannerActivityChannelId,
-    'Activity from your people',
-    description:
-        'Plans, approvals and Done/Skip updates from people you plan '
-        'with.',
-    importance: Importance.high,
-  );
+  static const _activityName = 'Activity from your people';
+  static const _activityDescription =
+      'Plans, approvals and Done/Skip updates from people you plan with.';
+  static const _nudgeName = 'Reminders to plan';
+  static const _nudgeDescription =
+      'An occasional nudge to plan something when you have not opened '
+      'Checkmate for a while.';
 
-  static const _details = NotificationDetails(
-    android: AndroidNotificationDetails(
+  static const _channels = [
+    AndroidNotificationChannel(
       kPlannerActivityChannelId,
-      'Activity from your people',
-      channelDescription:
-          'Plans, approvals and Done/Skip updates from people '
-          'you plan with.',
+      _activityName,
+      description: _activityDescription,
       importance: Importance.high,
-      priority: Priority.high,
-      icon: 'ic_notification',
     ),
-  );
+    AndroidNotificationChannel(
+      kNudgeChannelId,
+      _nudgeName,
+      description: _nudgeDescription,
+      importance: Importance.high,
+    ),
+  ];
+
+  static NotificationDetails _detailsFor(String channelId) {
+    final nudge = channelId == kNudgeChannelId;
+    return NotificationDetails(
+      android: AndroidNotificationDetails(
+        channelId,
+        nudge ? _nudgeName : _activityName,
+        channelDescription: nudge ? _nudgeDescription : _activityDescription,
+        importance: Importance.high,
+        priority: Priority.high,
+        icon: 'ic_notification',
+      ),
+    );
+  }
 
   AndroidFlutterLocalNotificationsPlugin? get _android => _plugin
       .resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin
       >();
 
-  /// Create the channel up front so a BACKGROUND push naming it lands there
+  /// Create the channels up front so a BACKGROUND push naming one lands there
   /// too; Android falls back to the manifest default for an unknown channel.
   Future<void> ensureChannel() async {
     try {
-      await _android?.createNotificationChannel(_channel);
+      for (final channel in _channels) {
+        await _android?.createNotificationChannel(channel);
+      }
     } catch (e) {
       debugPrint('TimeApp: activity channel create failed: $e');
     }
@@ -101,12 +129,15 @@ class ForegroundPushPresenter {
       final android = _android;
       if (android == null) return false;
       if (await android.areNotificationsEnabled() != true) return false;
-      await android.createNotificationChannel(_channel);
+      final channelId = channelIdForPush(data);
+      await android.createNotificationChannel(
+        _channels.firstWhere((c) => c.id == channelId),
+      );
       await _plugin.show(
         id: pushNotificationId(data),
         title: title,
         body: body,
-        notificationDetails: _details,
+        notificationDetails: _detailsFor(channelId),
         payload: encodePushTapPayload(data),
       );
       return true;

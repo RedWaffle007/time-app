@@ -8,6 +8,7 @@ import '../../social/application/stats_providers.dart';
 import '../../social/application/stats_registry.dart';
 import '../../social/domain/profile_stat.dart';
 import '../../social/presentation/stats_section.dart';
+import '../../../core/widgets/tab_body_inset.dart';
 
 /// **The Stats pillar — the signed-in user's own computed dashboard.**
 class StatsScreen extends ConsumerWidget {
@@ -19,29 +20,32 @@ class StatsScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Stats')),
-      body: ListView(
-        padding: Space.screenList,
-        children: [
-          const SectionHeader('Your numbers'),
-          Text(
-            'Your activity across planning, follow-through and tracked time.',
-            style: context.text.bodySmall?.copyWith(
-              color: context.colors.onSurfaceVariant,
+      body: TabBodyInset(
+        child: ListView(
+          padding: Space.screenList,
+          children: [
+            const SectionHeader('Your numbers'),
+            Text(
+              'Your activity across planning, follow-through and tracked time.',
+              style: context.text.bodySmall?.copyWith(
+                color: context.colors.onSurfaceVariant,
+              ),
             ),
-          ),
-          const SizedBox(height: Space.md),
-          computed.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (_, _) => Text(
-              'Stats are unavailable right now.',
-              style: context.text.bodySmall
-                  ?.copyWith(color: context.colors.onSurfaceVariant),
+            const SizedBox(height: Space.md),
+            computed.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (_, _) => Text(
+                'Stats are unavailable right now.',
+                style: context.text.bodySmall?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
+              ),
+              data: (values) => StatsGrid(
+                stats: statsFromSnapshot(ProfileStatsSnapshot(values: values)),
+              ),
             ),
-            data: (values) => StatsGrid(
-              stats: statsFromSnapshot(ProfileStatsSnapshot(values: values)),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

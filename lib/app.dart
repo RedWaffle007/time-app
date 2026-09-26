@@ -30,6 +30,8 @@ import 'features/scheduling/application/schedule_providers.dart';
 import 'features/scheduling/application/slot_lock_reconciler.dart';
 import 'features/social/application/stats_providers.dart';
 import 'features/social/application/social_providers.dart';
+import 'features/splash/application/launch_reveal_policy.dart';
+import 'features/splash/application/startup_sound_providers.dart';
 import 'features/splash/presentation/splash_overlay.dart';
 import 'features/theme/application/theme_mode_controller.dart';
 import 'features/time_tracking/application/time_tracking_providers.dart';
@@ -65,9 +67,11 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
   bool _registrationFailureDismissed = false;
   bool _registrationRetryRequested = false;
 
-  /// A notification tap that cold-started this process. The FCM/local plugins
-  /// report it asynchronously, so the splash may already be mounted when this
-  /// flips; [SplashOverlay.skipReveal] handles both the initial and late signal.
+  /// An ALARM launch that cold-started this process (see [launchSkipsReveal]:
+  /// push taps deliberately keep the startup screen). The local plugin reports
+  /// a reminder tap asynchronously, so the splash may already be mounted when
+  /// this flips; [SplashOverlay.skipReveal] handles both the initial and late
+  /// signal.
   bool _openedFromNotification = false;
   bool _splashReady = false;
   String? _activityUid;
@@ -77,7 +81,9 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     super.initState();
     // An alarm cold start skips the reveal (and its ting) from frame one: the
     // alarm service owns the ting→ring order, and nothing may flash first.
-    _openedFromNotification = alarmLaunchLocation() != null;
+    _openedFromNotification = launchSkipsReveal(
+      alarmLaunch: alarmLaunchLocation() != null,
+    );
     _setupNotificationTaps();
     _setupReminderLaunchTap();
 
@@ -215,7 +221,9 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
       final payload = launch?.notificationResponse?.payload;
       if (payload == null || payload.isEmpty) return;
       if (!mounted) return;
-      _dismissColdStartReveal();
+      if (launchSkipsReveal(alarmLaunch: false, localPayload: payload)) {
+        _dismissColdStartReveal();
+      }
       // A foreground-shown push (see _showForegroundBanner) carries its push
       // data; it must route like a push, never open the alarm screen.
       final push = decodePushTapPayload(payload);
@@ -309,7 +317,7 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
   /// would drift the first time a route moved — which these routes already did
   /// once, in the Session 3 shell refactor.
   void _handleTap(RemoteMessage message) {
-    _dismissColdStartReveal();
+    // No reveal skip: a push tap keeps the startup screen (launchSkipsReveal).
     ref.read(notificationRouterProvider).openForPushEvent(message.data);
   }
 
@@ -497,8 +505,8 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
       // THE COLD-START REVEAL wraps the app lock, not the reverse: on an ordinary
       // fresh launch the black Supercell-style reveal covers EVERYTHING —
       // including the lock screen — then fades to reveal whatever gate resolves
-      // beneath. A notification launch bypasses it because the user explicitly
-      // asked to see one destination now; a warm resume never re-runs `main()`.
+      // beneath. Only an ALARM launch bypasses it (launchSkipsReveal); a push
+      // tap keeps it and lands beneath; a warm resume never re-runs `main()`.
       // See SplashOverlay for both paths.
       builder: (context, child) => Listener(
         behavior: HitTestBehavior.translucent,
@@ -510,6 +518,7 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
         },
         child: SplashOverlay(
           skipReveal: _openedFromNotification,
+          playSound: ref.read(startupSoundEnabledProvider),
           onRevealComplete: () {
             if (mounted && !_splashReady) {
               setState(() => _splashReady = true);

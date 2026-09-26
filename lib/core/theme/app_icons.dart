@@ -118,6 +118,9 @@ abstract final class AppIcons {
   /// second variant to contrast with.
   static const IconData appLock = Icons.lock_outline;
 
+  /// The startup screen's clock strike, as a device setting.
+  static const IconData startupSound = Icons.music_note_outlined;
+
   /// The action that opens it. Distinct from [appLock]: "the lock" and "open the
   /// lock" are different concepts, and rule 1 gives them different glyphs.
   static const IconData unlock = Icons.lock_open_outlined;

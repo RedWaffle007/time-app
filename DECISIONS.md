@@ -6175,3 +6175,37 @@ writes them; item updates compare `changedKeys()`, so their presence never
 blocks approve/reject/withdraw/outcome — both pinned in
 `adversarial_schedule_matrix.test.mjs`. Scale limit to revisit: >50 pending
 future items across all users means later ones wait until earlier ones clear.
+
+## Batch C: startup sound, tab gutter, push taps keep the startup screen (2026-09-26)
+
+- **Push taps now show the startup screen (supersedes "a notification launch
+  bypasses the reveal").** Device report: tapping the six-hour inactivity push
+  played the startup ting but showed no startup screen. Cause: a push launch is
+  only known when `getInitialMessage()` resolves — after the reveal mounted
+  and its ting fired — and the old code then tore the reveal down. Now only an
+  ALARM launch (full-screen alarm route, or a tapped local reminder whose
+  payload is a bare item id) skips it (`launchSkipsReveal`); every push tap
+  plays the full 1.5 s reveal and lands on its destination beneath. Applies to
+  all pushes, not just inactivity, since every push cold start had the same
+  ting-without-screen defect.
+- **Startup sound toggle.** You → Edit profile → This device → "Startup
+  sound". Device-local `shared_preferences` (`startup_sound_enabled`, default
+  ON), read in `main()` before `runApp` like the app lock, because the strike
+  plays on the first frame. Off = the reveal plays silently. It is read ONLY
+  by the splash; alarm audio (`AlarmSoundService`) never consults it (pinned by
+  a test that lists every reader). New icon `AppIcons.startupSound`.
+- **Tab gutter token `Space.tabBodyInset`** = symmetric horizontal `Space.sm`
+  (8), applied once by `TabBodyInset` around the four main-tab bodies (Plan's
+  sub-tab view, Track, Stats, You). Symmetric so cards stay centred; app bars
+  and the bottom bar are outside it. Small by request ("not drastic").
+- **Inactivity delivery audit.** Findings: (1) the cron was never deployed
+  until Worker `8229568f` (2026-09-26), so nobody had received it before
+  today; (2) one user's failure threw out of the whole run, starving everyone
+  after them — now isolated per user; (3) no per-run cap against Cloudflare's
+  50-subrequest free-plan limit (~7-8 per user) — now 5 users per 5-minute
+  run, soonest-due first, the rest next run; (4) sent at normal FCM priority,
+  which Doze can hold for hours — now `priority: high`; (5) it had no channel
+  — now its own `app_nudges` channel ("Reminders to plan"), separate from
+  planner activity so nudges can be muted alone. Not changed: nudges still
+  fire at night (quiet-hours enforcement is parked), and a user who never
+  granted notifications cannot receive it (the primer is the repair path).

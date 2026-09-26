@@ -4,6 +4,8 @@ import test from 'node:test';
 import {
   buildInactivityMessage,
   INACTIVITY_DELAY_MS,
+  MAX_INACTIVITY_USERS_PER_RUN,
+  NUDGE_CHANNEL_ID,
   INACTIVITY_MESSAGES,
   sendDueInactivityNotifications,
 } from '../src/inactivity.js';
@@ -49,10 +51,10 @@ function harness(states, { tokens = ['token-1'], tokenResults = {} } = {}) {
 
 const now = new Date('2026-09-23T12:00:00.000Z');
 const dueState = (overrides = {}) => ({
-  id: 'alice',
+  id: 'user-a',
   updateTime: '2026-09-23T11:59:00.000Z',
   data: {
-    uid: 'alice',
+    uid: 'user-a',
     lastActivityAt: new Date(now.getTime() - INACTIVITY_DELAY_MS).toISOString(),
     nextNotificationAt: now.toISOString(),
     sequenceIndex: 0,
@@ -109,7 +111,7 @@ test('activity racing a claimed notification wins and clears the lease', async (
   h.ctx.db.patchDocIfUnchanged = async (...args) => {
     const claimed = await originalClaim(...args);
     h.ctx.db.getDoc = async () => ({
-      uid: 'alice',
+      uid: 'user-a',
       lastActivityAt: new Date(now.getTime() - 60_000).toISOString(),
     });
     return claimed;
@@ -125,7 +127,7 @@ test('activity while FCM is sending remains the final timer anchor', async () =>
   const freshActivity = new Date(now.getTime() + 30_000);
   h.ctx.fcm.send = async (token, message) => {
     h.sent.push({ token, message });
-    h.docs['inactivityStates/alice'].lastActivityAt = freshActivity.toISOString();
+    h.docs['inactivityStates/user-a'].lastActivityAt = freshActivity.toISOString();
     return { ok: true };
   };
   await sendDueInactivityNotifications(h.ctx, now);
@@ -148,7 +150,7 @@ test('bad tokens are cleaned while one successful device advances the cursor', a
 
   assert.equal(result.sent, 1);
   assert.equal(result.cleaned, 1);
-  assert.deepEqual(h.deleted, ['users/alice/fcmTokens/gone']);
+  assert.deepEqual(h.deleted, ['users/user-a/fcmTokens/gone']);
   assert.equal(h.patched.at(-1).fields.sequenceIndex, 1);
 });
 
@@ -157,4 +159,65 @@ test('message construction uses the requested sequence entry', () => {
     buildInactivityMessage(3).notification.body,
     INACTIVITY_MESSAGES[3],
   );
+});
+
+// --- delivery reliability (audit 2026-09-26) ---------------------------------
+
+function manyDue(count) {
+  return Array.from({ length: count }, (_, i) => {
+    const row = dueState();
+    return { ...row, id: `user-${i}`, data: { ...row.data, uid: `user-${i}` } };
+  });
+}
+
+test('inactivity pushes are high priority on their own nudge channel', () => {
+  const message = buildInactivityMessage(0);
+  assert.deepEqual(message.android, {
+    priority: 'high',
+    notification: { channel_id: NUDGE_CHANNEL_ID },
+  });
+  assert.equal(NUDGE_CHANNEL_ID, 'app_nudges');
+  assert.notEqual(NUDGE_CHANNEL_ID, 'planner_activity');
+});
+
+test('one user failing does not starve everyone after them in the run', async () => {
+  const states = manyDue(3);
+  const h = harness(states);
+  const listDocIds = h.ctx.db.listDocIds;
+  h.ctx.db.listDocIds = async (path) => {
+    if (path === 'users/user-0/fcmTokens') throw new Error('transient');
+    return listDocIds(path);
+  };
+
+  const summary = await sendDueInactivityNotifications(h.ctx, now);
+
+  assert.equal(summary.failed, 1);
+  assert.equal(summary.sent, 2, 'user-1 and user-2 still receive theirs');
+});
+
+test('a run processes at most the per-run cap, soonest-due first', async () => {
+  const states = manyDue(MAX_INACTIVITY_USERS_PER_RUN + 4);
+  const h = harness(states);
+  const summary = await sendDueInactivityNotifications(h.ctx, now);
+
+  assert.equal(summary.claimed, MAX_INACTIVITY_USERS_PER_RUN);
+  assert.equal(h.sent.length, MAX_INACTIVITY_USERS_PER_RUN);
+  // The users served are the first (soonest-due) rows the query returned.
+  const served = new Set(
+    h.patched.filter((p) => p.conditional).map((p) => p.path),
+  );
+  for (let i = 0; i < MAX_INACTIVITY_USERS_PER_RUN; i++) {
+    assert.ok(served.has(`inactivityStates/user-${i}`));
+  }
+});
+
+test('the query asks for enough rows to fill the cap past skipped ones', async () => {
+  let requested;
+  const h = harness(manyDue(1));
+  h.ctx.db.listDueInactivityStates = async (_now, limit) => {
+    requested = limit;
+    return [];
+  };
+  await sendDueInactivityNotifications(h.ctx, now);
+  assert.ok(requested >= MAX_INACTIVITY_USERS_PER_RUN * 2);
 });

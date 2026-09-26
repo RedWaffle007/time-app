@@ -44,7 +44,7 @@
 - Latest profile build installed on the Redmi; the third-pass fixes await the
   user's device check.
 - Next implementation order (revised 2026-09-26 after the in-person device
-  check): **Batch A ✓ → B ✓ → B2 → C → D (explore) → 32 → 24 → 33**. See "Device-check
+  check): **Batch A ✓ → B ✓ → B2 ✓ → C → D (explore) → 32 → 24 → 33**. See "Device-check
   backlog (2026-09-26)" below.
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
 
@@ -126,7 +126,8 @@ check deferred by the user** (DECISIONS.md "Dismiss and group-join pushes").
 `alarm.dismissedAt`). 6. Group join approved notifies the candidate.
 
 Batch B2 — pending approvals: visibility + reminders (added 2026-09-26) —
-**BUILT 2026-09-26; awaiting full suite, index deploy, Worker deploy, commit**
+**BUILT, committed `fca87b4`, index + Worker deployed 2026-09-26; device check
+deferred**
 (DECISIONS.md "Pending-approvals badge moves…" and "Approval reminders").
 Mechanism chosen for 13: **A, server-side Worker cron** (every minute).
 Every item ships with thorough regression tests (listed per item).
@@ -162,7 +163,9 @@ Every item ships with thorough regression tests (listed per item).
     past-due, clock skew), cap and spacing invariants, stop-on-each-decision,
     dedup per reminder slot, self-plans never remind, copy with/without names.
 
-Batch C (client, plus a Worker check for 9): 7. Startup-sound toggle (splash
+Batch C — **BUILT 2026-09-26; awaiting full suite, Worker deploy, commit**
+(DECISIONS.md "Batch C: startup sound, tab gutter…"). Push taps now keep
+the startup screen (only alarm launches skip it). Originally: 7. Startup-sound toggle (splash
 only, not alarms). 8. Slightly larger left content inset — one theme token,
 DECISIONS → UI-RULES → code order. 9. **Inactivity push (item 15) tap skips the
 startup screen** (reported 2026-09-26): tapping the 6-hour inactivity
