@@ -189,16 +189,31 @@ class GroupDetailScreen extends ConsumerWidget {
                         if (m.uid != myUid && iPlanFor(m.uid))
                           (uid: m.uid, isSelf: false),
                     ];
+                    // Members who gave ME their own emergency permission —
+                    // the only people an emergency group plan can reach.
+                    final emergencyUids = <String>{
+                      for (final g
+                          in ref.watch(myEmergencyTargetsProvider).value ??
+                              const <PlannerGrant>[])
+                        if (g.granted &&
+                            g.targetUid != myUid &&
+                            members.any((m) => m.uid == g.targetUid))
+                          g.targetUid,
+                    };
                     final others = candidates.where((c) => !c.isSelf).length;
-                    if (others == 0) return const SizedBox.shrink();
+                    if (others == 0 && emergencyUids.isEmpty) {
+                      return const SizedBox.shrink();
+                    }
+                    final reach = others > 0 ? others : emergencyUids.length;
                     return Card(
                       child: ListTile(
                         leading: const Icon(AppIcons.navPlan),
                         title: const Text('Plan for the group'),
                         subtitle: Text(
-                          'One item for $others '
-                          '${others == 1 ? 'member' : 'members'} you can plan '
-                          'for, plus you',
+                          'One item for $reach '
+                          '${reach == 1 ? 'member' : 'members'} you can plan '
+                          'for, plus you'
+                          '${emergencyUids.isNotEmpty ? ' · emergency available' : ''}',
                         ),
                         onTap: () => showGroupPlanSheet(
                           context,
@@ -206,6 +221,7 @@ class GroupDetailScreen extends ConsumerWidget {
                           groupId: groupId,
                           groupName: group.name,
                           candidates: candidates,
+                          emergencyUids: emergencyUids,
                         ),
                       ),
                     );

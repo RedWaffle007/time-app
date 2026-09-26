@@ -104,8 +104,12 @@ class ScheduleRepository {
     required String title,
     String? note,
     required DateTime wall,
+    // An EMERGENCY group plan (item 15): every copy is born approved and
+    // skips the queue; the rules require each member's own emergency grant.
+    ItemTier tier = ItemTier.normal,
   }) async {
     final sent = <({String uid, String itemId, bool isSelf})>[];
+    final emergency = tier == ItemTier.emergency;
     var skippedPast = 0;
     var skippedOther = 0;
     final now = DateTime.now().toUtc();
@@ -123,9 +127,10 @@ class ScheduleRepository {
           note: note,
           wall: wall,
           timezone: t.timezone,
-          status: t.isSelf
+          status: t.isSelf || emergency
               ? ScheduleItemStatus.approved
               : ScheduleItemStatus.pending,
+          tier: tier,
         );
         sent.add((uid: t.uid, itemId: id, isSelf: t.isSelf));
       } catch (_) {

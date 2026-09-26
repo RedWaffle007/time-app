@@ -6312,3 +6312,28 @@ The client `ItemLapseReconciler` stays as an idempotent fallback.
   itself is not repeated, so the notification is lost.
 - `lapsedByServerAt` is Worker-only (no client whitelist); pinned in the
   adversarial rules matrix.
+
+## Group emergency plans — per-person grants only (2026-09-26, item 15)
+
+"Plan for the group" gains an **Emergency** switch whenever the planner holds
+at least one other member's FRIENDSHIP emergency grant. There is still no
+group-level emergency permission.
+
+- **Who it reaches** (`groupPlanRecipients`, pure + unit-tested): the planner
+  (own copy) plus every member who gave the planner emergency permission —
+  including members with no normal grant. Members the planner can normally
+  plan for but who gave no emergency permission are listed on the sheet
+  ("Won't reach {names} — no emergency permission.") and counted as skipped.
+  Never silently downgraded to a normal plan.
+- **Each copy** is born `approved`, `tier: emergency`, `groupId` = the group
+  (self copy: no group, as before), so it rings without approval exactly like
+  a friendship emergency.
+- **Rules fix (deploy first):** the emergency create branch now requires the
+  group tag to be honest — `groupId == ''` or a group BOTH parties belong to.
+  Before, any `groupId` string was accepted.
+- **Worker fix:** `itemGrantPath` sends every `tier: emergency` item to the
+  friendship `emergencyGrants`, even with a `groupId`. Before, a group-tagged
+  emergency was checked against the group's normal `plannerGrants`, so its
+  pushes (including the data push that arms the alarm on a killed app) would
+  be refused — or wrongly allowed by a normal grant. The lapse and reminder
+  crons inherit the fix.

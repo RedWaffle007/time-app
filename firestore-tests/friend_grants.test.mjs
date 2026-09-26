@@ -329,6 +329,62 @@ describe('emergency tier — the both-way invariant', () => {
   });
 });
 
+// Item 15 (2026-09-26): a GROUP emergency plan is the same per-person
+// emergency grant, tagged with a group both parties belong to.
+describe('emergency tier — group emergency plans', () => {
+  const groupEmg = (o = {}) => emgItem({ groupId: GROUP, ...o });
+
+  it('an emergency grant + a shared group creates a group-tagged emergency', async () => {
+    await seedEmergencyGrant(true);
+    await assertSucceeds(setDoc(doc(as(B), `scheduleItems/${A}/items/g1`), groupEmg()));
+  });
+
+  it('a group-tagged emergency without the emergency grant is denied', async () => {
+    await seedLegacyGroupGrant(); // a normal GROUP grant is not emergency permission
+    await seedGrant(true);
+    await assertFails(setDoc(doc(as(B), `scheduleItems/${A}/items/g2`), groupEmg()));
+  });
+
+  it('DENIES tagging a group the target is not in', async () => {
+    await seedEmergencyGrant(true);
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'groups', 'b_only'), {
+        name: 'B only', ownerUid: B, joinCode: 'XYZ234', memberUids: [B],
+      });
+    });
+    await assertFails(setDoc(doc(as(B), `scheduleItems/${A}/items/g3`),
+      groupEmg({ groupId: 'b_only' })));
+  });
+
+  it('DENIES tagging a group the planner is not in', async () => {
+    await seedEmergencyGrant(true);
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'groups', 'a_only'), {
+        name: 'A only', ownerUid: A, joinCode: 'XYZ235', memberUids: [A],
+      });
+    });
+    await assertFails(setDoc(doc(as(B), `scheduleItems/${A}/items/g4`),
+      groupEmg({ groupId: 'a_only' })));
+  });
+
+  it('DENIES tagging a group that does not exist', async () => {
+    await seedEmergencyGrant(true);
+    await assertFails(setDoc(doc(as(B), `scheduleItems/${A}/items/g5`),
+      groupEmg({ groupId: 'no_such_group' })));
+  });
+
+  it('a group emergency is still born approved, never pending', async () => {
+    await seedEmergencyGrant(true);
+    await assertFails(setDoc(doc(as(B), `scheduleItems/${A}/items/g6`),
+      groupEmg({ status: 'pending' })));
+  });
+
+  it('the untagged (friendship) emergency still works', async () => {
+    await seedEmergencyGrant(true);
+    await assertSucceeds(setDoc(doc(as(B), `scheduleItems/${A}/items/g7`), emgItem()));
+  });
+});
+
 describe('emergency tier — read + recall', () => {
   it('an emergency grant authorizes reading the schedule', async () => {
     await seedEmergencyGrant(true);

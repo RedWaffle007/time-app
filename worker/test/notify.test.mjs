@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   ACTIVITY_CHANNEL_ID,
   buildMessage,
+  itemGrantPath,
   outcomeTiming,
   sendEventNotification,
   sendFriendNotification,
@@ -931,4 +932,79 @@ test('a friendship plan with an empty groupId is never dropped as malformed', as
   });
   assert.notEqual(result.reason, 'item-missing-fields');
   assert.equal(result.sent, 1);
+});
+
+// --- item 15: group emergency plans (2026-09-26) ------------------------------
+
+test('emergency items always authorize through the friendship emergency grant', () => {
+  assert.equal(
+    itemGrantPath({ tier: 'emergency', groupId: 'g1' }, 'planner', 'target'),
+    'friendships/planner_target/emergencyGrants/planner_target',
+  );
+  assert.equal(
+    itemGrantPath({ tier: 'emergency', groupId: '' }, 'planner', 'target'),
+    'friendships/planner_target/emergencyGrants/planner_target',
+  );
+  assert.equal(
+    itemGrantPath({ tier: 'normal', groupId: 'g1' }, 'planner', 'target'),
+    'groups/g1/plannerGrants/planner_target',
+  );
+  assert.equal(
+    itemGrantPath({ groupId: '' }, 'planner', 'target'),
+    'friendships/planner_target/plannerGrants/planner_target',
+  );
+  // Sorted pair regardless of which side is lexically first.
+  assert.equal(
+    itemGrantPath({ tier: 'emergency', groupId: 'g1' }, 'zed', 'amy'),
+    'friendships/amy_zed/emergencyGrants/zed_amy',
+  );
+});
+
+test('a group emergency plan reaches the target as a group-labelled alarm command', async () => {
+  const harness = context({
+    'scheduleItems/target/items/item-1': {
+      targetUid: 'target',
+      createdByUid: 'planner',
+      groupId: 'g1',
+      title: 'Evacuate',
+      status: 'approved',
+      tier: 'emergency',
+      scheduledInstantUtc: '2030-01-01T10:00:00.000Z',
+    },
+    'friendships/planner_target/emergencyGrants/planner_target': { granted: true },
+    'groups/g1': { name: 'Family' },
+    'users/planner': { name: 'Test Planner' },
+  });
+  const result = await sendEventNotification(harness.ctx, {
+    event: 'created', targetUid: 'target', itemId: 'item-1',
+  });
+  assert.equal(result.reason, 'sent');
+  assert.equal(harness.sent[0].data.command, 'scheduleReminder');
+  assert.equal(harness.sent[0].data.pushTitle, 'New group emergency plan for you');
+  assert.equal(
+    harness.sent[0].data.pushBody,
+    'Test Planner planned Evacuate for you in Family',
+  );
+});
+
+test('a normal GROUP grant never authorizes pushes about a group emergency', async () => {
+  const harness = context({
+    'scheduleItems/target/items/item-1': {
+      targetUid: 'target',
+      createdByUid: 'planner',
+      groupId: 'g1',
+      title: 'Evacuate',
+      status: 'approved',
+      tier: 'emergency',
+      outcome: { result: 'done' },
+    },
+    'groups/g1/plannerGrants/planner_target': { granted: true },
+  });
+  for (const event of ['created', 'outcome']) {
+    const result = await sendEventNotification(harness.ctx, {
+      event, targetUid: 'target', itemId: 'item-1',
+    });
+    assert.equal(result.reason, 'no-active-grant', event);
+  }
+  assert.equal(harness.sent.length, 0);
 });

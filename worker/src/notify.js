@@ -134,18 +134,21 @@ export async function sendEventNotification(ctx, { event, targetUid, itemId }) {
   return result(sent, cleaned, recipientUid, sent > 0 ? 'sent' : 'no-delivery');
 }
 
-// The grant that authorizes pushes about [item]. Group plans carry a group id;
-// friendship plans deliberately carry an empty one and use the sorted-pair
-// friendship subtree. Emergency permission is independent from normal
-// friendship permission, so its item tier selects emergencyGrants.
+// The grant that authorizes pushes about [item]. EMERGENCY permission is
+// always the per-person friendship emergency grant — also for a group
+// emergency plan, whose groupId is only a label (there is no group-level
+// emergency grant; 2026-09-26). Otherwise group plans use the group's
+// plannerGrants and friendship plans (empty groupId) the sorted-pair
+// friendship subtree.
 export function itemGrantPath(item, plannerUid, targetUid) {
   const grantId = `${plannerUid}_${targetUid}`;
   const pairId = [plannerUid, targetUid].sort().join('_');
+  if (item.tier === 'emergency') {
+    return `friendships/${pairId}/emergencyGrants/${grantId}`;
+  }
   return item.groupId
     ? `groups/${item.groupId}/plannerGrants/${grantId}`
-    : `friendships/${pairId}/${item.tier === 'emergency'
-        ? 'emergencyGrants'
-        : 'plannerGrants'}/${grantId}`;
+    : `friendships/${pairId}/plannerGrants/${grantId}`;
 }
 
 // Verify the event against the item's ACTUAL Firestore state and return this

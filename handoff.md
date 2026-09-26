@@ -212,8 +212,7 @@ Batch E — build, one item at a time, thorough regression tests each:
     deadline. Tests: before/after 22:00, exactly 22:00, DST nights, unknown
     zone, the lapse reconciler, and the calendar/My Schedule "still
     actionable" state.
-20. **Auto-skip notifies both people** — **BUILT 2026-09-26; awaiting full
-    suite, Worker deploy, commit** (DECISIONS.md "Server-side lapse…"). When an item lapses
+20. **Auto-skip notifies both people** — **BUILT, Worker deployed, committed** (DECISIONS.md "Server-side lapse…"). When an item lapses
     to Skipped "Did not respond", push to the target AND the planner (self-
     plans: target only). Recommended with it: move the lapse itself to the
     Worker cron (it already scans items every minute), because today it only
@@ -231,7 +230,9 @@ Batch E — build, one item at a time, thorough regression tests each:
       respond to {task}, so it was marked Skipped."
     - Group: add " in {group}" and "Group task" in the title; emergency:
       "Emergency task" in the title. Own dedup field per recipient.
-15. **Group emergency plan — per-person grants only.** "Plan for the group"
+15. **Group emergency plan — per-person grants only.** — **BUILT 2026-09-26;
+    awaiting rules deploy, Worker deploy, commit** (DECISIONS.md "Group
+    emergency plans"). "Plan for the group"
     gains an Emergency switch when the planner holds at least one member's
     FRIENDSHIP emergency grant; it fans out only to those members (born
     approved, as today) and reports who was skipped and why. Fixes needed

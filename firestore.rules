@@ -1669,9 +1669,17 @@ service cloud.firestore {
           // requires `callerHasEmergencyGrant` — so a normal grant can never
           // create an emergency item, and an emergency-only grant can never
           // create or queue a normal one. (DECISIONS.md "Emergency item tier".)
+          //
+          // A GROUP emergency plan (2026-09-26) is the same per-person grant —
+          // there is no group-level emergency permission — tagged with the
+          // group for labelling. The tag must be honest: '' (a friendship
+          // plan) or a group BOTH parties belong to.
           || (callerHasEmergencyGrant(targetUid)
               && request.resource.data.tier == 'emergency'
-              && request.resource.data.status == 'approved')
+              && request.resource.data.status == 'approved'
+              && (request.resource.data.groupId == ''
+                  || (callerInGroup(request.resource.data.groupId)
+                      && uidInGroup(request.resource.data.groupId, targetUid))))
         );
 
       // Missed-alarm review is the sole settled-outcome correction. Keep this
