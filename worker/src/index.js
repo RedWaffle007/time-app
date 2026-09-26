@@ -29,6 +29,7 @@ import {
 import { sendDueInactivityNotifications } from './inactivity.js';
 import { sendDueApprovalReminders } from './approval-reminders.js';
 import { settleLapsedItems } from './lapse.js';
+import { handleInviteRequest } from './invite.js';
 
 const MAX_BODY_BYTES = 2048;
 const EVENTS = new Set(['created', 'decided', 'outcome', 'withdrawn', 'dismissed']);
@@ -51,6 +52,11 @@ export default {
     // The avatar routes are handled BEFORE the POST-only guard below, because
     // removing a picture is a DELETE.
     const url = new URL(request.url);
+    // Invite links + Android App Links verification: public GETs, no auth,
+    // handled before every other route (item 17).
+    const invite = handleInviteRequest(request, env);
+    if (invite) return invite;
+
     if (url.pathname === '/avatar') {
       if (request.method !== 'POST' && request.method !== 'DELETE') {
         return json({ error: 'method-not-allowed' }, 405, {

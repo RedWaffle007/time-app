@@ -118,8 +118,13 @@ Future<void> showGroupCreateDialog(BuildContext context, WidgetRef ref) async {
 
 /// The "Join by code" dialog. Top-level for the same reason
 /// [showGroupCreateDialog] is — the Plan shell's app-bar Join action reuses it.
-Future<void> showGroupJoinDialog(BuildContext context, WidgetRef ref) async {
-  final controller = TextEditingController();
+Future<void> showGroupJoinDialog(
+  BuildContext context,
+  WidgetRef ref, {
+  // Prefilled from a group invite link (item 17); the person still confirms.
+  String? initialCode,
+}) async {
+  final controller = TextEditingController(text: initialCode ?? '');
   final code = await showDialog<String>(
     context: context,
     builder: (ctx) => AlertDialog(

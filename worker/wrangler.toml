@@ -14,6 +14,13 @@ crons = ["*/5 * * * *", "* * * * *", "*/2 * * * *"]
 PROJECT_ID = "time-app-1e1c9"
 SUPABASE_URL = "https://sssbuqrseunytlcqhlqy.supabase.co"
 SUPABASE_BUCKET = "avatars"
+# Android App Links (invite links, /.well-known/assetlinks.json). Public
+# signing-certificate fingerprints, comma-separated: the DEBUG key (debug and
+# profile builds) and the RELEASE key.
+APP_CERT_SHA256 = "1E:22:4B:C3:AF:38:AD:0B:C7:53:30:4D:30:30:12:0A:35:37:AF:6B:BB:3C:21:9B:27:36:84:03:47:09:7E:E8,A5:CF:E2:6E:45:0A:A3:29:C5:C7:D8:C1:DB:01:BD:D0:D4:66:25:8F:5B:18:FA:52:20:5D:4A:39:C0:48:15:75"
+# Where the invite page's "Get Checkmate" button points. Empty = the page says
+# to ask the sender for the app (no store listing yet).
+APP_DOWNLOAD_URL = ""
 
 # Profile/group-picture storage (Supabase). Non-secret: the project URL and the
 # bucket name are both public identifiers — the public object URL contains

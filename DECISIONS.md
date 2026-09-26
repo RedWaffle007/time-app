@@ -6374,3 +6374,34 @@ item 20). Tap → Plan activity.
   (item 20).
 - Budget: `MAX_REMINDERS_PER_RUN` lowered 6 → 5, since a final reminder now
   costs ~9 subrequests.
+
+## Tap-to-open invite links (2026-09-26, item 17)
+
+- **Links:** `https://time-app-notify.timeapp.workers.dev/i/u/{username}` (add
+  a friend) and `/i/g/{joinCode}` (ask to join a group). They carry only an
+  existing username or join code — no new collection, nothing secret (a code
+  still admits nobody without every member's approval).
+- **Worker** (`invite.js`): serves `/.well-known/assetlinks.json` (package
+  `com.timeapp.time_app`, fingerprints from the public `APP_CERT_SHA256` var —
+  debug key now; the RELEASE key must be appended before release builds verify)
+  and a tiny fallback page for anyone without the app: strict CSP, no script,
+  values validated then escaped, an `intent://` "Open in Checkmate" button,
+  and a "Get Checkmate" button only if `APP_DOWNLOAD_URL` is set (empty today:
+  the page says to ask the sender). Malformed or hostile paths get a plain 404.
+  Invite GETs are routed before every other route; the push root stays
+  POST-only.
+- **App:** a verified `autoVerify` intent filter for that host and `/i/` only,
+  plus `flutter_deeplinking_enabled`. go_router never shows an `/i/` screen:
+  the redirect PARKS the invite (`pendingInviteProvider`) and continues to
+  home or sign-in; `PendingInviteListener` inside HomeShell (past sign-in,
+  profile setup and permissions) acts once — a friend invite opens that
+  person's profile (Add friend is there), a group invite opens the join dialog
+  with the code prefilled. A link never sends anything by itself; your own
+  link and an unknown username say so.
+- **Share:** group Share now sends the link plus the typeable code; Friends
+  gains an "Invite a friend" share action with your username link.
+- **Parser parity is tested:** `test/fixtures/invite_paths.json` is parsed by
+  both the Dart and the Worker parser, which must agree (case folding, length
+  bounds, code alphabet, encoded/hostile input). One known difference: the app
+  also rejects reserved usernames; the Worker page shows them, harmlessly (no
+  one can hold one).

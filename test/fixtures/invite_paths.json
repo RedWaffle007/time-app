@@ -1,0 +1,33 @@
+{
+  "_comment": "Shared by test/invite_link_test.dart (app) and worker/test/invite.test.mjs (Worker): both parsers must agree exactly. null = rejected.",
+  "cases": [
+    { "path": "/i/u/ana_b", "kind": "user", "value": "ana_b" },
+    { "path": "/i/u/Ana_B", "kind": "user", "value": "ana_b" },
+    { "path": "/i/u/ana/", "kind": "user", "value": "ana" },
+    { "path": "/i/u/abc", "kind": "user", "value": "abc" },
+    { "path": "/i/u/a23456789012345678901", "kind": null },
+    { "path": "/i/u/abcdefghij0123456789", "kind": "user", "value": "abcdefghij0123456789" },
+    { "path": "/i/u/ab", "kind": null },
+    { "path": "/i/u/1abc", "kind": null },
+    { "path": "/i/u/_abc", "kind": null },
+    { "path": "/i/u/a.na", "kind": null },
+    { "path": "/i/u/a-na", "kind": null },
+    { "path": "/i/u/a%20na", "kind": null },
+    { "path": "/i/u/%3Cscript%3E", "kind": null },
+    { "path": "/i/u/%D0%B0na", "kind": null },
+    { "path": "/i/u/%E0%A4%A", "kind": null },
+    { "path": "/i/u/ana/extra", "kind": null },
+    { "path": "/i/u/", "kind": null },
+    { "path": "/i/g/HJK234", "kind": "group", "value": "HJK234" },
+    { "path": "/i/g/hjk234", "kind": "group", "value": "HJK234" },
+    { "path": "/i/g/HJK23", "kind": null },
+    { "path": "/i/g/HJK2345", "kind": null },
+    { "path": "/i/g/HJK23O", "kind": null },
+    { "path": "/i/g/HJK230", "kind": null },
+    { "path": "/i/g/HJK23I", "kind": null },
+    { "path": "/i/g/HJK231", "kind": null },
+    { "path": "/i/x/HJK234", "kind": null },
+    { "path": "/i/HJK234", "kind": null },
+    { "path": "/u/ana", "kind": null }
+  ]
+}

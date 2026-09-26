@@ -240,12 +240,15 @@ Batch E — build, one item at a time, thorough regression tests each:
     `tier == 'emergency'` even when `groupId` is set; rules: the emergency
     create branch must require `groupId == ''` OR both parties be members of
     that group (today it does not check `groupId`). Rules deploy + byte-verify.
-16. **Planner heads-up for pending plans.** — **BUILT 2026-09-26; awaiting
-    Worker deploy + commit** (DECISIONS.md "Planner heads-up"). When the FINAL approval reminder
+16. **Planner heads-up for pending plans.** — **BUILT, Worker deployed,
+    committed** (DECISIONS.md "Planner heads-up"). When the FINAL approval reminder
     goes out and the plan is still pending, the planner gets one push: "{name}
     hasn't approved {task} yet". Rides the B2 cron and its claim; own dedup
     field. Lapse stays silent to the planner.
-17. **WhatsApp invite link — real tap-to-open.** https link served by the
+17. **WhatsApp invite link — real tap-to-open.** — **BUILT 2026-09-26;
+    awaiting Worker deploy + commit; debug AND release fingerprints are in
+    `APP_CERT_SHA256`** (DECISIONS.md "Tap-to-open
+    invite links"). https link served by the
     Worker (`/i/u/{username}` add-friend, `/i/g/{joinCode}` join-group) with a
     small fallback landing page, `/.well-known/assetlinks.json`, an Android App
     Links `intent-filter` (autoVerify) and a router route that opens add-friend

@@ -22,6 +22,7 @@ import '../domain/group_join_request.dart';
 import '../domain/membership.dart';
 import '../domain/planner_grant.dart';
 import 'group_avatar_editor.dart';
+import '../../invites/domain/invite_link.dart';
 
 /// Shows a group's invite code and members, lets the signed-in user grant other
 /// members permission to plan for them (consent-first), and lets them end a
@@ -712,7 +713,7 @@ class GroupDetailScreen extends ConsumerWidget {
   Future<void> _shareCode(String code, String groupName) async {
     await SharePlus.instance.share(
       ShareParams(
-        text: 'Join my group "$groupName" on Checkmate with code: $code',
+        text: groupInviteShareText(groupName, code),
       ),
     );
   }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
@@ -13,6 +14,7 @@ import '../application/social_providers.dart';
 import '../../plan_requests/application/plan_request_providers.dart';
 import '../domain/friendship.dart';
 import 'user_row.dart';
+import '../../invites/domain/invite_link.dart';
 
 /// The friends list, and the door to everything else social.
 ///
@@ -37,6 +39,21 @@ class FriendsScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Friends'),
         actions: [
+          // Tap-to-open invite link for WhatsApp etc. (item 17).
+          Builder(
+            builder: (context) {
+              final username = ref.watch(profileProvider).value?.username;
+              return IconButton(
+                tooltip: 'Invite a friend',
+                icon: const Icon(AppIcons.share),
+                onPressed: username == null || username.isEmpty
+                    ? null
+                    : () => SharePlus.instance.share(
+                        ShareParams(text: friendInviteShareText(username)),
+                      ),
+              );
+            },
+          ),
           IconButton(
             tooltip: 'Blocked users',
             icon: const Icon(AppIcons.block),

@@ -32,6 +32,8 @@ import '../features/plan/presentation/plan_shell.dart';
 import '../features/stats/presentation/stats_screen.dart';
 import '../features/time_tracking/presentation/track_screen.dart';
 import 'go_router_refresh_stream.dart';
+import '../features/invites/application/pending_invite.dart';
+import '../features/invites/domain/invite_link.dart';
 
 /// Central list of route paths/names, so screens don't hardcode strings.
 ///
@@ -321,6 +323,20 @@ final routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final loggedIn = FirebaseAuth.instance.currentUser != null;
       final atAuth = state.matchedLocation == Routes.auth;
+
+      // An invite App Link (`/i/u/…`, `/i/g/…`; item 17) is not a screen: it
+      // is parked for PendingInviteListener, which acts once the person is
+      // past sign-in and setup. Unknown or malformed `/i/` paths just go home.
+      if (state.uri.path.startsWith('/i/')) {
+        final invite = InviteLink.parsePath(state.uri.path);
+        if (invite != null) {
+          // Deferred: redirect can run while providers are being read.
+          Future.microtask(
+            () => ref.read(pendingInviteProvider.notifier).set(invite),
+          );
+        }
+        return loggedIn ? Routes.home : Routes.auth;
+      }
 
       // Not signed in → force to the auth screen.
       if (!loggedIn && !atAuth) return Routes.auth;

@@ -130,6 +130,22 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Invite links (item 17): verified Android App Links for the
+                 Worker's /i/ paths. The Worker serves the matching
+                 /.well-known/assetlinks.json; go_router receives the path and
+                 parks it for PendingInviteListener. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data
+                    android:scheme="https"
+                    android:host="time-app-notify.timeapp.workers.dev"
+                    android:pathPrefix="/i/"/>
+            </intent-filter>
+            <meta-data
+                android:name="flutter_deeplinking_enabled"
+                android:value="true"/>
         </activity>
 
         <!-- ============ flutter_local_notifications' own receivers ============

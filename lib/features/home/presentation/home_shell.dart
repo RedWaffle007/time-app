@@ -15,6 +15,7 @@ import '../../voice/presentation/plan_target_picker.dart';
 import '../../voice/presentation/voice_capture_sheet.dart';
 import '../../walkthrough/application/walkthrough_providers.dart';
 import '../../walkthrough/presentation/walkthrough_overlay.dart';
+import '../../invites/presentation/pending_invite_listener.dart';
 
 /// The app home: the five-PILLAR bottom bar with the docked centre voice FAB
 /// (redesign slice S5; UI-RULES.md §6.12).
@@ -167,7 +168,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       if (prev != next) _startWalkthrough();
     });
 
-    return PopScope(
+    // Invite links act here, past every gate (item 17).
+    return PendingInviteListener(
+      child: PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _handleBack();
@@ -242,6 +245,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               ),
             ),
         ],
+      ),
       ),
     );
   }
