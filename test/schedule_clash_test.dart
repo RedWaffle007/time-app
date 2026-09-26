@@ -138,13 +138,9 @@ void main() {
     const noWait = [Duration.zero, Duration.zero, Duration.zero];
 
     test('clear and clash on a readable schedule', () async {
-      final clear = ScheduleClashChecker(
-        fetch: (_) async => [],
-        ensureAccess: (_, _) async {},
-      );
+      final clear = ScheduleClashChecker(fetch: (_) async => []);
       final busy = ScheduleClashChecker(
         fetch: (_) async => [item(instant: at)],
-        ensureAccess: (_, _) async {},
       );
       expect(
         await clear.check(targetUid: 'TARGET', instantUtc: at),
@@ -164,7 +160,6 @@ void main() {
           if (calls < 3) throw Exception('permission-denied');
           return [item(instant: at)];
         },
-        ensureAccess: (_, _) async {},
         retryDelays: noWait,
       );
       expect(
@@ -183,7 +178,6 @@ void main() {
             calls++;
             throw Exception('permission-denied');
           },
-          ensureAccess: (_, _) async {},
           retryDelays: noWait,
         );
         expect(
@@ -202,7 +196,6 @@ void main() {
           if (calls == 1) return Future.delayed(const Duration(hours: 1));
           return Future.value(const <ScheduleItem>[]);
         },
-        ensureAccess: (_, _) async {},
         retryDelays: noWait,
         attemptTimeout: const Duration(milliseconds: 10),
       );
@@ -211,61 +204,6 @@ void main() {
         ClashResult.clear,
       );
       expect(calls, 2);
-    });
-
-    test('group access: a missing hint row is written once, then the read '
-        'succeeds', () async {
-      var hint = false;
-      final ensured = <(String, String)>[];
-      final checker = ScheduleClashChecker(
-        fetch: (_) async {
-          if (!hint) throw Exception('permission-denied');
-          return [item(instant: at)];
-        },
-        ensureAccess: (target, group) async {
-          ensured.add((target, group));
-          hint = true;
-        },
-        retryDelays: noWait,
-      );
-      expect(
-        await checker.check(
-          targetUid: 'TARGET',
-          instantUtc: at,
-          groupId: 'group-1',
-        ),
-        ClashResult.clash,
-      );
-      expect(ensured, [('TARGET', 'group-1')]);
-    });
-
-    test('friendship access (no group) never writes a hint row', () async {
-      var ensured = 0;
-      final checker = ScheduleClashChecker(
-        fetch: (_) async => throw Exception('permission-denied'),
-        ensureAccess: (_, _) async => ensured++,
-        retryDelays: noWait,
-      );
-      await checker.check(targetUid: 'TARGET', instantUtc: at, groupId: '');
-      await checker.check(targetUid: 'TARGET', instantUtc: at);
-      expect(ensured, 0);
-    });
-
-    test('a failing hint write does not stop the retries', () async {
-      var calls = 0;
-      final checker = ScheduleClashChecker(
-        fetch: (_) async {
-          calls++;
-          if (calls < 2) throw Exception('unavailable');
-          return const <ScheduleItem>[];
-        },
-        ensureAccess: (_, _) async => throw Exception('permission-denied'),
-        retryDelays: noWait,
-      );
-      expect(
-        await checker.check(targetUid: 'TARGET', instantUtc: at, groupId: 'g'),
-        ClashResult.clear,
-      );
     });
   });
 

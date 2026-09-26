@@ -493,7 +493,10 @@ mode and multi-friend selection.
    and the reconciler; rules + Worker authz switch to `areFriends`. Y's ways
    to stop an alarm: mark it Done/Skipped before it rings, unfriend, or block
    (user-confirmed intent). Reverses "friendship grants nothing".
-3. **Groups, WhatsApp-style.** Creator = admin (existing groups: owner becomes
+3. **Groups, WhatsApp-style.** — **BUILT 2026-09-27; awaiting test run →
+   rules deploy → Worker deploy → commit; phone check deferred** (DECISIONS.md
+   "WhatsApp-style group admins"). Only the creator makes admins; any admin
+   may remove another admin (never the creator). Creator = admin (existing groups: owner becomes
    admin); admins can make any number of members admins, and remove members.
    An admin's invite joins immediately; a non-admin's invite, or a join code
    entered by an outsider, becomes a join request pushed to EVERY admin — any

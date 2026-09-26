@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,6 +8,7 @@ import '../../../core/theme/app_icons.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../routing/app_router.dart';
 import '../../auth/application/auth_providers.dart';
+import '../../notifications/application/friend_notifier.dart';
 import '../application/group_providers.dart';
 import '../domain/group.dart';
 import 'group_avatar_image.dart';
@@ -153,19 +156,32 @@ Future<void> showGroupJoinDialog(
   final profile = ref.read(profileProvider).value;
   if (user == null) return;
 
-  final requested = await ref
+  final notifier = ref.read(friendEventNotifierProvider);
+  final groupId = await ref
       .read(groupRepositoryProvider)
       .requestJoinByCode(
         code: code,
         uid: user.uid,
         name: profile?.name ?? user.displayName ?? 'Me',
       );
+  if (groupId != null) {
+    // Tell the group's admins (item 3). Best-effort and not awaited: the
+    // request is already saved, and they also see it in the group.
+    unawaited(
+      notifier.notify(
+        event: FriendNotifyEvent.groupJoinRequested,
+        fromUid: user.uid,
+        toUid: user.uid,
+        groupId: groupId,
+      ),
+    );
+  }
   if (!context.mounted) return;
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
       content: Text(
-        requested
-            ? 'Request sent. Every current member must approve it.'
+        groupId != null
+            ? 'Request sent. A group admin will approve it.'
             : 'No group with that code.',
       ),
     ),

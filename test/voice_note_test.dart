@@ -561,11 +561,7 @@ void main() {
               ),
             ),
             scheduleClashCheckerProvider.overrideWithValue(
-              checker ??
-                  ScheduleClashChecker(
-                    fetch: (_) async => [],
-                    ensureAccess: (_, _) async {},
-                  ),
+              checker ?? ScheduleClashChecker(fetch: (_) async => []),
             ),
             scheduleRepositoryProvider.overrideWithValue(repo),
             notificationEventNotifierProvider.overrideWithValue(_Notifier()),
@@ -663,7 +659,6 @@ void main() {
         tester,
         checker: ScheduleClashChecker(
           fetch: (_) async => [existing(seededInstant())],
-          ensureAccess: (_, _) async {},
         ),
       );
       expect(find.text('Schedule heads-up'), findsOneWidget);
@@ -698,7 +693,6 @@ void main() {
               outcome: const ScheduleOutcome(result: OutcomeResult.done),
             ),
           ],
-          ensureAccess: (_, _) async {},
         ),
       );
       expect(find.text('Schedule heads-up'), findsNothing);
@@ -711,7 +705,6 @@ void main() {
         tester,
         checker: ScheduleClashChecker(
           fetch: (_) async => throw Exception('permission-denied'),
-          ensureAccess: (_, _) async {},
           retryDelays: const [Duration.zero],
         ),
       );

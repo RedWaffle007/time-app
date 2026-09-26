@@ -621,6 +621,11 @@ planning your schedule and triggering your alarms was already built — groups +
 `plannerGrants` + the `pending → approved` machine + FCM + the reminder layer.
 The social layer does NOT replace or extend it.
 
+**Groups are WhatsApp-style (2026-09-27):** creator = admin (only the creator
+makes admins), admins add/approve/remove, any member plans for the WHOLE group
+with no grant; group grants and `plannerAccess` are retired. DECISIONS.md
+"WhatsApp-style group admins".
+
 **Friendship IS the planning permission (2026-09-27, user-directed — reverses
 the old "friends grant NOTHING" rule).** Friends may set alarms for each other
 and read each other's schedule for the clash check; there is no grant, switch or

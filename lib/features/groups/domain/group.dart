@@ -13,6 +13,7 @@ class Group {
     required this.ownerUid,
     required this.joinCode,
     required this.memberUids,
+    this.adminUids = const [],
     this.lastAdmittedUid,
     this.avatar,
   });
@@ -25,8 +26,16 @@ class Group {
   final String joinCode;
   final List<String> memberUids;
 
+  /// Admins besides the creator (WhatsApp-style, Batch G item 3). Only the
+  /// creator changes it. A group written before admins existed has none.
+  final List<String> adminUids;
+
+  /// The creator is always an admin; others only while still members.
+  bool isAdmin(String uid) =>
+      memberUids.contains(uid) && (uid == ownerUid || adminUids.contains(uid));
+
   /// Audit pointer used by Firestore rules to bind a roster addition to its
-  /// unanimously approved request. It is not membership state.
+  /// admin-approved request. It is not membership state.
   final String? lastAdmittedUid;
 
   /// Optional group picture. Legacy groups omit this and render their initial.
@@ -43,6 +52,7 @@ class Group {
       ownerUid: (d['ownerUid'] ?? '') as String,
       joinCode: (d['joinCode'] ?? '') as String,
       memberUids: List<String>.from(d['memberUids'] ?? const []),
+      adminUids: List<String>.from(d['adminUids'] ?? const []),
       lastAdmittedUid: d['lastAdmittedUid'] as String?,
       avatar: ProfileAvatar.fromMap(d['avatar'] as Map<String, dynamic>?),
     );

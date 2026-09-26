@@ -4,9 +4,8 @@
 //
 // What is worth testing here is exactly what the client cannot enforce:
 //
-//   * a planner cannot read a schedule without a plannerAccess row;
-//   * a planner cannot MINT their own row (the whole model inverted);
-//   * the row's id must match its contents, so it cannot name someone else;
+//   * group membership does not let someone read a non-friend's schedule, and
+//     the retired plannerAccess rows / group grants no longer help (item 3);
 //   * a slot lock is create-once — the second writer loses, which IS the
 //     server-side conflict re-check;
 //   * a lock cannot be stolen or overwritten, only released by the right people.
@@ -42,9 +41,8 @@ after(async () => { await testEnv.cleanup(); });
 
 const as = (uid) => testEnv.authenticatedContext(uid).firestore();
 
-/** The planner's groupId HINT row. It only names a group — the read rule
- * re-checks the LIVE grant through it, so a row alone reads nothing (pair it
- * with seedGrant). */
+/** A retired planner-access hint row (item 3, 2026-09-27): it authorizes
+ * nothing any more. */
 async function seedAccess() {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), `plannerAccess/${PLANNER}_${TARGET}`), {
@@ -53,23 +51,23 @@ async function seedAccess() {
   });
 }
 
-/** Flip the PLANNER->TARGET grant's `granted` flag, bypassing rules. */
-async function setGranted(granted) {
-  await testEnv.withSecurityRulesDisabled(async (ctx) => {
-    await setDoc(doc(ctx.firestore(), `groups/g1/plannerGrants/${PLANNER}_${TARGET}`),
-      { granted }, { merge: true });
-  });
-}
-
-/** An ACTIVE planner grant PLANNER->TARGET in group g1. This — not the mirror —
- * is what now authorises a planner to write a slot lock (see the create rule
- * for scheduleSlots and DECISIONS.md "Cross-device relationship + planning
- * denials"). */
-async function seedGrant() {
+/** A retired group grant PLANNER->TARGET in g1 — inert since item 3. */
+async function seedRetiredGrant() {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), `groups/g1/plannerGrants/${PLANNER}_${TARGET}`), {
       plannerUid: PLANNER, targetUid: TARGET, groupId: 'g1',
       granted: true, grantedByUid: TARGET,
+    });
+  });
+}
+
+/** PLANNER and TARGET are both members of g1 — what now lets a member put a
+ * group plan (and its lock) on another member (item 3). */
+async function seedGroup() {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'groups/g1'), {
+      name: 'G', ownerUid: TARGET, joinCode: 'SLOT23',
+      memberUids: [TARGET, PLANNER],
     });
   });
 }
@@ -87,128 +85,44 @@ async function seedItem() {
 
 beforeEach(async () => { await testEnv.clearFirestore(); });
 
-describe('reading the target schedule', () => {
+describe('reading the target schedule (item 3: friends only)', () => {
   const itemPath = `scheduleItems/${TARGET}/items/i1`;
 
-  it('the target reads their own, with or without a mirror', async () => {
+  it('the target reads their own', async () => {
     await seedItem();
     await assertSucceeds(getDoc(doc(as(TARGET), itemPath)));
   });
 
-  it('a planner with NO hint row is denied — even holding a grant', async () => {
-    // The read carries no groupId, so the grant alone cannot authorize it; the
-    // planner must have left a hint row. (Their reconciler writes one.)
+  it('a fellow group member who is not a friend is denied — even holding a '
+      + 'leftover grant AND hint row', async () => {
     await seedItem();
-    await seedGrant();
-    await assertFails(getDoc(doc(as(PLANNER), itemPath)));
-  });
-
-  it('a planner WITH a hint row AND a live grant reads full detail', async () => {
-    await seedItem();
-    await seedGrant();
-    await seedAccess();
-    const snap = await assertSucceeds(getDoc(doc(as(PLANNER), itemPath)));
-    // Full detail, not free/busy — the access model, not an oversight.
-    if (snap.data().title !== 'Gym') throw new Error('title should be readable');
-  });
-
-  it('a hint row with NO backing grant reads nothing', async () => {
-    // The row is only a hint; authorization is the live grant. A planner who
-    // wrote a row but holds no grant is denied — the whole safety story.
-    await seedItem();
+    await seedGroup();
+    await seedRetiredGrant();
     await seedAccess();
     await assertFails(getDoc(doc(as(PLANNER), itemPath)));
   });
 
-  it('revoking the GRANT cuts the planner off, though the row remains', async () => {
+  it('a stranger is denied', async () => {
     await seedItem();
-    await seedGrant();
-    await seedAccess();
-    await assertSucceeds(getDoc(doc(as(PLANNER), itemPath)));
-    await setGranted(false); // revoke — row is now a stale hint
-    await assertFails(getDoc(doc(as(PLANNER), itemPath)));
-  });
-
-  it('a legacy row carrying no group reads nothing', async () => {
-    await seedItem();
-    await seedGrant();
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), `plannerAccess/${PLANNER}_${TARGET}`), {
-        plannerUid: PLANNER, targetUid: TARGET, updatedAt: new Date(),
-      });
-    });
-    await assertFails(getDoc(doc(as(PLANNER), itemPath)));
-  });
-
-  it('deleting the hint row also cuts the planner off', async () => {
-    await seedItem();
-    await seedGrant();
-    await seedAccess();
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await deleteDoc(doc(ctx.firestore(), `plannerAccess/${PLANNER}_${TARGET}`));
-    });
-    await assertFails(getDoc(doc(as(PLANNER), itemPath)));
-  });
-
-  it('a stranger is denied even while the planner is allowed', async () => {
-    await seedItem();
-    await seedGrant();
-    await seedAccess();
     await assertFails(getDoc(doc(as(STRANGER), itemPath)));
-  });
-
-  it('read access does NOT confer write access to the target\'s items', async () => {
-    await seedItem();
-    await seedGrant();
-    await seedAccess();
-    // The planner did not create this item, so no write branch covers them.
-    await assertFails(setDoc(doc(as(PLANNER), itemPath),
-      { status: 'rejected' }, { merge: true }));
   });
 });
 
-describe('who may write the mirror hint', () => {
+describe('plannerAccess hint rows are retired (item 3)', () => {
   const rowPath = `plannerAccess/${PLANNER}_${TARGET}`;
-  const row = (overrides = {}) => ({
-    plannerUid: PLANNER, targetUid: TARGET, groupId: 'g1',
-    updatedAt: new Date(), ...overrides,
+  const row = { plannerUid: PLANNER, targetUid: TARGET, groupId: 'g1', updatedAt: new Date() };
+
+  it('no one may write one any more', async () => {
+    await seedGroup();
+    await seedRetiredGrant();
+    await assertFails(setDoc(doc(as(PLANNER), rowPath), row));
+    await assertFails(setDoc(doc(as(TARGET), rowPath), row));
   });
 
-  it('a PLANNER may self-provision, backed by a live grant', async () => {
-    await seedGrant();
-    await assertSucceeds(setDoc(doc(as(PLANNER), rowPath), row()));
-  });
-
-  it('a PLANNER cannot self-provision with NO grant', async () => {
-    // No grant seeded: the row would be inert, and the rule refuses it outright.
-    await assertFails(setDoc(doc(as(PLANNER), rowPath), row()));
-  });
-
-  it('a PLANNER cannot name a group they hold no grant in', async () => {
-    await seedGrant(); // grant is in g1
-    await assertFails(setDoc(doc(as(PLANNER), rowPath), row({ groupId: 'g2' })));
-  });
-
-  it('the target may still write their own row (back-compat)', async () => {
-    await assertSucceeds(setDoc(doc(as(TARGET), rowPath), row()));
-  });
-
-  it('the id must match the contents, so a row cannot name someone else', async () => {
-    await assertFails(setDoc(doc(as(TARGET), rowPath), row({ plannerUid: STRANGER })));
-  });
-
-  it('a target cannot forge a row over somebody else', async () => {
-    await assertFails(setDoc(doc(as(TARGET), `plannerAccess/${PLANNER}_${STRANGER}`),
-      row({ targetUid: STRANGER })));
-  });
-
-  it('the PLANNER may delete their own hint row (cleanup)', async () => {
+  it('either party may read or delete a leftover; a stranger may not', async () => {
     await seedAccess();
-    await assertSucceeds(deleteDoc(doc(as(PLANNER), rowPath)));
-  });
-
-  it('the target may also delete the row', async () => {
-    await seedAccess();
+    await assertFails(getDoc(doc(as(STRANGER), rowPath)));
+    await assertSucceeds(getDoc(doc(as(PLANNER), rowPath)));
     await assertSucceeds(deleteDoc(doc(as(TARGET), rowPath)));
   });
 });
@@ -227,18 +141,15 @@ describe('the slot lock — the server-side conflict re-check', () => {
     await assertSucceeds(setDoc(doc(db, lockPath), lock(TARGET)));
   });
 
-  it('a planner with an ACTIVE GRANT may claim a free slot — with NO mirror', async () => {
-    // The regression guard for the cross-device planning denial: the lock is now
-    // authorised by the grant the item also proves, not by the plannerAccess
-    // mirror, so a planner can plan before the target's device has written it.
-    await seedGrant();
+  it('a fellow group member may claim a free slot for a group plan', async () => {
+    await seedGroup();
     const db = testEnv.authenticatedContext(PLANNER).firestore();
     await assertSucceeds(setDoc(doc(db, lockPath), lock(PLANNER)));
   });
 
-  it('a planner WITHOUT a grant cannot claim one (a mirror is NOT enough)', async () => {
-    // The mirror alone must not authorise a WRITE — only a read.
+  it('a non-member cannot claim one, whatever leftovers they hold', async () => {
     await seedAccess();
+    await seedRetiredGrant();
     const db = testEnv.authenticatedContext(PLANNER).firestore();
     await assertFails(setDoc(doc(db, lockPath), lock(PLANNER)));
   });
@@ -246,7 +157,7 @@ describe('the slot lock — the server-side conflict re-check', () => {
   it('THE RACE: the second writer loses', async () => {
     // This is the requirement. B books the slot while A's modal is open; A
     // submits against a stale view; A's write must be refused.
-    await seedGrant();
+    await seedGroup();
     const target = testEnv.authenticatedContext(TARGET).firestore();
     await assertSucceeds(setDoc(doc(target, lockPath), lock(TARGET)));
 
@@ -263,7 +174,7 @@ describe('the slot lock — the server-side conflict re-check', () => {
   });
 
   it('createdByUid cannot be forged', async () => {
-    await seedGrant();
+    await seedGroup();
     const db = testEnv.authenticatedContext(PLANNER).firestore();
     await assertFails(setDoc(doc(db, lockPath), lock(TARGET)));
   });
@@ -275,7 +186,7 @@ describe('the slot lock — the server-side conflict re-check', () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), lockPath), lock(TARGET));
     });
-    await seedGrant();
+    await seedGroup();
 
     const db = testEnv.authenticatedContext(PLANNER).firestore();
     const batch = writeBatch(db);
@@ -296,7 +207,7 @@ describe('the slot lock — the server-side conflict re-check', () => {
   });
 
   it('releasing: the target and the lock owner may delete; nobody else', async () => {
-    await seedGrant();
+    await seedGroup();
     const planner = testEnv.authenticatedContext(PLANNER).firestore();
     await assertSucceeds(setDoc(doc(planner, lockPath), lock(PLANNER)));
 

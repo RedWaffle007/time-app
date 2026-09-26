@@ -128,7 +128,7 @@ test('a granted planner uploads; the Worker records what it checked', async () =
   assert.equal(record.expiresAt.getTime(), h.ctx.now.getTime() + ORPHAN_TTL_MS);
 });
 
-test('friendship alone, or a group grant between non-friends, allows it', async () => {
+test('friendship alone, or both in the tagged group, allows it', async () => {
   const friendsOnly = harness({
     'friendships/A_B/plannerGrants/B_A': null,
     'friendships/A_B/emergencyGrants/B_A': null,
@@ -141,17 +141,18 @@ test('friendship alone, or a group grant between non-friends, allows it', async 
   const group = harness({
     'friendships/A_B': null,
     'friendships/A_B/plannerGrants/B_A': null,
-    'groups/group00000001/plannerGrants/B_A': { granted: true },
+    'groups/group00000001': { memberUids: ['A', 'B'] },
   });
   assert.equal((await upload(group, { groupId: 'group00000001' })).status, 200);
 });
 
-test('an ended friendship, or a revoked group grant, is refused', async () => {
+test('an ended friendship, or someone no longer in the group, is refused', async () => {
   const cases = [
     [harness({ 'friendships/A_B': null }), {}],
     [harness({
       'friendships/A_B': null,
-      'groups/group00000001/plannerGrants/B_A': { granted: false },
+      'groups/group00000001': { memberUids: ['A'] },
+      'groups/group00000001/plannerGrants/B_A': { granted: true },
     }), { groupId: 'group00000001' }],
   ];
   for (const [h, o] of cases) {

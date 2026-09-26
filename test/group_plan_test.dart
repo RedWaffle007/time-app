@@ -82,21 +82,18 @@ class _Notifier implements NotificationEventNotifier {
 /// Records what each member was checked at; answers [clash] for [busy].
 class _Checker extends ScheduleClashChecker {
   _Checker({this.busy = const {}, this.unreadable = const {}})
-    : super(fetch: (_) async => [], ensureAccess: (_, _) async {});
+    : super(fetch: (_) async => []);
 
   final Set<String> busy;
   final Set<String> unreadable;
   final checked = <String, DateTime>{};
-  final groupIds = <String?>{};
 
   @override
   Future<ClashResult> check({
     required String targetUid,
     required DateTime instantUtc,
-    String? groupId,
   }) async {
     checked[targetUid] = instantUtc;
-    groupIds.add(groupId);
     if (unreadable.contains(targetUid)) return ClashResult.unknown;
     return busy.contains(targetUid) ? ClashResult.clash : ClashResult.clear;
   }
@@ -243,7 +240,6 @@ void main() {
         findsOneWidget,
       );
       expect(find.textContaining('Name PLANNER'), findsNothing);
-      expect(checker.groupIds, {'group'});
       await tester.tap(find.text('Got it'));
       await tester.pumpAndSettle();
       expect(find.text('Send to the group'), findsOneWidget);
@@ -294,15 +290,19 @@ void main() {
     }
   });
 
-  test('the group screen offers every member I may plan for (friends need '
-      'no grant, 2026-09-27)', () {
-    final source = File(
-      'lib/features/groups/presentation/group_detail_screen.dart',
-    ).readAsStringSync();
-    expect(source, contains('if (m.uid != myUid && iPlanFor(m.uid))'));
-    expect(source, isNot(contains('emergencyUids')));
-    expect(source, isNot(contains('managed on their profile')));
-    expect(source, isNot(contains('managed permanently on profiles')));
-  });
-
+  test(
+    'the group screen offers EVERY member — no permission step (item 3)',
+    () {
+      final source = File(
+        'lib/features/groups/presentation/group_detail_screen.dart',
+      ).readAsStringSync();
+      expect(
+        source,
+        contains('if (m.uid != myUid) (uid: m.uid, isSelf: false)'),
+      );
+      expect(source, isNot(contains('iPlanFor')));
+      expect(source, isNot(contains('setPlannerGrant')));
+      expect(source, isNot(contains('revokeMyPlannerGrant')));
+    },
+  );
 }

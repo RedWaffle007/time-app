@@ -6759,3 +6759,47 @@ Skip before it rings, or unfriend."; "How this app works" says the same.
 
 **Deploy order:** rules → Worker → app. An older app against the new rules:
 its switch/ask writes fail (harmless); planning for friends works.
+
+---
+
+## WhatsApp-style group admins (2026-09-27, Batch G item 3)
+
+**User-directed; replaces unanimous admission and group planner grants.**
+
+- **Admins.** The creator (`ownerUid`) is always an admin. Others are listed in
+  `groups/{id}.adminUids`; **only the creator** makes or removes admins
+  (confirmed with the user — WhatsApp lets any admin). A group written before
+  this has no `adminUids`: its owner alone. New groups write
+  `adminUids: [owner]`.
+- **Joining.** An admin adding one of their friends joins them at once — an
+  `admin`-source request born `approved`, the group array and the roster row in
+  ONE batch (`isAdminAdmission` + `isAdminDirectAdd`). A non-admin's friend
+  invitation (`friend`) or an invite-code request (`code`) is PENDING; every
+  admin is pushed (Worker `groupJoinRequested`, deduped via
+  `notifiedRequested`) and ANY ONE admin approves (atomic admission, the
+  approval names that admin) or rejects (terminal). Pending requests left from
+  the unanimous flow are simply decided by one admin.
+  `requiredApproverUids` stays on the document, always `[]`, for shape
+  compatibility. `groupJoinApproved` now requires the caller to be an admin;
+  an `admin`-source add reads "Added to a group".
+- **Removal.** Any admin may remove any member **except the creator**,
+  including another admin (confirmed with the user); a removed admin leaves
+  `adminUids` in the same write. Anyone but the creator may leave. The creator
+  still cannot leave (an ownerless group could never be cleaned up).
+- **Group planning.** ANY member may plan for the group: a group-tagged item is
+  allowed iff planner and target are both members of that group
+  (`callerMayGroupPlan`). There is no individual planning inside a group — the
+  builder lists friends only, and group-only members are not targets. Known
+  limit: rules cannot tell a whole-group fan-out from a single group-tagged
+  item (they cannot see the fan-out's other writes); the app only sends the
+  fan-out.
+- **Retired:** group `plannerGrants` writes (read-only leftovers), the
+  `plannerAccess` hint rows (party read/delete only), `callerHasActiveGrant`,
+  `callerHasPlannerAccess`, `PlannerAccessReconciler` + repository, the
+  per-member "can plan for me" switch, "Stop planning for them", and G1's
+  hint-provisioning retry. A non-friend co-member's schedule is no longer
+  readable; the group double-booking check (item 4) will not need that read.
+- **Worker:** `hasActiveItemGrant` / `callerMayPlanFor` = friends (untagged)
+  or both in the tagged group; new `groupJoinRequested` event (a code request
+  is the one event where `fromUid == toUid`); `groupAdminUids()`.
+- **Deploy order:** rules → Worker → app.

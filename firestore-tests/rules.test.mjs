@@ -502,7 +502,98 @@ describe('issue 1 — groups are not enumerable', () => {
   });
 });
 
-describe('unanimous group admission', () => {
+// Item 3 (2026-09-27): WhatsApp-style admins. The creator (TARGET, the seed's
+// owner) is always an admin; the seed group has no `adminUids`, so it also
+// proves a pre-admins group treats its owner as the sole admin.
+async function befriend(a, b) {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const [x, y] = a < b ? [a, b] : [b, a];
+    await setDoc(doc(ctx.firestore(), 'friendships', `${x}_${y}`), {
+      uidA: x, uidB: y, participants: [x, y],
+    });
+  });
+}
+
+async function seedGroupPatch(fields) {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'groups', GROUP), fields, { merge: true });
+  });
+}
+
+/** OUTSIDER already a (non-admin) member — for removal tests. */
+async function seedThirdMember() {
+  await seedGroupPatch({ memberUids: [TARGET, PLANNER, OUTSIDER] });
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'groups', GROUP, 'members', OUTSIDER), {
+      name: OUTSIDER,
+    });
+  });
+}
+
+/** One admin's approval: the request, the group array and the roster, atomic. */
+function approveBatch(db, adminUid) {
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'groups', GROUP, 'joinRequests', OUTSIDER), {
+    requiredApproverUids: [],
+    approvalUids: [adminUid],
+    status: 'approved',
+    updatedAt: serverTimestamp(),
+  });
+  batch.update(doc(db, 'groups', GROUP), {
+    memberUids: [TARGET, PLANNER, OUTSIDER],
+    lastAdmittedUid: OUTSIDER,
+  });
+  batch.set(doc(db, 'groups', GROUP, 'members', OUTSIDER), {
+    name: OUTSIDER,
+    joinedAt: serverTimestamp(),
+  });
+  return batch;
+}
+
+/** An admin adding a friend directly: born approved, atomic with admission. */
+function directAddBatch(db, adminUid) {
+  const batch = writeBatch(db);
+  batch.set(doc(db, 'groups', GROUP, 'joinRequests', OUTSIDER), {
+    candidateUid: OUTSIDER,
+    candidateName: OUTSIDER,
+    requestedByUid: adminUid,
+    source: 'admin',
+    inviteCode: null,
+    status: 'approved',
+    requiredApproverUids: [],
+    approvalUids: [adminUid],
+    rejectionUid: null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  batch.update(doc(db, 'groups', GROUP), {
+    memberUids: [TARGET, PLANNER, OUTSIDER],
+    lastAdmittedUid: OUTSIDER,
+  });
+  batch.set(doc(db, 'groups', GROUP, 'members', OUTSIDER), {
+    name: OUTSIDER,
+    joinedAt: serverTimestamp(),
+  });
+  return batch;
+}
+
+function memberInvitation(inviterUid) {
+  return {
+    candidateUid: OUTSIDER,
+    candidateName: OUTSIDER,
+    requestedByUid: inviterUid,
+    source: 'friend',
+    inviteCode: null,
+    status: 'pending',
+    requiredApproverUids: [],
+    approvalUids: [],
+    rejectionUid: null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+}
+
+describe('group invite codes', () => {
   it('ALLOWS resolving a code you were given', async () => {
     await assertSucceeds(getDoc(doc(as(OUTSIDER), 'joinCodes', JOIN_CODE)));
   });
@@ -546,139 +637,309 @@ describe('unanimous group admission', () => {
     );
   });
 
-  it('lets a member nominate their friend but not admit them directly', async () => {
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'friendships', `${TARGET}_${OUTSIDER}`), {
-        uidA: TARGET,
-        uidB: OUTSIDER,
-        participants: [TARGET, OUTSIDER],
-      });
-    });
-    const db = as(TARGET);
-    await assertSucceeds(
-      setDoc(doc(db, 'groups', GROUP, 'joinRequests', OUTSIDER), {
-        candidateUid: OUTSIDER,
-        candidateName: OUTSIDER,
-        requestedByUid: TARGET,
-        source: 'friend',
-        inviteCode: null,
-        status: 'pending',
-        requiredApproverUids: [TARGET, PLANNER],
-        approvalUids: [TARGET],
-        rejectionUid: null,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+  it('DENIES a code request that claims to be approved already', async () => {
+    await assertFails(
+      setDoc(doc(as(OUTSIDER), 'groups', GROUP, 'joinRequests', OUTSIDER), {
+        ...codeJoinRequest(),
+        status: 'approved',
       }),
     );
-    await assertFails(
-      setDoc(
-        doc(db, 'groups', GROUP),
-        {
-          memberUids: [TARGET, PLANNER, OUTSIDER],
-          lastAdmittedUid: OUTSIDER,
-        },
-        { merge: true },
-      ),
-    );
   });
+});
 
-  it('DENIES adding the candidate after only one of two approvals', async () => {
-    await submitCodeJoinRequest();
-    const db = as(TARGET);
-    const batch = writeBatch(db);
-    batch.update(doc(db, 'groups', GROUP, 'joinRequests', OUTSIDER), {
-      requiredApproverUids: [TARGET, PLANNER],
-      approvalUids: [TARGET],
-      status: 'pending',
-      updatedAt: serverTimestamp(),
-    });
-    batch.update(doc(db, 'groups', GROUP), {
-      memberUids: [TARGET, PLANNER, OUTSIDER],
-      lastAdmittedUid: OUTSIDER,
-    });
-    batch.set(doc(db, 'groups', GROUP, 'members', OUTSIDER), {
-      name: OUTSIDER,
-      joinedAt: serverTimestamp(),
-    });
-    await assertFails(batch.commit());
-  });
-
-  it('DENIES forging another member approval', async () => {
-    await submitCodeJoinRequest();
-    await assertFails(
-      setDoc(
-        doc(as(TARGET), 'groups', GROUP, 'joinRequests', OUTSIDER),
-        {
-          requiredApproverUids: [TARGET, PLANNER],
-          approvalUids: [TARGET, PLANNER],
-          status: 'approved',
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      ),
-    );
-  });
-
-  it('admits atomically after every current member approves', async () => {
-    await submitCodeJoinRequest();
-    await assertSucceeds(
-      setDoc(
-        doc(as(TARGET), 'groups', GROUP, 'joinRequests', OUTSIDER),
-        {
-          requiredApproverUids: [TARGET, PLANNER],
-          approvalUids: [TARGET],
-          status: 'pending',
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      ),
-    );
-
-    const db = as(PLANNER);
-    const batch = writeBatch(db);
-    batch.update(doc(db, 'groups', GROUP, 'joinRequests', OUTSIDER), {
-      requiredApproverUids: [TARGET, PLANNER],
-      approvalUids: [TARGET, PLANNER],
-      status: 'approved',
-      updatedAt: serverTimestamp(),
-    });
-    batch.update(doc(db, 'groups', GROUP), {
-      memberUids: [TARGET, PLANNER, OUTSIDER],
-      lastAdmittedUid: OUTSIDER,
-    });
-    batch.set(doc(db, 'groups', GROUP, 'members', OUTSIDER), {
-      name: OUTSIDER,
-      joinedAt: serverTimestamp(),
-    });
-    await assertSucceeds(batch.commit());
+describe('WhatsApp-style admission — admins decide', () => {
+  it('an admin adds a FRIEND directly: they join at once', async () => {
+    await befriend(TARGET, OUTSIDER);
+    await assertSucceeds(directAddBatch(as(TARGET), TARGET).commit());
     await assertSucceeds(getDoc(doc(as(OUTSIDER), 'groups', GROUP)));
   });
 
-  it('makes one member rejection terminal', async () => {
-    await submitCodeJoinRequest();
-    const request = doc(as(TARGET), 'groups', GROUP, 'joinRequests', OUTSIDER);
+  it('DENIES an admin directly adding someone who is not their friend', async () => {
+    await assertFails(directAddBatch(as(TARGET), TARGET).commit());
+  });
+
+  it('DENIES a non-admin member adding anyone directly', async () => {
+    await befriend(PLANNER, OUTSIDER);
+    await assertFails(directAddBatch(as(PLANNER), PLANNER).commit());
+  });
+
+  it('a non-admin member\'s invitation is only a pending request', async () => {
+    await befriend(PLANNER, OUTSIDER);
     await assertSucceeds(
       setDoc(
-        request,
-        {
-          status: 'rejected',
-          rejectionUid: TARGET,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true },
+        doc(as(PLANNER), 'groups', GROUP, 'joinRequests', OUTSIDER),
+        memberInvitation(PLANNER),
       ),
     );
     await assertFails(
       setDoc(
+        doc(as(PLANNER), 'groups', GROUP),
+        { memberUids: [TARGET, PLANNER, OUTSIDER], lastAdmittedUid: OUTSIDER },
+        { merge: true },
+      ),
+    );
+  });
+
+  it('DENIES inviting someone who is not the inviter\'s friend', async () => {
+    await assertFails(
+      setDoc(
         doc(as(PLANNER), 'groups', GROUP, 'joinRequests', OUTSIDER),
+        memberInvitation(PLANNER),
+      ),
+    );
+  });
+
+  it('ONE admin\'s approval admits, atomically', async () => {
+    await submitCodeJoinRequest();
+    await assertSucceeds(approveBatch(as(TARGET), TARGET).commit());
+    await assertSucceeds(getDoc(doc(as(OUTSIDER), 'groups', GROUP)));
+  });
+
+  it('a second admin may approve too', async () => {
+    await seedGroupPatch({ adminUids: [TARGET, PLANNER] });
+    await submitCodeJoinRequest();
+    await assertSucceeds(approveBatch(as(PLANNER), PLANNER).commit());
+  });
+
+  it('DENIES a non-admin member approving', async () => {
+    await submitCodeJoinRequest();
+    await assertFails(approveBatch(as(PLANNER), PLANNER).commit());
+  });
+
+  it('DENIES approving without admitting in the same write', async () => {
+    await submitCodeJoinRequest();
+    await assertFails(
+      setDoc(
+        doc(as(TARGET), 'groups', GROUP, 'joinRequests', OUTSIDER),
         {
-          requiredApproverUids: [TARGET, PLANNER],
-          approvalUids: [TARGET, PLANNER],
+          requiredApproverUids: [],
+          approvalUids: [TARGET],
           status: 'approved',
           updatedAt: serverTimestamp(),
         },
         { merge: true },
       ),
+    );
+  });
+
+  it('DENIES an admin forging someone else\'s approval', async () => {
+    await submitCodeJoinRequest();
+    await assertFails(approveBatch(as(TARGET), PLANNER).commit());
+  });
+
+  it('an admin\'s rejection is terminal; a non-admin cannot reject', async () => {
+    await submitCodeJoinRequest();
+    const reject = (uid) => setDoc(
+      doc(as(uid), 'groups', GROUP, 'joinRequests', OUTSIDER),
+      { status: 'rejected', rejectionUid: uid, updatedAt: serverTimestamp() },
+      { merge: true },
+    );
+    await assertFails(reject(PLANNER));
+    await assertSucceeds(reject(TARGET));
+    await assertFails(approveBatch(as(TARGET), TARGET).commit());
+  });
+
+  it('a request left over from unanimous approval is decided by one admin', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(
+        doc(ctx.firestore(), 'groups', GROUP, 'joinRequests', OUTSIDER),
+        {
+          ...memberInvitation(PLANNER),
+          requiredApproverUids: [TARGET, PLANNER],
+          approvalUids: [PLANNER],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      );
+    });
+    await assertSucceeds(approveBatch(as(TARGET), TARGET).commit());
+  });
+});
+
+describe('WhatsApp-style admins — who manages whom', () => {
+  it('the creator makes a member an admin, and removes it again', async () => {
+    const group = doc(as(TARGET), 'groups', GROUP);
+    await assertSucceeds(
+      setDoc(group, { adminUids: [TARGET, PLANNER] }, { merge: true }),
+    );
+    await assertSucceeds(setDoc(group, { adminUids: [TARGET] }, { merge: true }));
+  });
+
+  it('DENIES anyone but the creator changing admins — even another admin', async () => {
+    await seedThirdMember();
+    await seedGroupPatch({ adminUids: [TARGET, PLANNER] });
+    await assertFails(
+      setDoc(
+        doc(as(PLANNER), 'groups', GROUP),
+        { adminUids: [TARGET, PLANNER, OUTSIDER] },
+        { merge: true },
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(as(OUTSIDER), 'groups', GROUP),
+        { adminUids: [TARGET, OUTSIDER] },
+        { merge: true },
+      ),
+    );
+  });
+
+  it('DENIES making a non-member an admin, or duplicate entries', async () => {
+    const group = doc(as(TARGET), 'groups', GROUP);
+    await assertFails(
+      setDoc(group, { adminUids: [TARGET, OUTSIDER] }, { merge: true }),
+    );
+    await assertFails(
+      setDoc(group, { adminUids: [TARGET, PLANNER, PLANNER] }, { merge: true }),
+    );
+  });
+
+  it('a creator dropped from the list is still an admin', async () => {
+    await seedGroupPatch({ adminUids: [PLANNER] });
+    await submitCodeJoinRequest();
+    await assertSucceeds(approveBatch(as(TARGET), TARGET).commit());
+  });
+
+  it('an admin removes a member (roster row, then the array)', async () => {
+    await seedThirdMember();
+    await seedGroupPatch({ adminUids: [TARGET, PLANNER] });
+    const db = as(PLANNER);
+    await assertSucceeds(deleteDoc(doc(db, 'groups', GROUP, 'members', OUTSIDER)));
+    await assertSucceeds(
+      setDoc(doc(db, 'groups', GROUP), { memberUids: [TARGET, PLANNER] }, { merge: true }),
+    );
+  });
+
+  it('an admin may remove another admin, who leaves the admin list too', async () => {
+    await seedThirdMember();
+    await seedGroupPatch({ adminUids: [TARGET, PLANNER, OUTSIDER] });
+    const db = as(PLANNER);
+    // Keeping them listed as an admin after removal is refused.
+    await assertFails(
+      setDoc(doc(db, 'groups', GROUP), { memberUids: [TARGET, PLANNER] }, { merge: true }),
+    );
+    await assertSucceeds(
+      setDoc(
+        doc(db, 'groups', GROUP),
+        { memberUids: [TARGET, PLANNER], adminUids: [TARGET, PLANNER] },
+        { merge: true },
+      ),
+    );
+  });
+
+  it('DENIES removing the creator — by an admin or anyone', async () => {
+    await seedGroupPatch({ adminUids: [TARGET, PLANNER] });
+    await assertFails(deleteDoc(doc(as(PLANNER), 'groups', GROUP, 'members', TARGET)));
+    await assertFails(
+      setDoc(doc(as(PLANNER), 'groups', GROUP), { memberUids: [PLANNER] }, { merge: true }),
+    );
+  });
+
+  it('DENIES a non-admin removing someone else', async () => {
+    await seedThirdMember();
+    await assertFails(deleteDoc(doc(as(PLANNER), 'groups', GROUP, 'members', OUTSIDER)));
+    await assertFails(
+      setDoc(doc(as(PLANNER), 'groups', GROUP), { memberUids: [TARGET, PLANNER] }, { merge: true }),
+    );
+  });
+
+  it('any member except the creator may leave', async () => {
+    const db = as(PLANNER);
+    await assertSucceeds(deleteDoc(doc(db, 'groups', GROUP, 'members', PLANNER)));
+    await assertSucceeds(
+      setDoc(doc(db, 'groups', GROUP), { memberUids: [TARGET] }, { merge: true }),
+    );
+  });
+
+  it('a new group may start with its creator as the one admin', async () => {
+    await assertSucceeds(
+      setDoc(doc(as(OUTSIDER), 'groups', 'group_new'), {
+        name: 'New', ownerUid: OUTSIDER, joinCode: 'NEW234',
+        memberUids: [OUTSIDER], adminUids: [OUTSIDER],
+      }),
+    );
+    await assertFails(
+      setDoc(doc(as(OUTSIDER), 'groups', 'group_new2'), {
+        name: 'New', ownerUid: OUTSIDER, joinCode: 'NEW235',
+        memberUids: [OUTSIDER], adminUids: [OUTSIDER, PLANNER],
+      }),
+    );
+  });
+});
+
+describe('any member plans for the group — no grant', () => {
+  async function dropSeedGrant() {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await deleteDoc(
+        doc(ctx.firestore(), 'groups', GROUP, 'plannerGrants', `${PLANNER}_${TARGET}`),
+      );
+    });
+  }
+
+  it('a member sets a group-tagged alarm for a fellow member', async () => {
+    await dropSeedGrant();
+    await assertSucceeds(
+      addDoc(
+        collection(as(PLANNER), 'scheduleItems', TARGET, 'items'),
+        newItemFields({ status: 'approved' }),
+      ),
+    );
+  });
+
+  it('DENIES a non-member tagging the group', async () => {
+    await assertFails(
+      addDoc(
+        collection(as(OUTSIDER), 'scheduleItems', TARGET, 'items'),
+        newItemFields({ createdByUid: OUTSIDER }),
+      ),
+    );
+  });
+
+  it('DENIES a member tagging the group for someone outside it', async () => {
+    await assertFails(
+      addDoc(
+        collection(as(PLANNER), 'scheduleItems', OUTSIDER, 'items'),
+        newItemFields({ targetUid: OUTSIDER }),
+      ),
+    );
+  });
+
+  it('DENIES an untagged plan between non-friends (group membership is not '
+      + 'a personal permission)', async () => {
+    await assertFails(
+      addDoc(
+        collection(as(PLANNER), 'scheduleItems', TARGET, 'items'),
+        newItemFields({ groupId: '' }),
+      ),
+    );
+  });
+
+  it('a group member cannot read a non-friend\'s schedule', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(
+        doc(ctx.firestore(), 'scheduleItems', TARGET, 'items', 'self1'),
+        {
+          targetUid: TARGET, createdByUid: TARGET, groupId: '', title: 'Private',
+          localWallTime: '', timezone: 'Asia/Kolkata',
+          scheduledInstantUtc: Timestamp.fromDate(new Date('2026-08-11T01:30:00Z')),
+          status: 'approved',
+        },
+      );
+    });
+    await assertFails(getDoc(doc(as(PLANNER), 'scheduleItems', TARGET, 'items', 'self1')));
+  });
+
+  it('group grants and access hints can no longer be written', async () => {
+    await assertFails(
+      setDoc(doc(as(TARGET), 'groups', GROUP, 'plannerGrants', `${OUTSIDER}_${TARGET}`), {
+        plannerUid: OUTSIDER, targetUid: TARGET, groupId: GROUP, granted: true,
+        grantedByUid: TARGET,
+      }),
+    );
+    await assertFails(
+      setDoc(doc(as(PLANNER), 'plannerAccess', `${PLANNER}_${TARGET}`), {
+        plannerUid: PLANNER, targetUid: TARGET, groupId: GROUP,
+      }),
     );
   });
 });

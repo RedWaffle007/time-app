@@ -12,7 +12,7 @@
 //   * a non-friend is denied;
 //   * the retired grant / request documents can no longer be written, but the
 //     parties may still read and delete leftovers;
-//   * group grants still work for NON-friends only (unchanged until item 3).
+//   * a non-friend co-member may only set GROUP-tagged alarms (item 3).
 //
 // Run: npm test
 
@@ -198,25 +198,29 @@ describe('group labels on a friend\'s alarm', () => {
   });
 });
 
-describe('group grants still cover NON-friends only (until item 3)', () => {
-  const groupGrant = (planner) => ({
-    plannerUid: planner, targetUid: A, groupId: GROUP, granted: true,
-    grantedByUid: A, updatedAt: new Date(),
-  });
-
-  it('a non-friend with a group grant + hint row may plan and read', async () => {
-    await seedRetired(`groups/${GROUP}/plannerGrants/${C}_${A}`, groupGrant(C));
-    await seedRetired(`plannerAccess/${C}_${A}`, {
-      plannerUid: C, targetUid: A, groupId: GROUP, updatedAt: new Date(),
-    });
-    await assertSucceeds(getDoc(doc(as(C), itemPath)));
+describe('a non-friend fellow member (item 3: group plans only)', () => {
+  it('may set a GROUP-tagged alarm, with no grant', async () => {
     await assertSucceeds(setDoc(doc(as(C), `scheduleItems/${A}/items/gc1`),
       alarm({ createdByUid: C, groupId: GROUP })));
   });
 
-  it('DENIES creating a group grant between friends', async () => {
-    await assertFails(setDoc(
-      doc(as(A), `groups/${GROUP}/plannerGrants/${GRANT}`), groupGrant(B)));
+  it('may NOT set an untagged (personal) alarm, or read the schedule', async () => {
+    await assertFails(setDoc(doc(as(C), `scheduleItems/${A}/items/gc2`),
+      alarm({ createdByUid: C })));
+    await assertFails(getDoc(doc(as(C), itemPath)));
+  });
+
+  it('a leftover group grant + hint row changes nothing', async () => {
+    await seedRetired(`groups/${GROUP}/plannerGrants/${C}_${A}`, {
+      plannerUid: C, targetUid: A, groupId: GROUP, granted: true,
+      grantedByUid: A, updatedAt: new Date(),
+    });
+    await seedRetired(`plannerAccess/${C}_${A}`, {
+      plannerUid: C, targetUid: A, groupId: GROUP, updatedAt: new Date(),
+    });
+    await assertFails(getDoc(doc(as(C), itemPath)));
+    await assertFails(setDoc(doc(as(C), `scheduleItems/${A}/items/gc3`),
+      alarm({ createdByUid: C })));
   });
 });
 

@@ -8,8 +8,11 @@ import '../data/http_friend_notifier.dart';
 ///
 ///   friendRequest   — the SENDER notifies the RECIPIENT that a request arrived.
 ///   friendAccept    — the ACCEPTER notifies the original SENDER it was accepted.
-///   groupJoinApproved — the member whose approval admitted a candidate
+///   groupJoinApproved — the ADMIN whose approval admitted a candidate
 ///                     notifies that candidate; carries `groupId`.
+///   groupJoinRequested — whoever asked (the candidate with a code, or the
+///                     inviting member) notifies EVERY admin (item 3);
+///                     carries `groupId`. For a code request from == to.
 ///
 /// The wire value is the enum name, which the Worker matches on. (The
 /// planning-permission events were retired on 2026-09-27: friendship is the
@@ -19,6 +22,7 @@ enum FriendNotifyEvent {
   friendAccept,
   planRequested,
   groupJoinApproved,
+  groupJoinRequested,
 }
 
 /// The seam between "a friend-graph action happened" and "the other party gets a

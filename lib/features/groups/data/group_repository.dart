@@ -6,9 +6,8 @@ import '../../social/domain/avatar.dart';
 import '../domain/group.dart';
 import '../domain/group_join_request.dart';
 import '../domain/membership.dart';
-import '../domain/planner_grant.dart';
 
-/// Groups, membership, invite codes, and planner-consent grants.
+/// Groups, membership, admins, invite codes and join requests.
 class GroupRepository {
   GroupRepository(this._db);
 
@@ -68,6 +67,7 @@ class GroupRepository {
       'ownerUid': ownerUid,
       'joinCode': code,
       'memberUids': [ownerUid],
+      'adminUids': [ownerUid],
       'lastAdmittedUid': ownerUid,
       'createdAt': FieldValue.serverTimestamp(),
     });
@@ -88,17 +88,19 @@ class GroupRepository {
       ownerUid: ownerUid,
       joinCode: code,
       memberUids: [ownerUid],
+      adminUids: [ownerUid],
       lastAdmittedUid: ownerUid,
     );
   }
 
   /// Ask to join using a code. Knowing a code never changes membership: it only
-  /// creates a request that every current member must approve.
+  /// creates a pending request that any one admin decides (item 3). The caller
+  /// then asks the Worker to push the admins (`groupJoinRequested`).
   ///
-  /// Returns false when the code does not exist. A candidate cannot read the
-  /// group itself yet, so the public `joinCodes` lookup remains the only fact
-  /// disclosed here.
-  Future<bool> requestJoinByCode({
+  /// Returns the group id, or null when the code does not exist. A candidate
+  /// cannot read the group itself yet, so the public `joinCodes` lookup remains
+  /// the only fact disclosed here.
+  Future<String?> requestJoinByCode({
     required String code,
     required String uid,
     required String name,
@@ -106,7 +108,7 @@ class GroupRepository {
     final normalizedCode = code.trim().toUpperCase();
     final lookup = await _joinCodes.doc(normalizedCode).get();
     final groupId = lookup.data()?['groupId'] as String?;
-    if (groupId == null || groupId.isEmpty) return false;
+    if (groupId == null || groupId.isEmpty) return null;
 
     await _groups.doc(groupId).collection('joinRequests').doc(uid).set({
       'candidateUid': uid,
@@ -121,47 +123,55 @@ class GroupRepository {
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
-    return true;
+    return groupId;
   }
 
-  /// Invite an existing friend. The invitation is the caller's own approval,
-  /// not an admission: all other current members must still approve it.
-  /// Returns whether the friend was admitted at once (a one-member group).
+  /// Add or invite a friend (item 3, WhatsApp-style).
+  ///
+  /// An ADMIN's add is immediate: an approved `admin` request, the group array
+  /// and the roster row commit in one batch, and this returns true. A
+  /// non-admin's is only a pending `friend` request for the admins to decide;
+  /// this returns false and the caller pushes the admins
+  /// (`groupJoinRequested`). The rules enforce both, and that the candidate is
+  /// the caller's friend.
   Future<bool> inviteFriend({
     required String groupId,
     required String callerUid,
     required String friendUid,
     required String friendName,
+    required bool callerIsAdmin,
   }) async {
     final groupRef = _groups.doc(groupId);
     final requestRef = groupRef.collection('joinRequests').doc(friendUid);
-    await _db.runTransaction((transaction) async {
-      final group = await transaction.get(groupRef);
-      final memberUids = List<String>.from(
-        group.data()?['memberUids'] ?? const <String>[],
-      );
-      transaction.set(requestRef, {
-        'candidateUid': friendUid,
-        'candidateName': friendName,
-        'requestedByUid': callerUid,
-        'source': 'friend',
-        'inviteCode': null,
-        'status': 'pending',
-        'requiredApproverUids': memberUids,
-        'approvalUids': [callerUid],
-        'rejectionUid': null,
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
+    final request = <String, dynamic>{
+      'candidateUid': friendUid,
+      'candidateName': friendName,
+      'requestedByUid': callerUid,
+      'source': callerIsAdmin ? 'admin' : 'friend',
+      'inviteCode': null,
+      'status': callerIsAdmin ? 'approved' : 'pending',
+      'requiredApproverUids': <String>[],
+      'approvalUids': callerIsAdmin ? [callerUid] : <String>[],
+      'rejectionUid': null,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+    if (!callerIsAdmin) {
+      await requestRef.set(request);
+      return false;
+    }
+    final batch = _db.batch()
+      ..set(requestRef, request)
+      ..update(groupRef, {
+        'memberUids': FieldValue.arrayUnion([friendUid]),
+        'lastAdmittedUid': friendUid,
+      })
+      ..set(groupRef.collection('members').doc(friendUid), {
+        'name': friendName,
+        'joinedAt': FieldValue.serverTimestamp(),
       });
-    });
-    // Also completes a one-member group's unanimous decision immediately. For
-    // larger groups this is an idempotent normalization of the inviter's vote.
-    return decideJoinRequest(
-      groupId: groupId,
-      candidateUid: friendUid,
-      callerUid: callerUid,
-      approve: true,
-    );
+    await batch.commit();
+    return true;
   }
 
   Stream<List<GroupJoinRequest>> watchJoinRequests(String groupId) {
@@ -177,14 +187,11 @@ class GroupRepository {
         );
   }
 
-  /// Record one current member's decision. The approving transaction refreshes
-  /// the required voter snapshot from the current roster. If this approval
-  /// completes that exact roster, the request, group array, and roster document
-  /// move together atomically; there is no partially joined state.
-  ///
-  /// Returns true only when THIS call's approval admitted the candidate —
-  /// the one caller who should tell them (the Worker re-verifies it and
-  /// dedups on the request, so a wrong `true` could not send twice).
+  /// An ADMIN decides a pending request (item 3: one admin is enough).
+  /// Approving moves the request, the group array and the roster row together
+  /// atomically — there is no partially joined state — and returns true (the
+  /// caller then tells the candidate; the Worker re-verifies and dedups).
+  /// Rejecting is terminal and returns false.
   Future<bool> decideJoinRequest({
     required String groupId,
     required String candidateUid,
@@ -196,11 +203,9 @@ class GroupRepository {
     final memberRef = groupRef.collection('members').doc(candidateUid);
 
     return _db.runTransaction<bool>((transaction) async {
-      final groupSnapshot = await transaction.get(groupRef);
       final requestSnapshot = await transaction.get(requestRef);
-      final groupData = groupSnapshot.data();
       final requestData = requestSnapshot.data();
-      if (groupData == null || requestData == null) {
+      if (requestData == null) {
         throw StateError('Group join request no longer exists.');
       }
       if (requestData['status'] != 'pending') {
@@ -216,172 +221,58 @@ class GroupRepository {
         return false;
       }
 
-      final currentMembers = List<String>.from(
-        groupData['memberUids'] ?? const <String>[],
-      );
-      final previousApprovals = List<String>.from(
-        requestData['approvalUids'] ?? const <String>[],
-      );
-      final approvals = <String>{
-        for (final uid in previousApprovals)
-          if (currentMembers.contains(uid)) uid,
-        callerUid,
-      }.toList();
-      final unanimous = currentMembers.every(approvals.contains);
-
-      transaction.update(requestRef, {
-        'requiredApproverUids': currentMembers,
-        'approvalUids': approvals,
-        'status': unanimous ? 'approved' : 'pending',
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
-      if (unanimous) {
-        transaction.update(groupRef, {
+      transaction
+        ..update(requestRef, {
+          'requiredApproverUids': <String>[],
+          'approvalUids': [callerUid],
+          'status': 'approved',
+          'updatedAt': FieldValue.serverTimestamp(),
+        })
+        ..update(groupRef, {
           'memberUids': FieldValue.arrayUnion([candidateUid]),
           'lastAdmittedUid': candidateUid,
-        });
-        transaction.set(memberRef, {
+        })
+        ..set(memberRef, {
           'name': requestData['candidateName'],
           'joinedAt': FieldValue.serverTimestamp(),
         });
-      }
-      return unanimous;
+      return true;
     });
   }
 
-  // --- Planner consent grants ---
-
-  Stream<List<PlannerGrant>> watchGrants(String groupId) {
-    return _groups
-        .doc(groupId)
-        .collection('plannerGrants')
-        .snapshots()
-        .map((s) => s.docs.map(PlannerGrant.fromDoc).toList());
-  }
-
-  /// Every target the given planner may currently plan for, across all groups.
-  /// Powers the schedule-builder's target picker.
-  Stream<List<PlannerGrant>> watchTargetsFor(String plannerUid) {
-    return _db
-        .collectionGroup('plannerGrants')
-        .where('plannerUid', isEqualTo: plannerUid)
-        .where('granted', isEqualTo: true)
-        .snapshots()
-        .map((s) => s.docs.map(PlannerGrant.fromDoc).toList());
-  }
-
-  /// Every grant OTHER people hold over [targetUid] — the mirror image of
-  /// [watchTargetsFor], from the target's side.
-  ///
-  /// Feeds `PlannerAccessReconciler`, which derives the `plannerAccess` mirror
-  /// from it. Deliberately NOT filtered to `granted == true`: the reconciler has
-  /// to see a grant flip to false in order to delete the row it justified, and a
-  /// server-side filter would make a revoked grant look identical to a deleted
-  /// one — which is exactly the row it must remove.
-  Stream<List<PlannerGrant>> watchGrantsOverTarget(String targetUid) {
-    return _db
-        .collectionGroup('plannerGrants')
-        .where('targetUid', isEqualTo: targetUid)
-        .snapshots()
-        .map((s) => s.docs.map(PlannerGrant.fromDoc).toList());
-  }
-
-  /// Target grants (or revokes) a planner permission over themselves. Caller
-  /// must be the target — consent is the target's to give.
-  Future<void> setPlannerGrant({
+  /// The creator makes a member an admin, or takes it away (item 3). Only the
+  /// creator may — the rules refuse anyone else, including other admins.
+  Future<void> setAdmin({
     required String groupId,
-    required String plannerUid,
-    required String targetUid,
-    required bool granted,
-  }) async {
-    final id = PlannerGrant.docId(plannerUid, targetUid);
-    await _groups.doc(groupId).collection('plannerGrants').doc(id).set({
-      'plannerUid': plannerUid,
-      'targetUid': targetUid,
-      'groupId': groupId,
-      'granted': granted,
-      'grantedByUid': targetUid,
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-  }
-
-  /// Give up a planner grant the SIGNED-IN user *holds* over someone — the
-  /// "stop planning for them" direction.
-  ///
-  /// Deliberately NOT a call into [setPlannerGrant]. That one is the target's
-  /// consent switch and can turn a grant on; this can only ever turn one off,
-  /// and it is called by the planner, who must never be able to do the former.
-  /// The rules enforce the same asymmetry, so collapsing the two here would
-  /// produce a method whose happy path is denied half the time it is used.
-  ///
-  /// `update`, not `set(merge:)`: the rule's planner branch requires the write
-  /// to touch only `granted` and `updatedAt`, and an update on a missing doc
-  /// fails loudly rather than conjuring a grant no one consented to.
-  Future<void> revokeMyPlannerGrant({
-    required String groupId,
-    required String plannerUid,
-    required String targetUid,
+    required String memberUid,
+    required bool admin,
   }) {
-    final id = PlannerGrant.docId(plannerUid, targetUid);
-    return _groups.doc(groupId).collection('plannerGrants').doc(id).update({
-      'granted': false,
-      'updatedAt': FieldValue.serverTimestamp(),
+    return _groups.doc(groupId).update({
+      'adminUids': admin
+          ? FieldValue.arrayUnion([memberUid])
+          : FieldValue.arrayRemove([memberUid]),
     });
   }
 
-  /// Remove [memberUid] from [groupId] — either the caller leaving (when
-  /// [memberUid] is their own uid) or the owner ejecting someone.
+  /// Remove [memberUid] from [groupId] — the caller leaving (their own uid)
+  /// or an admin removing someone (item 3). Never the creator.
   ///
-  /// **The order is load-bearing and the rules enforce it.** Grants are revoked
-  /// and the roster doc deleted FIRST, while the caller is still inside
-  /// `memberUids` — `callerInGroup()` gates both writes, so dropping the array
-  /// entry first would lock the caller out of the very cleanup they are doing.
-  /// Admission writes the request, group array, and roster atomically; removal
-  /// cannot do that because its grant cleanup may span several documents.
-  ///
-  /// Not a transaction, and deliberately so: these are three documents under
-  /// three different rules, so an atomic removal is not on offer. `memberUids`
-  /// is the single source of truth for membership and it moves last, so a
-  /// failure part-way leaves only inert residue — a revoked grant or an
-  /// orphaned roster doc — and re-running this cleans it up.
+  /// **The order is load-bearing and the rules enforce it.** The roster doc is
+  /// deleted FIRST, while the caller is still inside `memberUids` —
+  /// `callerInGroup()` gates that delete, so dropping the array entry first
+  /// would lock a leaving member out of their own cleanup. `memberUids` is the
+  /// source of truth and moves last, together with the person's admin entry
+  /// (a removed admin is no longer an admin); a failure part-way leaves only an
+  /// orphaned roster row, and re-running cleans it up.
   Future<void> removeMember({
     required String groupId,
     required String memberUid,
     required String callerUid,
   }) async {
-    // 1. Revoke live grants that the departing member is party to AND that the
-    //    caller has standing to revoke (target, or planner giving one up). A
-    //    left-behind `granted: true` would keep the person listed in the
-    //    planner's target picker — watchTargetsFor filters on exactly that —
-    //    long after they stopped sharing a group.
-    //
-    //    Grants between the departing member and a THIRD party are left alone:
-    //    the caller is neither side of that consent and the rules refuse it.
-    //    They are inert, because creating an item additionally requires the
-    //    planner to still be in the group.
-    final grants = await _groups.doc(groupId).collection('plannerGrants').get();
-    for (final doc in grants.docs) {
-      final d = doc.data();
-      final planner = d['plannerUid'] as String?;
-      final target = d['targetUid'] as String?;
-      if (d['granted'] != true) continue;
-      final involvesDeparting = planner == memberUid || target == memberUid;
-      final callerIsParty = planner == callerUid || target == callerUid;
-      if (involvesDeparting && callerIsParty) {
-        await doc.reference.update({
-          'granted': false,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-      }
-    }
-
-    // 2. The roster doc, while callerInGroup() still holds.
     await _groups.doc(groupId).collection('members').doc(memberUid).delete();
-
-    // 3. Membership itself, last — it is what every rule above reads.
     await _groups.doc(groupId).update({
       'memberUids': FieldValue.arrayRemove([memberUid]),
+      'adminUids': FieldValue.arrayRemove([memberUid]),
     });
   }
 

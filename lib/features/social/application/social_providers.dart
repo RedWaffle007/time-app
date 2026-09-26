@@ -4,7 +4,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/application/auth_providers.dart';
-import '../../groups/application/group_providers.dart';
 import '../../groups/domain/planner_grant.dart';
 import '../../scheduling/application/planning_target_picker.dart';
 import '../data/avatar_uploader.dart';
@@ -71,32 +70,19 @@ final myFriendUidsProvider = Provider<AsyncValue<List<String>>>((ref) {
       );
 });
 
-/// Everyone I may plan for: every friend (friendship is the permission), plus
-/// non-friend group members who granted me (until groups are reworked).
+/// Everyone I may plan for individually: every friend (friendship is the
+/// permission). Group members plan only for the whole group (item 3).
 final effectivePlanningTargetsProvider =
     Provider<AsyncValue<List<PlannerGrant>>>((ref) {
       final me = ref.watch(currentUidProvider) ?? '';
-      final grants = ref.watch(myPlanningTargetsProvider);
-      final friends = ref.watch(myFriendUidsProvider);
-      if (grants.hasError) {
-        return AsyncError(grants.error!, grants.stackTrace ?? StackTrace.empty);
-      }
-      if (friends.hasError) {
-        return AsyncError(
-          friends.error!,
-          friends.stackTrace ?? StackTrace.empty,
-        );
-      }
-      final grantList = grants.value;
-      final friendList = friends.value;
-      if (grantList == null || friendList == null) return const AsyncLoading();
-      return AsyncData(
-        effectivePlanningTargets(
-          grantList,
-          friendUids: friendList.toSet(),
-          plannerUid: me,
-        ),
-      );
+      return ref
+          .watch(myFriendUidsProvider)
+          .whenData(
+            (friends) => effectivePlanningTargets(
+              friendUids: friends.toSet(),
+              plannerUid: me,
+            ),
+          );
     });
 
 /// Keeps every planning target's profile (and my own) listened to from sign-in,

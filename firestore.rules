@@ -66,46 +66,38 @@ service cloud.firestore {
       return signedIn() && uidInGroup(groupId, request.auth.uid);
     }
 
-    // The group's owner uid. Used by the removal rules, which must treat the
-    // owner as unremovable: `delete: if false` on /groups means a group that
-    // lost its owner could never be cleaned up by anyone, ever.
+    // The group's owner uid. The owner (creator) is unremovable and always an
+    // admin: `delete: if false` on /groups means a group that lost its owner
+    // could never be cleaned up by anyone, ever.
     function groupOwnerUid(groupId) {
       return get(/databases/$(database)/documents/groups/$(groupId)).data.ownerUid;
     }
 
-    // Does the caller hold an ACTIVE planner grant over `targetUid` in `groupId`?
-    // Group permission exists only for non-friends. Once the pair are friends,
-    // friendship itself is their sole planning authority (callerIsFriendOf).
-    // Grant id is deterministic: `{plannerUid}_{targetUid}` (PlannerGrant.docId).
-    function callerHasActiveGrant(targetUid, groupId) {
-      let grant = /databases/$(database)/documents/groups/$(groupId)/plannerGrants/$(request.auth.uid + '_' + targetUid);
-      return !areFriends(request.auth.uid, targetUid)
-        && exists(grant) && get(grant).data.granted == true;
+    // WhatsApp-style admins (Batch G item 3, 2026-09-27; DECISIONS.md
+    // "WhatsApp-style group admins"). The creator is always an admin; others
+    // are listed in `adminUids`, which only the creator changes. A group
+    // written before admins existed has no `adminUids` — its owner alone.
+    function isAdminOf(groupData, uid) {
+      return uid in groupData.memberUids
+        && (uid == groupData.ownerUid || uid in groupData.get('adminUids', []));
     }
 
-    // Does the CALLER hold planner access to read `targetUid`'s schedule?
-    //
-    // A read of `scheduleItems/{targetUid}/items` carries no groupId, and rules
-    // cannot query for "some group where a grant exists" — so the planner leaves
-    // a `plannerAccess/{planner}_{target}` row naming a group they were granted
-    // in, and THIS re-verifies the grant is still live in that group. The row is
-    // only a groupId HINT: authorization is `callerHasActiveGrant`, checked here
-    // on every read. That is what lets the PLANNER write the row themselves
-    // (they cannot fabricate a grant), removes any dependency on the target
-    // being online to provision it, AND makes revocation deny the read
-    // immediately — a stale row whose grant is gone fails this check. The empty
-    // groupId is rejected so a legacy target-written row (no group) cannot pass.
-    //
-    // Friendship-scoped grants (added later) carry no group and authorize reads
-    // DIRECTLY via a computed pair id, so they need no row here — this helper is
-    // the GROUP path only. See DECISIONS.md "Live-checked planner schedule
-    // access (2026-08-26)".
-    function callerHasPlannerAccess(targetUid) {
-      let m = /databases/$(database)/documents/plannerAccess/$(request.auth.uid + '_' + targetUid);
-      return exists(m)
-        && get(m).data.groupId is string
-        && get(m).data.groupId != ''
-        && callerHasActiveGrant(targetUid, get(m).data.groupId);
+    function callerIsGroupAdmin(groupId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/groups/$(groupId))
+        && isAdminOf(get(/databases/$(database)/documents/groups/$(groupId)).data,
+                     request.auth.uid);
+    }
+
+    // May the caller put a plan tagged with `groupId` on `targetUid`? Any member
+    // may plan for the GROUP (item 3): both must be members of that group. No
+    // grant, switch or hint row. (The app sends such plans only as a whole-
+    // group fan-out; rules cannot see the other writes of that fan-out.)
+    function callerMayGroupPlan(targetUid, groupId) {
+      return groupId is string
+        && groupId != ''
+        && callerInGroup(groupId)
+        && uidInGroup(groupId, targetUid);
     }
 
     // Keys whose value this write actually CHANGES (added, removed or altered).
@@ -166,14 +158,6 @@ service cloud.firestore {
 
     function changedKeys() {
       return request.resource.data.diff(resource.data).affectedKeys();
-    }
-
-    function sameUidSet(a, b) {
-      return a is list && b is list
-        && a.size() == b.size()
-        && a.toSet().size() == a.size()
-        && b.toSet().size() == b.size()
-        && a.hasAll(b);
     }
 
     // ---- inactivityStates/{uid} ----
@@ -519,17 +503,21 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.memberUids == [request.auth.uid]
+        && (!('adminUids' in request.resource.data)
+            || request.resource.data.adminUids == [request.auth.uid])
         && (!('avatar' in request.resource.data)
             || groupAvatarMetadataValid(request.resource.data.avatar, groupId));
 
-      // One approved request, its roster row, and the group array must commit
-      // in the same atomic write. `lastAdmittedUid` makes the candidate path
-      // explicit so rules never have to trust a caller-supplied document path.
-      function isUnanimousAdmission() {
+      // One approved request, its roster row, and the group array commit in the
+      // same atomic write, and the approval is an ADMIN's (item 3: one admin's
+      // approval is enough — or an admin's direct add, which is born approved).
+      // `lastAdmittedUid` makes the candidate path explicit so rules never
+      // trust a caller-supplied document path.
+      function isAdminAdmission() {
         let candidateUid = request.resource.data.lastAdmittedUid;
         let admission = getAfter(/databases/$(database)/documents/groups/$(groupId)/joinRequests/$(candidateUid));
         let roster = getAfter(/databases/$(database)/documents/groups/$(groupId)/members/$(candidateUid));
-        return request.auth.uid in resource.data.memberUids
+        return isAdminOf(resource.data, request.auth.uid)
           && candidateUid is string
           && !(candidateUid in resource.data.memberUids)
           && candidateUid in request.resource.data.memberUids
@@ -537,8 +525,7 @@ service cloud.firestore {
           && request.resource.data.memberUids.size() == resource.data.memberUids.size() + 1
           && admission.data.candidateUid == candidateUid
           && admission.data.status == 'approved'
-          && sameUidSet(admission.data.requiredApproverUids, resource.data.memberUids)
-          && sameUidSet(admission.data.approvalUids, resource.data.memberUids)
+          && admission.data.approvalUids == [request.auth.uid]
           && roster.data.name == admission.data.candidateName;
       }
 
@@ -548,22 +535,36 @@ service cloud.firestore {
           .difference(request.resource.data.memberUids.toSet());
       }
 
-      // Exactly one element removed, nothing added, and never the owner. The
-      // remover is either that member (leaving) or the owner (ejecting).
+      // Exactly one member removed, nothing added, never the creator. The
+      // remover is that member (leaving) or an admin (removing — including
+      // another admin). A removed admin leaves `adminUids` in the same write.
       function isMemberRemoval() {
         return resource.data.memberUids.hasAll(request.resource.data.memberUids)
           && request.resource.data.memberUids.size() == resource.data.memberUids.size() - 1
           && removedUids().size() == 1
           && !removedUids().hasAny([resource.data.ownerUid])
           && (removedUids().hasOnly([request.auth.uid])
-              || request.auth.uid == resource.data.ownerUid);
+              || isAdminOf(resource.data, request.auth.uid))
+          && request.resource.data.get('adminUids', []).toSet()
+               == resource.data.get('adminUids', []).toSet().difference(removedUids());
+      }
+
+      // Only the CREATOR makes or removes admins, and only among members. The
+      // creator stays an admin whatever the list says.
+      function isAdminChange() {
+        return request.auth.uid == resource.data.ownerUid
+          && request.resource.data.adminUids is list
+          && request.resource.data.adminUids.size()
+               == request.resource.data.adminUids.toSet().size()
+          && request.resource.data.memberUids.hasAll(request.resource.data.adminUids);
       }
 
       allow update: if signedIn()
         && (
-          (changedKeys().hasOnly(['memberUids']) && isMemberRemoval())
+          (changedKeys().hasOnly(['memberUids', 'adminUids']) && isMemberRemoval())
           || (changedKeys().hasOnly(['memberUids', 'lastAdmittedUid'])
-              && isUnanimousAdmission())
+              && isAdminAdmission())
+          || (changedKeys().hasOnly(['adminUids']) && isAdminChange())
           || (request.auth.uid == resource.data.ownerUid
               && changedKeys().hasOnly(['avatar'])
               && (!('avatar' in request.resource.data)
@@ -574,15 +575,23 @@ service cloud.firestore {
       allow delete: if false;
 
       // ---- joinRequests/{candidateUid} ----
-      // A code holder may ask; a member may invite one of THEIR friends. Both
-      // routes create the same pending record. The inviter's act counts only as
-      // their own approval, and every other current member still decides.
+      // Item 3 (WhatsApp-style). Three ways a request is born:
+      //   * `code`   — the candidate entered the invite code: PENDING;
+      //   * `friend` — a non-admin member invited one of THEIR friends: PENDING;
+      //   * `admin`  — an admin added one of their friends: born APPROVED, in the
+      //                same batch as the admission (they join at once).
+      // A pending request is decided by ANY ONE admin: approve (admits, atomic
+      // with the roster) or reject. Every admin is pushed (Worker
+      // `groupJoinRequested`). `requiredApproverUids` is kept empty for shape
+      // compatibility with the retired unanimous flow.
       match /joinRequests/{candidateUid} {
         function exactRequestKeys() {
           return request.resource.data.keys().hasOnly([
             'candidateUid', 'candidateName', 'requestedByUid', 'source',
             'inviteCode', 'status', 'requiredApproverUids', 'approvalUids',
-            'rejectionUid', 'createdAt', 'updatedAt'
+            'rejectionUid', 'createdAt', 'updatedAt',
+            'notifiedApproved', 'notifiedApprovedAt',
+            'notifiedRequested', 'notifiedRequestedAt'
           ]);
         }
 
@@ -601,20 +610,32 @@ service cloud.firestore {
             && code is string
             && exists(/databases/$(database)/documents/joinCodes/$(code))
             && get(/databases/$(database)/documents/joinCodes/$(code)).data.groupId == groupId
-            && request.resource.data.requiredApproverUids == []
+            && request.resource.data.status == 'pending'
             && request.resource.data.approvalUids == [];
         }
 
-        function isFriendInvitation() {
+        function isMemberInvitation() {
           return callerInGroup(groupId)
             && request.resource.data.requestedByUid == request.auth.uid
             && request.resource.data.source == 'friend'
             && request.resource.data.inviteCode == null
             && areFriends(request.auth.uid, candidateUid)
-            && sameUidSet(
-                 request.resource.data.requiredApproverUids,
-                 get(/databases/$(database)/documents/groups/$(groupId)).data.memberUids)
-            && request.resource.data.approvalUids == [request.auth.uid];
+            && request.resource.data.status == 'pending'
+            && request.resource.data.approvalUids == [];
+        }
+
+        // An admin adds a friend directly. Born approved, and only valid inside
+        // the admission batch (the group array must gain exactly this person).
+        function isAdminDirectAdd() {
+          return callerIsGroupAdmin(groupId)
+            && request.resource.data.requestedByUid == request.auth.uid
+            && request.resource.data.source == 'admin'
+            && request.resource.data.inviteCode == null
+            && areFriends(request.auth.uid, candidateUid)
+            && request.resource.data.status == 'approved'
+            && request.resource.data.approvalUids == [request.auth.uid]
+            && getAfter(/databases/$(database)/documents/groups/$(groupId)).data.lastAdmittedUid == candidateUid
+            && candidateUid in getAfter(/databases/$(database)/documents/groups/$(groupId)).data.memberUids;
         }
 
         allow get: if signedIn()
@@ -626,9 +647,9 @@ service cloud.firestore {
           && !(candidateUid in get(/databases/$(database)/documents/groups/$(groupId)).data.memberUids)
           && exactRequestKeys()
           && candidateNameIsReal()
-          && request.resource.data.status == 'pending'
+          && request.resource.data.requiredApproverUids == []
           && request.resource.data.rejectionUid == null
-          && (isCodeRequest() || isFriendInvitation());
+          && (isCodeRequest() || isMemberInvitation() || isAdminDirectAdd());
 
         function immutableRequestFields() {
           return request.resource.data.candidateUid == resource.data.candidateUid
@@ -645,33 +666,22 @@ service cloud.firestore {
             && changedKeys().hasOnly(['status', 'rejectionUid', 'updatedAt']);
         }
 
+        // One admin's approval admits — atomic with the group array + roster.
         function isApproval() {
-          let currentMembers = get(/databases/$(database)/documents/groups/$(groupId)).data.memberUids;
-          let oldCurrentApprovals = resource.data.approvalUids.toSet()
-            .intersection(currentMembers.toSet());
-          let newApprovals = request.resource.data.approvalUids;
-          let isUnanimous = sameUidSet(newApprovals, currentMembers);
-          return sameUidSet(request.resource.data.requiredApproverUids, currentMembers)
-            && newApprovals.size() == newApprovals.toSet().size()
-            && newApprovals.toSet().difference(currentMembers.toSet()).size() == 0
-            && newApprovals.toSet().hasAll(oldCurrentApprovals)
-            && newApprovals.toSet().difference(resource.data.approvalUids.toSet())
-                 .hasOnly([request.auth.uid])
+          return request.resource.data.status == 'approved'
+            && request.resource.data.approvalUids == [request.auth.uid]
             && request.resource.data.rejectionUid == null
-            && request.resource.data.status == (isUnanimous ? 'approved' : 'pending')
-            && (
-              !isUnanimous
-              || (
-                getAfter(/databases/$(database)/documents/groups/$(groupId)).data.lastAdmittedUid == candidateUid
-                && candidateUid in getAfter(/databases/$(database)/documents/groups/$(groupId)).data.memberUids
-                && getAfter(/databases/$(database)/documents/groups/$(groupId)/members/$(candidateUid)).data.name
-                   == resource.data.candidateName
-              )
-            );
+            && changedKeys().hasOnly([
+                 'status', 'approvalUids', 'requiredApproverUids', 'updatedAt'])
+            && request.resource.data.requiredApproverUids == []
+            && getAfter(/databases/$(database)/documents/groups/$(groupId)).data.lastAdmittedUid == candidateUid
+            && candidateUid in getAfter(/databases/$(database)/documents/groups/$(groupId)).data.memberUids
+            && getAfter(/databases/$(database)/documents/groups/$(groupId)/members/$(candidateUid)).data.name
+               == resource.data.candidateName;
         }
 
         allow update: if signedIn()
-          && callerInGroup(groupId)
+          && callerIsGroupAdmin(groupId)
           && resource.data.status == 'pending'
           && exactRequestKeys()
           && immutableRequestFields()
@@ -683,14 +693,14 @@ service cloud.firestore {
       // ---- members/{memberUid} ----
       // Roster is relationship-gated: only group members may read it. A user may
       // write their own row once they are a member; the other permitted create
-      // is the atomic unanimous-admission batch validated above.
+      // is the atomic admin-admission batch validated above.
       match /members/{memberUid} {
         allow read: if callerInGroup(groupId);
         allow create: if signedIn()
           && (
             (memberUid == request.auth.uid && callerInGroup(groupId))
             || (
-              callerInGroup(groupId)
+              callerIsGroupAdmin(groupId)
               && getAfter(/databases/$(database)/documents/groups/$(groupId)).data.lastAdmittedUid == memberUid
               && memberUid in getAfter(/databases/$(database)/documents/groups/$(groupId)).data.memberUids
               && getAfter(/databases/$(database)/documents/groups/$(groupId)/joinRequests/$(memberUid)).data.status == 'approved'
@@ -705,14 +715,13 @@ service cloud.firestore {
 
         // Removal deletes the roster doc BEFORE memberUids is updated, while
         // the caller is still a member — callerInGroup() gates this, so the
-        // reverse order would lock the caller out of their own cleanup. It is
-        // the exact inverse of the join, which writes memberUids first.
-        // The owner's own doc is never deletable, mirroring isMemberRemoval().
+        // reverse order would lock the caller out of their own cleanup. The
+        // creator's doc is never deletable, mirroring isMemberRemoval(); any
+        // admin may remove anyone else (item 3).
         allow delete: if signedIn()
           && callerInGroup(groupId)
           && memberUid != groupOwnerUid(groupId)
-          && (memberUid == request.auth.uid
-              || request.auth.uid == groupOwnerUid(groupId));
+          && (memberUid == request.auth.uid || callerIsGroupAdmin(groupId));
       }
 
       // ---- memberStats/{uid} ----
@@ -741,59 +750,13 @@ service cloud.firestore {
         allow delete: if signedIn() && uid == request.auth.uid;
       }
 
-      // ---- plannerGrants/{grantId} ----
-      // This SPECIFIC-path rule serves DIRECT, path-scoped access only (the
-      // roster list watchGrants(groupId), where groupId is bound so get() is
-      // valid). The planner's cross-group query is a COLLECTION-GROUP query and
-      // is NOT matched by a specific parent path — it is handled by the
-      // /{path=**}/plannerGrants rule at the bottom. (Verified on the emulator;
-      // see DECISIONS.md.)
-      // Write: consent is the TARGET's to give — the caller must be the target
-      // and the recorded grantedByUid, the grant must name this group, both
-      // parties must be group members, and they must not already be friends.
+      // ---- plannerGrants/{grantId} — RETIRED (item 3, 2026-09-27) ----
+      // Any member may plan for the group and friends need nothing, so group
+      // grants authorize nothing and can no longer be written. Leftovers stay
+      // readable to members (the collection-group rule below serves the
+      // planner's own query).
       match /plannerGrants/{grantId} {
         allow read: if callerInGroup(groupId);
-
-        allow create: if signedIn()
-          && request.resource.data.targetUid == request.auth.uid
-          && request.resource.data.grantedByUid == request.auth.uid
-          && request.resource.data.groupId == groupId
-          && callerInGroup(groupId)
-          && uidInGroup(groupId, request.resource.data.plannerUid)
-          && !areFriends(
-               request.resource.data.plannerUid,
-               request.resource.data.targetUid);
-
-        // Two callers may update a grant, and they may do different things.
-        //
-        //   * the TARGET — consent is theirs to give, so they set it either way
-        //     and remain the recorded grantedByUid.
-        //   * the PLANNER — but ONLY to `false`. Giving up a power you already
-        //     hold is not a coercion risk, and it is what "stop planning for
-        //     them" needs; a planner who could write `true` could grant
-        //     themselves authority over someone, which is the one thing this
-        //     whole model exists to prevent. grantedByUid is left exactly as
-        //     the target wrote it, so the consent trail survives revocation.
-        //
-        // Split from `create` on purpose: the planner branch reads `resource`
-        // via changedKeys(), which does not exist on a create.
-        allow update: if signedIn()
-          && request.resource.data.groupId == groupId
-          && callerInGroup(groupId)
-          && uidInGroup(groupId, request.resource.data.plannerUid)
-          && (request.resource.data.granted == false
-              || !areFriends(
-                   request.resource.data.plannerUid,
-                   request.resource.data.targetUid))
-          && (
-            (request.resource.data.targetUid == request.auth.uid
-              && request.resource.data.grantedByUid == request.auth.uid)
-            || (request.resource.data.plannerUid == request.auth.uid
-              && request.resource.data.granted == false
-              && changedKeys().hasOnly(['granted', 'updatedAt']))
-          );
-
-        allow delete: if false;
       }
     }
 
@@ -1509,7 +1472,6 @@ service cloud.firestore {
       // conflictInstantsForLocalDay and presentation receives no title/note.
       allow read: if signedIn()
         && (request.auth.uid == targetUid
-            || callerHasPlannerAccess(targetUid)
             || callerIsFriendOf(targetUid));
 
       allow create: if signedIn()
@@ -1562,25 +1524,20 @@ service cloud.firestore {
           (request.auth.uid == targetUid
               && request.resource.data.status in ['pending', 'approved'])
           // A PLANNER (F2, 2026-09-26 — the per-item approval step is gone;
-          // Batch G item 2, 2026-09-27 — friendship IS the permission): someone
-          // may set alarms that ring directly if they hold a GROUP grant for the
-          // tagged group, or are the target's FRIEND. Re-checked live on every
-          // create, so unfriending or blocking ends it at once.
+          // Batch G items 2 + 3, 2026-09-27): someone may set alarms that ring
+          // directly if they are the target's FRIEND (an untagged plan), or
+          // both are members of the tagged GROUP (a group plan). No grant.
+          // Re-checked live on every create, so unfriending, blocking, leaving
+          // or removal ends it at once.
           //
           // `approved` is what new clients write. `pending` is still accepted
           // so an older installed build keeps working; the target's device
           // turns such items into alarms (LegacyPendingReconciler).
-          //
-          // The group tag must be honest: '' (a friendship plan), or a group
-          // whose grant authorises it, or — for the friendship path — a group
-          // BOTH parties belong to (the group label on a plan made by a friend).
           || (request.resource.data.status in ['pending', 'approved']
               && request.resource.data.get('tier', 'normal') in ['normal', 'emergency']
-              && (callerHasActiveGrant(targetUid, request.resource.data.groupId)
-                  || (callerIsFriendOf(targetUid)
-                      && (request.resource.data.groupId == ''
-                          || (callerInGroup(request.resource.data.groupId)
-                              && uidInGroup(request.resource.data.groupId, targetUid))))))
+              && ((request.resource.data.groupId == ''
+                    && callerIsFriendOf(targetUid))
+                  || callerMayGroupPlan(targetUid, request.resource.data.groupId)))
         );
 
       // Missed-alarm review is the sole settled-outcome correction. Keep this
@@ -1656,58 +1613,15 @@ service cloud.firestore {
     // queries. Both stay resource-scoped so a caller can read ONLY items they
     // created / grants that name them — the query MUST filter on the same field
     // (which the app's queries do) or Firestore denies it.
-    // ---- plannerAccess/{plannerUid_targetUid} ----
-    // A groupId HINT the planner leaves so the schedule-read rule knows which
-    // group to re-verify their grant in (see `callerHasPlannerAccess` above).
-    // The row is NOT the permission — the live grant is. So:
-    //
-    //   * THE PLANNER may write their OWN row, but ONLY carrying a group in which
-    //     `callerHasActiveGrant` currently holds. They cannot fabricate a grant,
-    //     so a self-written row is inert unless a real grant backs it. This is
-    //     what removes the old dependency on the target being online to
-    //     provision access — and it is safe precisely because the read re-checks
-    //     the grant rather than trusting the row's existence.
-    //   * THE TARGET may also write a row (back-compat; harmless).
-    //
-    // Because authorization is the live grant, a row that outlives a revocation
-    // grants nothing — the read fails the moment the grant is gone. The planner
-    // still deletes their own row as cleanup when the grant disappears from
-    // their stream, but that is tidiness, not the security boundary.
-    //
-    // Read/list are scoped to the two parties, so the collection cannot be used
-    // to enumerate who plans for whom. The planner-side reconciler needs the
-    // `where plannerUid == me` query, which is why `list` is allowed (scoped).
+    // ---- plannerAccess/{plannerUid_targetUid} — RETIRED (item 3) ----
+    // It was a groupId hint for reading a group member's schedule through a
+    // group grant. Group grants are gone and group plans need no read, so the
+    // row authorizes nothing and can no longer be written; the parties may
+    // still read and delete leftovers.
     match /plannerAccess/{accessId} {
-      allow get: if signedIn()
+      allow get, list, delete: if signedIn()
         && (resource.data.plannerUid == request.auth.uid
             || resource.data.targetUid == request.auth.uid);
-      // Scoped list: every matched row must name the caller, so a query has to
-      // filter on `plannerUid == me` or `targetUid == me` (the app's do).
-      allow list: if signedIn()
-        && (resource.data.plannerUid == request.auth.uid
-            || resource.data.targetUid == request.auth.uid);
-
-      allow create, update: if signedIn()
-        && request.resource.data.keys().hasOnly(
-             ['plannerUid', 'targetUid', 'groupId', 'updatedAt'])
-        && accessId == request.resource.data.plannerUid + '_' + request.resource.data.targetUid
-        && (
-          // Planner self-provisions — but only backed by a REAL live grant in
-          // the named group. `callerHasActiveGrant` is the whole safety story.
-          (request.resource.data.plannerUid == request.auth.uid
-            && request.resource.data.groupId is string
-            && request.resource.data.groupId != ''
-            && callerHasActiveGrant(request.resource.data.targetUid,
-                                    request.resource.data.groupId))
-          // Target may write a row over themselves (back-compat).
-          || request.resource.data.targetUid == request.auth.uid
-        );
-
-      // Either party may delete: the planner as cleanup, the target to tidy.
-      // Deleting is inert to security — the read is grant-gated regardless.
-      allow delete: if signedIn()
-        && (resource.data.targetUid == request.auth.uid
-            || resource.data.plannerUid == request.auth.uid);
     }
 
     // ---- scheduleSlots/{targetUid}/slots/{slotIndex} ----
@@ -1729,7 +1643,6 @@ service cloud.firestore {
     match /scheduleSlots/{targetUid}/slots/{slotIndex} {
       allow read: if signedIn()
         && (request.auth.uid == targetUid
-            || callerHasPlannerAccess(targetUid)
             || callerIsFriendOf(targetUid));
 
       allow create: if signedIn()
@@ -1738,22 +1651,11 @@ service cloud.firestore {
         && request.resource.data.targetUid == targetUid
         && request.resource.data.createdByUid == request.auth.uid
         // Exactly the people who may create the ITEM this lock guards, checked
-        // the SAME way the item is: the target planning for themselves, or a
-        // planner holding an ACTIVE grant over the target in this group.
-        //
-        // This deliberately does NOT gate on `callerHasPlannerAccess` (the
-        // plannerAccess mirror). The lock is written in the SAME batch as the
-        // item, which already proves `callerHasActiveGrant`; gating the lock on
-        // the mirror instead coupled every cross-device plan to a document only
-        // the TARGET's device writes, so a planner was denied whenever the
-        // target had not yet synced the mirror. Carrying `groupId` on the lock
-        // lets it verify the real grant directly — strictly stronger than a
-        // mirror that can outlive a revocation. The mirror still gates the
-        // read path (viewing B's schedule), which carries no groupId.
-        // See DECISIONS.md "Cross-device relationship + planning denials".
+        // the same way the item is: the target, a friend (untagged), or a
+        // fellow member of the tagged group.
         && (request.auth.uid == targetUid
-            || callerHasActiveGrant(targetUid, request.resource.data.groupId)
-            || callerIsFriendOf(targetUid));
+            || (request.resource.data.groupId == '' && callerIsFriendOf(targetUid))
+            || callerMayGroupPlan(targetUid, request.resource.data.groupId));
 
       allow update: if false;
 

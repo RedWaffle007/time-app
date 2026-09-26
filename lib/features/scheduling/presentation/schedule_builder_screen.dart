@@ -17,7 +17,6 @@ import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/warning_panel.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../auth/domain/user_profile.dart';
-import '../../groups/application/group_providers.dart';
 import '../../groups/domain/planner_grant.dart';
 import '../../notifications/application/outcome_notifier.dart';
 import '../../social/application/social_providers.dart';
@@ -217,14 +216,13 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
   Future<void> _checkClash({
     required String key,
     required String targetUid,
-    required String? groupId,
     required DateTime instantUtc,
     required String name,
     required String timeLabel,
   }) async {
     final result = await ref
         .read(scheduleClashCheckerProvider)
-        .check(targetUid: targetUid, instantUtc: instantUtc, groupId: groupId);
+        .check(targetUid: targetUid, instantUtc: instantUtc);
     if (!mounted ||
         _clashKey != key ||
         result != ClashResult.clash ||
@@ -402,7 +400,6 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       body: AsyncView<List<PlannerGrant>>(
         value: targetsAsync,
         onRetry: () {
-          ref.invalidate(myPlanningTargetsProvider);
           ref.invalidate(myFriendshipsProvider);
         },
         builder: (context, grants) => _buildForm(grants),
@@ -433,13 +430,11 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
         _clashKey = key;
         final name = selectedProfile?.name ?? 'This person';
         final timeLabel = formatTimeOfDay(context, _time!);
-        final groupId = _groupId;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           _checkClash(
             key: key,
             targetUid: targetUid,
-            groupId: groupId,
             instantUtc: instantUtc,
             name: name,
             timeLabel: timeLabel,

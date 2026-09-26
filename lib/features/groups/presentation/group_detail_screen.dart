@@ -14,20 +14,19 @@ import '../../../core/widgets/section_header.dart';
 import '../../../routing/app_router.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../notifications/application/friend_notifier.dart';
-import '../../scheduling/application/planning_target_picker.dart';
 import '../../scheduling/presentation/group_plan_sheet.dart';
 import '../../social/application/social_providers.dart';
 import '../application/group_providers.dart';
 import '../domain/group_join_request.dart';
 import '../domain/membership.dart';
-import '../domain/planner_grant.dart';
+import '../domain/group.dart';
 import 'group_avatar_editor.dart';
 import '../../invites/domain/invite_link.dart';
 
-/// Shows a group's invite code and members, lets the signed-in user grant other
-/// members permission to plan for them (consent-first), and lets them end a
-/// relationship: give up a grant they hold, eject a member (owner only), or
-/// leave the group.
+/// A group's invite code, members and admins (WhatsApp-style, Batch G item 3):
+/// admins add friends directly and decide join requests; the creator makes or
+/// removes admins; admins remove members; anyone but the creator may leave; and
+/// any member may plan for the whole group.
 class GroupDetailScreen extends ConsumerWidget {
   const GroupDetailScreen({super.key, required this.groupId});
 
@@ -37,11 +36,7 @@ class GroupDetailScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final myUid = ref.watch(currentUidProvider);
     final membersAsync = ref.watch(membersProvider(groupId));
-    final grantsAsync = ref.watch(grantsProvider(groupId));
     final friendsAsync = ref.watch(myFriendshipsProvider);
-    final effectiveTargets =
-        ref.watch(effectivePlanningTargetsProvider).value ??
-        const <PlannerGrant>[];
     final joinRequests =
         ref.watch(groupJoinRequestsProvider(groupId)).value ??
         const <GroupJoinRequest>[];
@@ -55,6 +50,7 @@ class GroupDetailScreen extends ConsumerWidget {
     // firestore.rules refuses it, because /groups has `delete: if false` and a
     // group that lost its owner could never be cleaned up by anyone.
     final iAmOwner = myUid != null && group != null && group.ownerUid == myUid;
+    final iAmAdmin = myUid != null && group != null && group.isAdmin(myUid);
 
     return Scaffold(
       appBar: AppBar(
@@ -80,22 +76,6 @@ class GroupDetailScreen extends ConsumerWidget {
         value: membersAsync,
         onRetry: () => ref.invalidate(membersProvider(groupId)),
         builder: (context, members) {
-          final grants = grantsAsync.value ?? const <PlannerGrant>[];
-          final friendUids = <String>{
-            for (final friendship in friendsAsync.value ?? const [])
-              friendship.otherUid(myUid ?? ''),
-          };
-          bool grantsToMe(String plannerUid) => grants.any(
-            (g) =>
-                g.plannerUid == plannerUid && g.targetUid == myUid && g.granted,
-          );
-          // The other direction: a grant *I* hold over them. Separate question,
-          // separate answer — consent here is directed, never mutual.
-          bool iPlanFor(String targetUid) => effectiveTargets.any(
-            (g) =>
-                g.plannerUid == myUid && g.targetUid == targetUid && g.granted,
-          );
-
           return ListView(
             padding: const EdgeInsets.only(top: Space.lg),
             children: [
@@ -140,8 +120,10 @@ class GroupDetailScreen extends ConsumerWidget {
                   child: ListTile(
                     leading: const Icon(AppIcons.addFriend),
                     title: const Text('Add a friend'),
-                    subtitle: const Text(
-                      'Every current member must approve before they join',
+                    subtitle: Text(
+                      iAmAdmin
+                          ? 'They join right away'
+                          : 'A group admin approves before they join',
                     ),
                     trailing: const Icon(AppIcons.openRow),
                     onTap: friendsAsync.hasValue
@@ -151,11 +133,13 @@ class GroupDetailScreen extends ConsumerWidget {
                             group.memberUids,
                             joinRequests,
                             myUid,
+                            iAmAdmin,
                           )
                         : null,
                   ),
                 ),
-              if (joinRequests.isNotEmpty) ...[
+              // Only admins decide, so only admins see the queue (item 3).
+              if (iAmAdmin && joinRequests.isNotEmpty) ...[
                 const Padding(
                   padding: EdgeInsets.symmetric(horizontal: Space.lg),
                   child: SectionHeader('Join requests'),
@@ -178,19 +162,16 @@ class GroupDetailScreen extends ConsumerWidget {
                         context.push('${Routes.plan}/groups/$groupId/progress'),
                   ),
                 ),
-              // Group planning: one item for everyone the caller may plan for.
-              // Shown only when there is at least one OTHER member who granted
-              // permission — planning for only yourself is just self-planning.
+              // Group planning (item 3): ANY member plans for the whole group —
+              // every member plus themselves, no permission step. Shown once
+              // there is someone else to plan for.
               if (group != null && myUid != null)
                 Builder(
                   builder: (context) {
-                    // Every member I may plan for: friends (friendship is the
-                    // permission) and non-friends who granted me here.
                     final candidates = <GroupPlanCandidate>[
                       (uid: myUid, isSelf: true),
                       for (final m in members)
-                        if (m.uid != myUid && iPlanFor(m.uid))
-                          (uid: m.uid, isSelf: false),
+                        if (m.uid != myUid) (uid: m.uid, isSelf: false),
                     ];
                     final others = candidates.where((c) => !c.isSelf).length;
                     if (others == 0) return const SizedBox.shrink();
@@ -199,9 +180,8 @@ class GroupDetailScreen extends ConsumerWidget {
                         leading: const Icon(AppIcons.navPlan),
                         title: const Text('Plan for the group'),
                         subtitle: Text(
-                          'One alarm for $others '
-                          '${others == 1 ? 'member' : 'members'} you can plan '
-                          'for, plus you',
+                          'One alarm for all $others '
+                          '${others == 1 ? 'member' : 'members'}, plus you',
                         ),
                         onTap: () => showGroupPlanSheet(
                           context,
@@ -217,21 +197,6 @@ class GroupDetailScreen extends ConsumerWidget {
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: Space.lg),
                 child: SectionHeader('Members'),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  Space.lg,
-                  0,
-                  Space.lg,
-                  Space.sm,
-                ),
-                child: Text(
-                  'For non-friend members, turn on "can plan for me" here. '
-                  'Friends can always plan for each other.',
-                  style: context.text.bodySmall?.copyWith(
-                    color: context.colors.onSurfaceVariant,
-                  ),
-                ),
               ),
               for (final m in members)
                 ListTile(
@@ -254,50 +219,23 @@ class GroupDetailScreen extends ConsumerWidget {
                     ),
                   ),
                   title: Text(m.uid == myUid ? '${m.name} (you)' : m.name),
-                  // The switch's label. It moved off the trailing row to make
-                  // width for the overflow menu — three controls on one line is
-                  // a mis-tap waiting to happen, and one of them is destructive.
-                  subtitle: m.uid == myUid
+                  subtitle: group == null
                       ? null
-                      : Text(
-                          friendUids.contains(m.uid)
-                              ? 'A friend — can always plan for you'
-                              : 'can plan for me',
-                        ),
-                  trailing: m.uid == myUid || myUid == null
+                      : m.uid == group.ownerUid
+                      ? const Text('Creator · admin')
+                      : group.isAdmin(m.uid)
+                      ? const Text('Admin')
+                      : null,
+                  trailing: m.uid == myUid || myUid == null || group == null
                       ? null
-                      : Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (groupPlanningPermissionApplies(
-                              m.uid,
-                              friendUids: friendUids,
-                            ))
-                              Switch(
-                                value: grantsToMe(m.uid),
-                                onChanged: (v) => ref
-                                    .read(groupRepositoryProvider)
-                                    .setPlannerGrant(
-                                      groupId: groupId,
-                                      plannerUid: m.uid,
-                                      targetUid: myUid,
-                                      granted: v,
-                                    ),
-                              ),
-                            _memberMenu(
-                              context,
-                              ref,
-                              member: m,
-                              myUid: myUid,
-                              iAmOwner: iAmOwner,
-                              iPlanForThem:
-                                  groupPlanningPermissionApplies(
-                                    m.uid,
-                                    friendUids: friendUids,
-                                  ) &&
-                                  iPlanFor(m.uid),
-                            ),
-                          ],
+                      : _memberMenu(
+                          context,
+                          ref,
+                          member: m,
+                          group: group,
+                          iAmOwner: iAmOwner,
+                          iAmAdmin: iAmAdmin,
+                          myUid: myUid,
                         ),
                 ),
             ],
@@ -313,14 +251,14 @@ class GroupDetailScreen extends ConsumerWidget {
     GroupJoinRequest request,
     String? myUid,
   ) {
-    final alreadyApproved = myUid != null && request.hasApproved(myUid);
-    final required = request.approvalsRequired == 0
-        ? 'Waiting for the first decision'
-        : '${request.approvalsReceived}/${request.approvalsRequired} approved';
     return ListTile(
       leading: const Icon(AppIcons.joinGroup),
       title: Text(request.candidateName),
-      subtitle: Text(required),
+      subtitle: Text(
+        request.isInvitation
+            ? 'Invited by a member'
+            : 'Asked with the invite code',
+      ),
       trailing: myUid == null
           ? null
           : Wrap(
@@ -332,13 +270,12 @@ class GroupDetailScreen extends ConsumerWidget {
                   onPressed: () =>
                       _decideJoinRequest(context, ref, request, myUid, false),
                 ),
-                if (!alreadyApproved)
-                  IconButton(
-                    tooltip: 'Approve ${request.candidateName}',
-                    icon: const Icon(AppIcons.approved),
-                    onPressed: () =>
-                        _decideJoinRequest(context, ref, request, myUid, true),
-                  ),
+                IconButton(
+                  tooltip: 'Approve ${request.candidateName}',
+                  icon: const Icon(AppIcons.approved),
+                  onPressed: () =>
+                      _decideJoinRequest(context, ref, request, myUid, true),
+                ),
               ],
             ),
     );
@@ -373,8 +310,8 @@ class GroupDetailScreen extends ConsumerWidget {
         context,
         title: 'Reject ${request.candidateName}?',
         body:
-            'One rejection ends this join request, even if every other '
-            'member approved it. This cannot be undone.',
+            'This ends their request. Any admin can decide, and one '
+            'decision is final.',
         action: 'Reject',
       );
       if (confirmed != true || !context.mounted) return;
@@ -395,9 +332,7 @@ class GroupDetailScreen extends ConsumerWidget {
           content: Text(
             !approve
                 ? '${request.candidateName}\'s request was rejected.'
-                : admitted
-                ? '${request.candidateName} joined the group.'
-                : 'Your approval was recorded.',
+                : '${request.candidateName} joined the group.',
           ),
         ),
       );
@@ -415,6 +350,7 @@ class GroupDetailScreen extends ConsumerWidget {
     List<String> memberUids,
     List<GroupJoinRequest> requests,
     String myUid,
+    bool iAmAdmin,
   ) async {
     final friendships = ref.read(myFriendshipsProvider).value ?? const [];
     final unavailable = <String>{
@@ -487,16 +423,30 @@ class GroupDetailScreen extends ConsumerWidget {
             callerUid: myUid,
             friendUid: selected.uid,
             friendName: selected.name,
+            callerIsAdmin: iAmAdmin,
           );
-      if (admitted) _tellAdmitted(ref, myUid, selected.uid);
+      if (admitted) {
+        _tellAdmitted(ref, myUid, selected.uid);
+      } else {
+        // A member's invitation waits for an admin — tell them (item 3).
+        unawaited(
+          ref
+              .read(friendEventNotifierProvider)
+              .notify(
+                event: FriendNotifyEvent.groupJoinRequested,
+                fromUid: myUid,
+                toUid: selected.uid,
+                groupId: groupId,
+              ),
+        );
+      }
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             admitted
                 ? '${selected.name} joined the group.'
-                : '${selected.name} will join after every current member '
-                      'approves.',
+                : '${selected.name} will join once a group admin approves.',
           ),
         ),
       );
@@ -508,28 +458,30 @@ class GroupDetailScreen extends ConsumerWidget {
     }
   }
 
-  /// Per-member secondary actions. Both are relationship-ending, so both live
-  /// behind the overflow (UI-RULES.md §6.6) rather than inline in a scrolling
-  /// list. Renders nothing at all when neither applies — an empty menu is a
-  /// control that lies about having options.
+  /// Per-member actions (item 3). The creator makes or removes admins; any
+  /// admin removes a member (never the creator). Renders nothing when neither
+  /// applies — an empty menu is a control that lies about having options.
   Widget _memberMenu(
     BuildContext context,
     WidgetRef ref, {
     required Membership member,
-    required String myUid,
+    required Group group,
     required bool iAmOwner,
-    required bool iPlanForThem,
+    required bool iAmAdmin,
+    required String myUid,
   }) {
+    final isCreator = member.uid == group.ownerUid;
+    final theyAreAdmin = group.isAdmin(member.uid);
     final items = <PopupMenuEntry<void>>[
-      if (iPlanForThem)
+      if (iAmOwner && !isCreator)
         PopupMenuItem<void>(
-          onTap: () => _stopPlanning(context, ref, myUid, member),
-          child: const _MenuRow(
-            icon: AppIcons.stopPlanning,
-            label: 'Stop planning for them',
+          onTap: () => _setAdmin(context, ref, member, !theyAreAdmin),
+          child: _MenuRow(
+            icon: theyAreAdmin ? AppIcons.removeAdmin : AppIcons.makeAdmin,
+            label: theyAreAdmin ? 'Remove as admin' : 'Make admin',
           ),
         ),
-      if (iAmOwner)
+      if (iAmAdmin && !isCreator)
         PopupMenuItem<void>(
           onTap: () => _removeMember(context, ref, myUid, member),
           child: const _MenuRow(
@@ -546,39 +498,27 @@ class GroupDetailScreen extends ConsumerWidget {
     );
   }
 
-  /// Give up the grant I hold over [member] — I stop being their planner.
-  ///
-  /// Not destructive to *them*: it removes a power I hold, and they can hand it
-  /// back with their own switch. Confirmed anyway because it silently drops
-  /// them out of my schedule builder, which is otherwise hard to explain.
-  Future<void> _stopPlanning(
+  /// The creator shares or takes back admin rights (item 3).
+  Future<void> _setAdmin(
     BuildContext context,
     WidgetRef ref,
-    String myUid,
     Membership member,
+    bool admin,
   ) async {
-    final confirmed = await _confirm(
+    await _guard(
       context,
-      title: 'Stop planning for ${member.name}?',
-      body:
-          "They'll disappear from your schedule builder. Their existing "
-          'items are untouched, and they can switch the permission back on '
-          'for you at any time.',
-      action: 'Stop planning',
-    );
-    if (confirmed != true || !context.mounted) return;
-    await _guard(context, ref, () async {
-      await ref
+      ref,
+      () => ref
           .read(groupRepositoryProvider)
-          .revokeMyPlannerGrant(
-            groupId: groupId,
-            plannerUid: myUid,
-            targetUid: member.uid,
-          );
-    }, success: 'You no longer plan for ${member.name}.');
+          .setAdmin(groupId: groupId, memberUid: member.uid, admin: admin),
+      success: admin
+          ? '${member.name} is now an admin.'
+          : '${member.name} is no longer an admin.',
+    );
   }
 
-  /// Owner ejects a member.
+  /// An admin removes a member (item 3) — including another admin, never the
+  /// creator.
   Future<void> _removeMember(
     BuildContext context,
     WidgetRef ref,
@@ -589,9 +529,8 @@ class GroupDetailScreen extends ConsumerWidget {
       context,
       title: 'Remove ${member.name}?',
       body:
-          "They'll lose access to this group and any permission between you "
-          'is revoked. Schedule items already created stay where they are. '
-          'They can rejoin only with the invite code.',
+          "They'll lose access to this group. Plans already set stay where "
+          'they are. They can rejoin only with the invite code.',
       action: 'Remove',
     );
     if (confirmed != true || !context.mounted) return;
@@ -619,9 +558,8 @@ class GroupDetailScreen extends ConsumerWidget {
       context,
       title: 'Leave "$groupName"?',
       body:
-          'Any permission between you and its members is revoked. Schedule '
-          'items already created stay where they are. You can rejoin only '
-          'with the invite code.',
+          "You'll lose access to this group. Plans already set stay where "
+          'they are. You can rejoin only with the invite code.',
       action: 'Leave',
     );
     if (confirmed != true || !context.mounted) return;
@@ -633,7 +571,7 @@ class GroupDetailScreen extends ConsumerWidget {
     if (ok && context.mounted) Navigator.of(context).pop();
   }
 
-  /// One destructive-confirmation shape for all three actions — red on the
+  /// One destructive-confirmation shape for these actions — red on the
   /// confirm button only, one of the rationed uses (UI-RULES.md §2.5).
   Future<bool?> _confirm(
     BuildContext context, {
@@ -721,7 +659,9 @@ class _MenuRow extends StatelessWidget {
       children: [
         Icon(icon, size: Sizes.listIcon),
         const SizedBox(width: Space.md),
-        Text(label),
+        // Flexible so a long label ("Remove from group") at a large text scale
+        // wraps inside the popup's width cap instead of overflowing it.
+        Flexible(child: Text(label)),
       ],
     );
   }

@@ -14,10 +14,9 @@
 //
 // Bug 2 — planning cross-device was permission-denied. createItem commits ONE
 //   atomic batch: a scheduleSlots lock + the item. The lock USED to require the
-//   plannerAccess mirror (target-written, absent cross-device), which failed the
-//   whole batch. The fix carries `groupId` on the lock and gates it on the SAME
-//   active grant the item proves, so a real active grant with NO mirror now
-//   SUCCEEDS, while no grant is still denied.
+//   plannerAccess mirror (absent cross-device), which failed the whole batch.
+//   Since item 3 (2026-09-27) both halves are authorised by group membership
+//   alone, so the batch needs no grant and no mirror at all.
 
 import { readFileSync } from 'node:fs';
 import { after, before, beforeEach, describe, it } from 'node:test';
@@ -68,7 +67,7 @@ describe('Bug 1 — the stranger friendship read', () => {
 
 // --- Bug 2 ----------------------------------------------------------------
 
-describe('Bug 2 — createItem batch with a grant but no plannerAccess mirror', () => {
+describe('Bug 2 — createItem batch (item 3: group membership, no grant)', () => {
   const SLOT = '999123';
   const lockPath = `scheduleSlots/${TARGET}/slots/${SLOT}`;
   const item = {
@@ -79,18 +78,21 @@ describe('Bug 2 — createItem batch with a grant but no plannerAccess mirror', 
   };
   const lock = { targetUid: TARGET, createdByUid: PLANNER, groupId: 'g1', itemId: 'new1', createdAt: new Date() };
 
-  async function seedGrant() {
+  async function seedGroup() {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'groups/g1'), {
+        name: 'G', ownerUid: TARGET, joinCode: 'REPRO2', memberUids: [TARGET, PLANNER],
+      });
+    });
+  }
+  async function seedLeftovers() {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), `groups/g1/plannerGrants/${PLANNER}_${TARGET}`), {
         plannerUid: PLANNER, targetUid: TARGET, groupId: 'g1',
         granted: true, grantedByUid: TARGET,
       });
-    });
-  }
-  async function seedMirror() {
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), `plannerAccess/${PLANNER}_${TARGET}`), {
-        plannerUid: PLANNER, targetUid: TARGET, updatedAt: new Date(),
+        plannerUid: PLANNER, targetUid: TARGET, groupId: 'g1', updatedAt: new Date(),
       });
     });
   }
@@ -101,22 +103,15 @@ describe('Bug 2 — createItem batch with a grant but no plannerAccess mirror', 
     return batch.commit();
   }
 
-  it('THE FIX: active grant, NO mirror -> batch SUCCEEDS', async () => {
-    await seedGrant();
+  it('both in the group, NO grant, NO mirror -> batch SUCCEEDS', async () => {
+    await seedGroup();
     const db = testEnv.authenticatedContext(PLANNER).firestore();
     await assertSucceeds(commitBatch(db));
   });
 
-  it('no grant (mirror only) -> batch DENIED — a mirror is not a write grant', async () => {
-    await seedMirror();
+  it('a leftover grant + mirror without membership -> batch DENIED', async () => {
+    await seedLeftovers();
     const db = testEnv.authenticatedContext(PLANNER).firestore();
     await assertFails(commitBatch(db));
-  });
-
-  it('with BOTH grant and mirror -> batch SUCCEEDS', async () => {
-    await seedGrant();
-    await seedMirror();
-    const db = testEnv.authenticatedContext(PLANNER).firestore();
-    await assertSucceeds(commitBatch(db));
   });
 });

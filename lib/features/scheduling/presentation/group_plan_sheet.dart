@@ -128,11 +128,7 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
     final checker = ref.read(scheduleClashCheckerProvider);
     final results = await Future.wait(
       members.map(
-        (m) => checker.check(
-          targetUid: m.uid,
-          instantUtc: m.instantUtc,
-          groupId: widget.groupId,
-        ),
+        (m) => checker.check(targetUid: m.uid, instantUtc: m.instantUtc),
       ),
     );
     final busy = [

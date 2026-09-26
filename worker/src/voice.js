@@ -13,6 +13,8 @@
 // `voiceNote {durationMs, sha256, sizeBytes}`, and the Firestore rules require
 // it to match the `voiceUploads/{itemId}` record this Worker wrote.
 
+import { bothInGroup } from './notify.js';
+
 export const MAX_VOICE_BYTES = 256 * 1024;
 export const MAX_VOICE_MS = 20_500; // 20 s recorder cap + encoder slack
 // F5 (2026-09-26): at least 1 s, so every note falls in a replay band.
@@ -103,18 +105,13 @@ export async function sha256Hex(bytes) {
 
 /**
  * May [plannerUid] plan for [targetUid] right now? The item does not exist
- * yet, so this mirrors the create rule: friends may (Batch G item 2 —
- * friendship is the permission), and a non-friend needs a group grant for the
- * stated group.
+ * yet, so this mirrors the create rule (Batch G items 2 + 3): friends may set
+ * an untagged plan; fellow members of the stated group may set a group plan.
  */
 export async function callerMayPlanFor(db, plannerUid, targetUid, groupId) {
+  if (groupId) return bothInGroup(db, groupId, plannerUid, targetUid);
   const pair = [plannerUid, targetUid].sort().join('_');
-  if (await db.getDoc(`friendships/${pair}`)) return true;
-  if (!groupId) return false;
-  const g = await db.getDoc(
-    `groups/${groupId}/plannerGrants/${plannerUid}_${targetUid}`,
-  );
-  return Boolean(g && g.granted === true);
+  return Boolean(await db.getDoc(`friendships/${pair}`));
 }
 
 const reply = (status, body) => ({ status, body });

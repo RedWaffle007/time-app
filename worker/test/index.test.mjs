@@ -192,6 +192,27 @@ test('group-join pushes need a safe group id before auth', async () => {
   assert.equal(valid.status, 401);
 });
 
+test('a join-request push needs a safe group id; a self-request is allowed', async () => {
+  for (const payload of [
+    { event: 'groupJoinRequested', fromUid: 'candidate', toUid: 'candidate' },
+    { event: 'groupJoinRequested', fromUid: 'candidate', toUid: 'candidate', groupId: 'a/b' },
+  ]) {
+    const response = await worker.fetch(new Request('https://worker.example/', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }), env);
+    assert.equal(response.status, 400, JSON.stringify(payload));
+  }
+  // The candidate asking for themselves passes validation and reaches auth.
+  const self = await worker.fetch(new Request('https://worker.example/', {
+    method: 'POST',
+    body: JSON.stringify({
+      event: 'groupJoinRequested', fromUid: 'candidate', toUid: 'candidate', groupId: 'group-1',
+    }),
+  }), env);
+  assert.equal(self.status, 401);
+});
+
 test('voiceFallback is an item event that requires a bearer token', async () => {
   const response = await worker.fetch(new Request('https://worker.example/', {
     method: 'POST',

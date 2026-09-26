@@ -136,19 +136,31 @@ export async function sendEventNotification(ctx, { event, targetUid, itemId }) {
 }
 
 // Does the planner CURRENTLY hold permission over the target for [item]?
-// Mirrors the create rule. Batch G item 2 (2026-09-27): FRIENDSHIP is the
-// permission — no grant document. Non-friends need a group grant for the
-// tagged group (until item 3 reworks groups). Every item push, the lapse
-// notices and the voice rescue ask this; a lost permission means no push,
-// whichever way it flows.
+// Mirrors the create rule (Batch G items 2 + 3, 2026-09-27): a FRIEND may set
+// an untagged plan, and fellow MEMBERS of the tagged group may set a group
+// plan. No grant documents. Every item push, the lapse notices and the voice
+// rescue ask this; a lost permission means no push, whichever way it flows.
 export async function hasActiveItemGrant(db, item, plannerUid, targetUid) {
+  if (item.groupId) {
+    return bothInGroup(db, item.groupId, plannerUid, targetUid);
+  }
   const pairId = [plannerUid, targetUid].sort().join('_');
-  if (await db.getDoc(`friendships/${pairId}`)) return true;
-  if (!item.groupId) return false;
-  const g = await db.getDoc(
-    `groups/${item.groupId}/plannerGrants/${plannerUid}_${targetUid}`,
-  );
-  return Boolean(g && g.granted === true);
+  return Boolean(await db.getDoc(`friendships/${pairId}`));
+}
+
+export async function bothInGroup(db, groupId, a, b) {
+  const group = await db.getDoc(`groups/${groupId}`);
+  const members = group && Array.isArray(group.memberUids) ? group.memberUids : [];
+  return members.includes(a) && members.includes(b);
+}
+
+// The group's admins: the creator always, plus `adminUids`, members only.
+export function groupAdminUids(group) {
+  if (!group) return [];
+  const members = Array.isArray(group.memberUids) ? group.memberUids : [];
+  const listed = Array.isArray(group.adminUids) ? group.adminUids : [];
+  return [...new Set([group.ownerUid, ...listed])]
+    .filter((uid) => typeof uid === 'string' && members.includes(uid));
 }
 
 // Verify the event against the item's ACTUAL Firestore state and return this
@@ -391,6 +403,7 @@ function result(sent, cleaned, recipientUid, reason) {
 // by the transport shell BEFORE this runs — see index.js handleFriendEvent.
 export const FRIEND_EVENTS = new Set([
   'friendRequest', 'friendAccept', 'planRequested', 'groupJoinApproved',
+  'groupJoinRequested',
 ]);
 
 // Events whose recipient is the `toUid` (the other two notify the `fromUid`).
@@ -402,6 +415,11 @@ export async function sendFriendNotification(
   ctx,
   { event, fromUid, toUid, kind, planRequestId, groupId },
 ) {
+  // A code request is the candidate asking for THEMSELVES, so it is the one
+  // event where the two parties may be the same person.
+  if (event === 'groupJoinRequested' && fromUid && toUid) {
+    return sendGroupJoinRequestNotification(ctx, { fromUid, toUid, groupId });
+  }
   if (!FRIEND_EVENTS.has(event) || !fromUid || !toUid || fromUid === toUid) {
     return result(0, 0, null, 'bad-args');
   }
@@ -523,6 +541,7 @@ function buildFriendMessage(
       // A code request was asked for; a friend invitation was not, so it
       // reads as being added rather than approved.
       notification = groupInfo.joinSource === 'friend'
+          || groupInfo.joinSource === 'admin'
         ? { title: 'Added to a group', body: `You're now a member of ${name}` }
         : {
             title: 'Group join approved',
@@ -550,4 +569,72 @@ function buildFriendMessage(
         : {}),
     },
   };
+}
+
+// groupJoinRequested (item 3, 2026-09-27): a join request is waiting, so EVERY
+// admin is told — any one of them may decide. `toUid` is the candidate;
+// `fromUid` asked (the candidate for a code request, the inviting member for
+// a friend invitation). Only for a request Firestore says is still pending and
+// was made by `fromUid`; stamped once delivered so a retry cannot re-ring.
+export async function sendGroupJoinRequestNotification(ctx, { fromUid, toUid, groupId }) {
+  if (!groupId || groupId.includes('/')) return result(0, 0, null, 'bad-args');
+  const requestPath = `groups/${groupId}/joinRequests/${toUid}`;
+  const request = await ctx.db.getDoc(requestPath);
+  if (!request) return result(0, 0, null, 'request-not-found');
+  if (request.status !== 'pending' || request.requestedByUid !== fromUid) {
+    return result(0, 0, null, 'not-pending');
+  }
+  if (request.notifiedRequested === true) {
+    return result(0, 0, null, 'already-notified');
+  }
+  const group = await ctx.db.getDoc(`groups/${groupId}`);
+  const admins = groupAdminUids(group).filter((uid) => uid !== fromUid);
+  if (admins.length === 0) return result(0, 0, null, 'no-admins');
+
+  const groupName = group && group.name ? String(group.name) : 'your group';
+  const candidateName = request.candidateName
+    ? String(request.candidateName)
+    : 'Someone';
+  let body = `${candidateName} wants to join ${groupName}`;
+  if (fromUid !== toUid) {
+    const inviter = await ctx.db.getDoc(`users/${fromUid}`);
+    const who = inviter && inviter.name ? String(inviter.name) : 'A member';
+    body = `${who} invited ${candidateName} to join ${groupName}`;
+  }
+  const message = {
+    notification: { title: 'Join request', body },
+    android: {
+      priority: 'high',
+      notification: { channel_id: ACTIVITY_CHANNEL_ID },
+    },
+    data: {
+      type: 'groupJoinRequested',
+      event: 'groupJoinRequested',
+      fromUid,
+      toUid,
+      groupId,
+    },
+  };
+
+  let sent = 0;
+  let cleaned = 0;
+  for (const admin of admins) {
+    const tokens = await ctx.db.listDocIds(`users/${admin}/fcmTokens`);
+    for (const token of tokens) {
+      const res = await ctx.fcm.send(token, message);
+      if (res.ok) {
+        sent += 1;
+      } else if (res.error === 'UNREGISTERED' || res.error === 'INVALID') {
+        await ctx.db.deleteDoc(`users/${admin}/fcmTokens/${token}`);
+        cleaned += 1;
+      }
+    }
+  }
+  if (sent > 0) {
+    await ctx.db.patchDoc(requestPath, {
+      notifiedRequested: true,
+      notifiedRequestedAt: new Date().toISOString(),
+    });
+  }
+  return result(sent, cleaned, null, sent > 0 ? 'sent' : 'no-delivery');
 }

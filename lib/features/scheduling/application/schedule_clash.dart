@@ -1,7 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../auth/application/auth_providers.dart';
-import '../../groups/application/planner_access_reconciler.dart';
 import '../domain/schedule_item.dart';
 import '../domain/slot.dart';
 import 'schedule_providers.dart';
@@ -42,16 +40,14 @@ int _epochMinute(DateTime instant) =>
 /// in a failed state.
 ///
 /// The old check watched a long-lived listener: one `permission-denied` (a
-/// grant seconds old, a token refresh, a group hint row not written yet)
-/// terminated it for the rest of the app session. This does one fresh read per
-/// check, retries with short pauses, and — for group-scoped access — writes the
-/// planner's own `plannerAccess` hint before retrying. The hint write is
-/// idempotent and is the same one `PlannerAccessReconciler` makes; it only ever
-/// names a group the rules re-verify, so it grants nothing by itself.
+/// friendship seconds old, a token refresh) terminated it for the rest of the
+/// app session. This does one fresh read per check and retries with short
+/// pauses. Only a friend's schedule is readable (Batch G items 2 + 3); a group
+/// member who is not a friend reads as [ClashResult.unknown], and the group
+/// double-booking check does not rely on this read.
 class ScheduleClashChecker {
   ScheduleClashChecker({
     required this.fetch,
-    required this.ensureAccess,
     this.retryDelays = const [
       Duration(milliseconds: 500),
       Duration(seconds: 1),
@@ -62,9 +58,6 @@ class ScheduleClashChecker {
 
   final Future<List<ScheduleItem>> Function(String targetUid) fetch;
 
-  /// Provision group-scoped read access for [targetUid] via [groupId].
-  final Future<void> Function(String targetUid, String groupId) ensureAccess;
-
   /// One pause before each retry; its length is the number of retries.
   final List<Duration> retryDelays;
   final Duration attemptTimeout;
@@ -72,20 +65,9 @@ class ScheduleClashChecker {
   Future<ClashResult> check({
     required String targetUid,
     required DateTime instantUtc,
-    String? groupId,
   }) async {
-    var accessEnsured = false;
     for (var attempt = 0; attempt <= retryDelays.length; attempt++) {
       if (attempt > 0) {
-        if (!accessEnsured && groupId != null && groupId.isNotEmpty) {
-          accessEnsured = true;
-          try {
-            await ensureAccess(targetUid, groupId).timeout(attemptTimeout);
-          } catch (_) {
-            // A friendship-scoped target, or a grant that is really gone: the
-            // retry below settles it either way.
-          }
-        }
         await Future<void>.delayed(retryDelays[attempt - 1]);
       }
       try {
@@ -103,17 +85,5 @@ class ScheduleClashChecker {
 
 final scheduleClashCheckerProvider = Provider<ScheduleClashChecker>((ref) {
   final repository = ref.watch(scheduleRepositoryProvider);
-  final access = ref.watch(plannerAccessRepositoryProvider);
-  return ScheduleClashChecker(
-    fetch: repository.fetchItemsForTarget,
-    ensureAccess: (targetUid, groupId) async {
-      final me = ref.read(currentUidProvider);
-      if (me == null || me == targetUid) return;
-      await access.grant(
-        plannerUid: me,
-        targetUid: targetUid,
-        groupId: groupId,
-      );
-    },
-  );
+  return ScheduleClashChecker(fetch: repository.fetchItemsForTarget);
 });

@@ -275,8 +275,7 @@ test('an ended friendship still settles the item and tells the person, not the p
 
 test('group items read the group name and grant', async () => {
   const h = harness({ approved: [row('approved', { groupId: 'g1' })] }, {
-    'groups/g1': { name: 'Team' },
-    'groups/g1/plannerGrants/planner_target': { granted: true },
+    'groups/g1': { name: 'Team', memberUids: ['planner', 'target'] },
   });
   await settleLapsedItems(h.ctx, AFTER);
   assert.equal(h.sent.length, 2);

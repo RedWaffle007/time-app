@@ -1,11 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-/// A unanimous request to add [candidateUid] to a group.
+/// A request to add [candidateUid] to a group, decided by ANY ONE admin
+/// (WhatsApp-style, Batch G item 3, 2026-09-27).
 ///
 /// The document id is the candidate uid and lives at
-/// `groups/{groupId}/joinRequests/{candidateUid}`. An invitation from a friend
-/// and a request made with a code deliberately share this model: neither path
-/// is allowed to bypass the current members' approval.
+/// `groups/{groupId}/joinRequests/{candidateUid}`. [source] is `code` (the
+/// candidate entered the invite code), `friend` (a non-admin member invited a
+/// friend) or `admin` (an admin added a friend directly — born approved).
+/// [requiredApproverUids] is kept only for the retired unanimous flow's shape.
 class GroupJoinRequest {
   const GroupJoinRequest({
     required this.candidateUid,
@@ -28,11 +30,9 @@ class GroupJoinRequest {
   final String? rejectionUid;
 
   bool get isPending => status == 'pending';
-  bool hasApproved(String uid) => approvalUids.contains(uid);
 
-  int get approvalsRequired => requiredApproverUids.length;
-  int get approvalsReceived =>
-      approvalUids.where(requiredApproverUids.contains).toSet().length;
+  /// Whether a member invited them (rather than the candidate using a code).
+  bool get isInvitation => source == 'friend' && requestedByUid != candidateUid;
 
   factory GroupJoinRequest.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data() ?? const <String, dynamic>{};

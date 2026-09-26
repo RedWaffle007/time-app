@@ -167,7 +167,7 @@ abstract final class AppIcons {
   /// same `Icons.login` glyph until this file existed.
   static const IconData joinGroup = Icons.group_add_outlined;
 
-  /// Take someone else out of a group you own.
+  /// Take someone else out of a group (any admin may; never the creator).
   ///
   /// A bin glyph is *correct* here in a way it never is on [archive]: this
   /// really does change what the other person sees, and the copy rule cuts both
@@ -184,12 +184,14 @@ abstract final class AppIcons {
   /// the question.
   static const IconData leaveGroup = Icons.group_remove_outlined;
 
-  /// Give up a planner grant you hold over someone — "stop planning for them".
-  ///
-  /// Deliberately not [withdrawn], which retracts a single *item*. Ending a
-  /// standing permission and taking back one plan are different facts, and
-  /// letting them share a glyph is exactly the trap rule 1 exists to close.
-  static const IconData stopPlanning = Icons.event_busy_outlined;
+  /// The group creator shares admin rights with a member (Batch G item 3).
+  /// ("Stop planning for them" and its glyph were retired with group grants.)
+  static const IconData makeAdmin = Icons.admin_panel_settings_outlined;
+
+  /// The creator takes admin rights back. Its own glyph, not [makeAdmin] with a
+  /// different label — granting and removing a power are different acts
+  /// (rule 1), and not [removeMember], which ends the membership itself.
+  static const IconData removeAdmin = Icons.remove_moderator_outlined;
 
   /// Hide a settled item from your own views (Group D). Never "delete" — the
   /// record is untouched and the other party is unaffected, and the glyph has

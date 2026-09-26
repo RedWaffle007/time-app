@@ -19,6 +19,7 @@ import {
   sendEventNotification,
   sendFriendNotification,
   FRIEND_EVENTS,
+  groupAdminUids,
 } from './notify.js';
 import {
   handleAvatarUpload,
@@ -444,12 +445,15 @@ async function handleFriendEvent(request, env, body) {
   if (
     typeof fromUid !== 'string' ||
     typeof toUid !== 'string' ||
-    fromUid === toUid
+    !fromUid ||
+    !toUid ||
+    // A code join request is the candidate asking for themselves (item 3).
+    (fromUid === toUid && event !== 'groupJoinRequested')
   ) {
     return json({ error: 'invalid-body' }, 400);
   }
   if (
-    event === 'groupJoinApproved' &&
+    (event === 'groupJoinApproved' || event === 'groupJoinRequested') &&
     (typeof groupId !== 'string' || !groupId || groupId.includes('/'))
   ) {
     return json({ error: 'invalid-body' }, 400);
@@ -508,17 +512,20 @@ async function handleFriendEvent(request, env, body) {
       ) {
         return json({ error: 'forbidden' }, 403);
       }
+    } else if (event === 'groupJoinRequested') {
+      // Item 3: whoever asked (the candidate with a code, or the inviting
+      // member) tells the group's admins. The pending request made by the
+      // caller is re-verified in notify.js before anyone is pushed.
+      if (callerUid !== fromUid) return json({ error: 'forbidden' }, 403);
     } else {
-      // groupJoinApproved (the only other FRIEND_EVENTS member): a current
-      // member (the approver) tells the admitted candidate. The request's
-      // approved state and the roster are re-verified in notify.js; here the
-      // caller must be a member other than the candidate.
+      // groupJoinApproved: an ADMIN (item 3 — only admins admit) tells the
+      // admitted candidate. The request's approved state and the roster are
+      // re-verified in notify.js.
       if (callerUid !== fromUid) return json({ error: 'forbidden' }, 403);
       const group = await db.getDoc(`groups/${groupId}`);
-      const members = group && Array.isArray(group.memberUids)
-        ? group.memberUids
-        : [];
-      if (!members.includes(callerUid)) return json({ error: 'forbidden' }, 403);
+      if (!groupAdminUids(group).includes(callerUid)) {
+        return json({ error: 'forbidden' }, 403);
+      }
     }
 
     const ctx = {

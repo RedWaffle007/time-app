@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   ACTIVITY_CHANNEL_ID,
   buildMessage,
+  groupAdminUids,
   hasActiveItemGrant,
   outcomeTiming,
   sendEventNotification,
@@ -21,6 +22,18 @@ function context(rawDocs, {
   for (const key of Object.keys(rawDocs)) {
     const m = /^friendships\/([^/]+)\/(plannerGrants|emergencyGrants)\//.exec(key);
     if (m && !(`friendships/${m[1]}` in docs)) docs[`friendships/${m[1]}`] = { participants: [] };
+    // Item 3: group plans are authorised by MEMBERSHIP. Older tests seed a
+    // retired group grant to mean "these two share the group", so add both
+    // to that group's roster (a granted:false grant adds nobody).
+    const g = /^groups\/([^/]+)\/plannerGrants\/([^_]+)_(.+)$/.exec(key);
+    if (g && rawDocs[key] && rawDocs[key].granted === true) {
+      const path = `groups/${g[1]}`;
+      const current = docs[path] || {};
+      const members = new Set(current.memberUids || []);
+      members.add(g[2]);
+      members.add(g[3]);
+      docs[path] = { ...current, memberUids: [...members] };
+    }
   }
   const sent = [];
   const sentTokens = [];
@@ -965,10 +978,11 @@ test('a friendship plan with an empty groupId is never dropped as malformed', as
 
 // --- item 15: group emergency plans (2026-09-26) ------------------------------
 
-test('friendship is the permission; a group grant covers non-friends only', async () => {
+test('friends may plan untagged; fellow group members may plan group-tagged', async () => {
   const item = { groupId: '' };
   const db = (docs) => ({ getDoc: async (p) => docs[p] ?? null });
   const friends = { 'friendships/planner_target': {} };
+  const team = { 'groups/g1': { memberUids: ['planner', 'target'] } };
   // Friends: yes, with no grant document at all.
   assert.equal(await hasActiveItemGrant(db(friends), item, 'planner', 'target'), true);
   // A leftover granted:false doc takes nothing away.
@@ -978,13 +992,14 @@ test('friendship is the permission; a group grant covers non-friends only', asyn
   assert.equal(await hasActiveItemGrant(db({}), item, 'planner', 'target'), false);
   assert.equal(await hasActiveItemGrant(db({
     'friendships/planner_target/plannerGrants/planner_target': { granted: true } }), item, 'planner', 'target'), false);
-  // Group grant between members who are not friends.
+  // A group item: both members — yes, no grant needed.
+  assert.equal(await hasActiveItemGrant(db(team), { groupId: 'g1' }, 'planner', 'target'), true);
+  // One of them left the group — no, even with a leftover grant.
   assert.equal(await hasActiveItemGrant(db({
-    'groups/g1/plannerGrants/planner_target': { granted: true } }), { groupId: 'g1' }, 'planner', 'target'), true);
-  assert.equal(await hasActiveItemGrant(db({
-    'groups/g1/plannerGrants/planner_target': { granted: false } }), { groupId: 'g1' }, 'planner', 'target'), false);
-  // Friends with a group-tagged item: the friendship covers it.
-  assert.equal(await hasActiveItemGrant(db(friends), { groupId: 'g1' }, 'planner', 'target'), true);
+    'groups/g1': { memberUids: ['target'] },
+    'groups/g1/plannerGrants/planner_target': { granted: true } }), { groupId: 'g1' }, 'planner', 'target'), false);
+  // Friends do not carry a group item for a group they do not share.
+  assert.equal(await hasActiveItemGrant(db(friends), { groupId: 'g1' }, 'planner', 'target'), false);
 });
 
 test('the retired planning-permission events are not friend events', async () => {
@@ -1009,8 +1024,7 @@ test('a group emergency plan reaches the target as a group-labelled alarm comman
       tier: 'emergency',
       scheduledInstantUtc: '2030-01-01T10:00:00.000Z',
     },
-    'friendships/planner_target/emergencyGrants/planner_target': { granted: true },
-    'groups/g1': { name: 'Family' },
+    'groups/g1': { name: 'Family', memberUids: ['planner', 'target'] },
     'users/planner': { name: 'Test Planner' },
   });
   const result = await sendEventNotification(harness.ctx, {
@@ -1155,4 +1169,142 @@ test('the emergency alarm command carries the voice note only when there is one'
   for (const value of Object.values(withVoice.data)) assert.equal(typeof value, 'string');
   const plain = buildMessage('created', null, base, 'target', 'i', {});
   assert.equal(plain.data.voiceSha256, undefined);
+});
+
+// --- item 3: join requests go to every admin (2026-09-27) --------------------
+
+function joinHarness({ request = {}, group = {}, tokens = {} } = {}) {
+  const docs = {
+    'groups/g1/joinRequests/candidate': {
+      candidateUid: 'candidate', candidateName: 'Test Candidate',
+      requestedByUid: 'candidate', source: 'code', status: 'pending',
+      ...request,
+    },
+    'groups/g1': {
+      name: 'Team', ownerUid: 'owner',
+      memberUids: ['owner', 'admin2', 'member'], adminUids: ['owner', 'admin2'],
+      ...group,
+    },
+    'users/member': { name: 'Test Member' },
+  };
+  const sent = [];
+  const patched = [];
+  const listed = [];
+  return {
+    sent, patched, listed,
+    ctx: {
+      db: {
+        getDoc: async (p) => docs[p] ?? null,
+        listDocIds: async (p) => {
+          listed.push(p);
+          const uid = p.split('/')[1];
+          return tokens[uid] ?? [`${uid}-token`];
+        },
+        deleteDoc: async () => {},
+        patchDoc: async (path, fields) => patched.push({ path, fields }),
+      },
+      fcm: { send: async (token, message) => { sent.push({ token, message }); return { ok: true }; } },
+    },
+  };
+}
+
+test('a code request pushes every admin — not plain members — once', async () => {
+  const h = joinHarness();
+  const res = await sendFriendNotification(h.ctx, {
+    event: 'groupJoinRequested', fromUid: 'candidate', toUid: 'candidate', groupId: 'g1',
+  });
+  assert.equal(res.reason, 'sent');
+  assert.deepEqual(h.sent.map((s) => s.token).sort(), ['admin2-token', 'owner-token']);
+  assert.equal(h.sent[0].message.notification.title, 'Join request');
+  assert.equal(h.sent[0].message.notification.body, 'Test Candidate wants to join Team');
+  assert.equal(h.sent[0].message.data.type, 'groupJoinRequested');
+  assert.equal(h.sent[0].message.data.groupId, 'g1');
+  assert.equal(h.patched[0].path, 'groups/g1/joinRequests/candidate');
+  assert.equal(h.patched[0].fields.notifiedRequested, true);
+});
+
+test('a member invitation names the inviter, and never pushes the inviter', async () => {
+  const h = joinHarness({
+    request: { requestedByUid: 'admin2', source: 'friend' },
+  });
+  await sendFriendNotification(h.ctx, {
+    event: 'groupJoinRequested', fromUid: 'admin2', toUid: 'candidate', groupId: 'g1',
+  });
+  assert.deepEqual(h.sent.map((s) => s.token), ['owner-token']);
+
+  const m = joinHarness({ request: { requestedByUid: 'member', source: 'friend' } });
+  await sendFriendNotification(m.ctx, {
+    event: 'groupJoinRequested', fromUid: 'member', toUid: 'candidate', groupId: 'g1',
+  });
+  assert.equal(
+    m.sent[0].message.notification.body,
+    'Test Member invited Test Candidate to join Team',
+  );
+});
+
+test('a pre-admins group pushes its owner; an admin who left is skipped', async () => {
+  const legacy = joinHarness({ group: { adminUids: undefined } });
+  await sendFriendNotification(legacy.ctx, {
+    event: 'groupJoinRequested', fromUid: 'candidate', toUid: 'candidate', groupId: 'g1',
+  });
+  assert.deepEqual(legacy.sent.map((s) => s.token), ['owner-token']);
+
+  const left = joinHarness({ group: { memberUids: ['owner', 'member'] } });
+  await sendFriendNotification(left.ctx, {
+    event: 'groupJoinRequested', fromUid: 'candidate', toUid: 'candidate', groupId: 'g1',
+  });
+  assert.deepEqual(left.sent.map((s) => s.token), ['owner-token']);
+});
+
+test('no push for a decided, forged, missing or already-notified request', async () => {
+  const cases = [
+    [{ request: { status: 'approved' } }, 'candidate', 'not-pending'],
+    [{ request: { status: 'rejected' } }, 'candidate', 'not-pending'],
+    [{}, 'member', 'not-pending'],
+    [{ request: { notifiedRequested: true } }, 'candidate', 'already-notified'],
+  ];
+  for (const [opts, from, reason] of cases) {
+    const h = joinHarness(opts);
+    const res = await sendFriendNotification(h.ctx, {
+      event: 'groupJoinRequested', fromUid: from, toUid: 'candidate', groupId: 'g1',
+    });
+    assert.equal(res.reason, reason);
+    assert.equal(h.sent.length, 0);
+  }
+  const h = joinHarness();
+  const res = await sendFriendNotification(h.ctx, {
+    event: 'groupJoinRequested', fromUid: 'candidate', toUid: 'someone', groupId: 'g1',
+  });
+  assert.equal(res.reason, 'request-not-found');
+});
+
+test('groupAdminUids: creator always, listed admins who are still members', () => {
+  assert.deepEqual(
+    groupAdminUids({ ownerUid: 'o', memberUids: ['o', 'a', 'm'], adminUids: ['a', 'gone'] }),
+    ['o', 'a'],
+  );
+  assert.deepEqual(groupAdminUids({ ownerUid: 'o', memberUids: ['o'] }), ['o']);
+  assert.deepEqual(groupAdminUids(null), []);
+});
+
+test('an admin-added member is told they were added', async () => {
+  const docs = {
+    'groups/g1/joinRequests/candidate': { status: 'approved', source: 'admin' },
+    'groups/g1': { name: 'Team', memberUids: ['owner', 'candidate'] },
+    'users/owner': { name: 'Test Owner' },
+  };
+  const sent = [];
+  const ctx = {
+    db: {
+      getDoc: async (p) => docs[p] ?? null,
+      listDocIds: async () => ['t'],
+      deleteDoc: async () => {},
+      patchDoc: async () => {},
+    },
+    fcm: { send: async (_t, m) => { sent.push(m); return { ok: true }; } },
+  };
+  await sendFriendNotification(ctx, {
+    event: 'groupJoinApproved', fromUid: 'owner', toUid: 'candidate', groupId: 'g1',
+  });
+  assert.equal(sent[0].notification.title, 'Added to a group');
 });

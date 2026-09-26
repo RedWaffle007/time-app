@@ -20,7 +20,6 @@ import 'features/notifications/data/foreground_push_presenter.dart';
 import 'features/onboarding/application/onboarding_providers.dart';
 import 'features/groups/application/group_providers.dart';
 import 'features/groups/application/group_stats_providers.dart';
-import 'features/groups/application/planner_access_reconciler.dart';
 import 'features/reminders/application/alarm_timeline_providers.dart';
 import 'features/reminders/application/missed_alarm_providers.dart';
 import 'features/reminders/application/reminder_providers.dart';
@@ -428,18 +427,6 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     // Names ready before Plan is tapped (no uid/placeholder flash, no per-row
     // cold read while the builder opens).
     ref.watch(planningTargetProfilesPrefetchProvider);
-
-    // THE PLANNER-ACCESS MIRROR'S ONE WIRE — same shape again, and here the
-    // argument is sharper than for either of its neighbours. `plannerAccess` is
-    // what the RULES consult to decide whether a planner may read this user's
-    // schedule, so a stale mirror is not a missed notification, it is access
-    // that outlives its revocation. Driving it off the grant stream means
-    // revoke, re-grant, a second group's grant and being ejected from a group
-    // are all the same code path, and it backfills grants that predate the
-    // feature the first time this user opens the app.
-    //
-    // There is deliberately NO mirror write inside `setPlannerGrant()`.
-    ref.watch(plannerAccessSyncProvider);
 
     // LEGACY SLOT-LOCK CLEANUP. New plans no longer create 30-minute locks:
     // schedule entries are point alarms and may share a half-hour. Keep this
