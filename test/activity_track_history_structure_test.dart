@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_app/core/theme/app_theme.dart';
+import 'package:time_app/features/auth/application/auth_providers.dart';
 import 'package:time_app/features/scheduling/application/schedule_providers.dart';
 import 'package:time_app/features/scheduling/domain/schedule_item.dart';
 import 'package:time_app/features/scheduling/presentation/planner_activity_screen.dart';
@@ -29,16 +30,22 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Plans you make for others.'), findsOneWidget);
+    expect(
+      find.text('Plans you set for others, once answered.'),
+      findsOneWidget,
+    );
     expect(
       find.ancestor(
-        of: find.text('Plans you make for others.'),
+        of: find.text('Plans you set for others, once answered.'),
         matching: find.byType(Card),
       ),
       findsOneWidget,
     );
     expect(
-      find.text("You haven't planned anything for anyone yet."),
+      find.text(
+        'Plans you set for others appear here once they answer. '
+        'Until then they are on Home.',
+      ),
       findsOneWidget,
     );
   });
@@ -53,6 +60,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          currentUidProvider.overrideWithValue('planner'),
           myItemsAsPlannerProvider.overrideWithValue(AsyncData(items)),
         ],
         child: MaterialApp(
@@ -139,4 +147,6 @@ ScheduleItem _plan(String id, DateTime scheduled) => ScheduleItem(
   timezone: 'Etc/UTC',
   scheduledInstantUtc: scheduled,
   status: ScheduleItemStatus.approved,
+  // Answered — Activity holds answered plans only (item 7).
+  outcome: const ScheduleOutcome(result: OutcomeResult.done),
 );

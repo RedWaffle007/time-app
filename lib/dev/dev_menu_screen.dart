@@ -51,7 +51,7 @@ class DevMenuScreen extends ConsumerWidget {
       // sub-tab is chosen by `planIntentProvider`, not a route, so these debug
       // links just open the Plan pillar (landing on My Schedule) or its real
       // sub-routes. All `go` (in-shell).
-      ('Plan (My Schedule / stances)', Routes.plan, true),
+      ('Plan (Home / stances)', Routes.plan, true),
       ('Schedule Builder (planner)', Routes.scheduleBuilder, true),
       // The reminder layer's instrument: permissions, what the app believes it
       // armed, and the natively-written fire log with real delivery delays.

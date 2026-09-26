@@ -544,7 +544,8 @@ mode and multi-friend selection.
    creation). Sound CHOSEN 2026-09-27: "Cartoon - Uh-Oh!" by Breviceps,
    CC0, 1.3 s — https://freesound.org/people/Breviceps/sounds/445964/ (record
    source + licence in DECISIONS.md when built).
-7. **G3 + G4 (old numbering) — Home.** Rename "My Schedule" to "Home"
+7. **G3 + G4 (old numbering) — Home.** — **BUILT 2026-09-27; app-only
+   (no deploy); awaiting commit** (DECISIONS.md "Home: 'My Schedule' renamed…"). Rename "My Schedule" to "Home"
    everywhere user-facing; plans the user set for others stay on Home until
    the recipient marks Done/Skipped (or lapse/cancel), then move to Activity.
 8. **Remove Track Time** entirely (feature folder, entry points, voice-parser

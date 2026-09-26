@@ -97,14 +97,14 @@ void main() {
           side: CalendarSide.mine,
         ),
         // F2: there is no approvals queue; a legacy pending item is yours.
-        'Open in My Schedule',
+        'Open in Home',
       ),
       (
         CalendarEntry(
           item: _item('future', now.add(const Duration(days: 1))),
           side: CalendarSide.mine,
         ),
-        'Open in My Schedule',
+        'Open in Home',
       ),
       // Elapsed but undecided: its Done/Skip controls live in My Schedule.
       (
@@ -112,11 +112,24 @@ void main() {
           item: _item('undecided', now.subtract(const Duration(minutes: 3))),
           side: CalendarSide.mine,
         ),
-        'Open in My Schedule',
+        'Open in Home',
       ),
+      // A plan I set for someone else: on Home until they answer (item 7),
+      // then in Activity.
       (
         CalendarEntry(
           item: _item('planned', now.subtract(const Duration(days: 1))),
+          side: CalendarSide.planned,
+        ),
+        'Open in Home',
+      ),
+      (
+        CalendarEntry(
+          item: _item(
+            'answered',
+            now.subtract(const Duration(days: 1)),
+            outcome: const ScheduleOutcome(result: OutcomeResult.done),
+          ),
           side: CalendarSide.planned,
         ),
         'Open in Activity',
@@ -152,6 +165,7 @@ ScheduleItem _item(
   String id,
   DateTime instant, {
   ScheduleItemStatus status = ScheduleItemStatus.approved,
+  ScheduleOutcome? outcome,
 }) => ScheduleItem(
   id: id,
   targetUid: 'me',
@@ -162,4 +176,5 @@ ScheduleItem _item(
   timezone: 'Etc/UTC',
   scheduledInstantUtc: instant,
   status: status,
+  outcome: outcome,
 );

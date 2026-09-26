@@ -56,7 +56,11 @@ void main() {
         ],
         child: MaterialApp(
           theme: AppTheme.light,
-          home: const PlannerActivityScreen(),
+          // An OPEN plan for someone else — shown on Home since item 7, by
+          // this same card.
+          home: Scaffold(
+            body: SingleChildScrollView(child: PlannerItemCard(item: item)),
+          ),
         ),
       ),
     );

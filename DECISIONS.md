@@ -6937,3 +6937,30 @@ saving directly:
   other, F2); `pending` is still accepted from older builds. The voice-note
   check is the ordinary `voiceNoteIsValidOnCreate`.
 - Supersedes item 5's "Not built: a voice note on a fulfilled request".
+
+---
+
+## Home: "My Schedule" renamed, plans for others stay until answered (2026-09-27, Batch G item 7)
+
+**User-directed.**
+
+- **Rename.** "My Schedule" is **Home** in every user-facing place (Plan tab,
+  standalone title, Calendar's "Open in Home", tour + "How this app works",
+  dev-menu label). Code names (`OutcomeScreen`, `PlanTab`, routes) unchanged.
+- **Home = my open plans + the open plans I set for others.** A plan I set
+  for someone else (`createdByUid == me`, `targetUid != me`) that has no
+  outcome and is `approved` (or legacy `pending`) shows on Home in the same
+  day groups, as the planner card (`PlannerItemCard`, formerly Activity's
+  private card): "for {name}", status, voice delivery, the unavailable fact,
+  and **Cancel alarm** — never Done/Skip, which are theirs. The hero band
+  stays about MY next plan only. (`isOpenPlanForOthers`.)
+- **Activity = the plans I set for others once answered** — Done, Skipped or
+  lapsed "Did not respond" (`isSettledPlanForOthers`). Cancelled plans stay
+  hidden from both, as before. The move is live: both lists derive from the
+  item streams, so an answer moves the card on its own.
+- **Links follow the plan.** Pushes about a still-open plan (dismissed,
+  unavailable, voice fallback/undelivered) open it on Home, outlined; an
+  outcome/decision push opens Activity; Calendar opens a planned-for-others
+  item on Home while open, in Activity once answered.
+- Group plans I sent count per member: each member's copy stays on Home until
+  that member answers.

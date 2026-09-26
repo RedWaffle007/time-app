@@ -28,3 +28,20 @@ bool isUpcomingPlan(ScheduleItem item, DateTime nowUtc) =>
 bool isHistoryPlan(ScheduleItem item, DateTime nowUtc) =>
     item.status == ScheduleItemStatus.approved &&
     scheduleSurfaceFor(item, nowUtc) == ScheduleSurface.history;
+
+/// A plan [plannerUid] set for SOMEONE ELSE that is still open — no Done/Skip
+/// yet, not cancelled, not lapsed (Batch G item 7, 2026-09-27). It lives on
+/// Home beside your own plans until the other person answers it.
+bool isOpenPlanForOthers(ScheduleItem item, String plannerUid) =>
+    item.createdByUid == plannerUid &&
+    item.targetUid != plannerUid &&
+    item.outcome == null &&
+    (item.status == ScheduleItemStatus.approved ||
+        item.status == ScheduleItemStatus.pending);
+
+/// …and once it is answered (Done / Skipped, or lapsed to "Did not respond")
+/// it moves to Activity. Cancelled plans are hidden from both.
+bool isSettledPlanForOthers(ScheduleItem item, String plannerUid) =>
+    item.createdByUid == plannerUid &&
+    item.targetUid != plannerUid &&
+    item.outcome != null;

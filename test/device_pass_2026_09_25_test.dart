@@ -111,12 +111,15 @@ void main() {
             id: index == 45 ? 'far' : 'p$index',
             targetUid: 'friend',
             createdByUid: 'me',
+            // Answered: Activity holds answered plans (item 7).
+            outcome: const ScheduleOutcome(result: OutcomeResult.done),
           ),
       ];
 
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            currentUidProvider.overrideWithValue('me'),
             myItemsAsPlannerProvider.overrideWithValue(AsyncData(items)),
             profileByUidProvider.overrideWith((ref, uid) => Stream.value(null)),
           ],
@@ -317,6 +320,7 @@ ScheduleItem _item(
   String? id,
   String targetUid = 'me',
   String createdByUid = 'me',
+  ScheduleOutcome? outcome,
 }) => ScheduleItem(
   id: id ?? title,
   targetUid: targetUid,
@@ -327,4 +331,5 @@ ScheduleItem _item(
   timezone: 'Etc/UTC',
   scheduledInstantUtc: instant,
   status: ScheduleItemStatus.approved,
+  outcome: outcome,
 );

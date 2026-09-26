@@ -150,10 +150,12 @@ class _CalendarItemSheet extends ConsumerWidget {
               icon: const Icon(AppIcons.openRow),
               label: Text(
                 !isMine
-                    ? 'Open in Activity'
+                    ? (item.outcome == null
+                          ? 'Open in Home'
+                          : 'Open in Activity')
                     : isHistoryPlan(item, DateTime.now().toUtc())
                     ? 'Open in History'
-                    : 'Open in My Schedule',
+                    : 'Open in Home',
               ),
             ),
           ],
@@ -186,8 +188,13 @@ class _CalendarItemSheet extends ConsumerWidget {
         ref.read(planIntentProvider.notifier).highlightItem(item.id);
         context.go(Routes.plan);
       }
+    } else if (item.outcome == null) {
+      // A plan I set for someone else that they have not answered lives on
+      // Home until they do (item 7, 2026-09-27).
+      ref.read(planIntentProvider.notifier).highlightItem(item.id);
+      context.go(Routes.plan);
     } else {
-      // Land on the exact plan, not just the tab (restored 2026-09-25).
+      // Answered: Activity, on the exact plan (restored 2026-09-25).
       ref.read(planIntentProvider.notifier).highlightActivityItem(item.id);
       context.go(Routes.plan);
     }

@@ -44,9 +44,10 @@ class HowItWorksScreen extends ConsumerWidget {
             icon: AppIcons.navSchedule,
             title: 'Plan',
             body:
-                'Your schedule across three tabs — My Schedule (your day, next '
-                'task first), Activity (what you planned for others) and Groups. '
-                'Tap PLAN, bottom-right, to plan an item on any of them.',
+                'Your schedule across three tabs — Home (your day, next task '
+                'first, plus plans you set for others until they answer), '
+                'Activity (their answers) and Groups. Tap PLAN, bottom-left, to '
+                'plan an item, or REQUEST PLAN to ask a friend.',
           ),
           const _Feature(
             icon: AppIcons.navTrack,
@@ -153,7 +154,7 @@ class HowItWorksScreen extends ConsumerWidget {
           ),
           const _Feature(
             icon: AppIcons.calendar,
-            title: 'Calendar  ·  in My Schedule',
+            title: 'Calendar  ·  on Home',
             body:
                 'A month, week and day view over everything scheduled, in each '
                 "item's own timezone. Open it beside Upcoming Plans.",

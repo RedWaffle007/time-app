@@ -48,18 +48,22 @@ class NotificationRouter {
       case 'withdrawn':
       case 'approvalReminder':
         router.go(Routes.plan);
+      // Answered plans live in Activity.
       case 'decided':
       case 'outcome':
-      case 'dismissed':
       // The planner's "still waiting for approval" heads-up (item 16).
       case 'approvalPending':
+        _openPlanActivity();
+      // Still OPEN plans you set for someone else live on Home until they
+      // answer (item 7, 2026-09-27) — open it there, outlined.
+      case 'dismissed':
       // "Your voice note hasn't reached their phone yet" (item 32c).
       case 'voiceUndelivered':
       // "Their alarm rang with the normal ringtone" (item 32c-2).
       case 'voiceFallback':
       // "{name} was unavailable to dismiss the task" (item 6).
       case 'unavailable':
-        _openPlanActivity();
+        _openItemInSchedule(data['itemId']);
       // Friend-graph pushes: a new request opens the requests inbox; an accept
       // opens the friends list, where the new friend now appears.
       case 'friendRequest':

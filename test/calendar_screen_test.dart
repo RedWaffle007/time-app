@@ -274,9 +274,9 @@ void main() {
     // plan can never read as the viewer's own local time.
     expect(find.text(kolkata), findsOneWidget);
     // Its one action ROUTES to the screen that owns the real controls. An
-    // undecided item belongs to My Schedule even once its time has passed —
+    // undecided item belongs to Home even once its time has passed —
     // only a Done/Skip moves it to History (2026-09-25).
-    expect(find.text('Open in My Schedule'), findsOneWidget);
+    expect(find.text('Open in Home'), findsOneWidget);
     expect(find.text('Open in History'), findsNothing);
 
     // No edit affordance, disabled or otherwise. The deployed rules make

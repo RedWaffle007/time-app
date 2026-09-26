@@ -157,7 +157,7 @@ class _PlanShellState extends ConsumerState<PlanShell>
           tabs: [
             // No badge here: the pending count belongs on the Pending
             // approvals icon, the control that resolves it (2026-09-26).
-            const Tab(text: 'My Schedule'),
+            const Tab(text: 'Home'),
             const Tab(text: 'Activity'),
             const Tab(text: 'Groups'),
           ],

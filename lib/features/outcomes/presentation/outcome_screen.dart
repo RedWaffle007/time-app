@@ -22,6 +22,7 @@ import '../../reminders/presentation/reminder_primer.dart';
 import '../../scheduling/application/schedule_item_order.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
+import '../../scheduling/presentation/planner_activity_screen.dart';
 import '../../scheduling/presentation/planner_item_detail_sheet.dart';
 import '../application/history_intent.dart';
 import '../application/outcome_feedback.dart';
@@ -264,20 +265,36 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
   @override
   Widget build(BuildContext context) {
     final itemsAsync = ref.watch(myItemsAsTargetProvider);
+    // Item 7 (2026-09-27): plans I set for OTHERS stay on Home until they
+    // answer (then they move to Activity). Their own stream; an error there
+    // must not hide my own plans, so it simply contributes nothing.
+    final me = ref.watch(currentUidProvider) ?? '';
+    final forOthers = [
+      for (final item
+          in ref.watch(myItemsAsPlannerProvider).value ??
+              const <ScheduleItem>[])
+        if (isOpenPlanForOthers(item, me)) item,
+    ];
 
     return Scaffold(
-      appBar: widget.embedded
-          ? null
-          : AppBar(title: const Text('My Schedule')),
+      appBar: widget.embedded ? null : AppBar(title: const Text('Home')),
       body: AsyncView<List<ScheduleItem>>(
         value: itemsAsync,
         // Retry the SOURCE stream — see the note in planner_activity_screen.
         onRetry: () => ref.invalidate(allItemsAsTargetProvider),
         builder: (context, items) {
           _scheduleBoundaryTick(items);
-          final approved = items
+          final mine = items
               .where((item) => isUpcomingPlan(item, _nowUtc))
               .toList();
+          // Mine first, then the open plans I set for others (a plan can be
+          // both only as a self-plan, which is already in `mine`).
+          final mineIds = {for (final item in mine) item.id};
+          final approved = [
+            ...mine,
+            for (final item in forOthers)
+              if (!mineIds.contains(item.id)) item,
+          ];
 
           // Upcoming is one surface, grouped only by each item's own-timezone
           // calendar day. The partition itself is absolute-instant based; the
@@ -318,8 +335,9 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
 
           // The NEXT upcoming item (earliest future, no outcome) drives the hero
           // band and the primer — the same facts the old `upcoming` list carried.
+          // The hero band is about MY next plan, never one set for someone else.
           ScheduleItem? nextItem;
-          for (final item in approved) {
+          for (final item in mine) {
             if (item.outcome == null &&
                 item.scheduledInstantUtc.isAfter(_nowUtc)) {
               if (nextItem == null ||
@@ -367,6 +385,15 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
                   itemCount: byGroup[key]!.length,
                   itemBuilder: (context, index) {
                     final item = byGroup[key]![index];
+                    // A plan for someone else: its planner card — status,
+                    // Cancel alarm, no Done/Skip (those are theirs).
+                    if (item.targetUid != me && item.createdByUid == me) {
+                      return PlannerItemCard(
+                        item: item,
+                        highlighted: item.id == _highlighted,
+                        cardKey: item.id == _highlighted ? _highlightKey : null,
+                      );
+                    }
                     return OutcomeCard(
                       item: item,
                       highlighted: item.id == _highlighted,

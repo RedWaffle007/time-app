@@ -47,7 +47,7 @@ void main() {
       ),
     );
 
-    expect(find.textContaining('Tap PLAN, bottom-right'), findsOneWidget);
+    expect(find.textContaining('Tap PLAN, bottom-left'), findsOneWidget);
     expect(
       find.textContaining('Tap the ＋ button, bottom-right, to plan'),
       findsNothing,

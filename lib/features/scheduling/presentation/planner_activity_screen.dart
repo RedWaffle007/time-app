@@ -24,6 +24,7 @@ import '../application/schedule_providers.dart';
 import '../domain/schedule_item.dart';
 import 'planner_item_detail_sheet.dart';
 import '../../voice_notes/application/voice_delivery_policy.dart';
+import '../../outcomes/application/schedule_partition.dart';
 
 /// The planner's view of everything they created — updates LIVE as the target
 /// approves/rejects and marks Done/Skip (Option B: no push, just a Firestore
@@ -149,6 +150,7 @@ class _PlannerActivityScreenState extends ConsumerState<PlannerActivityScreen> {
   @override
   Widget build(BuildContext context) {
     final itemsAsync = ref.watch(myItemsAsPlannerProvider);
+    final me = ref.watch(currentUidProvider) ?? '';
     final embedded = widget.embedded;
 
     return Scaffold(
@@ -166,7 +168,7 @@ class _PlannerActivityScreenState extends ConsumerState<PlannerActivityScreen> {
             ),
       body: Column(
         children: [
-          const ExplainerCard('Plans you make for others.'),
+          const ExplainerCard('Plans you set for others, once answered.'),
           Expanded(
             child: AsyncView<List<ScheduleItem>>(
               value: itemsAsync,
@@ -174,14 +176,17 @@ class _PlannerActivityScreenState extends ConsumerState<PlannerActivityScreen> {
               // Provider; invalidating it would recompute the filter without ever
               // reconnecting the Firestore listener that actually failed.
               onRetry: () => ref.invalidate(allItemsAsPlannerProvider),
-              // Self-planned items (creator == target) live in My Schedule, not
-              // here — Activity is about people you plan FOR.
+              // Item 7 (2026-09-27): Activity holds the plans you set for
+              // others ONCE THEY ARE ANSWERED. Still-open ones live on Home,
+              // and self-plans were never here.
               isEmpty: (items) =>
-                  items.every((i) => i.createdByUid == i.targetUid),
-              emptyMessage: "You haven't planned anything for anyone yet.",
+                  !items.any((i) => isSettledPlanForOthers(i, me)),
+              emptyMessage:
+                  'Plans you set for others appear here once they answer. '
+                  'Until then they are on Home.',
               builder: (context, items) {
                 final sorted =
-                    items.where((i) => i.createdByUid != i.targetUid).toList()
+                    items.where((i) => isSettledPlanForOthers(i, me)).toList()
                       ..sort(compareScheduleItemsLatestFirst);
                 final groups = _grouped(context, sorted);
                 _itemCount = sorted.length;
@@ -243,7 +248,7 @@ class _PlannerActivityScreenState extends ConsumerState<PlannerActivityScreen> {
           itemCount: byDay[key]!.length,
           itemBuilder: (context, index) {
             final item = byDay[key]![index];
-            return _ActivityCard(
+            return PlannerItemCard(
               item: item,
               highlighted: item.id == _highlighted,
               cardKey: item.id == _highlighted ? _highlightKey : null,
@@ -254,8 +259,12 @@ class _PlannerActivityScreenState extends ConsumerState<PlannerActivityScreen> {
   }
 }
 
-class _ActivityCard extends ConsumerWidget {
-  const _ActivityCard({
+/// One plan you set for someone else — its status, their local time, voice
+/// delivery, the unavailable fact, and **Cancel alarm** while it is open. Used
+/// by Activity (answered plans) and by Home (still-open ones, item 7).
+class PlannerItemCard extends ConsumerWidget {
+  const PlannerItemCard({
+    super.key,
     required this.item,
     this.highlighted = false,
     this.cardKey,
