@@ -217,6 +217,7 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     override fun onDestroy() {
+        voicePreview.release()
         showOverLockAndWake(false)
         if (alarmEndedReceiverRegistered) {
             unregisterReceiver(alarmEndedReceiver)
@@ -224,6 +225,8 @@ class MainActivity : FlutterFragmentActivity() {
         }
         super.onDestroy()
     }
+
+    private val voicePreview = com.timeapp.time_app.voice.VoicePreviewChannel()
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -240,6 +243,8 @@ class MainActivity : FlutterFragmentActivity() {
             .register(flutterEngine.dartExecutor.binaryMessenger)
         AlarmLifecycleChannel(applicationContext)
             .register(flutterEngine.dartExecutor.binaryMessenger)
+        // Voice-note preview (item 32b) — media stream, not the alarm.
+        voicePreview.register(flutterEngine.dartExecutor.binaryMessenger)
         alarmKeyChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             ALARM_KEY_CHANNEL,

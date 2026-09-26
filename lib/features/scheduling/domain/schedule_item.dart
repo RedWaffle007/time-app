@@ -111,6 +111,45 @@ class ScheduleAlarmTimeline {
   }
 }
 
+/// The planner's voice note on someone else's alarm (item 32). Only metadata:
+/// the audio lives in the Worker's private bucket and is fetched by the
+/// target's device, which checks it against [sha256].
+class VoiceNoteMeta {
+  const VoiceNoteMeta({
+    required this.durationMs,
+    required this.sha256,
+    required this.sizeBytes,
+    this.deliveredAt,
+  });
+
+  final int durationMs;
+  final String sha256;
+  final int sizeBytes;
+
+  /// The target's device holds a verified copy (the delivery receipt, 32c).
+  final DateTime? deliveredAt;
+
+  Map<String, dynamic> toCreateMap() => {
+    'durationMs': durationMs,
+    'sha256': sha256,
+    'sizeBytes': sizeBytes,
+  };
+
+  static VoiceNoteMeta? fromMap(Object? raw) {
+    if (raw is! Map) return null;
+    final duration = raw['durationMs'];
+    final sha = raw['sha256'];
+    final size = raw['sizeBytes'];
+    if (duration is! num || sha is! String || size is! num) return null;
+    return VoiceNoteMeta(
+      durationMs: duration.toInt(),
+      sha256: sha,
+      sizeBytes: size.toInt(),
+      deliveredAt: (raw['deliveredAt'] as Timestamp?)?.toDate(),
+    );
+  }
+}
+
 /// A timetable item a planner created for a target. Stored at
 /// `scheduleItems/{targetUid}/items/{itemId}`.
 class ScheduleItem {
@@ -127,6 +166,7 @@ class ScheduleItem {
     this.tier = ItemTier.normal,
     this.durationMinutes = 0,
     this.planRequestId,
+    this.voiceNote,
     this.note,
     this.outcome,
     this.alarm,
@@ -163,6 +203,9 @@ class ScheduleItem {
   /// Soft provenance link for an item created while fulfilling Item 23. The
   /// request is never authority; rules still require the live normal grant.
   final String? planRequestId;
+
+  /// Voice-note alarm (item 32); null for a ringtone alarm.
+  final VoiceNoteMeta? voiceNote;
 
   final ScheduleOutcome? outcome;
   final ScheduleAlarmTimeline? alarm;
@@ -273,6 +316,7 @@ class ScheduleItem {
       tier: d['tier'] == 'emergency' ? ItemTier.emergency : ItemTier.normal,
       durationMinutes: (d['durationMinutes'] as num?)?.toInt() ?? 0,
       planRequestId: d['planRequestId'] as String?,
+      voiceNote: VoiceNoteMeta.fromMap(d['voiceNote']),
       outcome: ScheduleOutcome.fromMap(d['outcome'] as Map<String, dynamic>?),
       alarm: ScheduleAlarmTimeline.fromMap(d['alarm'] as Map<String, dynamic>?),
       rejectionReason: d['rejectionReason'] as String?,

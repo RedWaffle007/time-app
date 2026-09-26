@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,6 +19,9 @@ import '../../groups/application/group_providers.dart';
 import '../../groups/domain/planner_grant.dart';
 import '../../notifications/application/outcome_notifier.dart';
 import '../../social/application/social_providers.dart';
+import '../../voice_notes/application/voice_note_providers.dart';
+import '../../voice_notes/data/voice_note_client.dart';
+import '../../voice_notes/presentation/voice_note_recorder.dart';
 import '../application/conflict_disclosure.dart';
 import '../application/schedule_providers.dart';
 import '../application/target_schedule_providers.dart';
@@ -95,6 +99,13 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
   /// so it fires without their per-item approval. Reset whenever the target
   /// changes — the grant is per-target.
   bool _emergency = false;
+
+  /// The recorded-but-unsent voice note for someone else's alarm (item 32b).
+  RecordedVoiceNote? _voiceDraft;
+
+  /// Bumped to give the recorder a fresh state (after a save or a target
+  /// change) — the recorder owns its phase; the builder only resets it.
+  int _voiceRecorderGen = 0;
 
   @override
   void initState() {
@@ -233,23 +244,59 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
 
     setState(() => _saving = true);
     try {
+      // A voice note is uploaded FIRST, under an id minted for this plan; the
+      // Worker checks the audio and the rules then accept the item only with
+      // the metadata the Worker recorded. A failed upload saves nothing.
+      final repository = ref.read(scheduleRepositoryProvider);
+      final draft = _isSelf ? null : _voiceDraft;
+      String? preparedId;
+      VoiceNoteMeta? voiceNote;
+      if (draft != null) {
+        preparedId = repository.newItemId(_targetUid!);
+        try {
+          voiceNote = await ref
+              .read(voiceNoteClientProvider)
+              .upload(
+                bytes: await File(draft.path).readAsBytes(),
+                targetUid: _targetUid!,
+                itemId: preparedId,
+                groupId: (_groupId ?? '').isEmpty ? null : _groupId,
+              );
+        } on VoiceNoteFailure catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text(e.message)));
+          }
+          return;
+        } on Object {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(voiceNoteErrorMessage(null))),
+            );
+          }
+          return;
+        }
+      }
       // Self-authored AND emergency items are born approved (skip the queue);
       // normal planner items stay pending for the target to approve.
-      final itemId = await ref
-          .read(scheduleRepositoryProvider)
-          .createItem(
-            targetUid: _targetUid!,
-            createdByUid: me.uid,
-            groupId: _isSelf ? null : _groupId,
-            title: _titleController.text,
-            note: _noteController.text,
-            wall: wall,
-            timezone: timezone,
-            status: (_isSelf || isEmergency)
-                ? ScheduleItemStatus.approved
-                : ScheduleItemStatus.pending,
-            tier: isEmergency ? ItemTier.emergency : ItemTier.normal,
-          );
+      final itemId = await repository.createItem(
+        itemId: preparedId,
+        voiceNote: voiceNote,
+        targetUid: _targetUid!,
+        createdByUid: me.uid,
+        groupId: _isSelf ? null : _groupId,
+        title: _titleController.text,
+        note: _noteController.text,
+        wall: wall,
+        timezone: timezone,
+        status: (_isSelf || isEmergency)
+            ? ScheduleItemStatus.approved
+            : ScheduleItemStatus.pending,
+        tier: isEmergency ? ItemTier.emergency : ItemTier.normal,
+      );
+      // The draft was uploaded and is now the plan's; drop the local copy.
+      if (draft != null) unawaited(_deleteQuietly(draft.path));
       // Notify the target that a plan was created for them. Self-planned items
       // have no one else to tell (the Worker would skip them anyway).
       NotificationDeliveryResult? delivery;
@@ -274,6 +321,8 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
                 ? 'Added to your schedule.'
                 : isEmergency
                 ? 'Emergency item added — it will fire without approval.'
+                : voiceNote != null
+                ? 'Item with your voice note sent for approval.'
                 : 'Item sent for approval.',
           ),
         ),
@@ -285,6 +334,8 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
         _date = null;
         _time = null;
         _emergency = false;
+        _voiceDraft = null;
+        _voiceRecorderGen++;
       });
     } catch (e) {
       if (mounted) {
@@ -448,6 +499,16 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
             controller: _noteController,
             decoration: const InputDecoration(labelText: 'Note (optional)'),
           ),
+          // Voice note — only on someone else's alarm (item 32b).
+          if (!_isSelf) ...[
+            const SizedBox(height: Space.lg),
+            VoiceNoteRecorder(
+              key: ValueKey('voice-$_targetUid-$_voiceRecorderGen'),
+              recipientName: selectedProfile?.name ?? 'their',
+              enabled: !_saving,
+              onChanged: (note) => _voiceDraft = note,
+            ),
+          ],
           // Emergency tier — only when this friend granted me the SEPARATE
           // emergency permission. An emergency item skips their approval queue
           // and fires directly, so it is opt-in per plan and clearly labelled.
@@ -503,6 +564,12 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     );
   }
 
+  static Future<void> _deleteQuietly(String path) async {
+    try {
+      await File(path).delete();
+    } catch (_) {}
+  }
+
   /// Always-present "Myself" target — self-planning, no grant/group required.
   Widget _selfTile() {
     final me = ref.read(authRepositoryProvider).currentUser;
@@ -526,6 +593,8 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
           _targetUid = me.uid;
           _groupId = null;
           _emergency = false;
+          _voiceDraft = null;
+          _voiceRecorderGen++;
         }),
       ),
     );
@@ -547,6 +616,8 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
           _targetUid = grant.targetUid;
           _groupId = grant.groupId;
           _emergency = false;
+          _voiceDraft = null;
+          _voiceRecorderGen++;
         }),
       ),
     );

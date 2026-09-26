@@ -130,6 +130,14 @@ dependencies:
   # manifest.
   image_cropper: ^12.2.1
 
+  # Voice-note alarms (item 32b): records the planner's up-to-20 s note as AAC
+  # in an .m4a container — the one format the Worker accepts (it sniffs the
+  # bytes and reads the duration from the file header). Recording only;
+  # preview and ring-time playback use the platform MediaPlayer behind the
+  # `time_app/voice_player` channel. RECORD_AUDIO is already declared for
+  # speech_to_text; the prompt is only ever raised after an explanation.
+  record: ^7.1.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

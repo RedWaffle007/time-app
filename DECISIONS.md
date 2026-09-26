@@ -6445,3 +6445,27 @@ alarm with no 1.5 s lead in front of them.
   delete succeeds, so a failed delete is retried.
 - The Worker's Firestore writer now encodes whole numbers as integers (was
   doubles), so the rules' `is int` checks hold for Worker-written counters.
+
+## Voice-note recorder + approval preview (2026-09-26, item 32b)
+
+- **Recording** (`VoiceNoteRecorder`, schedule builder, someone else's plan
+  only): Record → auto-stop at 20 s → Play / Re-record / Discard. AAC-LC in
+  .m4a, mono, 64 kbps (`record` package behind the `VoiceRecorder` seam). The
+  microphone prompt is raised only after an on-screen explanation, and a
+  refusal explains how to turn it on. A discarded draft's file is deleted.
+- **Save order:** the builder mints the item id first (`newItemId`), uploads
+  the draft under it, and only then creates the item with the Worker's
+  `voiceNote` metadata. A refused upload saves nothing, keeps the draft and
+  says why in plain words (`voiceNoteErrorMessage`); a plan without a
+  recording is created exactly as before.
+- **Consent:** Pending approvals shows "Play voice note · m:ss" for a plan
+  that has one. The bytes are fetched through the Worker, checked on the phone
+  against the plan's size + sha256 (`VoiceNoteCache`, reused by 32c for the
+  alarm's offline copy), and refused if they do not match.
+- **Preview playback** is native MediaPlayer on the MEDIA stream
+  (`time_app/voice_player`, `VoicePreviewChannel`); it only plays an existing
+  app-written .m4a path, never a URL. Ring-time playback stays with
+  AlarmSoundService (32c).
+- Fixed while testing: a recorder or play button that closed before being used
+  crashed in `dispose` (a lazily-created collaborator read `ref` there); both
+  are now created in `initState`.

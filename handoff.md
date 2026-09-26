@@ -296,13 +296,13 @@ and never silent:
 
 Steps (each its own tests + commit):
 - **32-0** Remove the ting from alarms (native + tests + docs). — **BUILT, committed; Redmi check deferred.**
-- **32a** — **BUILT 2026-09-26; awaiting rules deploy, Worker deploy, commit.** Worker `POST /voice` (auth, active grant, byte-sniffed AAC/M4A, header
+- **32a** — **BUILT, rules + Worker deployed, committed.** Worker `POST /voice` (auth, active grant, byte-sniffed AAC/M4A, header
   duration ≤ 20.5 s, ≤ 256 KB, immutable once the item exists), `GET` download
   (target or planner only), library copy, retention cron (item audio deleted 7
   days after its scheduled time; orphan uploads after 1 day); private bucket;
   rules for `voiceNote {durationMs, sha256}` (other-person plans only) and the
   target-only `deliveredAt` stamp.
-- **32b** Recorder in the schedule builder (≤ 20 s, auto-stop, preview,
+- **32b** — **BUILT 2026-09-26; awaiting commit + Redmi check.** Recorder in the schedule builder (≤ 20 s, auto-stop, preview,
   discard/re-record, attach; mic permission only after an explanation);
   "Play voice note" on Pending approvals (hear it before consenting).
 - **32c** Target download + receipt, native three-loop playback, reboot /

@@ -86,6 +86,24 @@ abstract final class AppIcons {
   /// "I'm done talking" — stop the current voice capture and take the result.
   static const IconData voiceStop = Icons.stop_circle_outlined;
 
+  /// A recorded VOICE NOTE on someone's alarm (item 32) — distinct from the
+  /// voice-command mic above: one speaks to the app, the other is a message to
+  /// a person, so they must not share a glyph.
+  static const IconData voiceNote = Icons.record_voice_over_outlined;
+
+  /// Start recording a voice note.
+  static const IconData voiceNoteRecord = Icons.fiber_manual_record_outlined;
+
+  /// Stop a recording in progress.
+  static const IconData voiceNoteStopRecording = Icons.stop_outlined;
+
+  /// Play / stop playing a voice note.
+  static const IconData voiceNotePlay = Icons.play_arrow_outlined;
+  static const IconData voiceNoteStopPlaying = Icons.pause_outlined;
+
+  /// Throw a recorded voice note away (it was never sent).
+  static const IconData voiceNoteDiscard = Icons.close;
+
   /// "Type instead" — the always-present fallback from any voice flow to the
   /// identical manual entry (S6). The mic is never the only way in.
   static const IconData typeInstead = Icons.keyboard_outlined;

@@ -12,6 +12,7 @@ import '../../notifications/application/outcome_notifier.dart';
 import '../../scheduling/application/schedule_item_order.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
+import '../../voice_notes/presentation/voice_note_play_button.dart';
 
 /// The target's pending queue — approve or reject each item individually.
 class PendingApprovalsScreen extends ConsumerWidget {
@@ -98,6 +99,11 @@ class _ApprovalCard extends ConsumerWidget {
                   color: context.colors.onSurfaceVariant,
                 ),
               ),
+            ],
+            // Hear the alarm's voice note before consenting to it (item 32b).
+            if (item.voiceNote != null) ...[
+              const SizedBox(height: Space.sm),
+              VoiceNotePlayButton(item: item),
             ],
             const SizedBox(height: Space.md),
             Row(

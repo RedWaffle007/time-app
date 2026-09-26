@@ -36,10 +36,15 @@ class ScheduleRepository {
     ItemTier tier = ItemTier.normal,
     int durationMinutes = 0,
     String? planRequestId,
+    // Voice-note alarms (item 32b): the id the audio was uploaded under, and
+    // the metadata the Worker returned. The rules accept the note only if it
+    // matches the Worker's own upload record for this id.
+    String? itemId,
+    VoiceNoteMeta? voiceNote,
   }) async {
     final instant = resolveWallTimeToUtc(wall, timezone);
 
-    final itemRef = _items(targetUid).doc();
+    final itemRef = _items(targetUid).doc(itemId);
     // Items are point-in-time alarms, not 30-minute appointments: the model has
     // no duration. Multiple plans may therefore share a half-hour (or even the
     // same instant). The old scheduleSlots write is intentionally gone; the
@@ -61,6 +66,7 @@ class ScheduleRepository {
       if (tier != ItemTier.normal) 'tier': tier.name,
       if (durationMinutes > 0) 'durationMinutes': durationMinutes,
       'planRequestId': ?planRequestId,
+      if (voiceNote != null) 'voiceNote': voiceNote.toCreateMap(),
       // A self-approved item is decided at creation — record it for parity with
       // the approve() transition.
       if (status == ScheduleItemStatus.approved)
@@ -70,6 +76,10 @@ class ScheduleRepository {
     });
     return itemRef.id;
   }
+
+  /// A fresh item id for [targetUid], minted BEFORE the item exists so a voice
+  /// note can be uploaded under it first (item 32b).
+  String newItemId(String targetUid) => _items(targetUid).doc().id;
 
   /// **Group planning — the fan-out** (pairwise friendships cannot do this).
   ///
