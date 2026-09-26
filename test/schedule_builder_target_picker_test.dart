@@ -47,7 +47,7 @@ void main() {
     ),
   );
 
-  final titleField = find.widgetWithText(TextField, 'Title (what to do)');
+  final titleField = find.byKey(const ValueKey('task-name'));
   final change = find.byKey(const ValueKey('plan-target-change'));
 
   testWidgets('before a pick, everyone is listed and no form is shown', (

@@ -77,6 +77,8 @@ String alarmHeadline(ScheduleItem item, {String? plannerName}) {
   if (item.createdByUid == item.targetUid) return 'You planned $title';
   final name = plannerName?.trim();
   final who = name == null || name.isEmpty ? 'Someone' : name;
+  // A voice alarm has no task name (F4): the recording is the message.
+  if (item.voiceNote != null) return '$who sent you a voice alarm';
   return '$who planned $title for you';
 }
 

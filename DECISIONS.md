@@ -6589,3 +6589,37 @@ A has permitted rings at its time with no queue.
   says so. The recorder's stopwatch is now `clock.stopwatch()` (fakeable in
   tests); `clock` became a direct dependency (already locked).
 
+## Plan screen overhaul + field glow (2026-09-26, F4)
+
+User-directed redesign of the builder, light and dark.
+
+- **Order:** "You're building in {Name}'s local time — {zone}" (possessive
+  fixed; was "{Name} local time") → Pick date / Pick time → **Voice Note |
+  Default Alarm** (a rounded two-way choice; Default Alarm is preselected) →
+  either the recorder (Record → Play / Re-record / Discard) or the mandatory
+  **Name of the Task** → Note (optional) → Fires at / warnings → **Send**.
+- **Self-plans offer Default Alarm only** — no choice is shown; voice notes
+  are for someone else.
+- **A voice alarm has no name field.** It is stored with the fixed title
+  "Voice alarm" (the model and rules need a title). Its lock-screen and
+  missed-alarm sentence (`alarmHeadline`) and the Worker's "New alarm for
+  you" body both read **"{planner} sent you a voice alarm"**.
+- **Validation on Send, not a disabled button.** Send is enabled once a
+  target, date and time are chosen; an empty task name shows the red form
+  error "Please write task name. It is mandatory." (§2.5 allows red for form
+  validation), and Voice Note without a recording says "Please record a voice
+  note." Date/time still gate the button — there is no field to mark red.
+- **New recipe: field glow (UI-RULES §6.2a, replacing the retired pending
+  glow).** A static `primary` halo behind the pick buttons, the task name and
+  the note — green, because these are what you press/fill (§2.1). Alpha 30%
+  light / 45% dark, blur 12, spread 0; an `error` halo while the field shows a
+  validation error. **Decorative only:** the field keeps its `outline`
+  border and label, and the error keeps its text, so nothing is carried by the
+  glow alone (§2.6). It takes over §5's one in-flow shadow slot freed when F2
+  removed the pending-approvals glow; `Sizes.attentionGlow*` becomes
+  `Sizes.fieldGlow*`.
+- **Pick date / Pick time** are 56dp tall (`Sizes.pickerButton`) with
+  `titleMedium` labels — the "bold, larger" asked for, from the existing type
+  scale (no new token, no inline weight).
+- New icon concept `AppIcons.defaultAlarm` (`alarm_outlined`) for the choice.
+

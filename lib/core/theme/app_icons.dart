@@ -91,6 +91,10 @@ abstract final class AppIcons {
   /// a person, so they must not share a glyph.
   static const IconData voiceNote = Icons.record_voice_over_outlined;
 
+  /// A DEFAULT ALARM — the ringtone kind, chosen against a voice note in the
+  /// builder (F4). Distinct from `exactTiming`'s alarm_on.
+  static const IconData defaultAlarm = Icons.alarm_outlined;
+
   /// Start recording a voice note.
   static const IconData voiceNoteRecord = Icons.fiber_manual_record_outlined;
 

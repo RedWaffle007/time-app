@@ -251,7 +251,10 @@ export function buildMessage(event, subtype, item, targetUid, itemId, names = {}
       notification = item.status === 'approved'
         ? {
             title: `New ${noun('alarm').toLowerCase()} for you`,
-            body: `${who} set ${title} for you${inGroup}`,
+            // A voice alarm has no task name (F4): the recording is the message.
+            body: item.voiceNote
+              ? `${who} sent you a voice alarm${inGroup}`
+              : `${who} set ${title} for you${inGroup}`,
           }
         : {
             title: `New ${noun('plan').toLowerCase()} for you`,

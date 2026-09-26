@@ -17,6 +17,8 @@ import 'package:time_app/features/scheduling/application/schedule_providers.dart
 import 'package:time_app/features/scheduling/application/target_schedule_providers.dart';
 import 'package:time_app/features/scheduling/data/schedule_repository.dart';
 import 'package:time_app/features/scheduling/domain/schedule_item.dart';
+import 'package:time_app/core/theme/app_tokens.dart';
+import 'package:time_app/core/widgets/field_glow.dart';
 import 'package:time_app/features/scheduling/presentation/schedule_builder_screen.dart';
 import 'package:time_app/features/social/application/social_providers.dart';
 import 'package:time_app/features/voice_notes/application/voice_note_cache.dart';
@@ -137,6 +139,7 @@ class _Repo implements ScheduleRepository {
       'voiceNote': voiceNote,
       'status': status,
       'tier': tier,
+      'title': title,
     });
     return itemId ?? 'auto-id';
   }
@@ -499,6 +502,7 @@ void main() {
       WidgetTester tester, {
       _Client? client,
       String target = 'friend-1',
+      bool dark = false,
     }) async {
       final repo = _Repo();
       final voice = client ?? _Client();
@@ -545,7 +549,7 @@ void main() {
             ),
           ],
           child: MaterialApp(
-            theme: AppTheme.light,
+            theme: dark ? AppTheme.dark : AppTheme.light,
             home: Scaffold(
               body: ScheduleBuilderScreen(
                 initialTargetUid: target,
@@ -566,12 +570,18 @@ void main() {
       WidgetTester tester, {
       bool record = true,
     }) async {
-      await tester.enterText(
-        find.widgetWithText(TextField, 'Title (what to do)'),
-        'Wake up',
-      );
-      await tester.pump();
-      if (record) {
+      if (!record) {
+        await tester.enterText(
+          find.byKey(const ValueKey('task-name')),
+          'Wake up',
+        );
+        await tester.pump();
+        return;
+      }
+      // F4: a voice alarm is chosen, and has no name field.
+      await tester.tap(find.text('Voice Note'));
+      await tester.pumpAndSettle();
+      {
         await tester.tap(find.text('Record'));
         await settleIo(tester);
         await tester.pump();
@@ -592,12 +602,20 @@ void main() {
       tester,
     ) async {
       await pumpBuilder(tester);
+      // Default Alarm is preselected; Voice Note reveals the recorder.
+      expect(find.byKey(const ValueKey('voice-note-recorder')), findsNothing);
+      await tester.tap(find.text('Voice Note'));
+      await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('voice-note-recorder')), findsOneWidget);
+      expect(find.byKey(const ValueKey('task-name')), findsNothing);
     });
 
     testWidgets('planning for yourself has no voice note', (tester) async {
       await pumpBuilder(tester, target: 'me');
       expect(find.byKey(const ValueKey('voice-note-recorder')), findsNothing);
+      expect(find.byKey(const ValueKey('alarm-kind')), findsNothing);
+      expect(find.text('Voice Note'), findsNothing);
+      expect(find.byKey(const ValueKey('task-name')), findsOneWidget);
     });
 
     testWidgets('the note is uploaded first, then the plan saved with it', (
@@ -617,6 +635,7 @@ void main() {
         (created['voiceNote'] as VoiceNoteMeta?)?.sha256,
         _metaFor(_audio).sha256,
       );
+      expect(created['title'], kVoiceAlarmTitle);
       expect(find.text('Voice alarm sent.'), findsOneWidget);
       // The draft is gone and the recorder is fresh for the next plan.
       expect(find.text('Record'), findsOneWidget);
@@ -655,6 +674,82 @@ void main() {
       expect(repo.created.single['tier'], ItemTier.normal);
       expect(find.text('Emergency'), findsNothing);
       expect(find.text('Alarm sent.'), findsOneWidget);
+    });
+
+    testWidgets('an empty task name is refused in red, and typing clears it', (
+      tester,
+    ) async {
+      final (repo, _) = await pumpBuilder(tester);
+      await send(tester);
+      expect(repo.created, isEmpty);
+      expect(find.text(kTaskNameRequired), findsOneWidget);
+      expect(
+        tester.widget<Text>(find.text(kTaskNameRequired)).style?.color,
+        AppTheme.light.colorScheme.error,
+      );
+      await tester.enterText(find.byKey(const ValueKey('task-name')), 'Run');
+      await tester.pump();
+      expect(find.text(kTaskNameRequired), findsNothing);
+      await send(tester);
+      expect(repo.created.single['title'], 'Run');
+    });
+
+    testWidgets('Voice Note without a recording asks for one', (tester) async {
+      final (repo, client) = await pumpBuilder(tester);
+      await tester.tap(find.text('Voice Note'));
+      await tester.pumpAndSettle();
+      await send(tester);
+      expect(repo.created, isEmpty);
+      expect(client.uploads, isEmpty);
+      expect(find.text(kVoiceNoteRequired), findsOneWidget);
+      expect(find.text(kTaskNameRequired), findsNothing);
+    });
+
+    testWidgets('the layout: possessive zone line, glowing inputs, Send', (
+      tester,
+    ) async {
+      await pumpBuilder(tester);
+      expect(
+        find.textContaining("You're building in Name friend-1's local time"),
+        findsOneWidget,
+      );
+      expect(find.text('Name of the Task'), findsOneWidget);
+      expect(find.text('Note (optional)'), findsOneWidget);
+      // Pick date, Pick time, task name and note each sit in a field glow.
+      expect(find.byType(FieldGlow), findsNWidgets(4));
+      expect(
+        tester.getSize(find.byKey(const ValueKey('pick-date'))).height,
+        greaterThanOrEqualTo(Sizes.pickerButton),
+      );
+      // Order: date/time → choice → name → note → Send.
+      double top(Finder f) => tester.getRect(f).top;
+      expect(
+        top(find.byKey(const ValueKey('pick-date'))),
+        lessThan(top(find.byKey(const ValueKey('alarm-kind')))),
+      );
+      expect(
+        top(find.byKey(const ValueKey('alarm-kind'))),
+        lessThan(top(find.byKey(const ValueKey('task-name')))),
+      );
+      expect(
+        top(find.byKey(const ValueKey('task-name'))),
+        lessThan(top(find.byKey(const ValueKey('note')))),
+      );
+      expect(
+        top(find.byKey(const ValueKey('note'))),
+        lessThan(top(find.byKey(const ValueKey('plan-send')))),
+      );
+    });
+
+    testWidgets('the builder renders in dark mode too', (tester) async {
+      await pumpBuilder(tester, dark: true);
+      expect(tester.takeException(), isNull);
+      expect(find.byType(FieldGlow), findsNWidgets(4));
+      await send(tester);
+      expect(
+        tester.widget<Text>(find.text(kTaskNameRequired)).style?.color,
+        AppTheme.dark.colorScheme.error,
+      );
     });
   });
 }

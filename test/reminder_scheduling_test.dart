@@ -53,20 +53,19 @@ void main() {
     DateTime? at,
     String title = 'Run',
     String? note,
-  }) =>
-      ScheduleItem(
-        id: id,
-        targetUid: targetUid,
-        createdByUid: createdByUid,
-        groupId: groupId,
-        title: title,
-        note: note,
-        localWallTime: '2026-08-20T14:00',
-        timezone: 'Asia/Kolkata',
-        scheduledInstantUtc: at ?? inHours(2),
-        status: status,
-        outcome: outcome,
-      );
+  }) => ScheduleItem(
+    id: id,
+    targetUid: targetUid,
+    createdByUid: createdByUid,
+    groupId: groupId,
+    title: title,
+    note: note,
+    localWallTime: '2026-08-20T14:00',
+    timezone: 'Asia/Kolkata',
+    scheduledInstantUtc: at ?? inHours(2),
+    status: status,
+    outcome: outcome,
+  );
 
   ReminderRequest request(String id, {DateTime? at, String title = 'Run'}) =>
       ReminderRequest(
@@ -82,7 +81,10 @@ void main() {
       // The whole reason the id is a hash rather than a counter: cancelling a
       // notification means reproducing its id exactly, from a cold start, after
       // a reboot, possibly with no mirror at all.
-      expect(reminderNotificationId('abc123'), reminderNotificationId('abc123'));
+      expect(
+        reminderNotificationId('abc123'),
+        reminderNotificationId('abc123'),
+      );
       expect(reminderNotificationId(''), reminderNotificationId(''));
     });
 
@@ -110,8 +112,10 @@ void main() {
     });
 
     test('allocate returns the plain hash when nothing has claimed it', () {
-      expect(allocateNotificationId('abc', const {}),
-          reminderNotificationId('abc'));
+      expect(
+        allocateNotificationId('abc', const {}),
+        reminderNotificationId('abc'),
+      );
     });
 
     test('allocate probes past a collision, deterministically', () {
@@ -120,8 +124,10 @@ void main() {
       expect(first, isNot(base));
       // Same inputs, same answer — two devices must not diverge.
       expect(allocateNotificationId('abc', {base}), first);
-      expect(allocateNotificationId('abc', {base, first}),
-          isNot(anyOf(base, first)));
+      expect(
+        allocateNotificationId('abc', {base, first}),
+        isNot(anyOf(base, first)),
+      );
     });
 
     test('allocate stays inside 31 bits even when probing past the top', () {
@@ -160,13 +166,46 @@ void main() {
       );
       expect(
         {for (final r in d) r.itemId: r.title},
-        {'friend': '{planner} planned Run for you', 'self': 'You planned Stretch'},
+        {
+          'friend': '{planner} planned Run for you',
+          'self': 'You planned Stretch',
+        },
       );
     });
 
+    test('a voice alarm says "sent you a voice alarm", with no task (F4)', () {
+      const voice = VoiceNoteMeta(
+        durationMs: 7000,
+        sha256:
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        sizeBytes: 900,
+      );
+      final i = item(id: 'v', title: 'Voice alarm');
+      final withVoice = ScheduleItem(
+        id: i.id,
+        targetUid: i.targetUid,
+        createdByUid: i.createdByUid,
+        groupId: i.groupId,
+        title: i.title,
+        localWallTime: i.localWallTime,
+        timezone: i.timezone,
+        scheduledInstantUtc: i.scheduledInstantUtc,
+        status: i.status,
+        voiceNote: voice,
+      );
+      expect(
+        alarmHeadline(withVoice, plannerName: '{planner}'),
+        '{planner} sent you a voice alarm',
+      );
+      expect(alarmHeadline(withVoice), 'Someone sent you a voice alarm');
+    });
+
     test('a planner name arriving changes the fingerprint (re-arms once)', () {
-      final before =
-          desiredReminders(items: [item(id: 'a')], uid: 'me', now: now);
+      final before = desiredReminders(
+        items: [item(id: 'a')],
+        uid: 'me',
+        now: now,
+      );
       final after = desiredReminders(
         items: [item(id: 'a')],
         uid: 'me',
@@ -252,7 +291,12 @@ void main() {
       for (final r in OutcomeResult.values) {
         expect(
           desiredReminders(
-            items: [item(id: 'a', outcome: ScheduleOutcome(result: r))],
+            items: [
+              item(
+                id: 'a',
+                outcome: ScheduleOutcome(result: r),
+              ),
+            ],
             uid: 'me',
             now: now,
           ),
@@ -265,7 +309,10 @@ void main() {
     test('a past item is not reminded, including exactly now', () {
       expect(
         desiredReminders(
-          items: [item(id: 'a', at: inHours(-1)), item(id: 'b', at: now)],
+          items: [
+            item(id: 'a', at: inHours(-1)),
+            item(id: 'b', at: now),
+          ],
           uid: 'me',
           now: now,
         ),
@@ -285,39 +332,51 @@ void main() {
       );
     });
 
-    test('a self-planned item IS reminded — creator and target are the same', () {
-      expect(
-        desiredReminders(
-          items: [item(id: 'a', createdByUid: 'me')],
-          uid: 'me',
-          now: now,
-        ),
-        hasLength(1),
-      );
-    });
+    test(
+      'a self-planned item IS reminded — creator and target are the same',
+      () {
+        expect(
+          desiredReminders(
+            items: [item(id: 'a', createdByUid: 'me')],
+            uid: 'me',
+            now: now,
+          ),
+          hasLength(1),
+        );
+      },
+    );
 
     test('nobody signed in means nothing scheduled', () {
       expect(
-        desiredReminders(items: [item(id: 'a')], uid: null, now: now),
+        desiredReminders(
+          items: [item(id: 'a')],
+          uid: null,
+          now: now,
+        ),
         isEmpty,
       );
     });
 
     test('the body carries the planner note, or a fallback', () {
       expect(reminderBody(item(id: 'a', note: 'bring shoes')), 'bring shoes');
-      expect(reminderBody(item(id: 'a', note: '   ')),
-          'Tap to mark it done or skip.');
+      expect(
+        reminderBody(item(id: 'a', note: '   ')),
+        'Tap to mark it done or skip.',
+      );
       expect(reminderBody(item(id: 'a')), 'Tap to mark it done or skip.');
     });
 
-    test('the body never renders a date — locale formatting needs a context', () {
-      // Guards the standing worldwide requirement: any date/time rendering has
-      // to go through core/format/datetime_format.dart, which a scheduler
-      // cannot reach. The body must therefore contain no formatted time.
-      final body = reminderBody(item(id: 'a'));
-      expect(body, isNot(contains('2026')));
-      expect(body, isNot(matches(RegExp(r'\d{1,2}:\d{2}'))));
-    });
+    test(
+      'the body never renders a date — locale formatting needs a context',
+      () {
+        // Guards the standing worldwide requirement: any date/time rendering has
+        // to go through core/format/datetime_format.dart, which a scheduler
+        // cannot reach. The body must therefore contain no formatted time.
+        final body = reminderBody(item(id: 'a'));
+        expect(body, isNot(contains('2026')));
+        expect(body, isNot(matches(RegExp(r'\d{1,2}:\d{2}'))));
+      },
+    );
   });
 
   // -------------------------------------------------------------------------
@@ -348,8 +407,10 @@ void main() {
         now: now,
       );
       expect(second.isEmpty, isTrue);
-      expect(second.mirror.map((m) => m.notificationId),
-          first.mirror.map((m) => m.notificationId));
+      expect(
+        second.mirror.map((m) => m.notificationId),
+        first.mirror.map((m) => m.notificationId),
+      );
     });
 
     test('a moved time re-schedules under the SAME notification id', () {
@@ -364,49 +425,59 @@ void main() {
         now: now,
       );
       expect(moved.toSchedule, hasLength(1));
-      expect(moved.toCancel, isEmpty, reason: 'replacement is by id, not cancel');
-      expect(moved.toSchedule.single.notificationId,
-          first.mirror.single.notificationId);
+      expect(
+        moved.toCancel,
+        isEmpty,
+        reason: 'replacement is by id, not cancel',
+      );
+      expect(
+        moved.toSchedule.single.notificationId,
+        first.mirror.single.notificationId,
+      );
       expect(moved.mirror.single.fireAtUtc, inHours(5));
     });
 
-    test('a retitled item re-schedules — the fingerprint is not just the time',
-        () {
-      final first = reconcileReminders(
-        desired: [request('a')],
-        mirror: const [],
-        now: now,
-      );
-      final retitled = reconcileReminders(
-        desired: [request('a', title: 'Swim')],
-        mirror: first.mirror,
-        now: now,
-      );
-      expect(retitled.toSchedule, hasLength(1));
-    });
+    test(
+      'a retitled item re-schedules — the fingerprint is not just the time',
+      () {
+        final first = reconcileReminders(
+          desired: [request('a')],
+          mirror: const [],
+          now: now,
+        );
+        final retitled = reconcileReminders(
+          desired: [request('a', title: 'Swim')],
+          mirror: first.mirror,
+          now: now,
+        );
+        expect(retitled.toSchedule, hasLength(1));
+      },
+    );
 
-    test('a legacy delivery policy is replaced under the same notification id',
-        () {
-      final desired = request('a');
-      final legacy = ScheduledReminder(
-        itemId: desired.itemId,
-        notificationId: 41,
-        fireAtUtc: desired.fireAtUtc,
-        // Revision 1 had no delivery-policy prefix and used FLAG_INSISTENT.
-        fingerprint:
-            '${desired.fireAtUtc.millisecondsSinceEpoch}|${desired.title}|${desired.body}',
-      );
+    test(
+      'a legacy delivery policy is replaced under the same notification id',
+      () {
+        final desired = request('a');
+        final legacy = ScheduledReminder(
+          itemId: desired.itemId,
+          notificationId: 41,
+          fireAtUtc: desired.fireAtUtc,
+          // Revision 1 had no delivery-policy prefix and used FLAG_INSISTENT.
+          fingerprint:
+              '${desired.fireAtUtc.millisecondsSinceEpoch}|${desired.title}|${desired.body}',
+        );
 
-      final migrated = reconcileReminders(
-        desired: [desired],
-        mirror: [legacy],
-        now: now,
-      );
+        final migrated = reconcileReminders(
+          desired: [desired],
+          mirror: [legacy],
+          now: now,
+        );
 
-      expect(migrated.toSchedule, hasLength(1));
-      expect(migrated.toSchedule.single.notificationId, 41);
-      expect(migrated.mirror.single.fingerprint, desired.fingerprint);
-    });
+        expect(migrated.toSchedule, hasLength(1));
+        expect(migrated.toSchedule.single.notificationId, 41);
+        expect(migrated.mirror.single.fingerprint, desired.fingerprint);
+      },
+    );
 
     test('an item that stops being desired is cancelled', () {
       // One rule covering withdraw, reject, done, skip, un-approval and outright
@@ -498,8 +569,9 @@ void main() {
         mirror: const [],
         now: now,
       );
-      Map<String, int> byItem(ReminderPlan p) =>
-          {for (final m in p.mirror) m.itemId: m.notificationId};
+      Map<String, int> byItem(ReminderPlan p) => {
+        for (final m in p.mirror) m.itemId: m.notificationId,
+      };
       expect(byItem(forwards), byItem(backwards));
     });
   });
@@ -531,7 +603,8 @@ void main() {
     test('a corrupt row is dropped, not thrown — the rest survives', () {
       // Reading the mirror as partially empty re-schedules the missing entries,
       // which is the recoverable direction. Throwing at startup is not.
-      const json = '[{"itemId":"a","notificationId":1,"fireAtMs":100,'
+      const json =
+          '[{"itemId":"a","notificationId":1,"fireAtMs":100,'
           '"fingerprint":"f"},{"itemId":"b"},null,7]';
       final decoded = ScheduledReminder.decode(json);
       expect(decoded.map((r) => r.itemId), ['a']);
@@ -551,19 +624,21 @@ void main() {
       bool notifications = true,
       bool exact = true,
       bool fsi = true,
-    }) =>
-        ReminderPermissionState(
-          notificationsEnabled: notifications,
-          exactAlarmsAllowed: exact,
-          fullScreenIntentAllowed: fsi,
-        );
+    }) => ReminderPermissionState(
+      notificationsEnabled: notifications,
+      exactAlarmsAllowed: exact,
+      fullScreenIntentAllowed: fsi,
+    );
 
     test('needs all three — the primer shows until every one is granted', () {
       expect(state().isFullyReady, isTrue);
       expect(state(notifications: false).isFullyReady, isFalse);
       expect(state(exact: false).isFullyReady, isFalse);
-      expect(state(fsi: false).isFullyReady, isFalse,
-          reason: 'full-screen intent is what makes it ring over other apps');
+      expect(
+        state(fsi: false).isFullyReady,
+        isFalse,
+        reason: 'full-screen intent is what makes it ring over other apps',
+      );
     });
   });
 
@@ -580,13 +655,15 @@ void main() {
     });
 
     test('arms an approved item and remembers it', () async {
-      await service.sync(items: [item(id: 'a')], uid: 'me');
+      await service.sync(
+        items: [item(id: 'a')],
+        uid: 'me',
+      );
       expect(scheduler.scheduled.map((s) => s.$1.itemId), ['a']);
       expect((await store.load()).map((m) => m.itemId), ['a']);
     });
 
-    test('dismiss cancels the id the MIRROR recorded, not the bare hash',
-        () async {
+    test('dismiss cancels the id the MIRROR recorded, not the bare hash', () async {
       // A collision can move a reminder off `reminderNotificationId(itemId)`, and
       // the mirror is the authority. Seed a moved id and prove dismiss honours it.
       final moved = reminderNotificationId('a') + 7;
@@ -611,60 +688,94 @@ void main() {
     });
 
     test('a second sync with the same items does nothing at all', () async {
-      await service.sync(items: [item(id: 'a')], uid: 'me');
+      await service.sync(
+        items: [item(id: 'a')],
+        uid: 'me',
+      );
       scheduler.reset();
-      await service.sync(items: [item(id: 'a')], uid: 'me');
+      await service.sync(
+        items: [item(id: 'a')],
+        uid: 'me',
+      );
       expect(scheduler.scheduled, isEmpty);
       expect(scheduler.cancelled, isEmpty);
     });
 
-    test('recording an outcome cancels the reminder, with no transition hook',
-        () async {
-      await service.sync(items: [item(id: 'a')], uid: 'me');
-      final id = (await store.load()).single.notificationId;
-      scheduler.reset();
+    test(
+      'recording an outcome cancels the reminder, with no transition hook',
+      () async {
+        await service.sync(
+          items: [item(id: 'a')],
+          uid: 'me',
+        );
+        final id = (await store.load()).single.notificationId;
+        scheduler.reset();
 
-      await service.sync(
-        items: [
-          item(id: 'a', outcome: const ScheduleOutcome(result: OutcomeResult.done))
-        ],
-        uid: 'me',
-      );
-      expect(scheduler.cancelled, [id]);
-      expect(await store.load(), isEmpty);
-    });
+        await service.sync(
+          items: [
+            item(
+              id: 'a',
+              outcome: const ScheduleOutcome(result: OutcomeResult.done),
+            ),
+          ],
+          uid: 'me',
+        );
+        expect(scheduler.cancelled, [id]);
+        expect(await store.load(), isEmpty);
+      },
+    );
 
-    test('a REFUSED schedule is kept out of the mirror and retried next pass',
-        () async {
-      // The exact-alarm-denied path. Recording it as armed would make every
-      // later reconcile believe it exists — a reminder lost permanently and
-      // silently, which is this layer's worst failure.
-      scheduler.refuse.add('a');
-      await service.sync(items: [item(id: 'a')], uid: 'me');
-      expect(scheduler.scheduled, hasLength(1));
-      expect(await store.load(), isEmpty);
+    test(
+      'a REFUSED schedule is kept out of the mirror and retried next pass',
+      () async {
+        // The exact-alarm-denied path. Recording it as armed would make every
+        // later reconcile believe it exists — a reminder lost permanently and
+        // silently, which is this layer's worst failure.
+        scheduler.refuse.add('a');
+        await service.sync(
+          items: [item(id: 'a')],
+          uid: 'me',
+        );
+        expect(scheduler.scheduled, hasLength(1));
+        expect(await store.load(), isEmpty);
 
-      // User grants the permission and returns to the app.
-      scheduler.refuse.clear();
-      scheduler.reset();
-      await service.sync(items: [item(id: 'a')], uid: 'me', reason: 'resume');
-      expect(scheduler.scheduled.map((s) => s.$1.itemId), ['a']);
-      expect(await store.load(), hasLength(1));
-    });
+        // User grants the permission and returns to the app.
+        scheduler.refuse.clear();
+        scheduler.reset();
+        await service.sync(
+          items: [item(id: 'a')],
+          uid: 'me',
+          reason: 'resume',
+        );
+        expect(scheduler.scheduled.map((s) => s.$1.itemId), ['a']);
+        expect(await store.load(), hasLength(1));
+      },
+    );
 
-    test('a refused item keeps the id it would have had once it succeeds',
-        () async {
-      scheduler.refuse.add('a');
-      await service.sync(items: [item(id: 'a')], uid: 'me');
-      final attempted = scheduler.scheduled.single.$2;
-      scheduler.refuse.clear();
-      scheduler.reset();
-      await service.sync(items: [item(id: 'a')], uid: 'me');
-      expect(scheduler.scheduled.single.$2, attempted);
-    });
+    test(
+      'a refused item keeps the id it would have had once it succeeds',
+      () async {
+        scheduler.refuse.add('a');
+        await service.sync(
+          items: [item(id: 'a')],
+          uid: 'me',
+        );
+        final attempted = scheduler.scheduled.single.$2;
+        scheduler.refuse.clear();
+        scheduler.reset();
+        await service.sync(
+          items: [item(id: 'a')],
+          uid: 'me',
+        );
+        expect(scheduler.scheduled.single.$2, attempted);
+      },
+    );
 
     test('signing out drops every reminder from the device', () async {
-      await service.sync(items: [item(id: 'a')], uid: 'me');
+      await service.sync(
+        items: [item(id: 'a')],
+        uid: 'me',
+      );
       scheduler.reset();
       await service.clearAll();
       expect(scheduler.cancelAllCount, 1);
@@ -674,10 +785,16 @@ void main() {
     test('switching accounts cancels the previous user\'s reminders', () async {
       // One person's reminders must never fire into another person's session,
       // and their ids must not be inherited.
-      await service.sync(items: [item(id: 'a')], uid: 'me');
+      await service.sync(
+        items: [item(id: 'a')],
+        uid: 'me',
+      );
       scheduler.reset();
 
-      await service.sync(items: [item(id: 'b', targetUid: 'you')], uid: 'you');
+      await service.sync(
+        items: [item(id: 'b', targetUid: 'you')],
+        uid: 'you',
+      );
       expect(scheduler.cancelAllCount, 1);
       expect(scheduler.scheduled.map((s) => s.$1.itemId), ['b']);
       expect((await store.load()).map((m) => m.itemId), ['b']);
@@ -687,9 +804,21 @@ void main() {
       // Resume racing an item emission: both read the mirror, both compute a
       // plan against a state the other is about to change, and the loser's
       // writes vanish. The queue is what stops that.
-      final a = service.sync(items: [item(id: 'a')], uid: 'me');
-      final b = service.sync(items: [item(id: 'a'), item(id: 'b')], uid: 'me');
-      final c = service.sync(items: [item(id: 'b')], uid: 'me');
+      final a = service.sync(
+        items: [item(id: 'a')],
+        uid: 'me',
+      );
+      final b = service.sync(
+        items: [
+          item(id: 'a'),
+          item(id: 'b'),
+        ],
+        uid: 'me',
+      );
+      final c = service.sync(
+        items: [item(id: 'b')],
+        uid: 'me',
+      );
       await Future.wait([a, b, c]);
 
       expect((await store.load()).map((m) => m.itemId), ['b']);
@@ -702,11 +831,17 @@ void main() {
       // A broken pass must not wedge the queue — that is how one transient
       // failure becomes permanently dead reminders.
       scheduler.throwOnSchedule = true;
-      await service.sync(items: [item(id: 'a')], uid: 'me');
+      await service.sync(
+        items: [item(id: 'a')],
+        uid: 'me',
+      );
 
       scheduler.throwOnSchedule = false;
       scheduler.reset();
-      await service.sync(items: [item(id: 'a')], uid: 'me');
+      await service.sync(
+        items: [item(id: 'a')],
+        uid: 'me',
+      );
       expect(scheduler.scheduled.map((s) => s.$1.itemId), ['a']);
     });
   });
@@ -736,7 +871,8 @@ class _FakeScheduler implements ReminderScheduler {
   }
 
   @override
-  Future<void> cancel(int notificationId) async => cancelled.add(notificationId);
+  Future<void> cancel(int notificationId) async =>
+      cancelled.add(notificationId);
 
   @override
   Future<void> cancelAll() async => cancelAllCount++;

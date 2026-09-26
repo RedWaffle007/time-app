@@ -118,9 +118,13 @@ abstract final class Sizes {
   /// Icon inside a status badge, sized to `labelSmall`.
   static const double badgeIcon = 14;
 
-  /// The pending-approvals attention halo (UI-RULES §6.2a).
-  static const double attentionGlowBlur = 14;
-  static const double attentionGlowSpread = 1;
+  /// The field-glow halo behind the builder's primary inputs (UI-RULES §6.2b).
+  static const double fieldGlowBlur = 12;
+  static const double fieldGlowSpread = 0;
+
+  /// Pick date / Pick time — taller than a plain button, with `titleMedium`
+  /// labels, so the two choices that set WHEN read first (F4).
+  static const double pickerButton = 56;
 
   /// The spinner that replaces a button's label while it is working. Sized to
   /// the label, so the button doesn't change height mid-action.
@@ -228,4 +232,11 @@ abstract final class Sizes {
   /// mode the sky is light at every hour, so the rim — not the fill — is what
   /// makes the shape read at all.
   static const double celestialRim = 1.5;
+}
+
+/// Halo strength for the field glow (UI-RULES §6.2b). Dark needs more alpha
+/// for the same visible glow on a dark surface.
+abstract final class Glows {
+  static double alphaFor(Brightness brightness) =>
+      brightness == Brightness.dark ? 0.45 : 0.30;
 }

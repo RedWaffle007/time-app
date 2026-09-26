@@ -250,7 +250,7 @@ class _VoiceNoteRecorderState extends ConsumerState<VoiceNoteRecorder> {
                 const SizedBox(width: Space.sm),
                 Expanded(
                   child: Text(
-                    'Voice note (optional)',
+                    'Voice note',
                     style: context.text.titleSmall,
                   ),
                 ),

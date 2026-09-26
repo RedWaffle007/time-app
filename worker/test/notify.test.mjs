@@ -123,6 +123,27 @@ test('an alarm set through the (merged) emergency grant carries the alarm comman
   });
 });
 
+test('a voice alarm is announced as sent, with no task name (F4)', () => {
+  const message = buildMessage(
+    'created',
+    null,
+    {
+      targetUid: 'target',
+      createdByUid: 'planner',
+      groupId: '',
+      title: 'Voice alarm',
+      status: 'approved',
+      scheduledInstantUtc: '2030-01-02T03:04:05.000Z',
+      voiceNote: { sha256: 'a'.repeat(64), sizeBytes: 900, durationMs: 7000 },
+    },
+    'target',
+    'item-v',
+    { actorName: 'Test Planner' },
+  );
+  assert.equal(message.data.pushTitle, 'New alarm for you');
+  assert.equal(message.data.pushBody, 'Test Planner sent you a voice alarm');
+});
+
 // F2: one permission — the normal friendship grant now authorises any alarm,
 // including a legacy emergency-tier one.
 test('a normal friendship grant authorises an emergency-tier item too', async () => {

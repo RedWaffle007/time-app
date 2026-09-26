@@ -140,7 +140,7 @@ void main() {
       expect(args['voicePath'], '/data/voice-notes/item-1.m4a');
       expect(args['voiceSha256'], _sha);
       expect(args['voiceSizeBytes'], 9000);
-      expect(args['headline'], 'Someone planned Wake up for you');
+      expect(args['headline'], 'Someone sent you a voice alarm');
     });
 
     test('a plain alarm arms exactly as before (no voice keys)', () async {

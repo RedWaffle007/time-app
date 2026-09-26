@@ -402,7 +402,7 @@ anything that sits *in* the flow does not.
 | Dialogs | level 3 |
 | Bottom sheets | level 3 |
 | Snackbar | level 3 |
-| Pending-approvals attention glow (§6.2a) | not elevation — an `attention` halo, the one in-flow shadow |
+| Field glow (§6.2a) | not elevation — a `primary` halo, the one in-flow shadow |
 
 `Card` must never be constructed bare — use the recipe in §6.1, which sets
 elevation 0 and the border. A bare `Card` inherits Material's default shadow.
@@ -437,19 +437,27 @@ Always via `statusStyle(status)` from `status_style.dart` — never a local
 `Radii.pill`, text `labelSmall`. Neutral variants carry a 1px `outline` border;
 tinted and solid variants carry no border.
 
-### 6.2a Pending count badge + attention glow
+### 6.2a Pending count badge
 
-A count of things waiting on the user sits ON the control that resolves them
-(the Pending approvals icon), never on a neighbouring label. Always
-`PendingCountBadge` (real number, hidden at zero), wrapped in
-`PendingAttentionGlow(active: count > 0)` from `status_style.dart`:
+A count of things waiting on the user sits ON the control that resolves them,
+never on a neighbouring label. Always `PendingCountBadge` (real number, hidden
+at zero). The pending-approvals attention glow that used to surround it was
+retired with the approval step (F2, 2026-09-26).
 
-- Halo colour: `context.attention` at `AttentionGlow.alphaFor(brightness)`
-  (45% light, 60% dark); blur `Sizes.attentionGlowBlur`, spread
-  `Sizes.attentionGlowSpread`; circular, behind the icon.
+### 6.2b Field glow
+
+The builder's primary inputs — Pick date, Pick time, the task name, the note —
+sit in a `FieldGlow` from `core/widgets/field_glow.dart`, never an inline
+`BoxShadow`:
+
+- Halo colour: `primary` at `Glows.alphaFor(brightness)` (30% light, 45%
+  dark); `error` instead while the field shows a validation error. Blur
+  `Sizes.fieldGlowBlur`, spread `Sizes.fieldGlowSpread`, shaped to the field's
+  radius.
 - **Static.** No pulse — calm, and nothing to gate on reduced motion.
-- Supplementary only: the badge and the tooltip ("Pending approvals, N
-  waiting") carry the meaning (§2.6).
+- **Decorative only.** The field keeps its `outline` border and its label; an
+  error keeps its red text. Remove the glow and nothing is lost (§2.6).
+- Primary inputs only. A screen that glows everything has glowed nothing.
 
 ### 6.3 Warning panel
 

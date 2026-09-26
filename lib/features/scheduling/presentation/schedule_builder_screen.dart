@@ -11,6 +11,7 @@ import '../../../core/theme/app_tokens.dart';
 import '../../../core/timezone/quiet_hours.dart';
 import '../../../core/timezone/tz_resolver.dart';
 import '../../../core/widgets/async_view.dart';
+import '../../../core/widgets/field_glow.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/warning_panel.dart';
 import '../../auth/application/auth_providers.dart';
@@ -27,6 +28,19 @@ import '../application/schedule_providers.dart';
 import '../application/target_schedule_providers.dart';
 import '../domain/schedule_item.dart';
 import 'conflict_warning_dialog.dart';
+
+/// The two kinds of alarm (F4). A self-plan is always [defaultAlarm].
+enum AlarmKind { voiceNote, defaultAlarm }
+
+/// The fixed title a voice alarm is stored with: it has no name field (F4) —
+/// the recording is the message — but the model and rules need a title.
+const kVoiceAlarmTitle = 'Voice alarm';
+
+/// Shown in red under the task name when Send is tapped with it empty (F4).
+const kTaskNameRequired = 'Please write task name. It is mandatory.';
+
+/// Shown when Voice Note is chosen but nothing was recorded.
+const kVoiceNoteRequired = 'Please record a voice note.';
 
 /// Planner picks a target they may plan for and creates a timetable item IN THE
 /// TARGET'S LOCAL TIME.
@@ -94,6 +108,13 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
   TimeOfDay? _time;
   bool _saving = false;
 
+  /// Voice Note or Default Alarm (F4). Self-plans are always a default alarm.
+  AlarmKind _kind = AlarmKind.defaultAlarm;
+  bool get _isVoice => !_isSelf && _kind == AlarmKind.voiceNote;
+
+  /// Validation shown after Send was tapped (F4) — never before.
+  bool _nameError = false;
+  bool _voiceError = false;
 
   /// The recorded-but-unsent voice note for someone else's alarm (item 32b).
   RecordedVoiceNote? _voiceDraft;
@@ -197,12 +218,21 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     });
   }
 
-  bool get _canSave =>
-      _targetUid != null &&
-      _date != null &&
-      _time != null &&
-      _titleController.text.trim().isNotEmpty &&
-      !_saving;
+  /// Send is enabled once WHO and WHEN are chosen; what to send is checked
+  /// on tap, so the missing piece can be named in red (F4).
+  bool get _canSend =>
+      _targetUid != null && _date != null && _time != null && !_saving;
+
+  /// Whether the alarm is complete; marks what is missing when it is not.
+  bool _validate() {
+    final nameMissing = !_isVoice && _titleController.text.trim().isEmpty;
+    final voiceMissing = _isVoice && _voiceDraft == null;
+    setState(() {
+      _nameError = nameMissing;
+      _voiceError = voiceMissing;
+    });
+    return !nameMissing && !voiceMissing;
+  }
 
   Future<void> _save(String timezone) async {
     final me = ref.read(authRepositoryProvider).currentUser;
@@ -210,6 +240,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     if (!_isSelf && _groupId == null) {
       return; // planning for others needs a group
     }
+    if (!_validate()) return;
 
     final wall = _wall();
     final instantUtc = resolveWallTimeToUtc(wall, timezone);
@@ -236,7 +267,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       // Worker checks the audio and the rules then accept the item only with
       // the metadata the Worker recorded. A failed upload saves nothing.
       final repository = ref.read(scheduleRepositoryProvider);
-      final draft = _isSelf ? null : _voiceDraft;
+      final draft = _isVoice ? _voiceDraft : null;
       String? preparedId;
       VoiceNoteMeta? voiceNote;
       if (draft != null) {
@@ -266,15 +297,13 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
           return;
         }
       }
-      // Self-authored AND emergency items are born approved (skip the queue);
-      // normal planner items stay pending for the target to approve.
       final itemId = await repository.createItem(
         itemId: preparedId,
         voiceNote: voiceNote,
         targetUid: _targetUid!,
         createdByUid: me.uid,
         groupId: _isSelf ? null : _groupId,
-        title: _titleController.text,
+        title: draft != null ? kVoiceAlarmTitle : _titleController.text,
         note: _noteController.text,
         wall: wall,
         timezone: timezone,
@@ -320,6 +349,8 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
         _time = null;
         _voiceDraft = null;
         _voiceRecorderGen++;
+        _nameError = false;
+        _voiceError = false;
       });
     } catch (e) {
       if (mounted) {
@@ -430,62 +461,114 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
               child: Text(
                 _isSelf
                     ? "You're building in your local time — $timezone."
-                    : "You're building in ${selectedProfile?.name ?? 'their'} "
-                          "local time — $timezone.",
+                    : "You're building in "
+                          '${possessive(selectedProfile?.name)} local time '
+                          '— $timezone.',
                 style: context.text.bodySmall?.copyWith(
                   color: context.colors.onSurfaceVariant,
                 ),
               ),
             ),
           const SizedBox(height: Space.lg),
-          TextField(
-            controller: _titleController,
-            decoration: const InputDecoration(labelText: 'Title (what to do)'),
-            onChanged: (_) => setState(() {}),
-          ),
-          const SizedBox(height: Space.lg),
           Row(
             children: [
               Expanded(
-                child: OutlinedButton.icon(
+                child: _pickerButton(
+                  key: const ValueKey('pick-date'),
                   onPressed: _pickDate,
-                  icon: const Icon(AppIcons.date),
-                  label: Text(
-                    _date == null
-                        ? 'Pick date'
-                        : formatWallDate(context, _date!),
-                  ),
+                  icon: AppIcons.date,
+                  label: _date == null
+                      ? 'Pick date'
+                      : formatWallDate(context, _date!),
                 ),
               ),
               const SizedBox(width: Space.md),
               Expanded(
-                child: OutlinedButton.icon(
+                child: _pickerButton(
+                  key: const ValueKey('pick-time'),
                   onPressed: _pickTime,
-                  icon: const Icon(AppIcons.time),
-                  label: Text(
-                    _time == null
-                        ? 'Pick time'
-                        : formatTimeOfDay(context, _time!),
-                  ),
+                  icon: AppIcons.time,
+                  label: _time == null
+                      ? 'Pick time'
+                      : formatTimeOfDay(context, _time!),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: Space.lg),
-          TextField(
-            controller: _noteController,
-            decoration: const InputDecoration(labelText: 'Note (optional)'),
-          ),
-          // Voice note — only on someone else's alarm (item 32b).
+          // Voice notes are for someone else: a self-plan is a default alarm
+          // and shows no choice (F4).
           if (!_isSelf) ...[
-            const SizedBox(height: Space.lg),
+            const SizedBox(height: Space.xl),
+            SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<AlarmKind>(
+                key: const ValueKey('alarm-kind'),
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(
+                    value: AlarmKind.voiceNote,
+                    icon: Icon(AppIcons.voiceNote),
+                    label: Text('Voice Note'),
+                  ),
+                  ButtonSegment(
+                    value: AlarmKind.defaultAlarm,
+                    icon: Icon(AppIcons.defaultAlarm),
+                    label: Text('Default Alarm'),
+                  ),
+                ],
+                selected: {_kind},
+                onSelectionChanged: _saving
+                    ? null
+                    : (picked) => setState(() {
+                        _kind = picked.first;
+                        _nameError = false;
+                        _voiceError = false;
+                      }),
+              ),
+            ),
+          ],
+          const SizedBox(height: Space.xl),
+          if (_isVoice) ...[
             VoiceNoteRecorder(
               key: ValueKey('voice-$_targetUid-$_voiceRecorderGen'),
               recipientName: selectedProfile?.name ?? 'their',
               enabled: !_saving,
-              onChanged: (note) => _voiceDraft = note,
+              onChanged: (note) => setState(() {
+                _voiceDraft = note;
+                if (note != null) _voiceError = false;
+              }),
             ),
+            if (_voiceError) _errorLine(kVoiceNoteRequired),
+          ] else ...[
+            Text('Name of the Task', style: context.text.titleMedium),
+            const SizedBox(height: Space.sm),
+            FieldGlow(
+              error: _nameError,
+              child: TextField(
+                key: const ValueKey('task-name'),
+                controller: _titleController,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: InputDecoration(
+                  hintText: 'What should they do?',
+                  enabledBorder: _nameError ? _errorBorder() : null,
+                  focusedBorder: _nameError ? _errorBorder() : null,
+                ),
+                onChanged: (_) {
+                  if (_nameError) setState(() => _nameError = false);
+                },
+              ),
+            ),
+            if (_nameError) _errorLine(kTaskNameRequired),
           ],
+          const SizedBox(height: Space.xl),
+          FieldGlow(
+            child: TextField(
+              key: const ValueKey('note'),
+              controller: _noteController,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(labelText: 'Note (optional)'),
+            ),
+          ),
           if (timezone != null && _date != null && _time != null) ...[
             const SizedBox(height: Space.lg),
             Text(
@@ -503,7 +586,8 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
           ],
           const SizedBox(height: Space.xl),
           FilledButton(
-            onPressed: (_canSave && timezone != null)
+            key: const ValueKey('plan-send'),
+            onPressed: (_canSend && timezone != null)
                 ? () => _save(timezone)
                 : null,
             child: _saving
@@ -518,6 +602,45 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       ],
     );
   }
+
+  /// Pick date / Pick time: taller, `titleMedium`, with the field glow (F4).
+  Widget _pickerButton({
+    required Key key,
+    required VoidCallback onPressed,
+    required IconData icon,
+    required String label,
+  }) {
+    return FieldGlow(
+      borderRadius: Radii.pill,
+      child: OutlinedButton.icon(
+        key: key,
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size.fromHeight(Sizes.pickerButton),
+          textStyle: context.text.titleMedium,
+          side: BorderSide(color: context.colors.primary),
+        ),
+        icon: Icon(icon),
+        label: Text(label, overflow: TextOverflow.ellipsis),
+      ),
+    );
+  }
+
+  /// The theme's own form-error border, applied while the error line shows
+  /// (the error text sits outside the glow, so `errorText` is not used).
+  InputBorder? _errorBorder() =>
+      Theme.of(context).inputDecorationTheme.errorBorder;
+
+  /// A red form-validation line (§2.5), outside the glow so the halo hugs the
+  /// field alone.
+  Widget _errorLine(String message) => Padding(
+    padding: const EdgeInsets.only(top: Space.sm, left: Space.md),
+    child: Text(
+      message,
+      key: ValueKey('error-$message'),
+      style: context.text.bodySmall?.copyWith(color: context.colors.error),
+    ),
+  );
 
   static Future<void> _deleteQuietly(String path) async {
     try {
@@ -545,6 +668,8 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
         trailing: selected ? const Icon(AppIcons.selected) : null,
         onTap: () => _choose(() {
           _isSelf = true;
+          _kind = AlarmKind.defaultAlarm;
+          _voiceError = false;
           _targetUid = me.uid;
           _groupId = null;
           _voiceDraft = null;
@@ -674,4 +799,11 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     };
     return text == null ? const SizedBox.shrink() : WarningPanel(text);
   }
+}
+
+/// "{Name}'s" — the target's name as a possessive (F4 fixed "You're building
+/// in Sam local time"). Unknown name → "their".
+String possessive(String? name) {
+  final n = name?.trim() ?? '';
+  return n.isEmpty ? 'their' : "$n's";
 }

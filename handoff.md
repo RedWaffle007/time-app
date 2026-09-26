@@ -44,7 +44,7 @@
 - Latest profile build installed on the Redmi; the third-pass fixes await the
   user's device check.
 - Next implementation order (revised 2026-09-26 after the in-person device
-  check): **Batch A ✓ → B ✓ → B2 ✓ → C ✓ → D ✓ (decided) → E (18 → 19 → 20 → 15 → 14 → 16 → 17) ✓ → 32-0…32c ✓ → F (F1+F6 ✓ → F2 ✓ → F3+F5 ✓ built → F4) → 32d → 24 → 33**. See "Device-check
+  check): **Batch A ✓ → B ✓ → B2 ✓ → C ✓ → D ✓ (decided) → E (18 → 19 → 20 → 15 → 14 → 16 → 17) ✓ → 32-0…32c ✓ → F (F1+F6 ✓ → F2 ✓ → F3+F5 ✓ → F4 ✓ built) → 32d → 24 → 33**. See "Device-check
   backlog (2026-09-26)" below.
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
 
@@ -305,6 +305,12 @@ entirely on the planning permission (still target-granted and revocable).
   ringtone (as today); a Voice Note alarm plays the recording 3×. Everything
   else the app sends uses the phone's normal notification tone (the
   "Emergency plans" max-importance alert channel is retired).
+- **F4 — BUILT 2026-09-26 (awaiting test/deploy/commit; phone look in light
+  + dark deferred).** DECISIONS.md "Plan screen overhaul + field glow";
+  UI-RULES §6.2b `FieldGlow` (replaces the retired pending glow). Voice alarms
+  are stored titled "Voice alarm"; headline + push read "{planner} sent you a
+  voice alarm". Validation on Send (red task-name / record-a-note lines).
+  Original item:
 - **F4 — Plan screen overhaul** (light + dark, UI-RULES first for the new
   glow recipe): "You're building in {Name}'s local time" (possessive fix);
   Pick date / Pick time bold, larger, subtle glowing outline; two rounded
