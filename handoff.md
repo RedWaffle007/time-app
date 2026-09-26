@@ -530,7 +530,9 @@ mode and multi-friend selection.
    friend creates the plan (viewing does not count); none once past due.
    Revives the deleted Item 13 cron pattern (git history). The Request Plan
    button moves beside Plan; both slightly larger, bold (theme tokens).
-6. **"Unavailable" push with a custom tone.** New planner push when the
+6. **"Unavailable" push with a custom tone.** — **BUILT 2026-09-27;
+   awaiting Worker deploy → commit; phone check deferred (the tone on the
+   Redmi)** (DECISIONS.md "'Unavailable' push with the 'Uh-Oh!' tone"). New planner push when the
    target's alarm auto-stops unanswered (`alarm.unavailableAt`): "{Y} was
    unavailable to dismiss the task: {task} you planned for them." Plays a
    bundled "ooh-ooooo" sound on its own new channel (channel sound is fixed at

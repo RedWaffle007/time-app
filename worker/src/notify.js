@@ -40,6 +40,7 @@
 
 const EVENTS = new Set([
   'created', 'decided', 'outcome', 'withdrawn', 'dismissed', 'voiceFallback',
+  'unavailable',
 ]);
 
 // Which party each event notifies. The ACTOR is never the recipient: for a
@@ -195,6 +196,13 @@ function deriveEvent(event, item) {
         return { ok: false, reason: 'no-voice-fallback' };
       }
       return { ok: true, subtype: null, field: 'notifiedVoiceFallback', value: true };
+    case 'unavailable':
+      // Item 6 (2026-09-27): the alarm auto-stopped unanswered and the
+      // target's device recorded the immutable `alarm.unavailableAt`.
+      if (!item.alarm || !item.alarm.unavailableAt) {
+        return { ok: false, reason: 'not-unavailable' };
+      }
+      return { ok: true, subtype: null, field: 'notifiedUnavailable', value: true };
     case 'dismissed':
       // The target's device records `alarm.dismissedAt` when the ringing alarm
       // is dismissed; no recorded dismissal, no push.
@@ -212,6 +220,12 @@ function deriveEvent(event, item) {
 // `kPlannerActivityChannelId` in foreground_push_presenter.dart). Never the
 // reminder channel: silencing someone else's activity must not silence alarms.
 export const ACTIVITY_CHANNEL_ID = 'planner_activity';
+
+// Item 6 (2026-09-27): "{Y} was unavailable…" plays a cartoon "Uh-Oh!"
+// (Breviceps, CC0, res/raw/uh_oh.mp3). A channel's sound is fixed when it is
+// created, so it has its own channel — keep in step with
+// `kPlannerUnavailableChannelId` in foreground_push_presenter.dart.
+export const UNAVAILABLE_CHANNEL_ID = 'planner_unavailable';
 
 // When the outcome was recorded relative to the plan, from Firestore state
 // only. 'late' = a missed alarm was later answered Done; 'early' = the outcome
@@ -283,6 +297,13 @@ export function buildMessage(event, subtype, item, targetUid, itemId, names = {}
       notification = {
         title: "Voice note didn't play",
         body: `${who}'s alarm for ${title}${inGroup} rang with the normal ringtone — your voice note couldn't play.`,
+      };
+      break;
+    case 'unavailable':
+      // Plays the "Uh-Oh!" tone: its own channel (UNAVAILABLE_CHANNEL_ID).
+      notification = {
+        title: `${who} was unavailable`,
+        body: `${who} was unavailable to dismiss the task: ${title} you planned for them${inGroup}.`,
       };
       break;
     case 'dismissed':
@@ -373,7 +394,11 @@ export function buildMessage(event, subtype, item, targetUid, itemId, names = {}
     data,
     android: {
       priority: 'high',
-      notification: { channel_id: ACTIVITY_CHANNEL_ID },
+      notification: {
+        channel_id: event === 'unavailable'
+          ? UNAVAILABLE_CHANNEL_ID
+          : ACTIVITY_CHANNEL_ID,
+      },
     },
   };
 }

@@ -22,13 +22,37 @@ const kNudgeChannelId = 'app_nudges';
 /// settings are frozen, so the old one is deleted on start.
 const kRetiredEmergencyPlansChannelId = 'time_app_emergency_plans';
 
+/// "{name} was unavailable to dismiss the task" (item 6, 2026-09-27) plays a
+/// cartoon "Uh-Oh!" instead of the phone's tone — Breviceps, CC0,
+/// `res/raw/uh_oh.mp3`. A channel's sound is frozen when it is created, so it
+/// has its own channel. The Worker names it `UNAVAILABLE_CHANNEL_ID`.
+const kPlannerUnavailableChannelId = 'planner_unavailable';
+
 /// Which channel a push belongs on, foreground and background alike. Every
-/// one plays the phone's normal notification tone (F3); only the due-time
-/// alarm rings, and that is not a push.
+/// one plays the phone's normal notification tone (F3) except the
+/// "unavailable" notice (its own "Uh-Oh!"); only the due-time alarm rings,
+/// and that is not a push.
 String channelIdForPush(Map<String, dynamic> data) =>
-    (data['event'] ?? data['type']) == 'inactivity'
-    ? kNudgeChannelId
-    : kPlannerActivityChannelId;
+    switch (data['event'] ?? data['type']) {
+      'inactivity' => kNudgeChannelId,
+      'unavailable' => kPlannerUnavailableChannelId,
+      _ => kPlannerActivityChannelId,
+    };
+
+const _unavailableName = 'Missed alarms of people you plan for';
+const _unavailableDescription =
+    'When someone did not answer an alarm you set for them. Plays an '
+    '"Uh-Oh!" sound.';
+
+/// The "Uh-Oh!" channel, shared by the foreground presenter and the
+/// killed-app handler like [plannerActivityChannel].
+const plannerUnavailableChannel = AndroidNotificationChannel(
+  kPlannerUnavailableChannelId,
+  _unavailableName,
+  description: _unavailableDescription,
+  importance: Importance.high,
+  sound: RawResourceAndroidNotificationSound('uh_oh'),
+);
 
 const _activityName = 'Activity from your people';
 const _activityDescription =
@@ -113,6 +137,7 @@ class ForegroundPushPresenter {
 
   static final _channels = [
     plannerActivityChannel,
+    plannerUnavailableChannel,
     const AndroidNotificationChannel(
       kNudgeChannelId,
       _nudgeName,
@@ -122,6 +147,19 @@ class ForegroundPushPresenter {
   ];
 
   static NotificationDetails _detailsFor(String channelId) {
+    if (channelId == kPlannerUnavailableChannelId) {
+      return const NotificationDetails(
+        android: AndroidNotificationDetails(
+          kPlannerUnavailableChannelId,
+          _unavailableName,
+          channelDescription: _unavailableDescription,
+          importance: Importance.high,
+          priority: Priority.high,
+          sound: RawResourceAndroidNotificationSound('uh_oh'),
+          icon: 'ic_notification',
+        ),
+      );
+    }
     if (channelId != kNudgeChannelId) return activityAlertDetails();
     return const NotificationDetails(
       android: AndroidNotificationDetails(

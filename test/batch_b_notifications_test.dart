@@ -119,15 +119,18 @@ void main() {
       expect(notifier.events, isEmpty);
     });
 
-    test('rang and unavailable never push a dismissal', () async {
+    test('rang pushes nothing; unavailable pushes "unavailable", never a '
+        'dismissal (item 6)', () async {
       final timeline = _Timeline();
       final notifier = _Notifier();
       final repo = DismissNotifyingTimelineRepository(timeline, notifier);
       await repo.recordRang('TARGET', 'item-1', at);
+      expect(notifier.events, isEmpty);
       await repo.recordUnavailable('TARGET', 'item-1', at);
+      await Future<void>.delayed(Duration.zero);
 
       expect(timeline.calls, ['rang:item-1', 'unavailable:item-1']);
-      expect(notifier.events, isEmpty);
+      expect(notifier.events, [(NotifyEvent.unavailable, 'TARGET', 'item-1')]);
     });
 
     test('the wire names match the Worker events', () {

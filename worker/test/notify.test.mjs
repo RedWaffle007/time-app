@@ -1308,3 +1308,76 @@ test('an admin-added member is told they were added', async () => {
   });
   assert.equal(sent[0].notification.title, 'Added to a group');
 });
+
+// --- item 6: "unavailable" push with the Uh-Oh tone (2026-09-27) -------------
+
+test('an unanswered alarm tells the planner, on the Uh-Oh channel, once', async () => {
+  const item = {
+    targetUid: 'target', createdByUid: 'planner', groupId: '', title: 'Gym',
+    status: 'approved', alarm: { unavailableAt: '2030-01-01T10:01:00Z' },
+  };
+  const h = context({
+    'scheduleItems/target/items/item-1': item,
+    'friendships/planner_target': { participants: [] },
+    'users/target': { name: 'Test Target' },
+  });
+  const res = await sendEventNotification(h.ctx, {
+    event: 'unavailable', targetUid: 'target', itemId: 'item-1',
+  });
+  assert.equal(res.reason, 'sent');
+  assert.deepEqual(h.listed, ['users/planner/fcmTokens']);
+  assert.equal(h.sent[0].notification.title, 'Test Target was unavailable');
+  assert.equal(
+    h.sent[0].notification.body,
+    'Test Target was unavailable to dismiss the task: Gym you planned for them.',
+  );
+  assert.equal(h.sent[0].android.notification.channel_id, 'planner_unavailable');
+  assert.equal(h.patched[0].fields.notifiedUnavailable, true);
+
+  const again = context({
+    'scheduleItems/target/items/item-1': { ...item, notifiedUnavailable: true },
+    'friendships/planner_target': { participants: [] },
+  });
+  const res2 = await sendEventNotification(again.ctx, {
+    event: 'unavailable', targetUid: 'target', itemId: 'item-1',
+  });
+  assert.equal(res2.reason, 'already-notified');
+});
+
+test('no unavailable push without the recorded fact, or for a self-plan', async () => {
+  const none = context({
+    'scheduleItems/target/items/item-1': {
+      targetUid: 'target', createdByUid: 'planner', groupId: '', status: 'approved',
+    },
+    'friendships/planner_target': { participants: [] },
+  });
+  const r1 = await sendEventNotification(none.ctx, {
+    event: 'unavailable', targetUid: 'target', itemId: 'item-1',
+  });
+  assert.equal(r1.sent, 0);
+
+  const self = context({
+    'scheduleItems/target/items/item-1': {
+      targetUid: 'target', createdByUid: 'target', groupId: '', status: 'approved',
+      alarm: { unavailableAt: '2030-01-01T10:01:00Z' },
+    },
+  });
+  const r2 = await sendEventNotification(self.ctx, {
+    event: 'unavailable', targetUid: 'target', itemId: 'item-1',
+  });
+  assert.equal(r2.sent, 0);
+});
+
+test('other item pushes stay on the normal activity channel', async () => {
+  const h = context({
+    'scheduleItems/target/items/item-1': {
+      targetUid: 'target', createdByUid: 'planner', groupId: '', status: 'approved',
+      title: 'Gym', alarm: { dismissedAt: '2030-01-01T10:00:30Z' },
+    },
+    'friendships/planner_target': { participants: [] },
+  });
+  await sendEventNotification(h.ctx, {
+    event: 'dismissed', targetUid: 'target', itemId: 'item-1',
+  });
+  assert.equal(h.sent[0].android.notification.channel_id, 'planner_activity');
+});

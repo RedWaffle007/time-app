@@ -25,6 +25,11 @@ enum NotifyEvent {
   /// A voice-note alarm rang the normal ringtone (item 32c-2) → notify the
   /// planner. Requires `alarm.voiceFallbackAt`, which the Worker re-reads.
   voiceFallback,
+
+  /// The target's alarm auto-stopped unanswered (item 6) → notify the planner,
+  /// with the "Uh-Oh!" tone. Requires `alarm.unavailableAt`, which the Worker
+  /// re-reads.
+  unavailable,
 }
 
 /// The app's seam between "something happened to an item" and "the other party

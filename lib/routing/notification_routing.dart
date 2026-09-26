@@ -57,6 +57,8 @@ class NotificationRouter {
       case 'voiceUndelivered':
       // "Their alarm rang with the normal ringtone" (item 32c-2).
       case 'voiceFallback':
+      // "{name} was unavailable to dismiss the task" (item 6).
+      case 'unavailable':
         _openPlanActivity();
       // Friend-graph pushes: a new request opens the requests inbox; an accept
       // opens the friends list, where the new friend now appears.

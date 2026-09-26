@@ -3,7 +3,8 @@ import 'dart:async';
 import '../../notifications/application/outcome_notifier.dart';
 import '../data/alarm_timeline_repository.dart';
 
-/// Tells the planner when the target dismisses a ringing alarm.
+/// Tells the planner when the target dismisses a ringing alarm — or when it
+/// stopped unanswered (item 6).
 ///
 /// **The one place a dismissal becomes a push.** Both dismiss paths — the
 /// full-screen AlarmScreen and the native lifecycle row replayed by the missed-
@@ -41,10 +42,22 @@ class DismissNotifyingTimelineRepository implements AlarmTimelineRepository {
   Future<void> recordRang(String targetUid, String itemId, DateTime atUtc) =>
       _inner.recordRang(targetUid, itemId, atUtc);
 
+  /// Item 6 (2026-09-27): the alarm auto-stopped unanswered — tell the
+  /// planner, the same way, only after `alarm.unavailableAt` is durable. The
+  /// Worker's `notifiedUnavailable` stamp makes a replayed row a no-op.
   @override
   Future<void> recordUnavailable(
     String targetUid,
     String itemId,
     DateTime atUtc,
-  ) => _inner.recordUnavailable(targetUid, itemId, atUtc);
+  ) async {
+    await _inner.recordUnavailable(targetUid, itemId, atUtc);
+    unawaited(
+      _notifier.notify(
+        event: NotifyEvent.unavailable,
+        targetUid: targetUid,
+        itemId: itemId,
+      ),
+    );
+  }
 }

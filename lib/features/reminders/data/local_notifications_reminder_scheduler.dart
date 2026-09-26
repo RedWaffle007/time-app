@@ -178,6 +178,7 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
       channelId: kRetiredEmergencyPlansChannelId,
     );
     await android?.createNotificationChannel(plannerActivityChannel);
+    await android?.createNotificationChannel(plannerUnavailableChannel);
   }
 
   @visibleForTesting

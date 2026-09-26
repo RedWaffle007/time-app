@@ -6887,3 +6887,29 @@ ONE friend to plan it.
   Friends → Plan requests stays the sent/received list.
 - **Not built:** a voice note on a fulfilled request (would need the voice
   upload flow on the request screen).
+
+---
+
+## "Unavailable" push with the "Uh-Oh!" tone (2026-09-27, Batch G item 6)
+
+**User-directed.** When the target's alarm auto-stops unanswered (the immutable
+`alarm.unavailableAt`), the planner is told: title "{Y} was unavailable", body
+"{Y} was unavailable to dismiss the task: {task} you planned for them." (plus
+" in {group}" for a group plan). It plays a playful sound instead of the
+phone's tone.
+
+- **Sound:** "Cartoon - Uh-Oh!" by Breviceps, freesound.org sound 445964,
+  **CC0 1.0** (public domain — no attribution required), user-chosen from three
+  CC0 options. Shipped as `android/app/src/main/res/raw/uh_oh.mp3` (the
+  site's 128 kbps preview transcode, 1.3 s).
+- **Channel:** a channel's sound is frozen at creation, so it has its own,
+  `planner_unavailable` ("Missed alarms of people you plan for"), created
+  wherever the activity channel is (foreground presenter + the killed-app
+  path) and named by the Worker for background delivery
+  (`UNAVAILABLE_CHANNEL_ID`). Every other push keeps the normal tone (F3).
+- **Trigger:** the same single seam as the dismiss push —
+  `DismissNotifyingTimelineRepository.recordUnavailable` fires the
+  `unavailable` event only after the field is durable. The Worker re-reads
+  `alarm.unavailableAt`, dedups on `notifiedUnavailable`, drops self-plans and
+  requires a live permission, like every item event.
+- **iOS:** not wired (no iOS target yet).
