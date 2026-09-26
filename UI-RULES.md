@@ -765,13 +765,17 @@ A". Recipes so it stays Hearth:
   1. The docked centre **voice FAB** — a standard (56) circular `primary` (brand green)
      FAB, mic glyph, *gentle* floating shadow (`Elevations.floating`). Speak-to-
      create. Owned by `HomeShell` (the outer scaffold), present on every pillar.
-  2. A **manual-create FAB**, bottom-right (`endFloat`), owned by the creating
-     pillar's own (inner) scaffold so it clears the bottom bar. **Plan** uses a
-     rounded, bold **`PLAN`** text FAB on all three sub-tabs; **Track** retains its
+  2. A **manual-create FAB**, owned by the creating pillar's own (inner)
+     scaffold so it clears the bottom bar. **Plan** uses TWO rounded text FABs
+     side by side at the bottom-LEFT (`startFloat`) on all three sub-tabs —
+     **`PLAN`** and **`REQUEST PLAN`** (2026-09-27, DECISIONS.md "Request Plan
+     redesign") — `Sizes.createFab` tall with bold `titleMedium` labels, both
+     from the FAB theme's `extendedSizeConstraints` / `extendedTextStyle`
+     (never styled in the screen); **Track** retains its
      circular **`AppIcons.add` (`＋`)** "Log item" FAB. Each carries its own
      `heroTag` so it never collides with the voice FAB in a route transition.
-  The controls never merge or appear a third time: mic = voice, `PLAN` / `＋` =
-  the pillar-specific manual action.
+  The controls never merge: mic = voice, `PLAN` / `REQUEST PLAN` / `＋` = the
+  pillar-specific manual actions.
   Manual create is **no longer** an app-bar `＋`. Detail/leaf pushed screens carry
   no FAB.
 - **Bottom edge respects the system nav bar.** Any full-screen **pushed** route

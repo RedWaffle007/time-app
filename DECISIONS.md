@@ -6851,3 +6851,39 @@ until it updates (the user accepted this; deploy rules with the new APK).
 - **Legacy.** The 30-minute `scheduleSlots` are untouched (their cleanup
   reconciler stays).
 - **Deploy order:** rules → Worker → install the new APK everywhere.
+
+---
+
+## Request Plan redesign + PLAN / REQUEST PLAN buttons (2026-09-27, Batch G item 5 + G6)
+
+**User-directed.** X wants a reminder for something they might forget and asks
+ONE friend to plan it.
+
+- **Form (X):** one friend (single choice — several could clash) → date + time
+  (X's own zone) → "Task for which you need a reminder" (required) → note
+  (optional) → Send. If X already has a live plan at that minute, item 4's red
+  line blocks Send. Flexible windows, multi-friend asks and durations are gone.
+- **Shape:** the existing `planRequests` document, fixed to one minute —
+  `mode: onePlan`, `windowEndUtc = windowStartUtc + 1 min`,
+  `durationMinutes: 1`, `title` = the task, `message` = the note. The create
+  rule now accepts only that shape; requests already open keep working
+  through the unchanged update/fulfilment rules.
+- **Friend (Y):** instant push "Plan request — {X} has requested you to plan
+  for them. Click to view details." → the request screen (who, task, when in
+  X's zone, note) with **Set the alarm** (creates the plan at exactly that
+  minute, minute lock included, and fulfils the request) or Decline. If X
+  became busy at that minute, the rules refuse it and Y is told so.
+- **Reminders (Worker, the 2-minute cron):** at 50% and 75% of
+  W = requested time − sent time, titled "Reminder", same body. They stop only
+  when Y CREATES the plan (the request becomes `fulfilled`) — opening it does
+  not — or when it is declined / cancelled / past due. Claimed with a
+  conditional write on the request (`remindersSent`); a missed slot is
+  skipped rather than sent as a burst. The query is a single-field range on
+  `windowStartUtc` (no composite index).
+- **Buttons (G6):** Plan's bottom-left now holds two text FABs side by side,
+  **PLAN** and **REQUEST PLAN**, slightly larger (`Sizes.createFab` = 60) with
+  bold `titleMedium` labels from the FAB theme (`extendedTextStyle`), so no
+  screen styles them by hand. REQUEST PLAN opens `/plan/request-plan`; You →
+  Friends → Plan requests stays the sent/received list.
+- **Not built:** a voice note on a fulfilled request (would need the voice
+  upload flow on the request screen).

@@ -16,11 +16,17 @@ import '../../../routing/app_router.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../notifications/application/friend_notifier.dart';
 import '../../notifications/application/outcome_notifier.dart';
+import '../../scheduling/application/schedule_clash.dart';
+import '../../scheduling/application/schedule_providers.dart';
 import '../../social/application/social_providers.dart';
 import '../../social/presentation/avatar_image.dart';
 import '../application/plan_request_providers.dart';
 import '../domain/plan_request.dart';
 
+/// **Request Plan** (Batch G item 5, DECISIONS.md "Request Plan redesign"):
+/// ask ONE friend to plan a reminder for something you might forget — when you
+/// need it (your own zone), what it is, and an optional note. The friend is
+/// pushed at once and reminded until they actually set it.
 class CreatePlanRequestScreen extends ConsumerStatefulWidget {
   const CreatePlanRequestScreen({super.key});
 
@@ -31,123 +37,124 @@ class CreatePlanRequestScreen extends ConsumerStatefulWidget {
 
 class _CreatePlanRequestScreenState
     extends ConsumerState<CreatePlanRequestScreen> {
-  final _selected = <String>{};
-  final _title = TextEditingController();
-  final _message = TextEditingController();
-  PlanRequestMode _mode = PlanRequestMode.onePlan;
-  DateTime? _startDate;
-  DateTime? _endDate;
-  TimeOfDay? _startTime;
-  TimeOfDay? _endTime;
-  int _duration = 30;
+  final _task = TextEditingController();
+  final _note = TextEditingController();
+  String? _friendUid;
+  DateTime? _date;
+  TimeOfDay? _time;
+  bool _taskError = false;
   bool _saving = false;
+
+  /// Item 4: your own minute must be free — the friend's plan could not land.
+  String? _clashKey;
+  bool _clashBlocked = false;
 
   @override
   void dispose() {
-    _title.dispose();
-    _message.dispose();
+    _task.dispose();
+    _note.dispose();
     super.dispose();
   }
 
-  Future<void> _pickDate(bool start) async {
+  DateTime _nowIn(String? zone) {
+    if (zone != null && zone.isNotEmpty) return wallNowIn(zone);
     final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day, now.hour, now.minute);
+  }
+
+  Future<void> _pickDate(String? zone) async {
+    final now = _nowIn(zone);
+    final today = DateTime(now.year, now.month, now.day);
     final value = await showDatePicker(
       context: context,
-      initialDate: (start ? _startDate : _endDate) ?? now,
-      firstDate: now,
-      lastDate: now.add(const Duration(days: 365)),
+      initialDate: _date ?? today,
+      currentDate: today,
+      firstDate: today,
+      lastDate: today.add(const Duration(days: 365)),
     );
-    if (value != null) {
-      setState(() {
-        if (start) {
-          _startDate = value;
-          _endDate ??= value;
-        } else {
-          _endDate = value;
-        }
-      });
-    }
+    if (value != null) setState(() => _date = value);
   }
 
-  Future<void> _pickTime(bool start) async {
+  Future<void> _pickTime(String? zone) async {
+    final now = _nowIn(zone);
     final value = await showTimePicker(
       context: context,
-      initialTime: (start ? _startTime : _endTime) ?? TimeOfDay.now(),
+      initialTime: _time ?? TimeOfDay(hour: now.hour, minute: now.minute),
     );
-    if (value != null) {
-      setState(() {
-        if (start) {
-          _startTime = value;
-        } else {
-          _endTime = value;
-        }
-      });
+    if (value != null) setState(() => _time = value);
+  }
+
+  DateTime _wall() => DateTime.utc(
+    _date!.year,
+    _date!.month,
+    _date!.day,
+    _time!.hour,
+    _time!.minute,
+  );
+
+  bool get _canSend =>
+      _friendUid != null &&
+      _date != null &&
+      _time != null &&
+      !_saving &&
+      !_clashBlocked;
+
+  Future<void> _checkClash(String key, String uid, DateTime instantUtc) async {
+    final result = await ref
+        .read(scheduleClashCheckerProvider)
+        .check(targetUid: uid, instantUtc: instantUtc);
+    if (mounted && _clashKey == key) {
+      setState(() => _clashBlocked = result == ClashResult.clash);
     }
   }
 
-  DateTime _wall(DateTime date, TimeOfDay time) =>
-      DateTime.utc(date.year, date.month, date.day, time.hour, time.minute);
-
-  Future<void> _submit(String uid, String timezone) async {
-    if (_selected.isEmpty ||
-        _startDate == null ||
-        _endDate == null ||
-        _startTime == null ||
-        _endTime == null ||
-        _saving) {
-      return;
-    }
-    final start = resolveWallTimeToUtc(
-      _wall(_startDate!, _startTime!),
-      timezone,
-    );
-    final end = resolveWallTimeToUtc(_wall(_endDate!, _endTime!), timezone);
-    final now = DateTime.now().toUtc();
-    if (!start.isAfter(now) || !end.isAfter(start)) {
+  Future<void> _send(String uid, String timezone) async {
+    final task = _task.text.trim();
+    setState(() => _taskError = task.isEmpty);
+    if (task.isEmpty || !_canSend) return;
+    final instant = resolveWallTimeToUtc(_wall(), timezone);
+    if (!instant.isAfter(DateTime.now().toUtc())) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Choose a future window with a later end.'),
+          content: Text('That time has already passed. Pick a later time.'),
         ),
       );
       return;
     }
-
+    final friendUid = _friendUid!;
+    final friendName =
+        ref.read(profileByUidProvider(friendUid)).value?.name ?? 'your friend';
+    final notifier = ref.read(friendEventNotifierProvider);
+    final messenger = ScaffoldMessenger.of(context);
     setState(() => _saving = true);
-    final batchId = '$uid-${DateTime.now().microsecondsSinceEpoch}';
-    final planners = _selected.toList();
     try {
-      await ref
+      final requestId = await ref
           .read(planRequestRepositoryProvider)
-          .createBatch(
-            batchId: batchId,
+          .createRequest(
             requesterUid: uid,
-            plannerUids: planners,
-            mode: _mode,
+            plannerUid: friendUid,
             timezone: timezone,
-            windowStartUtc: start,
-            windowEndUtc: end,
-            durationMinutes: _duration,
-            title: _title.text,
-            message: _message.text,
+            instantUtc: instant,
+            task: task,
+            note: _note.text,
           );
-      final notifier = ref.read(friendEventNotifierProvider);
-      for (final plannerUid in planners) {
-        unawaited(
-          notifier.notify(
-            event: FriendNotifyEvent.planRequested,
-            fromUid: uid,
-            toUid: plannerUid,
-            planRequestId: PlanRequest.requestId(batchId, plannerUid),
-          ),
-        );
-      }
+      // The instant push; reminders follow from the Worker until they plan it.
+      unawaited(
+        notifier.notify(
+          event: FriendNotifyEvent.planRequested,
+          fromUid: uid,
+          toUid: friendUid,
+          planRequestId: requestId,
+        ),
+      );
+      messenger.showSnackBar(
+        SnackBar(content: Text('Request sent to $friendName.')),
+      );
       if (mounted) context.pop();
     } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not send the request. $error')),
-        );
-      }
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not send the request. $error')),
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -157,24 +164,39 @@ class _CreatePlanRequestScreenState
   Widget build(BuildContext context) {
     final uid = ref.watch(currentUidProvider);
     final profile = ref.watch(profileProvider).value;
-    // Friendship is the planning permission (2026-09-27): any friend may be
-    // asked.
+    final zone = profile?.homeTimezone;
     final friendsAsync = ref.watch(myFriendUidsProvider);
+
+    if (uid != null &&
+        zone != null &&
+        zone.isNotEmpty &&
+        _date != null &&
+        _time != null) {
+      final instant = resolveWallTimeToUtc(_wall(), zone);
+      final key = '$uid|${instant.millisecondsSinceEpoch}';
+      if (key != _clashKey) {
+        _clashKey = key;
+        _clashBlocked = false;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _checkClash(key, uid, instant);
+        });
+      }
+    }
 
     return Scaffold(
       appBar: AppBar(title: const Text('Request a plan')),
       body: AsyncView(
         value: friendsAsync,
         onRetry: () => ref.invalidate(myFriendshipsProvider),
-        builder: (context, eligible) {
+        builder: (context, friends) {
           if (uid == null || profile == null) {
             return const Center(child: CircularProgressIndicator());
           }
           return ListView(
             padding: Space.screenListSafe(context),
             children: [
-              const SectionHeader('Ask'),
-              if (eligible.isEmpty)
+              const SectionHeader('Ask one friend'),
+              if (friends.isEmpty)
                 Text(
                   'Add a friend first — any friend can plan for you.',
                   style: context.text.bodyMedium?.copyWith(
@@ -182,93 +204,90 @@ class _CreatePlanRequestScreenState
                   ),
                 )
               else
-                for (final friendUid in eligible)
-                  _PlannerChoice(
-                    uid: friendUid,
-                    selected: _selected.contains(friendUid),
-                    onChanged: (value) => setState(() {
-                      value
-                          ? _selected.add(friendUid)
-                          : _selected.remove(friendUid);
-                    }),
+                RadioGroup<String>(
+                  groupValue: _friendUid,
+                  onChanged: (value) => setState(() => _friendUid = value),
+                  child: Column(
+                    children: [
+                      for (final friendUid in friends)
+                        _FriendChoice(uid: friendUid),
+                    ],
                   ),
-              const SectionHeader('Request'),
-              SegmentedButton<PlanRequestMode>(
-                showSelectedIcon: false,
-                segments: const [
-                  ButtonSegment(
-                    value: PlanRequestMode.onePlan,
-                    label: Text('One plan'),
+                ),
+              const SectionHeader('When do you need the reminder?'),
+              Text(
+                'In your local time — $zone.',
+                style: context.text.bodySmall?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: Space.sm),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      key: const ValueKey('request-date'),
+                      onPressed: () => _pickDate(zone),
+                      icon: const Icon(AppIcons.date),
+                      label: Text(
+                        _date == null
+                            ? 'Pick date'
+                            : formatWallDate(context, _date!),
+                      ),
+                    ),
                   ),
-                  ButtonSegment(
-                    value: PlanRequestMode.flexibleWindow,
-                    label: Text('Flexible window'),
+                  const SizedBox(width: Space.md),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      key: const ValueKey('request-time'),
+                      onPressed: () => _pickTime(zone),
+                      icon: const Icon(AppIcons.time),
+                      label: Text(
+                        _time == null
+                            ? 'Pick time'
+                            : formatTimeOfDay(context, _time!),
+                      ),
+                    ),
                   ),
                 ],
-                selected: {_mode},
-                onSelectionChanged: (value) =>
-                    setState(() => _mode = value.first),
               ),
-              const SizedBox(height: Space.lg),
-              TextField(
-                controller: _title,
-                maxLength: 200,
-                decoration: InputDecoration(
-                  labelText: _mode == PlanRequestMode.onePlan
-                      ? 'What should they plan? (optional)'
-                      : 'Theme or goal (optional)',
+              if (_clashBlocked)
+                _RequestError(
+                  'You already have a plan scheduled for this time. '
+                  'Please select a different time.',
                 ),
+              const SizedBox(height: Space.xl),
+              TextField(
+                key: const ValueKey('request-task'),
+                controller: _task,
+                maxLength: 200,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  labelText: 'Task for which you need a reminder',
+                ),
+                onChanged: (_) {
+                  if (_taskError) setState(() => _taskError = false);
+                },
               ),
+              if (_taskError)
+                const _RequestError('Please write the task. It is mandatory.'),
               const SizedBox(height: Space.md),
               TextField(
-                controller: _message,
+                key: const ValueKey('request-note'),
+                controller: _note,
                 maxLength: 500,
                 maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Message (optional)',
-                ),
-              ),
-              const SectionHeader('Window in your local time'),
-              _DateTimeChoice(
-                label: 'Starts',
-                date: _startDate,
-                time: _startTime,
-                onDate: () => _pickDate(true),
-                onTime: () => _pickTime(true),
-              ),
-              const SizedBox(height: Space.md),
-              _DateTimeChoice(
-                label: 'Ends',
-                date: _endDate,
-                time: _endTime,
-                onDate: () => _pickDate(false),
-                onTime: () => _pickTime(false),
-              ),
-              const SizedBox(height: Space.lg),
-              DropdownButtonFormField<int>(
-                initialValue: _duration,
-                decoration: InputDecoration(
-                  labelText: _mode == PlanRequestMode.onePlan
-                      ? 'Plan duration'
-                      : 'Default item duration',
-                ),
-                items: [15, 30, 45, 60, 90, 120]
-                    .map(
-                      (minutes) => DropdownMenuItem(
-                        value: minutes,
-                        child: Text(formatDurationMinutes(context, minutes)),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (value) => setState(() => _duration = value ?? 30),
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(labelText: 'Note (optional)'),
               ),
               const SizedBox(height: Space.xl),
               FilledButton.icon(
-                onPressed: _selected.isNotEmpty && !_saving
-                    ? () => _submit(uid, profile.homeTimezone)
+                key: const ValueKey('request-send'),
+                onPressed: _canSend && zone != null && zone.isNotEmpty
+                    ? () => _send(uid, zone)
                     : null,
                 icon: const Icon(AppIcons.send),
-                label: Text(_saving ? 'Sending…' : 'Send request'),
+                label: Text(_saving ? 'Sending…' : 'Send'),
               ),
             ],
           );
@@ -278,68 +297,37 @@ class _CreatePlanRequestScreenState
   }
 }
 
-class _PlannerChoice extends ConsumerWidget {
-  const _PlannerChoice({
-    required this.uid,
-    required this.selected,
-    required this.onChanged,
-  });
+class _RequestError extends StatelessWidget {
+  const _RequestError(this.message);
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: Space.sm),
+    child: Text(
+      message,
+      key: ValueKey('error-$message'),
+      style: context.text.bodySmall?.copyWith(color: context.colors.error),
+    ),
+  );
+}
+
+class _FriendChoice extends ConsumerWidget {
+  const _FriendChoice({required this.uid});
 
   final String uid;
-  final bool selected;
-  final ValueChanged<bool> onChanged;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(profileByUidProvider(uid)).value;
     return Card(
-      child: CheckboxListTile(
-        value: selected,
-        onChanged: (value) => onChanged(value ?? false),
+      child: RadioListTile<String>(
+        key: ValueKey('request-friend-$uid'),
+        value: uid,
         secondary: AvatarImage(profile: profile, size: Sizes.avatarRow),
-        title: Text(profile?.name ?? 'Friend'),
+        title: Text(profile?.name ?? 'Loading…'),
       ),
-    );
-  }
-}
-
-class _DateTimeChoice extends StatelessWidget {
-  const _DateTimeChoice({
-    required this.label,
-    required this.date,
-    required this.time,
-    required this.onDate,
-    required this.onTime,
-  });
-
-  final String label;
-  final DateTime? date;
-  final TimeOfDay? time;
-  final VoidCallback onDate;
-  final VoidCallback onTime;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        SizedBox(width: Sizes.avatarRow, child: Text(label)),
-        const SizedBox(width: Space.sm),
-        Expanded(
-          child: OutlinedButton(
-            onPressed: onDate,
-            child: Text(date == null ? 'Date' : formatWallDate(context, date!)),
-          ),
-        ),
-        const SizedBox(width: Space.sm),
-        Expanded(
-          child: OutlinedButton(
-            onPressed: onTime,
-            child: Text(
-              time == null ? 'Time' : formatTimeOfDay(context, time!),
-            ),
-          ),
-        ),
-      ],
     );
   }
 }
@@ -354,7 +342,7 @@ class PlanRequestsScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Plan requests')),
       floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'requestPlanFab',
+        heroTag: 'planRequestsListFab',
         onPressed: () => context.push(Routes.newPlanRequest),
         icon: const Icon(AppIcons.add),
         label: const Text('Request'),
@@ -412,8 +400,8 @@ class _PlanRequestCard extends ConsumerWidget {
             const SizedBox(height: Space.xs),
             Text(
               '${incoming ? 'From' : 'To'} ${profile?.name ?? 'friend'} · '
-              '${formatInstant(context, request.windowStartUtc, request.timezone)} '
-              '– ${formatInstant(context, request.windowEndUtc, request.timezone)}',
+              '${formatInstant(context, request.windowStartUtc, request.timezone)}'
+              '${request.durationMinutes <= 1 ? '' : ' – ${formatInstant(context, request.windowEndUtc, request.timezone)}'}',
               style: context.text.bodySmall?.copyWith(
                 color: context.colors.onSurfaceVariant,
               ),
@@ -440,7 +428,7 @@ class _PlanRequestCard extends ConsumerWidget {
                       onPressed: () => context.push(
                         Routes.fulfillPlanRequestFor(request.id),
                       ),
-                      child: const Text('Plan'),
+                      child: const Text('View'),
                     ),
                   ),
                 ],
@@ -460,6 +448,10 @@ class _PlanRequestCard extends ConsumerWidget {
   }
 }
 
+/// A friend's request, seen by the friend asked (Batch G item 5): who, what,
+/// when (in THEIR zone), the note, and one action — **Set the alarm** — which
+/// creates the plan at exactly that minute and completes the request. Opening
+/// this screen does not stop the reminders; setting the alarm does.
 class FulfillPlanRequestScreen extends ConsumerStatefulWidget {
   const FulfillPlanRequestScreen({required this.requestId, super.key});
 
@@ -472,63 +464,41 @@ class FulfillPlanRequestScreen extends ConsumerStatefulWidget {
 
 class _FulfillPlanRequestScreenState
     extends ConsumerState<FulfillPlanRequestScreen> {
-  final _title = TextEditingController();
-  final _note = TextEditingController();
-  DateTime? _date;
-  TimeOfDay? _time;
-  int? _duration;
-  bool _finish = false;
   bool _saving = false;
-  bool _seeded = false;
+  String? _error;
 
-  @override
-  void dispose() {
-    _title.dispose();
-    _note.dispose();
-    super.dispose();
-  }
-
-  Future<void> _pickDate() async {
-    final now = DateTime.now();
-    final value = await showDatePicker(
-      context: context,
-      initialDate: _date ?? now,
-      firstDate: now,
-      lastDate: now.add(const Duration(days: 365)),
-    );
-    if (value != null) setState(() => _date = value);
-  }
-
-  Future<void> _pickTime() async {
-    final value = await showTimePicker(
-      context: context,
-      initialTime: _time ?? TimeOfDay.now(),
-    );
-    if (value != null) setState(() => _time = value);
-  }
-
-  Future<void> _save(PlanRequest request) async {
+  Future<void> _setAlarm(PlanRequest request, String requesterName) async {
     final uid = ref.read(currentUidProvider);
-    if (uid == null || _date == null || _time == null || _saving) return;
-    final wall = DateTime.utc(
-      _date!.year,
-      _date!.month,
-      _date!.day,
-      _time!.hour,
-      _time!.minute,
+    if (uid == null || _saving) return;
+    final local = tz.TZDateTime.from(
+      request.windowStartUtc,
+      tz.getLocation(request.timezone),
     );
-    setState(() => _saving = true);
+    final wall = DateTime.utc(
+      local.year,
+      local.month,
+      local.day,
+      local.hour,
+      local.minute,
+    );
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
     try {
       final itemId = await ref
           .read(planRequestRepositoryProvider)
           .fulfill(
             request: request,
             plannerUid: uid,
-            title: _title.text,
-            note: _note.text,
+            title: (request.title ?? '').trim().isEmpty
+                ? 'Reminder'
+                : request.title!,
+            note: request.message,
             wall: wall,
-            durationMinutes: _duration ?? request.durationMinutes,
-            finishFlexibleRequest: _finish,
+            durationMinutes: request.durationMinutes,
+            finishFlexibleRequest: true,
           );
       unawaited(
         ref
@@ -539,24 +509,24 @@ class _FulfillPlanRequestScreenState
               itemId: itemId,
             ),
       );
-      if (!mounted) return;
-      if (request.isOnePlan || _finish) {
-        context.pop();
-      } else {
-        setState(() {
-          _title.clear();
-          _note.clear();
-          _date = null;
-          _time = null;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Item added. You can add another.')),
-        );
-      }
+      messenger.showSnackBar(
+        SnackBar(content: Text('Alarm set for $requesterName.')),
+      );
+      if (mounted) context.pop();
     } catch (error) {
+      // Refused? Most likely they already have a plan at that minute (item 4).
+      String? holder;
+      try {
+        holder = await ref
+            .read(scheduleRepositoryProvider)
+            .minuteLockHolder(request.requesterUid, request.windowStartUtc);
+      } catch (_) {}
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not add the plan. $error')),
+        setState(
+          () => _error = holder != null
+              ? '$requesterName already has a plan scheduled for this time, '
+                    'so this alarm can’t be set.'
+              : 'Could not set the alarm. $error',
         );
       }
     } finally {
@@ -568,7 +538,7 @@ class _FulfillPlanRequestScreenState
   Widget build(BuildContext context) {
     final value = ref.watch(planRequestProvider(widget.requestId));
     return Scaffold(
-      appBar: AppBar(title: const Text('Fulfill request')),
+      appBar: AppBar(title: const Text('Plan request')),
       body: AsyncView<PlanRequest?>(
         value: value,
         onRetry: () => ref.invalidate(planRequestProvider(widget.requestId)),
@@ -576,93 +546,89 @@ class _FulfillPlanRequestScreenState
         emptyMessage: 'This request is no longer available.',
         builder: (context, request) {
           final live = request!;
-          if (!_seeded) {
-            _seeded = true;
-            _title.text = live.title ?? '';
-            _duration = live.durationMinutes;
-            final local = tz.TZDateTime.from(
-              live.windowStartUtc,
-              tz.getLocation(live.timezone),
-            );
-            _date = DateTime(local.year, local.month, local.day);
-            _time = TimeOfDay(hour: local.hour, minute: local.minute);
-          }
+          final requester = ref
+              .watch(profileByUidProvider(live.requesterUid))
+              .value;
+          final name = requester?.name ?? 'Your friend';
+          final task = (live.title ?? '').trim();
+          final note = (live.message ?? '').trim();
           return ListView(
             padding: Space.screenListSafe(context),
             children: [
               Text(
-                'Use ${live.timezone}. The item must stay inside '
-                '${formatInstant(context, live.windowStartUtc, live.timezone)} '
-                '– ${formatInstant(context, live.windowEndUtc, live.timezone)}.',
-                style: context.text.bodySmall?.copyWith(
-                  color: context.colors.onSurfaceVariant,
-                ),
+                '$name has requested you to plan for them.',
+                style: context.text.titleMedium,
               ),
               const SizedBox(height: Space.lg),
-              TextField(
-                controller: _title,
-                decoration: const InputDecoration(labelText: 'Title'),
-                onChanged: (_) => setState(() {}),
+              _Detail(label: 'Task', value: task.isEmpty ? '—' : task),
+              _Detail(
+                label: 'When',
+                value:
+                    '${formatInstant(context, live.windowStartUtc, live.timezone)}'
+                    ' (${live.timezone})',
               ),
-              const SizedBox(height: Space.lg),
-              _DateTimeChoice(
-                label: 'Starts',
-                date: _date,
-                time: _time,
-                onDate: _pickDate,
-                onTime: _pickTime,
-              ),
-              const SizedBox(height: Space.lg),
-              DropdownButtonFormField<int>(
-                initialValue: _duration,
-                decoration: const InputDecoration(labelText: 'Duration'),
-                items: [15, 30, 45, 60, 90, 120]
-                    .map(
-                      (minutes) => DropdownMenuItem(
-                        value: minutes,
-                        child: Text(formatDurationMinutes(context, minutes)),
-                      ),
-                    )
-                    .toList(),
-                onChanged: live.isOnePlan
-                    ? null
-                    : (value) => setState(() => _duration = value),
-              ),
-              const SizedBox(height: Space.lg),
-              TextField(
-                controller: _note,
-                decoration: const InputDecoration(labelText: 'Note (optional)'),
-              ),
-              if (!live.isOnePlan) ...[
-                const SizedBox(height: Space.sm),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Finish request after this item'),
-                  value: _finish,
-                  onChanged: (value) => setState(() => _finish = value),
-                ),
-                if (live.fulfilledSpans.isNotEmpty)
-                  TextButton(
-                    onPressed: () async {
-                      await ref
-                          .read(planRequestRepositoryProvider)
-                          .completeFlexible(live);
-                      if (context.mounted) context.pop();
-                    },
-                    child: const Text('Finish without another item'),
-                  ),
-              ],
+              if (note.isNotEmpty) _Detail(label: 'Note', value: note),
               const SizedBox(height: Space.xl),
-              FilledButton(
-                onPressed: _title.text.trim().isNotEmpty && !_saving
-                    ? () => _save(live)
-                    : null,
-                child: Text(_saving ? 'Adding…' : 'Add plan'),
-              ),
+              if (_error != null) ...[
+                _RequestError(_error!),
+                const SizedBox(height: Space.md),
+              ],
+              if (live.isOpen) ...[
+                FilledButton.icon(
+                  key: const ValueKey('request-set-alarm'),
+                  onPressed: _saving ? null : () => _setAlarm(live, name),
+                  icon: const Icon(AppIcons.navPlan),
+                  label: Text(_saving ? 'Setting…' : 'Set the alarm'),
+                ),
+                const SizedBox(height: Space.sm),
+                OutlinedButton(
+                  key: const ValueKey('request-decline'),
+                  onPressed: _saving
+                      ? null
+                      : () async {
+                          await ref
+                              .read(planRequestRepositoryProvider)
+                              .decline(live);
+                          if (context.mounted) context.pop();
+                        },
+                  child: const Text('Decline'),
+                ),
+              ] else
+                Text(switch (live.status) {
+                  PlanRequestStatus.fulfilled => 'The alarm is set.',
+                  PlanRequestStatus.declined => 'You declined this request.',
+                  PlanRequestStatus.cancelled => 'They cancelled this request.',
+                  _ => '',
+                }, style: context.text.bodyMedium),
             ],
           );
         },
       ),
     );
   }
+}
+
+class _Detail extends StatelessWidget {
+  const _Detail({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: Space.md),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: context.text.labelMedium?.copyWith(
+            color: context.colors.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: Space.xs),
+        Text(value, style: context.text.bodyLarge),
+      ],
+    ),
+  );
 }

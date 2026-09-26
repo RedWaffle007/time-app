@@ -209,6 +209,10 @@ class Routes {
   /// (Was `/activity/schedule-builder` before the S5 cutover.)
   static const scheduleBuilder = '$plan/schedule-builder';
 
+  /// Ask ONE friend to plan a reminder for you (Batch G item 5), pushed from
+  /// the REQUEST PLAN button beside PLAN.
+  static const requestPlan = '$plan/request-plan';
+
   /// Voice-flow query params seeding [scheduleBuilder] (S6). The Plan voice flow
   /// picks the target first, parses the spoken details, and pushes the builder
   /// with these filled. All are optional; a missing/malformed one degrades to
@@ -384,6 +388,11 @@ final routerProvider = Provider<GoRouter>((ref) {
                 // this branch page, so query-only changes were unreliable.
                 builder: (context, state) => const PlanShell(),
                 routes: [
+                  GoRoute(
+                    path: 'request-plan',
+                    builder: (context, state) =>
+                        const CreatePlanRequestScreen(),
+                  ),
                   GoRoute(
                     path: 'schedule-builder',
                     // Voice-flow seeds (S6) ride in as query params on the pushed

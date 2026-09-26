@@ -153,15 +153,18 @@ void main() {
         expect(find.text('PLAN'), findsOneWidget);
         expect(find.byTooltip('Plan an item'), findsOneWidget);
         final fab = tester.widget<FloatingActionButton>(
-          find.byType(FloatingActionButton),
+          find.byKey(const ValueKey('plan-fab')),
         );
         expect(fab.isExtended, isTrue);
         expect(fab.heroTag, 'planCreateFab');
-        final label = tester.widget<Text>(find.text('PLAN'));
-        expect(label.style?.fontWeight, FontWeight.bold);
-        final shape = Theme.of(
-          tester.element(find.byType(FloatingActionButton)),
-        ).floatingActionButtonTheme.shape;
+        // G6 (2026-09-27): REQUEST PLAN sits beside it; the bold label comes
+        // from the FAB theme, not the screen.
+        expect(find.text('REQUEST PLAN'), findsOneWidget);
+        final fabTheme = Theme.of(
+          tester.element(find.byKey(const ValueKey('plan-fab'))),
+        ).floatingActionButtonTheme;
+        expect(fabTheme.extendedTextStyle?.fontWeight, FontWeight.bold);
+        final shape = fabTheme.shape;
         expect(shape, isA<RoundedRectangleBorder>());
         expect((shape! as RoundedRectangleBorder).borderRadius, Radii.pill);
       }
@@ -174,7 +177,7 @@ void main() {
       await tester.pumpAndSettle();
       expectPlanButton();
 
-      await tester.tap(find.byType(FloatingActionButton));
+      await tester.tap(find.byKey(const ValueKey('plan-fab')));
       await tester.pumpAndSettle();
       expect(find.text('Schedule builder destination'), findsOneWidget);
     },

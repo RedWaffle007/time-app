@@ -187,7 +187,7 @@ void main() {
     );
     final screenWidth = tester.getSize(find.byType(PlanShell)).width;
     expect(
-      tester.getCenter(find.byType(FloatingActionButton)).dx,
+      tester.getCenter(find.byKey(const ValueKey('plan-fab'))).dx,
       lessThan(screenWidth / 2),
     );
   });

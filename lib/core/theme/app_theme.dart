@@ -193,6 +193,13 @@ abstract final class AppTheme {
         backgroundColor: cs.primaryContainer,
         foregroundColor: cs.onPrimaryContainer,
         shape: const RoundedRectangleBorder(borderRadius: Radii.pill),
+        // Text FABs (Plan's PLAN / REQUEST PLAN): a little larger, bold (G6).
+        extendedSizeConstraints: const BoxConstraints.tightFor(
+          height: Sizes.createFab,
+        ),
+        extendedTextStyle: AppText.titleMedium.copyWith(
+          fontWeight: FontWeight.w700,
+        ),
       ),
 
       filledButtonTheme: FilledButtonThemeData(

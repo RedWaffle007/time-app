@@ -29,6 +29,7 @@ import {
 } from './avatar.js';
 import { sendDueInactivityNotifications } from './inactivity.js';
 import { handleGroupPlanned } from './group-plan.js';
+import { sendPlanRequestReminders } from './plan-request-reminders.js';
 import { settleLapsedItems } from './lapse.js';
 import { rescueUndeliveredVoiceNotes } from './voice-rescue.js';
 import { handleInviteRequest } from './invite.js';
@@ -419,6 +420,9 @@ async function runLapseCron(env, now) {
   // Same 2-minute invocation: rescue voice notes not yet on the target's phone.
   const rescue = await rescueUndeliveredVoiceNotes(context, now);
   console.log(JSON.stringify({ event: 'voice-rescue', ...rescue }));
+  // …and remind friends of plan requests they have not planned yet (item 5).
+  const reminders = await sendPlanRequestReminders(context, now);
+  console.log(JSON.stringify({ event: 'plan-request-reminders', ...reminders }));
 }
 
 async function runInactivityCron(env, now) {

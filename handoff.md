@@ -520,7 +520,9 @@ mode and multi-friend selection.
    already have a plan then." The planner gets a summary: "Your group task
    "{task}" is set for {X} members. {Y} ({names}) were busy at that time and
    won't be alerted."
-5. **Request Plan redesign.** One friend → date + time → "Task for which you
+5. **Request Plan redesign.** — **BUILT 2026-09-27 (with G6's buttons);
+   awaiting rules deploy → Worker deploy → commit; phone check deferred**
+   (DECISIONS.md "Request Plan redesign + PLAN / REQUEST PLAN buttons"). One friend → date + time → "Task for which you
    need a reminder" → optional note → Send. Friend gets an instant push:
    "{X} has requested you to plan for them. Click to view details." Reminder
    pushes (same text, tagged "Reminder") at 50% and 75% of the window W =

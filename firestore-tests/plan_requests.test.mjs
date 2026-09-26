@@ -70,6 +70,16 @@ const request = (overrides = {}) => ({
   ...overrides,
 });
 
+/** The redesigned request (item 5): one minute, one-minute plan, a task. */
+const newRequest = (overrides = {}) => request({
+  windowStartUtc: new Date('2030-11-03T05:00:00Z'),
+  windowEndUtc: new Date('2030-11-03T05:01:00Z'),
+  durationMinutes: 1,
+  title: 'Take medicine',
+  message: 'After lunch',
+  ...overrides,
+});
+
 async function unfriend() {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     await deleteDoc(doc(ctx.firestore(), `friendships/${PAIR}`));
@@ -96,7 +106,7 @@ async function seedRequest(overrides = {}) {
   });
 }
 
-function item(itemId, start = '2030-11-03T06:00:00Z') {
+function item(itemId, start = '2030-11-03T06:00:00Z', duration = 30) {
   return {
     targetUid: TARGET,
     createdByUid: PLANNER,
@@ -105,7 +115,7 @@ function item(itemId, start = '2030-11-03T06:00:00Z') {
     localWallTime: '2030-11-03T01:00',
     timezone: 'America/New_York',
     scheduledInstantUtc: new Date(start),
-    durationMinutes: 30,
+    durationMinutes: duration,
     planRequestId: REQUEST_ID,
     status: 'pending',
     createdAt: new Date(),
@@ -118,15 +128,16 @@ async function fulfill(db, itemId, {
   start = '2030-11-03T06:00:00Z',
   priorIds = [],
   priorSpans = [],
+  duration = 30,
 } = {}) {
   const nextSpan = {
     itemId,
     startUtc: new Date(start),
-    durationMinutes: 30,
+    durationMinutes: duration,
   };
   const batch = writeBatch(db);
   batch.set(doc(db, `scheduleItems/${TARGET}/items/${itemId}`),
-    item(itemId, start));
+    item(itemId, start, duration));
   // Item 4 (strict): the plan carries the lock on its minute.
   batch.set(doc(db, lockPath(TARGET, new Date(start))), {
     targetUid: TARGET, itemId, createdByUid: PLANNER, createdAt: new Date(),
@@ -144,31 +155,79 @@ async function fulfill(db, itemId, {
 
 describe('plan request creation is consent-scoped', () => {
   it('allows the target to ask a friend (friendship is the permission)', async () => {
-    await assertSucceeds(setDoc(doc(as(TARGET), REQUEST_PATH), request()));
+    await assertSucceeds(setDoc(doc(as(TARGET), REQUEST_PATH), newRequest()));
   });
 
   it('denies a request to someone who is not a friend', async () => {
     await unfriend();
-    await assertFails(setDoc(doc(as(TARGET), REQUEST_PATH), request()));
+    await assertFails(setDoc(doc(as(TARGET), REQUEST_PATH), newRequest()));
   });
 
   it('a retired grant document with granted:false no longer matters', async () => {
     await seedRetiredGrant(false);
-    await assertSucceeds(setDoc(doc(as(TARGET), REQUEST_PATH), request()));
+    await assertSucceeds(setDoc(doc(as(TARGET), REQUEST_PATH), newRequest()));
   });
 
   it('denies the planner creating an ask on the target behalf', async () => {
-    await assertFails(setDoc(doc(as(PLANNER), REQUEST_PATH), request()));
+    await assertFails(setDoc(doc(as(PLANNER), REQUEST_PATH), newRequest()));
+  });
+
+  it('denies the old shapes: a window, a flexible request, a longer plan, no task', async () => {
+    for (const bad of [
+      { windowEndUtc: new Date('2030-11-03T09:00:00Z') },
+      { mode: 'flexibleWindow' },
+      { durationMinutes: 30 },
+      { title: '   ' },
+      { title: null },
+    ]) {
+      await assertFails(setDoc(doc(as(TARGET), REQUEST_PATH), newRequest(bad)),
+        JSON.stringify(bad));
+    }
   });
 
   it('denies malformed bounds, duration, and deterministic id mismatch', async () => {
-    await assertFails(setDoc(doc(as(TARGET), REQUEST_PATH), request({
+    await assertFails(setDoc(doc(as(TARGET), REQUEST_PATH), newRequest({
       windowEndUtc: new Date('2030-11-03T04:00:00Z'),
     })));
-    await assertFails(setDoc(doc(as(TARGET), REQUEST_PATH), request({
+    await assertFails(setDoc(doc(as(TARGET), REQUEST_PATH), newRequest({
       durationMinutes: 0,
     })));
-    await assertFails(setDoc(doc(as(TARGET), 'planRequests/wrong'), request()));
+    await assertFails(setDoc(doc(as(TARGET), 'planRequests/wrong'), newRequest()));
+  });
+});
+
+describe('the redesigned request is fulfilled at exactly its minute', () => {
+  it('the friend sets the alarm at the requested minute', async () => {
+    await seedRequest(newRequest());
+    await assertSucceeds(fulfill(as(PLANNER), 'item-1', {
+      start: '2030-11-03T05:00:00Z', duration: 1,
+    }));
+  });
+
+  it('DENIES a different minute', async () => {
+    await seedRequest(newRequest());
+    await assertFails(fulfill(as(PLANNER), 'item-1', {
+      start: '2030-11-03T05:01:00Z', duration: 1,
+    }));
+  });
+
+  it('DENIES it when the requester is already busy at that minute', async () => {
+    await seedRequest(newRequest());
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, `scheduleItems/${TARGET}/items/busy`), {
+        targetUid: TARGET, createdByUid: TARGET, groupId: '', title: 'Own',
+        localWallTime: '', timezone: 'America/New_York',
+        scheduledInstantUtc: new Date('2030-11-03T05:00:00Z'),
+        status: 'approved', createdAt: new Date(), updatedAt: new Date(),
+      });
+      await setDoc(doc(db, lockPath(TARGET, new Date('2030-11-03T05:00:00Z'))), {
+        targetUid: TARGET, itemId: 'busy', createdByUid: TARGET, createdAt: new Date(),
+      });
+    });
+    await assertFails(fulfill(as(PLANNER), 'item-1', {
+      start: '2030-11-03T05:00:00Z', duration: 1,
+    }));
   });
 });
 

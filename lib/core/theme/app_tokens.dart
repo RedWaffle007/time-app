@@ -126,6 +126,10 @@ abstract final class Sizes {
   /// labels, so the two choices that set WHEN read first (F4).
   static const double pickerButton = 56;
 
+  /// Plan's bottom-left text FABs, PLAN and REQUEST PLAN — slightly taller
+  /// than the standard 56 so the two create actions are easy to spot (G6).
+  static const double createFab = 60;
+
   /// The spinner that replaces a button's label while it is working. Sized to
   /// the label, so the button doesn't change height mid-action.
   static const double buttonSpinner = 20;

@@ -531,9 +531,10 @@ function buildFriendMessage(
       };
       break;
     case 'planRequested':
+      // Item 5 (2026-09-27): the redesigned wording, shared with reminders.
       notification = {
-        title: 'Plan requested',
-        body: `${who} asked you to plan something for them`,
+        title: 'Plan request',
+        body: `${who} has requested you to plan for them. Click to view details.`,
       };
       break;
     case 'groupJoinApproved': {
