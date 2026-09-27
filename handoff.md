@@ -1,9 +1,10 @@
-# Checkmate handoff — 2026-09-26 (end of day)
+# Checkmate handoff — 2026-09-27 (end of Batch G)
 
 ## Operating rules
 
-- Do not run tests, commit, push, deploy, or publish. The user does those after
-  receiving exact commands.
+- Never commit, push, deploy, or publish — the user does those after receiving
+  exact commands. Tests: the user normally runs them; Claude runs the suite
+  when asked (it did from 2026-09-27 onward) and reports exact counts.
 - Before any device test that depends on rules, run
   `scripts/check-deployed-rules.sh` (read-only). Device passes against stale
   rules produced false "regressions" on 2026-09-25.
@@ -40,103 +41,119 @@
 
 ## Current state
 
-- Branch `main`, clean after `dc9d7f3`. Today's commits, each green on the full
-  suite: `b1db021` (F1+F6), `4e9489a` (F2), `29feacb` (F3+F5), `f1a0950` (F4),
-  `dc9d7f3` (32d).
-- Completed: Items **1–23, 25–32 (32-0 … 32d), 34, 35**, Batches **A–F**.
-- **Deployed 2026-09-26 (user-confirmed):** Firestore rules (latest adds
-  `users/{uid}/voiceLibrary`; run `scripts/check-deployed-rules.sh` before any
-  rules-dependent device pass) and the Cloudflare Worker (32d library routes +
-  save hooks). `wrangler deploy` makes the new version live immediately.
-- Test counts at `dc9d7f3`: Flutter 737, Worker 147 (`node --test
-  worker/test/*.test.mjs` from the repo root — there is no worker/package.json),
-  rules 262, Kotlin unit tests green.
-- **International test build (2026-09-26):** the user is building an arm64
-  release APK to share with a tester abroad, and may install it on the Redmi
-  to check it first. Their results are the next device evidence.
-- Next implementation order: **… F ✓ → 32d ✓ → Batch G → 24 → 33**. Every phone check
-  since Batch A is deferred to the device pass (see "Deferred device checks").
+- Branch `main`, clean after `1df7447`. **Batch G is DONE in code** (items 1–9
+  + 5b), one commit each, every one green on the full suite:
+  `6fe18b0` G1 clash · `4f4b047` G2 pickers · `508dcca` friends = permission ·
+  `3d0e1fc` WhatsApp groups · `d8f5e4e` minute locks · `8a2cb6e` Request Plan
+  redesign · `af4ca73` Uh-Oh push · `d688fb0` 5b fulfil via Plan screen ·
+  `c751f43` Home · `8e8b8e2` Track Time removed · `1df7447` bigger Play/X.
+- Test counts at `1df7447`: Flutter 790, rules 274, Worker 176, Kotlin green.
+- **Deploy status — CONFIRM before any device pass.** The user confirmed the
+  rules + Worker deploy for items 2–4. Items 5, 5b and 8 changed the rules and
+  items 5 and 6 changed the Worker; their deploys were given but not
+  explicitly confirmed. Run `scripts/check-deployed-rules.sh` (live rules must
+  match HEAD) and redeploy the Worker from HEAD if unsure:
+  `firebase deploy --only firestore:rules && scripts/check-deployed-rules.sh && (cd worker && npx wrangler deploy)`.
+- **Strict minute locks (item 4): a build older than `d8f5e4e` cannot create
+  ANY plan against the current rules.** Every phone — including the external
+  tester's — needs a fresh APK.
+- Completed: Items **1–23, 25–32, 34, 35**, Batches **A–G**.
+- Next: **Item 24 → Item 33** (both research-first; propose, wait for
+  sign-off). Nothing built since Batch A has been checked on a phone — see
+  "Deferred device checks".
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
 
-## Product model now (2026-09-26 — read before touching planning or alarms)
+## Product model now (2026-09-27 — read before touching planning or alarms)
 
-- **No approval step (F2, user-directed change to the core loop).** Consent is
-  ONE revocable permission per person ("Let {name} set alarms for me"; the old
-  planning + emergency grants are merged — turning it off revokes both). Every
-  alarm a permitted person sets is saved `approved` and rings directly; the
-  planner can **Cancel alarm** until it rings. Legacy `pending` items become
-  alarms on the target's device (past ones → skipped "did not respond"). No
-  Pending approvals screen, badge, glow, approval reminders or "Emergency"
-  label anywhere. CLAUDE.md's core-loop line still says "A approves each item" —
-  DECISIONS.md "Approval removed" supersedes it.
-- **Two alarm kinds (F4):** Default Alarm (mandatory task name; rings the
-  ringtone) and Voice Note (no name — stored as "Voice alarm"; lock screen,
-  missed notice and push read "{planner} sent you a voice alarm"). Self-plans
-  are Default Alarm only.
-- **Tones (F3):** only alarms ring; every other notification uses the phone's
-  normal tone on the `planner_activity` / `app_nudges` channels.
+- **No approval step (F2).** Every alarm is saved `approved` and rings
+  directly; the planner can **Cancel alarm** until it is answered. CLAUDE.md's
+  core-loop "A approves each item" is superseded (DECISIONS.md "Approval
+  removed").
+- **Friendship IS the planning permission (item 2).** Friends may set alarms
+  for each other and read each other's schedule for the clash check — no
+  grant, switch or request. Unfriend/block ends it at once; the target's other
+  way out is Done/Skip before it rings.
+- **Groups are WhatsApp-style (item 3).** Creator = admin; only the creator
+  makes/removes admins; admins add friends directly, decide join requests (any
+  one admin; every admin is pushed) and remove anyone but the creator. Any
+  member plans for the WHOLE group — no individual planning inside a group.
+  Group grants and `plannerAccess` are retired.
+- **No double-booking, strict (item 4).** Every plan is written with a lock at
+  `scheduleMinutes/{target}/minutes/{epochMinute}`; a minute held by a live plan
+  refuses a second one (self-plans too); a settled plan's lock is taken over.
+  Group plans skip busy members; the Worker verifies them before pushing the
+  member and the planner's summary. Targets backfill locks for older plans.
+- **Pickers open in the recipient's time (G2)**, with "It's now … there."
+- **Request Plan (items 5, 5b, 8):** its own bottom-bar pillar,
+  `Plan · Request · ⊕ · Stats · You`. X asks ONE friend for ONE minute with a
+  task (+ note); the friend is pushed at once and reminded at 50% and 75% of
+  the window until they CREATE the plan, which they do through the normal Plan
+  screen (locked to that minute; Default Alarm or Voice Note).
+- **Home (item 7)** = my open plans + the open plans I set for others (planner
+  card, Cancel alarm, no Done/Skip); **Activity** = plans for others once
+  answered.
+- **Track Time is removed (item 8)**; ⊕ voice plans only.
+- **Two alarm kinds (F4):** Default Alarm (mandatory name) and Voice Note
+  ("{planner} sent you a voice alarm"). Self-plans are Default Alarm only.
+- **Tones (F3 + item 6):** only alarms ring; pushes use the phone's normal tone
+  on `planner_activity` / `app_nudges` — except "{Y} was unavailable to dismiss
+  the task…", which plays the bundled CC0 "Uh-Oh!" on `planner_unavailable`.
 - **Voice replays (F5):** 15–20 s → 3 plays, 10–15 s → 4, 5–10 s → 5,
-  under 5 s → 6 (boundaries take the longer band); notes are 1–20 s.
-- **Voice library (32d):** every SENT voice note is saved automatically
-  (Worker, send time + hourly sweep fallback), newest 20 FIFO; You → Voice
-  notes (play / rename / delete); "Choose from library" in the builder via a
-  server-side copy.
+  under 5 s → 6; notes are 1–20 s. **Library (32d):** every sent note is
+  saved, newest 20; bigger Play/X on a chosen note (item 9).
 
 ## Behaviour that must not regress (all test-pinned)
 
-- **History = decided plans only.** An approved plan leaves My Schedule only when
-  it has an outcome; elapsed time never moves it. The end-of-day lapse
+- **History = decided plans only.** An approved plan leaves Home only when it
+  has an outcome; elapsed time never moves it. The end-of-day lapse
   (`Did not respond`) still settles undecided plans.
 - **Missed alarm = fact, not outcome.** The one-minute auto-stop records only
   immutable `alarm.unavailableAt` (in the background — the popup never waits on
   Firestore). The card shows the "User unavailable at alarm time" tag above
   Done/Skip. The popup (two actions only) writes the first outcome itself;
   Done renders as `Done (Late)`. **An unanswered popup re-appears on every
-  launch until Done/Skip — user-directed, keep it.** Legacy auto-skip rows are
-  still offered for review.
-- **Done/Skip show "Updating {planner}…" for 1.5 s** (card: non-dismissible
-  dialog; popup: in place), then the celebration (Done only). The celebration
-  fires from the committed save (`committedCelebrationProvider`), de-duplicated
-  with the Firestore echo by id. No Log Time pop-up after Done.
-- **Alarm copy is one sentence** from `alarmHeadline()`: "{planner} planned
-  {task} for you" / "You planned {task}" / (voice) "{planner} sent you a voice
-  alarm". It is carried natively with the armed
-  alarm (survives reboot) and used for the lock-screen AlarmScreen (no
-  placeholder flash), the unlocked heads-up (Android shows full-screen only when
-  locked; user chose a rich heads-up over "display over other apps"), and the
-  native missed-alarm notification.
-- **No ting on alarms (2026-09-26, user-directed):** `AlarmSoundService` starts
-  the ringtone at once; the ting is app-start only. (Was "ting then ring".) The splash ting is suppressed while ringing; an
-  alarm cold start opens directly on `/alarm?item=` (`getInitialRoute`).
-- **One notification per ringing alarm**: the service cancels the scheduled
-  reminder notification (same id) directly on NotificationManager, at once and
-  at 0.5/2/5 s. Never via Dart's cancel path (it releases the owner and stops
-  the ring).
-- Plan builder: person list collapses to one row + Change after a pick; rows
-  show `Loading…`, never a uid; planning-target profiles are prefetched from
-  sign-in. PLAN button is bottom-left. Send validates on tap (red "Please write
-  task name. It is mandatory." / "Please record a voice note."); the field
-  glow is UI-RULES §6.2b.
-- The phone's 12/24-hour setting wins over the language default everywhere
-  (F1, `DeviceClockScope`).
-- Library entries are created/deleted ONLY by the Worker (entry + audio stay
-  together); a deleted note is never re-added (`librarySavedAt`).
-- My Schedule and History cards open the status timeline; Calendar → "Open in
-  Activity" reveals and outlines the exact item.
+  launch until Done/Skip — user-directed, keep it.**
+- **Done/Skip show "Updating {planner}…" for 1.5 s**, then the celebration
+  (Done only), from the committed save, de-duplicated with the Firestore echo.
+- **Alarm copy is one sentence** from `alarmHeadline()`, carried natively with
+  the armed alarm (lock screen, heads-up, missed notice).
+- **No ting on alarms**; the ting is app-start only. **One notification per
+  ringing alarm** (the service cancels the scheduled one directly, never via
+  Dart's cancel path).
+- Plan builder: person list collapses after a pick; rows never show a uid;
+  PLAN bottom-left; Send validates on tap in red; the clash red line blocks
+  Send; request mode locks target/date/time.
+- The phone's 12/24-hour setting wins everywhere (F1, `DeviceClockScope`).
+- Library entries are created/deleted ONLY by the Worker.
+- Home and History cards open the status timeline; links about an open plan
+  for someone else land on Home, answered ones in Activity.
+- **Formatting:** never `dart format` a file that was not formatter-clean at
+  HEAD (check first); `outcome_screen.dart`, `group_detail_screen.dart`,
+  `block_repository.dart`, `friend_requests_screen.dart`,
+  `user_profile_screen.dart`, `app_router.dart` and `dev_menu_screen.dart`
+  are known-unclean.
 
 ## Deferred device checks (everything since Batch A — run in one pass)
 
-- Nothing built on 2026-09-26 has been checked on a phone. Priorities for the
-  pass: an alarm rings with no approval step (friend → target); Cancel alarm;
-  voice alarm plays 3–6× by length and reads "{planner} sent you a voice
-  alarm" locked and unlocked; ringtone fallback when the note is missing; new
-  alarm / other notifications use the normal tone and the old "Emergency
-  plans" channel is gone from Settings; Plan screen in light + dark (glow,
-  red validation, possessive zone line); You → Voice notes (auto-save after a
-  send, play, rename, delete, 21st evicts the oldest); Choose from library →
-  send; 12/24-hour on the Nothing 4a.
-- International tester: sign-in, timezone of alarms planned across zones,
-  permissions onboarding on their OEM, delivery while their app is killed.
+Install a fresh **debug** build on every phone first (strict locks). Needs a
+second account/phone for most of it.
+- **Batch G:** a friend sets an alarm with no permission step; unfriend blocks
+  it; WhatsApp groups (admin add, code request → every admin pushed → one
+  approves, make/remove admin, remove member); a busy minute shows the red
+  line and blocks Send; a group plan skips a busy member (their push + your
+  summary); pickers + "It's now … there" for a recipient abroad; Request tab:
+  ask one friend → instant push → "Reminder" at 50%/75% → Set the alarm →
+  Plan screen (voice note too) → reminders stop; an unanswered alarm → "{Y} was
+  unavailable…" with the Uh-Oh tone; Home shows your open plans for others and
+  Activity only answered ones; the ⊕ goes straight to voice planning; bigger
+  Play/X in light + dark.
+- **Batch F / 32:** alarm rings with no approval; Cancel alarm; voice alarm
+  plays 3–6× and reads "{planner} sent you a voice alarm" locked and unlocked;
+  ringtone fallback when the note is missing; normal tone for other pushes;
+  Plan screen light + dark; You → Voice notes; Choose from library → send;
+  12/24-hour on the Nothing 4a.
+- International tester: sign-in, cross-zone timing, permissions onboarding on
+  their OEM, delivery while their app is killed.
 
 ## Deferred final release gate
 
@@ -459,111 +476,26 @@ Steps (each its own tests + commit):
   timestamp default name, newest first, month groups once two months exist),
   attach from library via server-side copy.
 
-### Batch G — FINAL execution list (decided with the user 2026-09-27) — NEXT
+### Batch G — DONE 2026-09-27 (decided with the user; all committed)
 
-Supersedes the first Batch G list. One item at a time, plan → sign-off →
-build, regression tests each. Every consent/permission change gets a
-DECISIONS.md entry BEFORE code (they reverse earlier recorded decisions).
-Deploy order whenever rules/Worker change: rules → Worker → app.
+Items 1 (G2 pickers), 2 (friends = permission), 3 (WhatsApp groups), 4 (strict
+minute locks), 5 + 5b (Request Plan redesign; fulfil via the Plan screen), 6
+(Uh-Oh "unavailable" push), 7 (Home), 8 (Track Time removed; Request pillar;
+REQUEST PLAN moved off Plan), 9 (bigger Play/X). G1's advisory warning became
+item 4's hard block. Cancelled along the way: the permission switch, friend /
+emergency / group grants, planning-permission requests, `plannerAccess`,
+unanimous group approval, flexible-window and multi-friend requests. Full
+reasoning: the dated 2026-09-27 DECISIONS.md entries; commits in "Current
+state". Phone checks: "Deferred device checks".
 
-**Done:** G1 literal-clash WARNING (`6fe18b0`) — becomes a hard block in G4
-below; its group hint-row retry becomes dead once G2 lands (remove it there).
-
-**Cancelled by the 2026-09-27 instructions:** the "Let {name} set alarms for
-me" switch, friend/emergency planner grants, planning-permission requests
-("Ask to plan" + its pushes), `plannerAccess` hint rows, unanimous group-join
-approval, group per-member planning grants, Request Plan's flexible-window
-mode and multi-friend selection.
-
-1. **G2 — Pickers open in the recipient's time.** — **BUILT 2026-09-27;
-   awaiting test run + commit; phone check deferred** (DECISIONS.md "Pickers
-   open in the recipient's time"). Pick date opens on the
-   recipient's current date (their "today" highlighted; range counted from
-   their date; an already-chosen date kept); Pick time opens on their current
-   time. Add the line "It's now 9:30 PM, Sat 26 Sep there." under the zone line
-   (one format helper; not shown for self-plans). Self-plans use the profile
-   zone. Group sheet pickers stay on the planner's own time (see G4).
-2. **Friends = permission.** — **BUILT 2026-09-27; awaiting test run →
-   rules deploy → Worker deploy → commit; phone check deferred** (DECISIONS.md
-   "Friendship is the planning permission"). Rules tests:
-   `firestore-tests/friendship_permission.test.mjs` (replaces
-   `friend_grants.test.mjs`). Being friends is the ONLY permission: X may plan
-   for Y (and read Y's schedule for the clash check) iff they are friends.
-   Remove the switch, grants, planning requests, emergency grants, hint rows
-   and the reconciler; rules + Worker authz switch to `areFriends`. Y's ways
-   to stop an alarm: mark it Done/Skipped before it rings, unfriend, or block
-   (user-confirmed intent). Reverses "friendship grants nothing".
-3. **Groups, WhatsApp-style.** — **BUILT 2026-09-27; awaiting test run →
-   rules deploy → Worker deploy → commit; phone check deferred** (DECISIONS.md
-   "WhatsApp-style group admins"). Only the creator makes admins; any admin
-   may remove another admin (never the creator). Creator = admin (existing groups: owner becomes
-   admin); admins can make any number of members admins, and remove members.
-   An admin's invite joins immediately; a non-admin's invite, or a join code
-   entered by an outsider, becomes a join request pushed to EVERY admin — any
-   one admin approves/denies. Any member may plan for the GROUP; there is no
-   individual planning inside a group (plan 1:1 as friends instead). Replaces
-   unanimous approval and group planner grants. Rules + Worker + app.
-4. **Block double-booking** (replaces G1's warning). — **BUILT 2026-09-27
-   (STRICT: old builds cannot create plans until updated); awaiting test run →
-   rules deploy → Worker deploy → new APK everywhere → commit; phone check
-   deferred** (DECISIONS.md "No double-booking — minute locks"). A live plan at the same
-   minute for the same person blocks the save — self-plans included. Message:
-   "{name} already has a plan scheduled for this time. Please select a
-   different time." (self: "You already have …"). Server-enforced: a
-   create-only per-minute lock doc written in the same batch as the item;
-   client pre-check covers legacy items without a lock. Lock released when the
-   item settles/cancels (stream-driven reconciler, not a transition hook).
-   **Group plans:** pickers show the planner's time, plus a light pop-up
-   listing every member's current local date/time ("Name: Sat 26 Sep, 9:30 PM",
-   one line each) while picking. Busy members are excluded (no alarm) and get:
-   "Group task "{task}" from {planner} wasn't set for you at {time} — you
-   already have a plan then." The planner gets a summary: "Your group task
-   "{task}" is set for {X} members. {Y} ({names}) were busy at that time and
-   won't be alerted."
-5. **Request Plan redesign.** — **BUILT 2026-09-27 (with G6's buttons);
-   awaiting rules deploy → Worker deploy → commit; phone check deferred**
-   (DECISIONS.md "Request Plan redesign + PLAN / REQUEST PLAN buttons"). One friend → date + time → "Task for which you
-   need a reminder" → optional note → Send. Friend gets an instant push:
-   "{X} has requested you to plan for them. Click to view details." Reminder
-   pushes (same text, tagged "Reminder") at 50% and 75% of the window W =
-   due − sent (4 PM → 6 PM: 5:00 and 5:30), Worker cron, stop ONLY when the
-   friend creates the plan (viewing does not count); none once past due.
-   Revives the deleted Item 13 cron pattern (git history). The Request Plan
-   button moves beside Plan; both slightly larger, bold (theme tokens).
-5b. **Fulfil a request through the Plan screen** (user update 2026-09-27):
-   Set the alarm → the normal Plan screen, pre-filled and locked to the
-   requested minute; Default Alarm or Voice Note. — **BUILT 2026-09-27;
-   awaiting rules deploy → commit** (DECISIONS.md "Request Plan fulfilled
-   through the Plan screen").
-6. **"Unavailable" push with a custom tone.** — **BUILT 2026-09-27;
-   awaiting Worker deploy → commit; phone check deferred (the tone on the
-   Redmi)** (DECISIONS.md "'Unavailable' push with the 'Uh-Oh!' tone"). New planner push when the
-   target's alarm auto-stops unanswered (`alarm.unavailableAt`): "{Y} was
-   unavailable to dismiss the task: {task} you planned for them." Plays a
-   bundled "ooh-ooooo" sound on its own new channel (channel sound is fixed at
-   creation). Sound CHOSEN 2026-09-27: "Cartoon - Uh-Oh!" by Breviceps,
-   CC0, 1.3 s — https://freesound.org/people/Breviceps/sounds/445964/ (record
-   source + licence in DECISIONS.md when built).
-7. **G3 + G4 (old numbering) — Home.** — **BUILT 2026-09-27; app-only
-   (no deploy); awaiting commit** (DECISIONS.md "Home: 'My Schedule' renamed…"). Rename "My Schedule" to "Home"
-   everywhere user-facing; plans the user set for others stay on Home until
-   the recipient marks Done/Skipped (or lapse/cancel), then move to Activity.
-8. **Remove Track Time** — **BUILT 2026-09-27: Request took Track's pillar
-   (option d), REQUEST PLAN dropped from Plan; awaiting rules deploy →
-   commit** (DECISIONS.md "Track Time removed; Request takes its pillar"). Was: entirely (feature folder, entry points, voice-parser
-   hooks, stats reading it, tests, `trackedTime` rules block + deploy).
-9. **Bigger Play and X** — **BUILT 2026-09-27; app-only; awaiting commit**
-   (DECISIONS.md "Bigger Play and X on a library voice note"). on a library-attached voice note (≥ 48 dp, theme
-   tokens, light + dark).
-
-### 24 — Stats and product review (after Batch G)
+### 24 — Stats and product review (NEXT)
 
 - Last product-surface change: audit/reuse existing stats; prioritize useful,
   privacy-safe signals over surveillance/vanity metrics.
-- Cover minimum samples, permission/relationship changes, timezone ranges,
-  trends, empty states, and humane streaks.
-- ~~Research whether standalone Log Time provides enough planned-vs-actual
-  value~~ — superseded: Track Time is being removed (Batch G item 8).
+- Cover minimum samples, relationship changes (friendship = permission,
+  group membership), timezone ranges, trends, empty states, and humane streaks.
+- Track Time is gone (item 8): the "Time tracked" / "Focus sessions" stats were
+  removed; stats now come from the schedule record only.
 
 ### 33 — Competitor review (last)
 
@@ -576,8 +508,9 @@ mode and multi-friend selection.
 
 - Items live at `scheduleItems/{targetUid}/items/{itemId}`; Item 23 must preserve
   legacy point alarms.
-- Planning grants live on the sorted friendship document; group membership is
-  never permission.
+- Planning permission = the friendship document itself (`areFriends`), or — for
+  a group-tagged plan only — both being members of that group. No grant docs.
+- Every item create carries its minute lock in the same write (strict).
 - Calendar is a projection of existing streams, not a datastore.
 - Worker authorization re-reads Firestore; never trust request/notification data.
 - Firestore rules and Worker policy tests are security boundaries.
@@ -586,11 +519,11 @@ mode and multi-friend selection.
 
 ## Immediate next action
 
-1. Collect the user's results from the release APK (their Redmi and the
-   tester abroad). Fix anything reported before new work; record verified
-   items in CLAUDE.md "Parked & unverified" / DECISIONS.md.
-2. Batch G final list (see roadmap), item 1 (G2) first: plan each item, wait
-   for sign-off, build.
-3. Then Item 24 (stats and product review): research and audit first, present
-   findings and a proposal, and wait for sign-off before changing anything.
+1. Confirm the deploys (see "Current state"), then install a fresh debug build
+   on every phone — the strict locks reject plans from older builds.
+2. Collect device results (Redmi, the tester abroad) against "Deferred device
+   checks". Fix anything reported before new work; record verified items in
+   CLAUDE.md "Parked & unverified" / DECISIONS.md.
+3. Item 24 (stats and product review): research and audit first, present
+   findings and a proposal, wait for sign-off before changing anything.
 4. Item 33 (competitor review) last.
