@@ -7110,3 +7110,26 @@ consistency, never failure detail.
   `avgLateMinutes` from the stored document. No rules change, no migration.
 - Group `memberStats.followThrough` still falls back to 0 below the sample —
   24d replaces it with group-scoped numbers.
+
+### 24d — group progress (2026-09-27) — RULES CHANGE
+
+Group progress now counts **only the plans made in that group** (items with
+`groupId == g`); those plans still count toward each member's own profile.
+
+- **`memberStats` shape (rules):** `name, tasksCompleted, answered,
+  currentStreak, bestStreak` are required (ints, `done ≤ answered`,
+  `current ≤ best`); `followThrough` is retired — readers derive it, so a
+  small sample is never stored as a misleading 0. Requiring `answered`
+  rejects pre-24d builds (which would overwrite group numbers with personal
+  ones); strict minute locks already force a fresh APK. The app publishes
+  with a full `set`, never a merge, so a legacy row is replaced cleanly.
+- **Admins may delete a member's row**; `removeMember()` deletes it first
+  (leave and remove). The board also filters rows by the group's
+  `memberUids`, so a leftover row never shows.
+- **Board:** members with ≥5 answered group plans are ranked (follow-through
+  → done → name); others are listed under "Getting started" with "Needs 5
+  answered" — never ranked last at 0%. Header: "N of M kept their streak
+  going" (replaces the min-streak that one newcomer zeroed) and pooled
+  follow-through (all done ÷ all answered, ≥5).
+- Pure logic in `group_board.dart`; `test/group_board_test.dart`; 8 new
+  emulator tests. **Deploy order: rules → verify → app.**

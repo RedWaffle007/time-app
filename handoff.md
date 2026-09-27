@@ -65,7 +65,7 @@
   ANY plan against the current rules.** Every phone — including the external
   tester's — needs a fresh APK.
 - Completed: Items **1–23, 25–32, 34, 35**, Batches **A–G**.
-- Next: **Item 24 (24a–24c committed; 24d next) → Batch H → Item 33** (research-first;
+- Next: **Item 24 (24a–24c committed; 24d built, rules deploy pending) → Batch H → Item 33** (research-first;
   propose, wait for sign-off). Nothing built since Batch A has been checked on a phone — see
   "Deferred device checks".
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
@@ -519,7 +519,8 @@ separate and group-scoped, and group plans also count individually.
   "24c — what a profile shows"). Published/visible stats trimmed to tasks
   completed, current streak, best streak, follow-through (≥5 only). Missed
   alarms and who-plans-for-you are never published.
-- **24d — group progress (rules deploy).** Numbers from that group's plans
+- **24d — group progress (rules deploy).** BUILT 2026-09-27, awaiting rules
+  deploy + commit (DECISIONS.md "24d — group progress"). Numbers from that group's plans
   only; current members only (delete `memberStats` on leave/remove, admin
   delete in rules); minimum sample before ranking; shared streak as
   "N of M kept it going". Also: `memberStats.followThrough` still writes 0
@@ -584,6 +585,6 @@ confirmed with `wrangler deployments status`.
 2. Collect device results (Redmi, the tester abroad) against "Deferred device
    checks". Fix anything reported before new work; record verified items in
    CLAUDE.md "Parked & unverified" / DECISIONS.md.
-3. Item 24: 24a–24c committed. Next 24d (rules deploy), plan → sign-off.
+3. Item 24: 24a–24c committed; 24d built — deploy rules, verify, commit.
 4. Batch H (Profile & Settings restructure), one item at a time.
 5. Item 33 (competitor review) last.

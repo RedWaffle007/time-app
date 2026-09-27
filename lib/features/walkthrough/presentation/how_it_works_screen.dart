@@ -142,8 +142,8 @@ class HowItWorksScreen extends ConsumerWidget {
             icon: AppIcons.stats,
             title: 'Group progress & leaderboard',
             body:
-                'A shared streak and a follow-through leaderboard across a '
-                "group's members.",
+                "How the group is doing on plans made in it, and a "
+                'leaderboard once members have five answered plans.',
           ),
           const _Feature(
             icon: AppIcons.friends,

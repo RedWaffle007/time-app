@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -9,18 +7,20 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../core/widgets/section_header.dart';
+import '../../social/domain/profile_stat.dart';
+import '../application/group_board.dart';
 import '../application/group_providers.dart';
 import '../application/group_stats_providers.dart';
 import '../domain/group_member_stat.dart';
 
-/// **Group accountability + leaderboard** on one screen — they are two views of
-/// the same published `memberStats` data (DECISIONS.md "Group accountability +
-/// leaderboard"). The top is the shared story (a group streak + collective
-/// follow-through); below it, the members ranked.
+/// **Group progress** (item 24d, DECISIONS.md "24d — group progress"): how the
+/// group is doing on the plans made IN this group, and a board of its current
+/// members.
 ///
-/// Every number here is PUBLISHED by each member's own device — a group member
-/// cannot read another's items. A member who has never published simply is not
-/// listed yet.
+/// Every number is PUBLISHED by each member's own device (a member cannot read
+/// another's items) and counts only this group's plans. Only current members
+/// appear; members with fewer than five answered group plans are listed, not
+/// ranked.
 class GroupProgressScreen extends ConsumerWidget {
   const GroupProgressScreen({super.key, required this.groupId});
 
@@ -29,77 +29,62 @@ class GroupProgressScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final statsAsync = ref.watch(groupMemberStatsProvider(groupId));
-    final groupName = ref
+    final group = ref
         .watch(myGroupsProvider)
         .value
         ?.where((g) => g.id == groupId)
-        .firstOrNull
-        ?.name;
+        .firstOrNull;
+
+    final boardAsync = statsAsync.whenData(
+      (rows) => buildGroupBoard(rows, group?.memberUids ?? const []),
+    );
 
     return Scaffold(
-      appBar: AppBar(title: Text(groupName ?? 'Group progress')),
-      body: AsyncView<List<GroupMemberStat>>(
-        value: statsAsync,
+      appBar: AppBar(title: Text(group?.name ?? 'Group progress')),
+      body: AsyncView<GroupBoard>(
+        value: boardAsync,
         onRetry: () => ref.invalidate(groupMemberStatsProvider(groupId)),
-        isEmpty: (s) => s.isEmpty,
+        isEmpty: (b) => b.isEmpty || b.hasNoAnswers,
         emptyIcon: AppIcons.navStats,
         emptyMessage:
-            'No activity yet. Progress shows up here as members complete plans.',
-        builder: (context, stats) {
-          // Leaderboard: follow-through first, then tasks done, then name.
-          final ranked = [...stats]..sort((a, b) {
-              final byFt = b.followThrough.compareTo(a.followThrough);
-              if (byFt != 0) return byFt;
-              final byDone = b.tasksCompleted.compareTo(a.tasksCompleted);
-              if (byDone != 0) return byDone;
-              return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-            });
-
-          // The SHARED streak: the run every member currently has going — the
-          // smallest individual streak, so the group only holds it while
-          // everyone shows up. Its own "everyone must show" property is the
-          // point of a shared streak, not a bug.
-          final sharedStreak =
-              stats.map((s) => s.currentStreak).reduce(math.min);
-          final avgFollowThrough = stats.isEmpty
-              ? 0.0
-              : stats.map((s) => s.followThrough).reduce((a, b) => a + b) /
-                  stats.length;
-
-          return ListView(
-            padding: Space.screenList,
-            children: [
-              _SharedHeader(
-                sharedStreak: sharedStreak,
-                avgFollowThrough: avgFollowThrough,
-                memberCount: stats.length,
-              ),
-              const SizedBox(height: Space.md),
+            'No group plans answered yet. Progress shows here once members '
+            'answer plans made in this group.',
+        builder: (context, board) => ListView(
+          padding: Space.screenList,
+          children: [
+            _GroupHeader(board: board),
+            const SizedBox(height: Space.md),
+            if (board.ranked.isNotEmpty) ...[
               const SectionHeader('Leaderboard'),
-              for (var i = 0; i < ranked.length; i++)
-                _LeaderRow(rank: i + 1, stat: ranked[i]),
+              for (var i = 0; i < board.ranked.length; i++)
+                _MemberRow(rank: i + 1, stat: board.ranked[i]),
             ],
-          );
-        },
+            if (board.unranked.isNotEmpty) ...[
+              const SizedBox(height: Space.md),
+              const SectionHeader('Getting started'),
+              for (final stat in board.unranked) _MemberRow(stat: stat),
+            ],
+          ],
+        ),
       ),
     );
   }
 }
 
-/// The group's collective story: a shared streak and average follow-through.
-class _SharedHeader extends StatelessWidget {
-  const _SharedHeader({
-    required this.sharedStreak,
-    required this.avgFollowThrough,
-    required this.memberCount,
-  });
+/// The group's shared story: who has a streak going, and pooled
+/// follow-through on this group's plans.
+class _GroupHeader extends StatelessWidget {
+  const _GroupHeader({required this.board});
 
-  final int sharedStreak;
-  final double avgFollowThrough;
-  final int memberCount;
+  final GroupBoard board;
 
   @override
   Widget build(BuildContext context) {
+    final muted = context.colors.onSurfaceVariant;
+    final kept = formatCount(context, board.keptStreak);
+    final total = formatCount(context, board.memberCount);
+    final followThrough = board.followThrough;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(Space.lg),
@@ -110,29 +95,24 @@ class _SharedHeader extends StatelessWidget {
               children: [
                 Icon(AppIcons.streak, color: context.colors.primary),
                 const SizedBox(width: Space.sm),
-                Text('Shared streak', style: context.text.titleMedium),
+                Text('Streaks', style: context.text.titleMedium),
               ],
             ),
             const SizedBox(height: Space.sm),
             Text(
-              sharedStreak == 0
-                  ? "${formatCount(context, 0)} days — the group's streak "
-                      'needs everyone showing up.'
-                  : sharedStreak == 1
-                      ? '${formatCount(context, 1)} day — everyone kept it '
-                          'going.'
-                      : '${formatCount(context, sharedStreak)} days — '
-                          'everyone kept it going.',
+              '$kept of $total kept their streak going.',
               style: context.text.bodyMedium,
             ),
             const SizedBox(height: Space.md),
             Text(
-              'Group follow-through: '
-              '${formatPercent(context, avgFollowThrough.round())} across '
-              '${formatCount(context, memberCount)} '
-              '${memberCount == 1 ? 'member' : 'members'}.',
-              style: context.text.bodySmall
-                  ?.copyWith(color: context.colors.onSurfaceVariant),
+              followThrough == null
+                  ? 'Group follow-through shows after '
+                        '${formatCount(context, kMinStatSample)} answered '
+                        'group plans.'
+                  : 'Group follow-through: '
+                        '${formatPercent(context, followThrough)} on plans '
+                        'made in this group.',
+              style: context.text.bodySmall?.copyWith(color: muted),
             ),
           ],
         ),
@@ -141,41 +121,55 @@ class _SharedHeader extends StatelessWidget {
   }
 }
 
-/// One ranked member.
-class _LeaderRow extends StatelessWidget {
-  const _LeaderRow({required this.rank, required this.stat});
+/// One member: ranked (with a position and a percentage) or getting started.
+class _MemberRow extends StatelessWidget {
+  const _MemberRow({required this.stat, this.rank});
 
-  final int rank;
   final GroupMemberStat stat;
+
+  /// Null for a member below the sample — listed, never ranked.
+  final int? rank;
 
   @override
   Widget build(BuildContext context) {
+    final muted = context.colors.onSurfaceVariant;
+    final streak = formatCount(context, stat.currentStreak);
+    final followThrough = stat.followThrough;
+
     return Card(
       child: ListTile(
-        leading: Container(
-          width: Sizes.avatarRow,
-          height: Sizes.avatarRow,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: context.colors.primaryContainer,
-            borderRadius: Radii.md,
-          ),
-          child: Text(formatCount(context, rank),
-              style: context.text.titleMedium
-                  ?.copyWith(color: context.colors.onPrimaryContainer)),
-        ),
-        title: Text(stat.name.isEmpty ? '—' : stat.name),
+        leading: rank == null
+            ? null
+            : Container(
+                width: Sizes.avatarRow,
+                height: Sizes.avatarRow,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: context.colors.primaryContainer,
+                  borderRadius: Radii.md,
+                ),
+                child: Text(
+                  formatCount(context, rank!),
+                  style: context.text.titleMedium?.copyWith(
+                    color: context.colors.onPrimaryContainer,
+                  ),
+                ),
+              ),
+        title: Text(stat.name.isEmpty ? 'Member' : stat.name),
         subtitle: Text(
           '${formatCount(context, stat.tasksCompleted)} done · '
-          '${formatCount(context, stat.currentStreak)} '
-          '${stat.currentStreak == 1 ? 'day' : 'days'} streak',
-          style: context.text.bodySmall
-              ?.copyWith(color: context.colors.onSurfaceVariant),
+          '$streak ${stat.currentStreak == 1 ? 'day' : 'days'} streak',
+          style: context.text.bodySmall?.copyWith(color: muted),
         ),
-        trailing: Text(
-          formatPercent(context, stat.followThrough.round()),
-          style: context.text.titleMedium,
-        ),
+        trailing: followThrough == null
+            ? Text(
+                'Needs ${formatCount(context, kMinStatSample)} answered',
+                style: context.text.labelSmall?.copyWith(color: muted),
+              )
+            : Text(
+                formatPercent(context, followThrough),
+                style: context.text.titleMedium,
+              ),
       ),
     );
   }

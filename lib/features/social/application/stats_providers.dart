@@ -29,6 +29,7 @@ StatItem toStatItem(ScheduleItem item) => StatItem(
   wasUnavailable: item.wasUnavailableAtAlarmTime,
   creatorUid: item.createdByUid,
   fromPlanRequest: item.planRequestId != null,
+  groupId: item.groupId,
 );
 
 /// An automatic skip — nobody answered. Both automatic reasons are fixed

@@ -1495,8 +1495,8 @@ describe('issue 2 — every legitimate write still works', () => {
 describe('group memberStats — publish own, read as a member', () => {
   const statPath = (uid) => `groups/${GROUP}/memberStats/${uid}`;
   const stats = (o = {}) => ({
-    name: 'Target', tasksCompleted: 5, currentStreak: 3, followThrough: 80,
-    updatedAt: serverTimestamp(), ...o,
+    name: 'Target', tasksCompleted: 5, answered: 6, currentStreak: 3,
+    bestStreak: 4, updatedAt: serverTimestamp(), ...o,
   });
 
   it('a member publishes their OWN stats', async () => {
@@ -1529,5 +1529,61 @@ describe('group memberStats — publish own, read as a member', () => {
   it('a member may delete their own stats', async () => {
     await setDoc(doc(as(TARGET), statPath(TARGET)), stats());
     await assertSucceeds(deleteDoc(doc(as(TARGET), statPath(TARGET))));
+  });
+
+  // ---- item 24d: group-scoped shape + admin removal ----
+
+  it('24d: the pre-24d shape (followThrough, no answered) is DENIED', async () => {
+    await assertFails(setDoc(doc(as(TARGET), statPath(TARGET)), {
+      name: 'Target', tasksCompleted: 5, currentStreak: 3, followThrough: 80,
+      updatedAt: serverTimestamp(),
+    }));
+  });
+
+  it('24d: followThrough can no longer be stored', async () => {
+    await assertFails(
+      setDoc(doc(as(TARGET), statPath(TARGET)), stats({ followThrough: 80 })));
+  });
+
+  it('24d: answered and bestStreak are required', async () => {
+    const { answered, ...noAnswered } = stats();
+    const { bestStreak, ...noBest } = stats();
+    await assertFails(setDoc(doc(as(TARGET), statPath(TARGET)), noAnswered));
+    await assertFails(setDoc(doc(as(TARGET), statPath(TARGET)), noBest));
+  });
+
+  it('24d: numbers must be consistent whole counts', async () => {
+    const path = doc(as(TARGET), statPath(TARGET));
+    await assertFails(setDoc(path, stats({ tasksCompleted: 7, answered: 6 })));
+    await assertFails(setDoc(path, stats({ currentStreak: 5, bestStreak: 4 })));
+    await assertFails(setDoc(path, stats({ tasksCompleted: -1 })));
+    await assertFails(setDoc(path, stats({ answered: 6.5 })));
+    await assertFails(setDoc(path, stats({ name: 7 })));
+  });
+
+  it('24d: a full replace over a legacy row succeeds', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), statPath(TARGET)), {
+        name: 'Target', tasksCompleted: 1, currentStreak: 1, followThrough: 100,
+      });
+    });
+    await assertSucceeds(setDoc(doc(as(TARGET), statPath(TARGET)), stats()));
+  });
+
+  it('24d: an admin may delete a member\'s row (removal)', async () => {
+    await setDoc(doc(as(PLANNER), statPath(PLANNER)), stats({ name: 'P' }));
+    await seedGroupPatch({ adminUids: [TARGET] });
+    await assertSucceeds(deleteDoc(doc(as(TARGET), statPath(PLANNER))));
+  });
+
+  it('24d: a non-admin member may NOT delete another member\'s row', async () => {
+    await setDoc(doc(as(TARGET), statPath(TARGET)), stats());
+    await seedGroupPatch({ adminUids: [TARGET] });
+    await assertFails(deleteDoc(doc(as(PLANNER), statPath(TARGET))));
+  });
+
+  it('24d: an outsider may not delete a row', async () => {
+    await setDoc(doc(as(TARGET), statPath(TARGET)), stats());
+    await assertFails(deleteDoc(doc(as(OUTSIDER), statPath(TARGET))));
   });
 });

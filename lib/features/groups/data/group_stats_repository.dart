@@ -13,29 +13,33 @@ class GroupStatsRepository {
   CollectionReference<Map<String, dynamic>> _col(String groupId) =>
       _db.collection('groups').doc(groupId).collection('memberStats');
 
-  /// Publish the signed-in member's summary into [groupId]. The field set
-  /// matches the rules' whitelist exactly.
+  /// Publish the signed-in member's group-scoped summary into [groupId].
+  ///
+  /// A FULL replace, never a merge: the rules check the whole resulting
+  /// document against the 24d shape, so merging over a pre-24d row would keep
+  /// its retired `followThrough` field and be denied.
   Future<void> publish({
     required String groupId,
-    required String uid,
-    required String name,
-    required int tasksCompleted,
-    required int currentStreak,
-    required double followThrough,
+    required GroupMemberStat stat,
   }) {
-    return _col(groupId).doc(uid).set({
-      'name': name,
-      'tasksCompleted': tasksCompleted,
-      'currentStreak': currentStreak,
-      'followThrough': followThrough,
+    return _col(groupId).doc(stat.uid).set({
+      'name': stat.name,
+      'tasksCompleted': stat.tasksCompleted,
+      'answered': stat.answered,
+      'currentStreak': stat.currentStreak,
+      'bestStreak': stat.bestStreak,
       'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    });
   }
+
+  /// Remove [uid]'s row — on leave (self) or removal (an admin; item 24d).
+  Future<void> delete({required String groupId, required String uid}) =>
+      _col(groupId).doc(uid).delete();
 
   /// Every member's published summary for [groupId], live.
   Stream<List<GroupMemberStat>> watch(String groupId) {
-    return _col(groupId).snapshots().map(
-          (s) => s.docs.map(GroupMemberStat.fromDoc).toList(),
-        );
+    return _col(
+      groupId,
+    ).snapshots().map((s) => s.docs.map(GroupMemberStat.fromDoc).toList());
   }
 }

@@ -705,15 +705,36 @@ service cloud.firestore {
       // read) — but they describe only the writer's OWN record, so a member
       // inflating their own board position is the ceiling, not reading anyone
       // else's data.
+      //
+      // Item 24d (2026-09-27): the numbers are GROUP-SCOPED (only plans tagged
+      // with this group) and the shape changed: `answered` + `bestStreak` are
+      // REQUIRED and `followThrough` is gone (readers derive it from
+      // tasksCompleted ÷ answered, so a small sample is never stored as a
+      // misleading 0). Requiring `answered` rejects pre-24d builds, which
+      // would overwrite the group numbers with personal ones. An admin may
+      // delete a member's row, so removing someone takes them off the board.
       match /memberStats/{uid} {
         allow read: if callerInGroup(groupId);
         allow create, update: if signedIn()
           && uid == request.auth.uid
           && callerInGroup(groupId)
           && request.resource.data.keys().hasOnly(
-               ['name', 'tasksCompleted', 'currentStreak', 'followThrough',
-                'updatedAt']);
-        allow delete: if signedIn() && uid == request.auth.uid;
+               ['name', 'tasksCompleted', 'answered', 'currentStreak',
+                'bestStreak', 'updatedAt'])
+          && request.resource.data.keys().hasAll(
+               ['name', 'tasksCompleted', 'answered', 'currentStreak',
+                'bestStreak'])
+          && request.resource.data.name is string
+          && request.resource.data.tasksCompleted is int
+          && request.resource.data.answered is int
+          && request.resource.data.currentStreak is int
+          && request.resource.data.bestStreak is int
+          && request.resource.data.tasksCompleted >= 0
+          && request.resource.data.tasksCompleted <= request.resource.data.answered
+          && request.resource.data.currentStreak >= 0
+          && request.resource.data.currentStreak <= request.resource.data.bestStreak;
+        allow delete: if signedIn()
+          && (uid == request.auth.uid || callerIsGroupAdmin(groupId));
       }
 
       // ---- plannerGrants/{grantId} — RETIRED (item 3, 2026-09-27) ----

@@ -205,6 +205,7 @@ class StatItem {
     this.wasUnavailable = false,
     this.creatorUid,
     this.fromPlanRequest = false,
+    this.groupId = '',
   });
 
   final DateTime instantUtc;
@@ -233,6 +234,10 @@ class StatItem {
 
   /// Created while fulfilling a friend's plan request (`planRequestId`).
   final bool fromPlanRequest;
+
+  /// The group this plan was made in, or '' for a personal/friend plan.
+  /// Group progress (item 24d) counts only its own group's plans.
+  final String groupId;
 
   bool get hasOutcome => isDone || isSkipped;
 

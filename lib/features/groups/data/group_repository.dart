@@ -269,6 +269,16 @@ class GroupRepository {
     required String memberUid,
     required String callerUid,
   }) async {
+    // Their group stats go first (item 24d), while an admin caller is still
+    // provably an admin and the leaver still a member — best-effort: a row
+    // left behind is filtered off the board by `memberUids` anyway.
+    try {
+      await _groups
+          .doc(groupId)
+          .collection('memberStats')
+          .doc(memberUid)
+          .delete();
+    } catch (_) {}
     await _groups.doc(groupId).collection('members').doc(memberUid).delete();
     await _groups.doc(groupId).update({
       'memberUids': FieldValue.arrayRemove([memberUid]),
