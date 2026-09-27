@@ -75,21 +75,7 @@ abstract final class AppIcons {
   static const IconData navYou = Icons.person_outline;
   static const IconData navYouSelected = Icons.person;
 
-  /// The docked centre **voice FAB** (§6.12) — one mic glyph for the whole
-  /// speak-to-create affordance spanning Track and Plan. Not a nav destination,
-  /// so it has no filled/outline pair.
-  static const IconData voice = Icons.mic_none_outlined;
-
-  /// The ACTIVE mic while a voice capture is listening (S6) — filled, because it
-  /// is a live state, not the at-rest affordance the [voice] FAB is.
-  static const IconData voiceListening = Icons.mic;
-
-  /// "I'm done talking" — stop the current voice capture and take the result.
-  static const IconData voiceStop = Icons.stop_circle_outlined;
-
-  /// A recorded VOICE NOTE on someone's alarm (item 32) — distinct from the
-  /// voice-command mic above: one speaks to the app, the other is a message to
-  /// a person, so they must not share a glyph.
+  /// A recorded VOICE NOTE on someone's alarm (item 32).
   static const IconData voiceNote = Icons.record_voice_over_outlined;
 
   /// A DEFAULT ALARM — the ringtone kind, chosen against a voice note in the
@@ -113,9 +99,6 @@ abstract final class AppIcons {
   /// Throw a recorded voice note away (it was never sent).
   static const IconData voiceNoteDiscard = Icons.close;
 
-  /// "Type instead" — the always-present fallback from any voice flow to the
-  /// identical manual entry (S6). The mic is never the only way in.
-  static const IconData typeInstead = Icons.keyboard_outlined;
 
   // ---- objects ----
 

@@ -7295,3 +7295,23 @@ only; the note (or a library pick) uploads when Send is tapped, exactly as
 before `caecaf7`, and Send shows its spinner during that upload. Everything
 else from "Faster Send" (background push, minute-lock-only Send check)
 stays. No Worker or rules change.
+
+## Centre voice button removed; groups reset run (2026-09-27)
+
+User-directed. **The centre ⊕ voice button is gone**, with its whole
+speak-to-plan flow: `lib/features/voice/` (person picker, capture sheet,
+speech service, utterance parser), the `speech_to_text` and `flutter_tts`
+packages, the Android `RecognitionService` query, the iOS speech-recognition
+string, the seeded-builder route params (`Routes.scheduleBuilderVoice`) and
+the four ⊕-only icons. The bar is now `Plan · Request · Stats · You`, a plain
+`BottomAppBar` with no notch; the tour has four steps and the guide no longer
+mentions a centre mic. **Voice Note alarms are untouched** (recorder,
+library, Worker, rules, native playback); `RECORD_AUDIO` stays for them, and
+the iOS mic string now describes voice notes. `ScheduleBuilderScreen`'s
+optional seed parameters stay (tests use them; no route passes them).
+
+**Groups reset run** (`scripts/clear-groups.mjs --apply`, project
+`time-app-1e1c9`): 7 groups, 7 join codes, 60 documents deleted; a follow-up
+dry run found 0. Schedule items, friendships and profiles were kept. The 7
+`group-avatars/{groupId}/` folders in Supabase are left for the user to
+remove from the dashboard.

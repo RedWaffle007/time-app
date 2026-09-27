@@ -76,7 +76,10 @@
 - Next: the user is building a **release APK** (`flutter build apk
   --release --target-platform android-arm64`), then **the deferred device
   pass**, then **Item 33** (competitor review, research only; can run any
-  time). **Group reset is DEFERRED** by the user (see "Faster Send" below).
+  time). **Group reset DONE 2026-09-27** (7 groups / 60 docs deleted; the 7
+  `group-avatars/…` folders in Supabase are the user's to remove). **Centre ⊕
+  voice button REMOVED 2026-09-27** (DECISIONS.md "Centre voice button
+  removed"); Voice Note alarms stay.
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
 
 ## Product model now (2026-09-27 — read before touching planning or alarms)
@@ -101,14 +104,15 @@
   member and the planner's summary. Targets backfill locks for older plans.
 - **Pickers open in the recipient's time (G2)**, with "It's now … there."
 - **Request Plan (items 5, 5b, 8):** its own bottom-bar pillar,
-  `Plan · Request · ⊕ · Stats · You`. X asks ONE friend for ONE minute with a
+  `Plan · Request · Stats · You` (⊕ removed 2026-09-27). X asks ONE friend for ONE minute with a
   task (+ note); the friend is pushed at once and reminded at 50% and 75% of
   the window until they CREATE the plan, which they do through the normal Plan
   screen (locked to that minute; Default Alarm or Voice Note).
 - **Home (item 7)** = my open plans + the open plans I set for others (planner
   card, Cancel alarm, no Done/Skip); **Activity** = plans for others once
   answered.
-- **Track Time is removed (item 8)**; ⊕ voice plans only.
+- **Track Time is removed (item 8)**; the ⊕ voice button is removed too
+  (2026-09-27).
 - **Two alarm kinds (F4):** Default Alarm (mandatory name) and Voice Note
   ("{planner} sent you a voice alarm"). Self-plans are Default Alarm only.
 - **Tones (F3 + item 6):** only alarms ring; pushes use the phone's normal tone
@@ -627,7 +631,7 @@ User-directed; plan → sign-off → build.
 ### Faster Send + device fixes + groups reset — BUILT + committed (`caecaf7`); Worker deploy to confirm
 
 DECISIONS.md "Faster Send, no Approved badge, ended alarms leave, groups
-reset". **Group reset DEFERRED by the user (2026-09-27)**: when wanted, run
+reset". **Group reset RUN 2026-09-27** (see Current state). To run it again:
 `node scripts/clear-groups.mjs --project time-app-1e1c9 --token "$(gcloud auth
 print-access-token)"` (dry run; check the first line says time-app-1e1c9),
 then again with `--apply`, remove the listed `group-avatars/…` folders in
@@ -664,8 +668,8 @@ builds can still create groups.
    starting with the "Latest" block, then item 24 + Batch H. Fix anything
    reported before new work; record verified items in CLAUDE.md "Parked &
    unverified" / DECISIONS.md.
-3. When the user wants groups to start fresh: the deferred group reset
-   (command in "Faster Send" above), just before sharing a build.
+3. (Done 2026-09-27: group reset.) The user removes the 7
+   `group-avatars/…` folders in Supabase.
 4. Item 33 (competitor review, PingPal + SnoozeSquad): research only;
    propose findings, change nothing without sign-off.
 5. Open design question, only if the user asks: reporting a dismissal /

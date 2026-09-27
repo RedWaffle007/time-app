@@ -65,17 +65,6 @@ dependencies:
   local_auth: ^2.3.0
   shared_preferences: ^2.3.2
 
-  # Voice STT (redesign S6). `speech_to_text` wraps the PLATFORM recognizer
-  # (Android SpeechRecognizer / iOS SFSpeechRecognizer) — on-device where the OS
-  # ships offline models, otherwise routed by the OS to its own free service.
-  # No API key, no per-call billing, no network code of ours. It and the
-  # voice-note recorder (`record`, below) are what use RECORD_AUDIO. `flutter_tts` speaks the two prompts aloud
-  # ("audio + on-screen text") through the platform TTS; it needs no permission.
-  # Both stay behind the `SpeechService` seam (data/speech_service.dart) — no OS
-  # vocabulary crosses it, so an iOS or on-device swap is one provider line.
-  speech_to_text: ^7.0.0
-  flutter_tts: ^4.2.0
-
   # `path_provider` finds the app-private support directory (voice-note
   # copies, the removed chatbot's leftover model files to clean up).
   # `crypto` checks a downloaded voice note's sha256 so a damaged or swapped
@@ -132,8 +121,8 @@ dependencies:
   # in an .m4a container — the one format the Worker accepts (it sniffs the
   # bytes and reads the duration from the file header). Recording only;
   # preview and ring-time playback use the platform MediaPlayer behind the
-  # `time_app/voice_player` channel. RECORD_AUDIO is already declared for
-  # speech_to_text; the prompt is only ever raised after an explanation.
+  # `time_app/voice_player` channel. RECORD_AUDIO is declared for it; the
+  # prompt is only ever raised after an explanation.
   record: ^7.1.1
 
 dev_dependencies:

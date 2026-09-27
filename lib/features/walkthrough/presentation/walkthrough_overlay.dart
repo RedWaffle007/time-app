@@ -5,7 +5,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 
 /// The per-step copy for the first-run orientation tour — one short line each,
-/// in **spatial bottom-bar order**: Plan · Request · ⊕voice · Stats · You.
+/// in **spatial bottom-bar order**: Plan · Request · Stats · You.
 ///
 /// Pure data with no keys or widgets, so it is unit-testable on its own
 /// (`walkthrough_test.dart`). `HomeShell` pairs each entry, by index, with the
@@ -16,7 +16,7 @@ class WalkthroughStepCopy {
   final String body;
 }
 
-/// The five steps. Order is deliberate and must match the order the bar items'
+/// The four steps. Order is deliberate and must match the order the bar items'
 /// keys are supplied in `HomeShell`.
 const kWalkthroughStepCopy = <WalkthroughStepCopy>[
   WalkthroughStepCopy(
@@ -30,11 +30,6 @@ const kWalkthroughStepCopy = <WalkthroughStepCopy>[
         'you. Tap REQUEST PLAN (bottom-left) to ask.',
   ),
   WalkthroughStepCopy(
-    'Speak to create',
-    'The centre mic: tap and talk to plan a reminder, hands-free. You review '
-        'it before anything saves.',
-  ),
-  WalkthroughStepCopy(
     'Stats',
     'Your totals, streaks and follow-through at a glance.',
   ),
@@ -45,7 +40,7 @@ const kWalkthroughStepCopy = <WalkthroughStepCopy>[
 ];
 
 /// One resolved step: the copy plus the live target to spotlight and the shape
-/// of that spotlight (the FAB is circular; a pillar is a rounded rect).
+/// of that spotlight (a pillar is a rounded rect).
 class WalkthroughStep {
   const WalkthroughStep({
     required this.copy,
@@ -63,7 +58,7 @@ class WalkthroughStep {
 /// `app_tokens.dart` and it passes the UI-RULES §1 lint (UI-RULES.md §6.13).
 ///
 /// It is a full-screen sibling stacked OVER `HomeShell`'s `Scaffold`, so it
-/// covers the bottom bar and the docked FAB — the very things it points at,
+/// covers the bottom bar — the very thing it points at,
 /// which a body-level overlay could not reach.
 ///
 /// Skippable at any step; tapping the dimmed area advances (the mainstream

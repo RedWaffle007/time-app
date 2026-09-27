@@ -55,13 +55,6 @@ class HowItWorksScreen extends ConsumerWidget {
                 "Friends' requests to you show here too.",
           ),
           const _Feature(
-            icon: AppIcons.voice,
-            title: 'Centre mic',
-            body:
-                'Say it out loud, like "Monday 7am gym". You check it before '
-                'it saves.',
-          ),
-          const _Feature(
             icon: AppIcons.stats,
             title: 'Stats',
             body: 'Your streaks and how often you follow through.',

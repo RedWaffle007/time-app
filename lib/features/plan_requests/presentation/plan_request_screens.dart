@@ -340,8 +340,8 @@ class PlanRequestsScreen extends ConsumerWidget {
     final outgoing = ref.watch(outgoingPlanRequestsProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Plan requests')),
-      // The Request pillar's create action (item 8), bottom-LEFT like PLAN so
-      // it clears the docked voice button (UI-RULES §6.12).
+      // The Request pillar's create action (item 8), bottom-LEFT like PLAN
+      // (UI-RULES §6.12).
       floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
       floatingActionButton: FloatingActionButton.extended(
         key: const ValueKey('request-plan-fab'),

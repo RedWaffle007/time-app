@@ -82,12 +82,9 @@ class ScheduleBuilderScreen extends ConsumerStatefulWidget {
   /// with the builder. The calendar deliberately has no create flow of its own.
   final DateTime? initialDate;
 
-  /// Voice-flow seeds (S6). The Plan voice flow picks the target FIRST (its own
-  /// person-picker), captures speech, parses it, and pushes this screen with the
-  /// target already chosen and whatever the parser read pre-filled. All are
-  /// optional and null everywhere else; the form is otherwise unchanged, and
-  /// `_canSave` still requires a title, date and time, so an incomplete voice
-  /// parse cannot submit straight through — it lands here for confirm/edit.
+  /// Optional seeds: open with the target (and any of title/time) already
+  /// chosen. Written for the spoken-plan flow, which was removed 2026-09-27;
+  /// no route passes them now, and they are null everywhere else.
   final String? initialTargetUid;
   final String? initialGroupId;
   final bool initialIsSelf;

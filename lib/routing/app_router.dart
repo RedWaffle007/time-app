@@ -1,6 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart' show TimeOfDay, WidgetsBinding;
+import 'package:flutter/material.dart' show WidgetsBinding;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -38,7 +38,7 @@ import '../features/invites/domain/invite_link.dart';
 /// Central list of route paths/names, so screens don't hardcode strings.
 ///
 /// Since the S5 cutover the five pillar roots are `/plan`, `/track`, `/stats`
-/// and `/you` (the ⊕ voice FAB is not a route). A route that belongs *to* a
+/// and `/you`. A route that belongs *to* a
 /// pillar is nested under its path, so its location names the branch it lives in
 /// — `go()` from a notification lands inside the right pillar with the bottom bar
 /// and a back stack, not on a bare screen. Account-level routes (`/profile`,
@@ -212,79 +212,6 @@ class Routes {
   /// (Was `/activity/schedule-builder` before the S5 cutover.)
   static const scheduleBuilder = '$plan/schedule-builder';
 
-  /// Voice-flow query params seeding [scheduleBuilder] (S6). The Plan voice flow
-  /// picks the target first, parses the spoken details, and pushes the builder
-  /// with these filled. All are optional; a missing/malformed one degrades to
-  /// the ordinary empty builder rather than throwing.
-  static const sbTargetParam = 'target';
-  static const sbGroupParam = 'group';
-  static const sbSelfParam = 'self';
-  static const sbTitleParam = 'title';
-  static const sbTimeParam = 'time'; // 'HH:mm'
-
-  /// Build the seeded builder URL. Only the fields that were actually parsed are
-  /// carried; the rest are omitted and stay unset in the form.
-  static String scheduleBuilderVoice({
-    required String targetUid,
-    required bool isSelf,
-    String? groupId,
-    String? title,
-    DateTime? date,
-    TimeOfDay? time,
-  }) => Uri(
-    path: scheduleBuilder,
-    queryParameters: _voiceParams(
-      targetUid: targetUid,
-      isSelf: isSelf,
-      groupId: groupId,
-      title: title,
-      date: date,
-      time: time,
-    ),
-  ).toString();
-
-  static Map<String, String> _voiceParams({
-    required String targetUid,
-    required bool isSelf,
-    String? groupId,
-    String? title,
-    DateTime? date,
-    TimeOfDay? time,
-  }) {
-    final params = <String, String>{
-      sbTargetParam: targetUid,
-      sbSelfParam: isSelf ? '1' : '0',
-    };
-    if (groupId != null) params[sbGroupParam] = groupId;
-    if (title != null && title.trim().isNotEmpty) params[sbTitleParam] = title;
-    if (date != null) {
-      params[calendarDateParam] =
-          '${date.year.toString().padLeft(4, '0')}-'
-          '${date.month.toString().padLeft(2, '0')}-'
-          '${date.day.toString().padLeft(2, '0')}';
-    }
-    if (time != null) {
-      params[sbTimeParam] =
-          '${time.hour.toString().padLeft(2, '0')}:'
-          '${time.minute.toString().padLeft(2, '0')}';
-    }
-    return params;
-  }
-
-  /// Parse [sbTimeParam] ('HH:mm') back to a [TimeOfDay]; null if absent/bad.
-  static TimeOfDay? timeOfDayFrom(String? raw) {
-    if (raw == null) return null;
-    final parts = raw.split(':');
-    if (parts.length != 2) return null;
-    final h = int.tryParse(parts[0]);
-    final m = int.tryParse(parts[1]);
-    if (h == null || m == null || h < 0 || h > 23 || m < 0 || m > 59) {
-      return null;
-    }
-    return TimeOfDay(hour: h, minute: m);
-  }
-
-
   /// Debug-only. The route itself is registered only in debug builds — see the
   /// `if (kDebugMode)` guard below. In release this path resolves to nothing.
   static const devMenu = '/dev';
@@ -357,11 +284,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: Routes.auth,
         builder: (context, state) => const AuthScreen(),
       ),
-      // The five-PILLAR home (S5 cutover). Each pillar is a BRANCH with its own
+      // The four-PILLAR home (S5 cutover). Each pillar is a BRANCH with its own
       // navigator, so a screen is registered exactly once and anything pushed
       // inside a branch keeps the bottom bar beneath it. The bar names the app's
-      // pillars — Plan · Request · ⊕voice · Stats · You — where the ⊕ voice FAB is
-      // NOT a branch but a docked FAB on `HomeShell` (§6.12). The three old
+      // pillars — Plan · Request · Stats · You (§6.12). The three old
       // delegation stances (Groups / My Schedule / Activity) are now the
       // keep-alive sub-tabs INSIDE Plan (`PlanShell`), not branches here.
       //
@@ -389,27 +315,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                 routes: [
                   GoRoute(
                     path: 'schedule-builder',
-                    // Voice-flow seeds (S6) ride in as query params on the pushed
-                    // URL. This is a PUSHED sub-route (rebuilt each push), not the
-                    // cached branch root, so query params are reliable here — the
-                    // reason `planIntentProvider` exists for `/plan` does not apply.
-                    builder: (context, state) {
-                      final q = state.uri.queryParameters;
-                      final target = q[Routes.sbTargetParam];
-                      if (target == null) return const ScheduleBuilderScreen();
-                      return ScheduleBuilderScreen(
-                        initialTargetUid: target,
-                        initialGroupId: q[Routes.sbGroupParam],
-                        initialIsSelf: q[Routes.sbSelfParam] == '1',
-                        initialTitle: q[Routes.sbTitleParam],
-                        initialDate: Routes.calendarDateFrom(
-                          q[Routes.calendarDateParam],
-                        ),
-                        initialTime: Routes.timeOfDayFrom(
-                          q[Routes.sbTimeParam],
-                        ),
-                      );
-                    },
+                    builder: (context, state) => const ScheduleBuilderScreen(),
                   ),
                   GoRoute(
                     path: 'history',

@@ -7,14 +7,13 @@ import 'package:time_app/features/walkthrough/presentation/walkthrough_overlay.d
 
 /// The tour's copy is the one piece with no plugins, keys or layout, so it is
 /// the piece that can be pinned without a device. These assertions guard the
-/// contract `HomeShell` relies on: exactly five steps, in spatial bottom-bar
+/// contract `HomeShell` relies on: exactly four steps, in spatial bottom-bar
 /// order, each one short line.
 void main() {
-  test('covers exactly the five bar targets, in spatial order', () {
+  test('covers exactly the four bar targets, in spatial order', () {
     expect(kWalkthroughStepCopy.map((s) => s.heading).toList(), [
       'Plan',
       'Request',
-      'Speak to create',
       'Stats',
       'You',
     ]);
@@ -37,6 +36,7 @@ void main() {
     expect(kWalkthroughStepCopy[1].body, contains('REQUEST PLAN'));
     for (final step in kWalkthroughStepCopy) {
       expect(step.body, isNot(contains('log time')), reason: step.heading);
+      expect(step.body, isNot(contains('mic')), reason: step.heading);
     }
   });
 
@@ -83,6 +83,9 @@ void main() {
       'fill a time window',
       'one or more',
       'Plan requests',
+      // The centre ⊕ voice button was removed (2026-09-27).
+      'Centre mic',
+      'Say it out loud',
     ]) {
       expect(texts, isNot(contains(retired)), reason: retired);
     }

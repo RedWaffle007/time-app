@@ -17,13 +17,9 @@ void main() {
     expect(Directory('lib/features/time_tracking').existsSync(), isFalse);
     expect(read('firestore.rules'), isNot(contains('match /trackedTime/')));
     expect(read('lib/routing/app_router.dart'), isNot(contains('TrackScreen')));
-    expect(
-      read('lib/features/voice/application/voice_parsers.dart'),
-      isNot(contains('parseTrackUtterance')),
-    );
   });
 
-  test('the bar is Plan · Request · ⊕ · Stats · You', () {
+  test('the bar is Plan · Request · Stats · You', () {
     final shell = read('lib/features/home/presentation/home_shell.dart');
     final labels = RegExp(
       r"label: '(\w+)'",
@@ -37,11 +33,25 @@ void main() {
     expect(shell, isNot(contains("'Track")));
   });
 
-  test('the voice button goes straight to planning — no Track choice', () {
+  // 2026-09-27 (user-directed): the centre ⊕ voice button and its spoken-plan
+  // flow are gone; voice-note alarms are unaffected.
+  test('the centre voice button and speech-to-plan are removed', () {
     final shell = read('lib/features/home/presentation/home_shell.dart');
-    expect(shell, contains('Future<void> _showVoiceSheet() => _voicePlan();'));
+    expect(shell, isNot(contains('FloatingActionButton')));
+    expect(shell, isNot(contains('_voicePlan')));
     expect(shell, isNot(contains('Track time')));
-    expect(shell, isNot(contains('showLogTimeSheet')));
+    expect(Directory('lib/features/voice').existsSync(), isFalse);
+    expect(read('pubspec.yaml'), isNot(contains('speech_to_text')));
+    expect(
+      read('android/app/src/main/AndroidManifest.xml'),
+      isNot(contains('RecognitionService')),
+    );
+    // Voice-note alarms still record audio.
+    expect(
+      read('android/app/src/main/AndroidManifest.xml'),
+      contains('android.permission.RECORD_AUDIO'),
+    );
+    expect(Directory('lib/features/voice_notes').existsSync(), isTrue);
   });
 
   test('plan requests live at the Request pillar, not under Friends', () {

@@ -752,10 +752,11 @@ has a custom blur, size, slot-row, or status-badge recipe.
 
 ---
 
-### 6.12 Product-pillar navigation & the docked voice FAB
+### 6.12 Product-pillar navigation & the create FABs
 
-The bar names the app's **pillars**: `Plan · Request · ⊕ · Stats · You` (Request
-took the retired Track pillar's slot, 2026-09-27) — a change
+The bar names the app's **pillars**: `Plan · Request · Stats · You` (Request
+took the retired Track pillar's slot; the centre ⊕ voice FAB was removed,
+2026-09-27, DECISIONS.md "Centre voice button removed") — a change
 from the earlier "three delegation stances" (those three are now sub-navigation
 *inside* Plan). Full reasoning in DECISIONS.md "UI redesign — Hearth + Candidate
 A". Recipes so it stays Hearth:
@@ -765,24 +766,18 @@ A". Recipes so it stays Hearth:
   icon in `onSurfaceVariant`. The pending-attention **count** rides the
   **Request** icon (plan requests waiting on you) — the one orange the bar may
   carry (§2.7), rendering nothing at zero.
-- **Two FABs, and only these two, each with a distinct job** (revised 2026-08-27,
-  DECISIONS.md "Per-page create FABs"). The old "one FAB, always" rule is retired:
-  a single centre-docked mic left *manual* create hidden behind knowing to open an
-  app-bar overflow, which confused users who stayed on My Schedule.
-  1. The docked centre **voice FAB** — a standard (56) circular `primary` (brand green)
-     FAB, mic glyph, *gentle* floating shadow (`Elevations.floating`). Speak-to-
-     create. Owned by `HomeShell` (the outer scaffold), present on every pillar.
-  2. A **manual-create FAB**, owned by the creating pillar's own (inner)
+- **One create FAB per creating pillar** (revised 2026-08-27, DECISIONS.md
+  "Per-page create FABs"; the centre voice FAB was removed 2026-09-27). The bar
+  has no notch and nothing docked in it.
+  - A **manual-create FAB**, owned by the creating pillar's own (inner)
      scaffold so it clears the bottom bar: a rounded text FAB at the
      bottom-LEFT (`startFloat`) — **`PLAN`** on all three Plan sub-tabs, and
      **`REQUEST PLAN`** on the Request pillar (2026-09-27, DECISIONS.md
      "Request Plan redesign" and "Track Time removed") — `Sizes.createFab` tall
      with bold `titleMedium` labels from the FAB theme's
      `extendedSizeConstraints` / `extendedTextStyle` (never styled in the
-     screen). Each carries its own `heroTag` so it never collides with the
-     voice FAB in a route transition.
-  The controls never merge: mic = voice, `PLAN` / `REQUEST PLAN` = the
-  pillar-specific manual actions.
+     screen). Each carries its own `heroTag` so it never collides with
+     another FAB in a route transition.
   Manual create is **no longer** an app-bar `＋`. Detail/leaf pushed screens carry
   no FAB.
 - **Bottom edge respects the system nav bar.** Any full-screen **pushed** route

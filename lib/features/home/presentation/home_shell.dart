@@ -7,26 +7,21 @@ import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/theme/status_style.dart';
-import '../../../routing/app_router.dart';
 import '../../plan_requests/application/plan_request_providers.dart';
-import '../../voice/application/voice_parsers.dart';
-import '../../voice/presentation/plan_target_picker.dart';
-import '../../voice/presentation/voice_capture_sheet.dart';
 import '../../walkthrough/application/walkthrough_providers.dart';
 import '../../walkthrough/presentation/walkthrough_overlay.dart';
 import '../../invites/presentation/pending_invite_listener.dart';
 
-/// The app home: the five-PILLAR bottom bar with the docked centre voice FAB
-/// (redesign slice S5; UI-RULES.md §6.12).
+/// The app home: the four-PILLAR bottom bar (redesign slice S5; UI-RULES.md
+/// §6.12).
 ///
-/// `[ Plan · Request · ⊕ voice · Stats · You ]`. The four pillars are branches
-/// of the [StatefulNavigationShell]; the ⊕ is NOT a branch but a docked FAB that
-/// starts the voice Plan flow (Track Time and its voice choice were
-/// removed 2026-09-27, Batch G item 8; Request took Track's slot). The old three delegation stances (Groups / My Schedule /
-/// Activity) are now the keep-alive sub-tabs inside the Plan pillar.
+/// `[ Plan · Request · Stats · You ]`, each a branch of the
+/// [StatefulNavigationShell]. The centre ⊕ voice button and its spoken-plan
+/// flow were removed 2026-09-27 (user-directed); Track Time went earlier
+/// (Batch G item 8; Request took its slot). The old three delegation stances
+/// (Groups / My Schedule / Activity) are now the keep-alive sub-tabs inside
+/// the Plan pillar.
 ///
-/// The bar is a [BottomAppBar] with a circular notch rather than a
-/// [NavigationBar] because M3's NavigationBar cannot notch around a docked FAB.
 /// Each pillar is a §6.6 filled-selected / outline-unselected icon + label; the
 /// Plan pillar carries the §2.7 aggregate attention count.
 ///
@@ -51,13 +46,12 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   // --- first-run orientation tour (S-walkthrough) -------------------------
   //
-  // The coach-mark targets: the four pillars and the docked voice FAB. Keys are
+  // The coach-mark targets: the four pillars. Keys are
   // owned here (not by the buttons) so the overlay can spotlight each. The bar
   // is persistent, so these are always laid out — the tour reads their rects
   // directly.
   final _planKey = GlobalKey();
   final _requestKey = GlobalKey();
-  final _voiceKey = GlobalKey();
   final _statsKey = GlobalKey();
   final _youKey = GlobalKey();
 
@@ -80,16 +74,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         ),
         WalkthroughStep(
           copy: kWalkthroughStepCopy[2],
-          targetKey: _voiceKey,
-          spotlightRadius: Radii.pill,
-        ),
-        WalkthroughStep(
-          copy: kWalkthroughStepCopy[3],
           targetKey: _statsKey,
           spotlightRadius: Radii.md,
         ),
         WalkthroughStep(
-          copy: kWalkthroughStepCopy[4],
+          copy: kWalkthroughStepCopy[3],
           targetKey: _youKey,
           spotlightRadius: Radii.md,
         ),
@@ -175,22 +164,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         children: [
           Scaffold(
         body: shell,
-        // ONE FAB, always (§6.12): the docked centre voice affordance. Sage,
-        // circular, a gentle floating shadow — inviting, not shouting.
-        floatingActionButton: FloatingActionButton(
-          key: _voiceKey,
-          heroTag: 'voiceFab',
-          tooltip: 'Speak to create',
-          elevation: Elevations.floating,
-          onPressed: _showVoiceSheet,
-          child: const Icon(AppIcons.voice),
-        ),
-        floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
         bottomNavigationBar: BottomAppBar(
-          // Flat scaffold-background chrome with a notch for the FAB (§6.12).
+          // Flat scaffold-background chrome (§6.12).
           color: context.colors.surface,
           elevation: Elevations.nav,
-          shape: const CircularNotchedRectangle(),
           padding: EdgeInsets.zero,
           child: Row(
             children: [
@@ -214,8 +191,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                 shell: shell,
                 spotlightKey: _requestKey,
               ),
-              // The gap the notch + FAB occupy.
-              const SizedBox(width: Sizes.touchTarget),
               _PillarButton(
                 index: 2,
                 label: 'Stats',
@@ -247,43 +222,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       ),
       ),
     );
-  }
-
-  /// The voice FAB (§6.12) starts the voice Plan flow directly — the old
-  /// two-choice sheet went with Track Time (item 8).
-  Future<void> _showVoiceSheet() => _voicePlan();
-
-  /// Voice "Plan time" (S6): pick the target FIRST (the person-picker), then
-  /// speak "Please give alarm details", parse "[Day][Time][Alarm name]", and
-  /// push the schedule-builder with the target chosen and the details filled for
-  /// confirm/edit. A dismissal/denial/misparse still opens the builder against
-  /// the chosen target — the manual flow — so voice is never the only way.
-  Future<void> _voicePlan() async {
-    final target = await showPlanTargetPicker(context, ref);
-    if (!mounted || target == null) return;
-
-    final outcome = await showVoiceCaptureSheet(
-      context,
-      ref,
-      promptText: 'Please give alarm details',
-      hintText: 'Say the day, time and name, '
-          'e.g. "Monday 7am gym" or "30 Aug 9pm study".',
-    );
-    if (!mounted) return;
-
-    PlanDraft? draft;
-    if (outcome?.transcript != null) {
-      draft = parsePlanUtterance(outcome!.transcript!, now: DateTime.now());
-    }
-
-    context.push(Routes.scheduleBuilderVoice(
-      targetUid: target.uid,
-      isSelf: target.isSelf,
-      groupId: target.groupId,
-      title: draft?.title,
-      date: draft?.date,
-      time: draft?.time,
-    ));
   }
 }
 
