@@ -2,11 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../core/format/datetime_format.dart';
 import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/widgets/async_view.dart';
+import '../../../routing/app_router.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../auth/domain/user_profile.dart';
 import '../../notifications/application/friend_notifier.dart';
@@ -37,7 +40,6 @@ class UserProfileScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final visibility = ref.watch(profileVisibilityProvider(uid));
-    final profile = ref.watch(profileByUidProvider(uid));
 
     return Scaffold(
       appBar: AppBar(
@@ -48,35 +50,62 @@ class UserProfileScreen extends ConsumerWidget {
               _ProfileOverflowMenu(uid: uid, visibility: v),
         ],
       ),
-      body: AsyncView<UserProfile?>(
-        value: profile,
-        onRetry: () => ref.invalidate(profileByUidProvider(uid)),
-        isEmpty: (p) => p == null,
-        emptyIcon: AppIcons.profileUnavailable,
-        emptyMessage: 'This profile is not available.',
-        builder: (context, data) {
-          final v = visibility.value;
-          // Still resolving the relationship. Deliberately NOT rendered as a
-          // partial profile: the header is harmless but the stats section
-          // below it is not, and a permissive default for one frame is a leak.
-          if (v == null) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (v.isUnreachable) return const _Unavailable();
+      body: ProfileBody(uid: uid),
+    );
+  }
+}
 
-          return ListView(
-            padding: Space.screenListSafe(context),
-            children: [
-              _Header(profile: data!, visibility: v),
-              const SizedBox(height: Space.lg),
-              _RelationshipActions(uid: uid, visibility: v),
-              if (v.relation == ProfileRelation.friend)
-                _PlanningNote(name: data.name),
-              StatsSection(uid: uid),
+/// **The one profile layout** (Batch H1): header, the relationship slot, and
+/// stats. A visitor's `/u/<uid>` and your own You tab both render it, so your
+/// profile looks exactly the way others see it. On your OWN profile the
+/// relationship slot is the Edit profile button, and [selfLinks] (Friends,
+/// Voice notes on the You tab) sit under it.
+class ProfileBody extends ConsumerWidget {
+  const ProfileBody({super.key, required this.uid, this.selfLinks = const []});
+
+  final String uid;
+
+  /// Rendered only when the profile is the viewer's own.
+  final List<Widget> selfLinks;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final visibility = ref.watch(profileVisibilityProvider(uid));
+    final profile = ref.watch(profileByUidProvider(uid));
+
+    return AsyncView<UserProfile?>(
+      value: profile,
+      onRetry: () => ref.invalidate(profileByUidProvider(uid)),
+      isEmpty: (p) => p == null,
+      emptyIcon: AppIcons.profileUnavailable,
+      emptyMessage: 'This profile is not available.',
+      builder: (context, data) {
+        final v = visibility.value;
+        // Still resolving the relationship. Deliberately NOT rendered as a
+        // partial profile: the header is harmless but the stats section
+        // below it is not, and a permissive default for one frame is a leak.
+        if (v == null) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (v.isUnreachable) return const _Unavailable();
+
+        return ListView(
+          padding: Space.screenListSafe(context),
+          children: [
+            _Header(profile: data!, visibility: v),
+            const SizedBox(height: Space.lg),
+            _RelationshipActions(uid: uid, visibility: v),
+            if (v.isSelf && selfLinks.isNotEmpty) ...[
+              const SizedBox(height: Space.md),
+              ...selfLinks,
             ],
-          );
-        },
-      ),
+            if (v.relation == ProfileRelation.friend)
+              _PlanningNote(name: data.name),
+            const SizedBox(height: Space.md),
+            StatsSection(uid: uid),
+          ],
+        );
+      },
     );
   }
 }
@@ -151,9 +180,16 @@ class _Header extends ConsumerWidget {
                   ],
                   if (friendCount != null) ...[
                     const SizedBox(height: Space.sm),
-                    Text(
-                      friendCount == 1 ? '1 friend' : '$friendCount friends',
-                      style: context.text.labelSmall?.copyWith(color: muted),
+                    // Your own count (the only one a device can know) opens
+                    // Friends, like a profile's friend count does elsewhere.
+                    InkWell(
+                      key: const ValueKey('friend-count'),
+                      onTap: () => context.push(Routes.friends),
+                      child: Text(
+                        '${formatCount(context, friendCount)} '
+                        '${friendCount == 1 ? 'friend' : 'friends'}',
+                        style: context.text.labelSmall?.copyWith(color: muted),
+                      ),
                     ),
                   ],
                 ],
@@ -208,7 +244,20 @@ class _RelationshipActionsState extends ConsumerState<_RelationshipActions> {
   @override
   Widget build(BuildContext context) {
     final me = ref.watch(currentUidProvider);
-    if (me == null || widget.visibility.isSelf) return const SizedBox.shrink();
+    if (me == null) return const SizedBox.shrink();
+    // Your own profile: the slot where others see "Add friend" is Edit profile
+    // (Batch H1). Full width, outlined: editing is not a primary social act.
+    if (widget.visibility.isSelf) {
+      return SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          key: const ValueKey('edit-profile'),
+          onPressed: () => context.push(Routes.profile),
+          icon: const Icon(AppIcons.editProfile),
+          label: const Text('Edit profile'),
+        ),
+      );
+    }
     final repo = ref.read(friendRepositoryProvider);
     // Captured while alive, then used across awaits — see the note in
     // friend_requests_screen.dart. Here the widget usually survives the action,

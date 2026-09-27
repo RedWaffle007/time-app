@@ -40,8 +40,7 @@ const kWalkthroughStepCopy = <WalkthroughStepCopy>[
   ),
   WalkthroughStepCopy(
     'You',
-    'Everything else lives here: Profile, Friends, '
-        '“How this app works”, and reminder permissions.',
+    'Your profile, as others see it. The gear opens Settings.',
   ),
 ];
 

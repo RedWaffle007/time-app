@@ -65,7 +65,7 @@
   ANY plan against the current rules.** Every phone — including the external
   tester's — needs a fresh APK.
 - Completed: Items **1–23, 25–32, 34, 35**, Batches **A–G**.
-- Next: **Item 24 (24a–24c committed; 24d built, rules deploy pending) → Batch H → Item 33** (research-first;
+- Next: **Item 24 (24a–24c committed; 24d built, rules deploy pending) → Batch H (H1–H3 built; H4, H5 next) → Item 33** (research-first;
   propose, wait for sign-off). Nothing built since Batch A has been checked on a phone — see
   "Deferred device checks".
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
@@ -531,6 +531,8 @@ separate and group-scoped, and group plans also count individually.
 User-directed. One item at a time, plan → sign-off → build; UI changes follow
 UI-RULES (DECISIONS → UI-RULES → code for any new recipe/token).
 
+- **H1–H3 BUILT 2026-09-27, awaiting commit** (DECISIONS.md "You = your
+  profile; Settings holds the rest"). App only.
 - **H1 — "You" = your own profile (Instagram model).** Tapping You opens the
   signed-in user's profile rendered exactly as others see it
   (`user_profile_screen.dart`), plus an **Edit Profile** button shown only on

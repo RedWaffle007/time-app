@@ -26,6 +26,7 @@ import '../features/home/presentation/home_shell.dart';
 import '../features/reminders/presentation/alarm_screen.dart';
 import '../features/reminders/presentation/reminder_diagnostics_screen.dart';
 import '../features/scheduling/presentation/schedule_builder_screen.dart';
+import '../features/settings/presentation/settings_screen.dart';
 import '../features/home/presentation/you_screen.dart';
 import '../features/plan/presentation/plan_shell.dart';
 import '../features/stats/presentation/stats_screen.dart';
@@ -61,6 +62,10 @@ class Routes {
   /// account menu; it belongs to no tab. Distinct from the first-run coach tour,
   /// which it can replay.
   static const howItWorks = '/how-it-works';
+
+  /// **Settings** (Batch H2): reminders, quiet hours, this device, help, sign
+  /// out. Pushed top-level from the gear on your own profile.
+  static const settings = '/settings';
 
   /// **The calendar** — a month/week/day view over the items that already
   /// exist. Top-level and pushed from My Schedule's `CALENDAR` control. It
@@ -533,6 +538,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.howItWorks,
         builder: (context, state) => const HowItWorksScreen(),
+      ),
+      GoRoute(
+        path: Routes.settings,
+        builder: (context, state) => const SettingsScreen(),
       ),
       // The full-screen alarm surface. Top-level and outside the shell so it
       // covers the nav bar the way a clock alarm covers everything; its Dismiss

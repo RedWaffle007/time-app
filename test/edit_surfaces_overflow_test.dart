@@ -11,11 +11,10 @@ import 'package:time_app/features/auth/domain/user_profile.dart';
 import 'package:time_app/features/auth/presentation/profile_edit_screen.dart';
 import 'package:time_app/features/calendar/application/calendar_grouping.dart';
 import 'package:time_app/features/calendar/presentation/calendar_item_sheet.dart';
-import 'package:time_app/features/home/presentation/you_screen.dart';
+import 'package:time_app/features/settings/presentation/settings_screen.dart';
 import 'package:time_app/features/scheduling/domain/schedule_item.dart';
 import 'package:time_app/features/scheduling/application/schedule_providers.dart';
 import 'package:time_app/features/scheduling/presentation/group_plan_sheet.dart';
-import 'package:time_app/features/social/application/social_providers.dart';
 import 'package:time_app/features/outcomes/presentation/outcome_screen.dart';
 import 'package:time_app/features/stats/application/my_stats_providers.dart';
 import 'package:time_app/features/stats/presentation/stats_screen.dart';
@@ -29,18 +28,23 @@ void main() {
     final profile = _profile();
     for (final scale in [1.0, 1.3]) {
       for (final theme in [AppTheme.light, AppTheme.dark]) {
+        // The theme selector moved to Settings in Batch H2.
         await _pump(
           tester,
-          const YouScreen(),
+          const SettingsScreen(),
           theme: theme,
           overrides: [
             profileProvider.overrideWith((ref) => Stream.value(profile)),
-            incomingRequestCountProvider.overrideWithValue(0),
+            appLockInitiallyEnabledProvider.overrideWithValue(false),
           ],
           scale: scale,
           height: 1000,
         );
-        await tester.drag(find.byType(ListView), const Offset(0, -700));
+        await tester.scrollUntilVisible(
+          find.byType(SegmentedButton<ThemeMode>),
+          200,
+          scrollable: find.byType(Scrollable).first,
+        );
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
         expect(find.text('Theme'), findsOneWidget);

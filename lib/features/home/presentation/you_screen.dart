@@ -1,209 +1,66 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_icons.dart';
-import '../../../core/theme/app_theme.dart';
-import '../../../core/theme/app_tokens.dart';
-import '../../../core/theme/dataviz_tokens.dart';
-import '../../../core/theme/status_style.dart';
-import '../../../core/widgets/section_header.dart';
+import '../../../core/widgets/nav_tile.dart';
+import '../../../core/widgets/tab_body_inset.dart';
 import '../../../routing/app_router.dart';
 import '../../auth/application/auth_providers.dart';
-import '../../notifications/application/messaging_service.dart';
 import '../../social/application/social_providers.dart';
-import '../../social/presentation/avatar_image.dart';
-import '../../theme/application/theme_mode_controller.dart';
-import '../../../core/widgets/tab_body_inset.dart';
+import '../../social/presentation/user_profile_screen.dart';
 
-/// **The You hub** (migration slice S3) — the account popup promoted to a real
-/// screen, which resolves the audit's most overloaded surface: the junk-drawer
-/// menu that mixed feature launchers, account settings and device config behind
-/// one closed popup.
+/// **The You pillar = your own profile** (Batch H1, DECISIONS.md "You = your
+/// profile; Settings holds the rest").
 ///
-/// **A re-housing, not a rebuild.** Every row pushes exactly the route the popup
-/// pushes today; the destination screens are untouched (their Hearth polish is
-/// the S7 sweep). Reached for now through a TEMPORARY account-popup entry (the
-/// temporary-door strategy); it becomes the fifth bottom-bar pillar at the S5
-/// cutover, at which point the popup is retired.
-///
+/// It renders [ProfileBody], the same layout anyone visiting you sees, so you
+/// always know what your profile looks like to others. The body swaps the
+/// relationship slot for **Edit profile**; the app bar carries a **Settings**
+/// gear for everything that is not your public identity. Friends and Voice
+/// notes stay one tap away under the header.
 class YouScreen extends ConsumerWidget {
   const YouScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final uid = ref.watch(currentUidProvider);
     final profile = ref.watch(profileProvider).value;
     final pendingRequests = ref.watch(incomingRequestCountProvider);
+    final username = profile?.username;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('You')),
-      body: TabBodyInset(
-        child: ListView(
-          padding: Space.screenList,
-          children: [
-            // Profile header — avatar + name, tapping through to the edit form.
-            Card(
-              child: ListTile(
-                leading: AvatarImage(profile: profile, size: Sizes.avatarRow),
-                title: Text(
-                  profile?.name ?? '',
-                  style: context.text.titleMedium,
-                ),
-                subtitle: profile?.username == null
-                    ? null
-                    : Text('@${profile!.username}'),
-                trailing: const Icon(AppIcons.openRow),
-                onTap: () => context.push(Routes.profile),
-              ),
-            ),
-
-            const SectionHeader('Places'),
-            _YouTile(
-              icon: AppIcons.friends,
-              label: 'Friends',
-              badgeCount: pendingRequests,
-              onTap: () => context.push(Routes.friends),
-            ),
-            _YouTile(
-              icon: AppIcons.voiceLibrary,
-              label: 'Voice notes',
-              onTap: () => context.push(Routes.voiceNotes),
-            ),
-            const SectionHeader('Account & device'),
-            _YouTile(
-              icon: AppIcons.walkthrough,
-              label: 'How this app works',
-              // The complete guide — one blurb per page/feature. It carries a
-              // "Replay the guided tour" button for the first-run coach marks, so
-              // the tour is still reachable without this tile owning it.
-              onTap: () => context.push(Routes.howItWorks),
-            ),
-            _YouTile(
-              icon: AppIcons.permissions,
-              label: 'Reminders & permissions',
-              onTap: () => context.push(Routes.permissions),
-            ),
-            const _ThemeModeTile(),
-            if (kDebugMode)
-              _YouTile(
-                icon: AppIcons.devMenu,
-                label: 'Dev menu (debug)',
-                onTap: () => context.push(Routes.devMenu),
-              ),
-            _YouTile(
-              icon: AppIcons.signOut,
-              label: 'Sign out',
-              showChevron: false,
-              onTap: () => signOutWithTokenCleanup(ref),
-            ),
-          ],
+      appBar: AppBar(
+        title: Text(
+          username != null ? '@$username' : (profile?.name ?? 'You'),
         ),
+        actions: [
+          IconButton(
+            key: const ValueKey('open-settings'),
+            tooltip: 'Settings',
+            icon: const Icon(AppIcons.settings),
+            onPressed: () => context.push(Routes.settings),
+          ),
+        ],
       ),
-    );
-  }
-}
-
-/// The device-local appearance preference. System remains the default, while
-/// light and dark let a person deliberately override it from the You hub.
-class _ThemeModeTile extends ConsumerWidget {
-  const _ThemeModeTile();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final mode = ref.watch(themeModeProvider);
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: Space.lg),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            ListTile(
-              leading: Icon(
-                AppIcons.themeSystem,
-                color: context.colors.onSurfaceVariant,
-              ),
-              title: Text('Theme', style: context.text.titleMedium),
-              subtitle: Text(
-                switch (mode) {
-                  ThemeMode.light => 'Light',
-                  ThemeMode.dark => 'Dark',
-                  ThemeMode.system => 'System default',
-                },
-                style: context.text.bodySmall?.copyWith(
-                  color: context.colors.onSurfaceVariant,
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: Space.lg),
-              child: SegmentedButton<ThemeMode>(
-                expandedInsets: EdgeInsets.zero,
-                showSelectedIcon: false,
-                segments: const [
-                  ButtonSegment(
-                    value: ThemeMode.light,
-                    label: Text('Light'),
-                    tooltip: 'Light theme',
+      body: TabBodyInset(
+        child: uid == null
+            ? const SizedBox.shrink()
+            : ProfileBody(
+                uid: uid,
+                selfLinks: [
+                  NavTile(
+                    icon: AppIcons.friends,
+                    label: 'Friends',
+                    badgeCount: pendingRequests,
+                    onTap: () => context.push(Routes.friends),
                   ),
-                  ButtonSegment(
-                    value: ThemeMode.dark,
-                    label: Text('Dark'),
-                    tooltip: 'Dark theme',
-                  ),
-                  ButtonSegment(
-                    value: ThemeMode.system,
-                    label: Text('System'),
-                    tooltip: 'Use system theme',
+                  NavTile(
+                    icon: AppIcons.voiceLibrary,
+                    label: 'Voice notes',
+                    onTap: () => context.push(Routes.voiceNotes),
                   ),
                 ],
-                selected: {mode},
-                onSelectionChanged: (selection) {
-                  ref.read(themeModeProvider.notifier).setMode(selection.first);
-                },
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// One hub row — a flat outlined card (§6.1) with a leading icon, an optional
-/// pending-count badge (the one orange the app trusts, §2.7) and a chevron.
-class _YouTile extends StatelessWidget {
-  const _YouTile({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.badgeCount = 0,
-    this.showChevron = true,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final int badgeCount;
-  final bool showChevron;
-
-  @override
-  Widget build(BuildContext context) {
-    final leading = Icon(icon, color: context.colors.onSurfaceVariant);
-    return Card(
-      child: ListTile(
-        leading: badgeCount > 0
-            ? PendingCountBadge(count: badgeCount, child: leading)
-            : leading,
-        title: Text(
-          label,
-          style: context.text.titleMedium?.copyWith(
-            color: context.colors.categoricalAccentFor(label),
-          ),
-        ),
-        trailing: showChevron ? const Icon(AppIcons.openRow) : null,
-        onTap: onTap,
       ),
     );
   }

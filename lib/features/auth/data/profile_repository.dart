@@ -46,18 +46,26 @@ class ProfileRepository {
     required String uid,
     required String name,
     required String homeTimezone,
-    int? quietHoursStartMinutes,
-    int? quietHoursEndMinutes,
   }) async {
-    final quietSet =
-        quietHoursStartMinutes != null && quietHoursEndMinutes != null;
     await _users.doc(uid).set({
       'name': name.trim(),
       'homeTimezone': homeTimezone,
-      'quietHoursStartMinutes':
-          quietSet ? quietHoursStartMinutes : FieldValue.delete(),
-      'quietHoursEndMinutes':
-          quietSet ? quietHoursEndMinutes : FieldValue.delete(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  /// Sets (both non-null) or clears (either null) the quiet-hours window.
+  /// Its own write since Batch H2: quiet hours live in Settings and save the
+  /// moment they change, so the Edit profile form must never rewrite them.
+  Future<void> updateQuietHours({
+    required String uid,
+    int? startMinutes,
+    int? endMinutes,
+  }) async {
+    final set = startMinutes != null && endMinutes != null;
+    await _users.doc(uid).set({
+      'quietHoursStartMinutes': set ? startMinutes : FieldValue.delete(),
+      'quietHoursEndMinutes': set ? endMinutes : FieldValue.delete(),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
@@ -65,7 +73,7 @@ class ProfileRepository {
   /// Updates the social half of the profile — bio and the privacy toggle.
   ///
   /// **Separate from [updateProfile] on purpose.** That method is the identity
-  /// form (name, timezone, quiet hours) and rewrites all of them together; this
+  /// form (name, timezone) and rewrites all of them together; this
   /// is a different form with a different Save. Folding them into one method
   /// would mean every privacy change also rewrote the user's timezone, and a
   /// concurrent edit on another device would silently lose one of them.

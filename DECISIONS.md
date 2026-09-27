@@ -7133,3 +7133,27 @@ Group progress now counts **only the plans made in that group** (items with
   follow-through (all done ÷ all answered, ≥5).
 - Pure logic in `group_board.dart`; `test/group_board_test.dart`; 8 new
   emulator tests. **Deploy order: rules → verify → app.**
+
+## You = your profile; Settings holds the rest (2026-09-27, Batch H1–H3)
+
+User-directed ("Instagram model"). Built as one change because the pieces
+depend on each other.
+
+- **H1:** the You pillar renders the signed-in user's own profile through the
+  SAME body a visitor sees (`ProfileBody`, extracted from
+  `user_profile_screen.dart`), so there is one profile layout. On your own
+  profile the relationship slot holds a full-width **Edit profile** button
+  (on `/u/<your uid>` too). The app bar shows your @username with a
+  **Settings** gear; Friends (request badge) and Voice notes sit under the
+  header, and "N friends" also opens Friends.
+- **H2:** new pushed `/settings` (top-level, covers the bar): Reminders
+  (Reminders & permissions, Quiet hours), This device (App lock, Startup
+  sound, Theme), Help (How this app works), Dev menu (debug), Sign out.
+  **Quiet hours save instantly** from their own tile via
+  `ProfileRepository.updateQuietHours()`; `updateProfile()` no longer touches
+  them (it used to delete them whenever the edit form saved with the switch
+  off). No rules change — the users rule does not constrain those fields.
+- **H3:** Edit profile = picture (change/remove), name, home timezone,
+  username, about you (with a one-tap clear), public toggle. Quiet hours and
+  the device section left it.
+- New icon concepts: `AppIcons.settings`, `AppIcons.clearField`.

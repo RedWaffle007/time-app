@@ -473,6 +473,13 @@ abstract final class AppIcons {
   static const IconData editProfile = Icons.person_outline;
   static const IconData devMenu = Icons.build_outlined;
 
+  /// The Settings screen, reached from the gear on your own profile (Batch H2).
+  static const IconData settings = Icons.settings_outlined;
+
+  /// Clear a text field in one tap (e.g. remove "About you", Batch H3).
+  /// Distinct from [close] (dismiss a surface) per rule 1.
+  static const IconData clearField = Icons.clear;
+
   /// The first-run orientation tour, as a replayable entry in the You hub
   /// ("How this app works"). A compass/explore glyph — "show me around" — and
   /// distinct from [permissions] (the OS-permission flow): re-touring the UI

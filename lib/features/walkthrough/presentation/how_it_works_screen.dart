@@ -74,8 +74,8 @@ class HowItWorksScreen extends ConsumerWidget {
             icon: AppIcons.navYou,
             title: 'You',
             body:
-                'Your profile plus everything below — Friends, Calendar, '
-                'this guide, and reminder permissions.',
+                'Your profile, as others see it, with Friends and Voice '
+                'notes. The gear opens Settings.',
           ),
 
           const SizedBox(height: Space.md),
@@ -161,7 +161,7 @@ class HowItWorksScreen extends ConsumerWidget {
           ),
           const _Feature(
             icon: AppIcons.permissions,
-            title: 'Reminders & permissions  ·  in the You tab',
+            title: 'Reminders & permissions  ·  in Settings',
             body:
                 'Review and fix the permissions reliable reminders need, any '
                 'time.',
