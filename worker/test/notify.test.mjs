@@ -1381,3 +1381,131 @@ test('other item pushes stay on the normal activity channel', async () => {
   });
   assert.equal(h.sent[0].android.notification.channel_id, 'planner_activity');
 });
+
+
+// ---- atomic dedup claim (2026-09-27 device bug: "dismissed" pushed 3x) ----
+
+// A db double with real compare-and-set semantics on `updateTime`.
+function casContext(docs, { tokenResult = { ok: true } } = {}) {
+  const versions = {};
+  const bump = (path) => { versions[path] = (versions[path] ?? 0) + 1; };
+  for (const path of Object.keys(docs)) bump(path);
+  const sent = [];
+  const tick = () => new Promise((r) => setImmediate(r));
+  return {
+    sent,
+    docs,
+    ctx: {
+      db: {
+        getDoc: async (path) => { await tick(); return docs[path] ?? null; },
+        getDocWithMeta: async (path) => {
+          await tick();
+          return docs[path]
+            ? { data: { ...docs[path] }, updateTime: String(versions[path]) }
+            : null;
+        },
+        patchDocIfUnchanged: async (path, fields, updateTime) => {
+          await tick();
+          if (String(versions[path]) !== updateTime) return false;
+          docs[path] = { ...docs[path], ...fields };
+          bump(path);
+          return true;
+        },
+        patchDoc: async (path, fields) => {
+          await tick();
+          docs[path] = { ...docs[path], ...fields };
+          bump(path);
+        },
+        listDocIds: async () => { await tick(); return ['planner-token']; },
+        deleteDoc: async () => {},
+      },
+      fcm: {
+        send: async (_token, message) => {
+          await tick();
+          sent.push(message);
+          return tokenResult;
+        },
+      },
+    },
+  };
+}
+
+const claimItem = () => ({
+  targetUid: 'target',
+  createdByUid: 'planner',
+  groupId: '',
+  title: 'Wake up',
+  status: 'approved',
+  alarm: { dismissedAt: '2030-01-01T00:00:00.000Z' },
+});
+
+test('three simultaneous reports of one dismissal push exactly once', async () => {
+  const h = casContext({
+    'scheduleItems/target/items/item-1': claimItem(),
+    'friendships/planner_target': { uidA: 'planner', uidB: 'target' },
+    'users/target': { name: 'Test Target' },
+  });
+  const args = { event: 'dismissed', targetUid: 'target', itemId: 'item-1' };
+  const results = await Promise.all([
+    sendEventNotification(h.ctx, args),
+    sendEventNotification(h.ctx, args),
+    sendEventNotification(h.ctx, args),
+  ]);
+  assert.equal(h.sent.length, 1);
+  assert.equal(results.filter((r) => r.sent === 1).length, 1);
+  assert.equal(results.filter((r) => r.reason === 'already-notified').length, 2);
+  assert.equal(h.docs['scheduleItems/target/items/item-1'].notifiedDismissed, true);
+});
+
+test('a claim that delivered nothing is released for a later attempt', async () => {
+  const h = casContext({
+    'scheduleItems/target/items/item-1': claimItem(),
+    'friendships/planner_target': { uidA: 'planner', uidB: 'target' },
+  }, { tokenResult: { ok: false, error: 'OTHER' } });
+  const args = { event: 'dismissed', targetUid: 'target', itemId: 'item-1' };
+  const first = await sendEventNotification(h.ctx, args);
+  assert.equal(first.reason, 'no-delivery');
+  assert.equal(h.docs['scheduleItems/target/items/item-1'].notifiedDismissed, null);
+  const second = await sendEventNotification(h.ctx, args);
+  assert.equal(second.reason, 'no-delivery'); // tried again, not "already"
+});
+
+test('a concurrent unrelated write does not lose the push (claim retries)', async () => {
+  const h = casContext({
+    'scheduleItems/target/items/item-1': claimItem(),
+    'friendships/planner_target': { uidA: 'planner', uidB: 'target' },
+  });
+  const path = 'scheduleItems/target/items/item-1';
+  const racing = h.ctx.db.patchDocIfUnchanged;
+  let once = true;
+  h.ctx.db.patchDocIfUnchanged = async (p, f, t) => {
+    if (once) {
+      once = false;
+      await h.ctx.db.patchDoc(path, { outcome: { result: 'done' } });
+    }
+    return racing(p, f, t);
+  };
+  const res = await sendEventNotification(h.ctx, {
+    event: 'dismissed', targetUid: 'target', itemId: 'item-1',
+  });
+  assert.equal(res.sent, 1);
+  assert.equal(h.sent.length, 1);
+});
+
+test('the unavailable push rides the Uh-Oh channel and is claimed once', async () => {
+  const item = {
+    ...claimItem(),
+    alarm: { unavailableAt: '2030-01-01T00:01:00.000Z' },
+  };
+  const h = casContext({
+    'scheduleItems/target/items/item-1': item,
+    'friendships/planner_target': { uidA: 'planner', uidB: 'target' },
+  });
+  const args = { event: 'unavailable', targetUid: 'target', itemId: 'item-1' };
+  await Promise.all([
+    sendEventNotification(h.ctx, args),
+    sendEventNotification(h.ctx, args),
+  ]);
+  assert.equal(h.sent.length, 1);
+  assert.equal(h.sent[0].android.notification.channel_id, 'planner_unavailable');
+});

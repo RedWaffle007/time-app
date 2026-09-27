@@ -19,6 +19,7 @@ import {
   sendEventNotification,
   sendFriendNotification,
   FRIEND_EVENTS,
+  ITEM_EVENTS,
   groupAdminUids,
 } from './notify.js';
 import {
@@ -48,16 +49,16 @@ import {
 } from './voice-library.js';
 
 const MAX_BODY_BYTES = 2048;
-const EVENTS = new Set([
-  'created', 'decided', 'outcome', 'withdrawn', 'dismissed', 'voiceFallback',
-]);
+// The item events come from notify.js — one list, so the door and the policy
+// can never disagree again (this copy once lacked `unavailable`, 400-ing it).
+const EVENTS = ITEM_EVENTS;
 // Planner-triggered events (caller must be the item's CREATOR); the rest are
 // target-triggered (caller must be the target). This is the authz branch the
 // "one endpoint" framing requires — one endpoint, but NOT one authz rule.
 const PLANNER_TRIGGERED = new Set(['created', 'withdrawn']);
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, execCtx) {
     // --- routing ---
     //
     // Two features share one Worker: push (the root path, unchanged) and
@@ -211,19 +212,29 @@ export default {
       };
       const res = await sendEventNotification(ctx, { event, targetUid, itemId });
       // Every SENT voice note goes into the planner's library (32d). Never
-      // allowed to fail the push; the hourly sweep retries it.
+      // allowed to fail — or DELAY — the push: the copy (download + upload +
+      // Firestore) runs AFTER the response via waitUntil. Awaiting it here kept
+      // the planner's Send spinning past the app's 10 s timeout (2026-09-27).
+      // The hourly sweep retries a copy that did not finish.
       if (event === 'created' && item.voiceNote && item.createdByUid !== targetUid) {
-        try {
-          const storage = makeVoiceStorage(env);
-          if (storage.configured) {
-            const saved = await saveSentVoiceNote(
-              { db, storage },
-              { targetUid, itemId, item },
-            );
-            console.log(JSON.stringify({ event: 'voice-library-save', saved }));
+        const save = (async () => {
+          try {
+            const storage = makeVoiceStorage(env);
+            if (storage.configured) {
+              const saved = await saveSentVoiceNote(
+                { db, storage },
+                { targetUid, itemId, item },
+              );
+              console.log(JSON.stringify({ event: 'voice-library-save', saved }));
+            }
+          } catch (e) {
+            console.error('voice library save failed', { name: e?.name || 'Error' });
           }
-        } catch (e) {
-          console.error('voice library save failed', { name: e?.name || 'Error' });
+        })();
+        if (execCtx && typeof execCtx.waitUntil === 'function') {
+          execCtx.waitUntil(save);
+        } else {
+          await save;
         }
       }
       // Surface the decisive result in `wrangler tail` — HTTP 200 alone can't

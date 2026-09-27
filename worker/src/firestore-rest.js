@@ -62,6 +62,16 @@ export function makeFirestoreDb(projectId, accessToken) {
       return decodeFields(doc.fields);
     },
 
+    // The document plus its `updateTime`, for a compare-and-set via
+    // patchDocIfUnchanged (the item-push dedup claim).
+    async getDocWithMeta(path) {
+      const resp = await fetch(urlFor(path), { headers: authHeader });
+      if (resp.status === 404) return null;
+      if (!resp.ok) throw new Error(`Firestore getDoc ${path} → ${resp.status}`);
+      const doc = await resp.json();
+      return { data: decodeFields(doc.fields), updateTime: doc.updateTime };
+    },
+
     async listDocIds(collectionPath) {
       const resp = await fetch(`${urlFor(collectionPath)}?pageSize=100`, {
         headers: authHeader,

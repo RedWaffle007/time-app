@@ -164,6 +164,22 @@ test('dismissed is an item event that requires a bearer token', async () => {
   assert.deepEqual(await body(response), { error: 'missing-token' });
 });
 
+test('EVERY item event passes the request guard (unavailable was 400-ed)', async () => {
+  // 2026-09-27 device bug: index.js kept its own event list without
+  // `unavailable`, so the Uh-Oh push was rejected as invalid-body. The guard
+  // now uses notify.js's ITEM_EVENTS; each event must reach auth (401).
+  const { ITEM_EVENTS } = await import('../src/notify.js');
+  assert.ok(ITEM_EVENTS.has('unavailable'));
+  for (const event of ITEM_EVENTS) {
+    const response = await worker.fetch(new Request('https://worker.example/', {
+      method: 'POST',
+      body: JSON.stringify({ event, targetUid: 'target', itemId: 'item-1' }),
+    }), env);
+    assert.equal(response.status, 401, event);
+    assert.deepEqual(await body(response), { error: 'missing-token' }, event);
+  }
+});
+
 test('group-join pushes need a safe group id before auth', async () => {
   const cases = [
     { event: 'groupJoinApproved', fromUid: 'member', toUid: 'candidate' },

@@ -38,10 +38,14 @@
 // The item is re-read and the sub-type is DERIVED from Firestore — the caller
 // cannot assert an outcome/decision that didn't actually happen.
 
-const EVENTS = new Set([
+// THE one list of item events. index.js imports it for its request guard, so
+// a new event can never again be accepted here but rejected at the door (the
+// `unavailable` push was 400'd by a second, stale list until 2026-09-27).
+export const ITEM_EVENTS = new Set([
   'created', 'decided', 'outcome', 'withdrawn', 'dismissed', 'voiceFallback',
   'unavailable',
 ]);
+const EVENTS = ITEM_EVENTS;
 
 // Which party each event notifies. The ACTOR is never the recipient: for a
 // planner-triggered event the recipient is the target, and vice versa — and the
@@ -62,7 +66,13 @@ export async function sendEventNotification(ctx, { event, targetUid, itemId }) {
   }
 
   const itemPath = `scheduleItems/${targetUid}/items/${itemId}`;
-  const item = await ctx.db.getDoc(itemPath);
+  // With `updateTime` when the db supports it: the dedup slot is then CLAIMED
+  // atomically before sending (see claimSlot), so near-simultaneous calls for
+  // the same event (every dismiss path reports) push exactly once.
+  const withMeta = ctx.db.getDocWithMeta
+    ? await ctx.db.getDocWithMeta(itemPath)
+    : null;
+  const item = withMeta ? withMeta.data : await ctx.db.getDoc(itemPath);
   if (!item) return result(0, 0, null, 'item-not-found');
 
   const plannerUid = item.createdByUid;
@@ -99,6 +109,12 @@ export async function sendEventNotification(ctx, { event, targetUid, itemId }) {
   const tokens = await ctx.db.listDocIds(`users/${recipientUid}/fcmTokens`);
   if (tokens.length === 0) return result(0, 0, recipientUid, 'no-tokens');
 
+  // Claim this event's slot BEFORE sending. The read above and the stamp used
+  // to be separate steps, so three reports of one dismissal arriving together
+  // all saw "not yet notified" and all pushed (seen on device 2026-09-27).
+  const claimed = await claimSlot(ctx.db, itemPath, derived, withMeta);
+  if (!claimed) return result(0, 0, recipientUid, 'already-notified');
+
   // Names are read HERE, from Firestore, never taken from the request: the
   // actor is whoever performed this event (the planner for created/withdrawn,
   // the target for decided/outcome). A missing profile degrades to 'Someone'.
@@ -124,16 +140,40 @@ export async function sendEventNotification(ctx, { event, targetUid, itemId }) {
     // 'OTHER' (transient) errors are left alone — no send counted, not cleaned.
   }
 
-  // Only stamp this event's guard once a push actually went out, so a run that
-  // found no live token can still deliver on a later, genuine attempt.
+  // Keep the stamp only if a push actually went out, so a run that reached no
+  // live token can still deliver on a later, genuine attempt.
   if (sent > 0) {
     await ctx.db.patchDoc(itemPath, {
       [derived.field]: derived.value,
       notifiedAt: new Date().toISOString(),
     });
+  } else if (withMeta) {
+    await ctx.db.patchDoc(itemPath, { [derived.field]: null });
   }
 
   return result(sent, cleaned, recipientUid, sent > 0 ? 'sent' : 'no-delivery');
+}
+
+// Atomically take this event's dedup slot. Compare-and-set on the item's
+// `updateTime`: exactly one concurrent caller wins. A loser re-reads — if the
+// slot is now taken it was a duplicate; if something else changed the item
+// (an outcome, a timeline stamp) it retries with the fresh version. Without
+// updateTime support (older test doubles) it falls back to send-then-stamp.
+async function claimSlot(db, itemPath, derived, withMeta) {
+  if (!withMeta || !db.patchDocIfUnchanged) return true;
+  let updateTime = withMeta.updateTime;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const won = await db.patchDocIfUnchanged(
+      itemPath,
+      { [derived.field]: derived.value },
+      updateTime,
+    );
+    if (won) return true;
+    const fresh = await db.getDocWithMeta(itemPath);
+    if (!fresh || fresh.data[derived.field] === derived.value) return false;
+    updateTime = fresh.updateTime;
+  }
+  return false;
 }
 
 // Does the planner CURRENTLY hold permission over the target for [item]?

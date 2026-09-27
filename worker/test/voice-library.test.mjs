@@ -252,8 +252,11 @@ test('the save runs at send time and in the hourly sweep, never failing the push
   const { readFileSync } = await import('node:fs');
   const index = readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
   const notify = index.slice(index.indexOf('sendEventNotification(ctx, { event, targetUid, itemId })'));
-  assert.match(notify.slice(0, 900), /event === 'created' && item\.voiceNote/);
-  assert.match(notify.slice(0, 900), /saveSentVoiceNote\(/);
-  assert.match(notify.slice(0, 900), /catch \(e\)/);
+  const block = notify.slice(0, 1800);
+  assert.match(block, /event === 'created' && item\.voiceNote/);
+  assert.match(block, /saveSentVoiceNote\(/);
+  assert.match(block, /catch \(e\)/);
+  // 2026-09-27: the copy runs AFTER the response, never delaying Send.
+  assert.match(block, /execCtx\.waitUntil\(save\)/);
   assert.match(index, /ctx\.saveToLibrary = \(args, at\) => saveSentVoiceNote\(ctx, args, at\)/);
 });

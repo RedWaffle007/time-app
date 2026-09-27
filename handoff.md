@@ -1,4 +1,4 @@
-# Checkmate handoff — 2026-09-27 (end of Batch G)
+# Checkmate handoff — 2026-09-27 (end of item 24 + Batch H)
 
 ## Operating rules
 
@@ -48,26 +48,27 @@
 
 ## Current state
 
-- Branch `main`, clean after `1df7447`. **Batch G is DONE in code** (items 1–9
-  + 5b), one commit each, every one green on the full suite:
-  `6fe18b0` G1 clash · `4f4b047` G2 pickers · `508dcca` friends = permission ·
-  `3d0e1fc` WhatsApp groups · `d8f5e4e` minute locks · `8a2cb6e` Request Plan
-  redesign · `af4ca73` Uh-Oh push · `d688fb0` 5b fulfil via Plan screen ·
-  `c751f43` Home · `8e8b8e2` Track Time removed · `1df7447` bigger Play/X.
-- Test counts at `1df7447`: Flutter 790, rules 274, Worker 176, Kotlin green.
-- **Deploy status — CONFIRM before any device pass.** The user confirmed the
-  rules + Worker deploy for items 2–4. Items 5, 5b and 8 changed the rules and
-  items 5 and 6 changed the Worker; their deploys were given but not
-  explicitly confirmed. Run `scripts/check-deployed-rules.sh` (live rules must
-  match HEAD) and redeploy the Worker from HEAD if unsure:
-  `firebase deploy --only firestore:rules && scripts/check-deployed-rules.sh && (cd worker && npx wrangler deploy)`.
-- **Strict minute locks (item 4): a build older than `d8f5e4e` cannot create
-  ANY plan against the current rules.** Every phone — including the external
-  tester's — needs a fresh APK.
-- Completed: Items **1–23, 25–32, 34, 35**, Batches **A–G**.
-- Next: **Item 24 (24a–24c committed; 24d built, rules deploy pending) → Batch H (all built; H5 awaiting commit) → Item 33** (research-first;
-  propose, wait for sign-off). Nothing built since Batch A has been checked on a phone — see
-  "Deferred device checks".
+- Branch `main`, clean after `9de506a`. **Item 24 (stats) and Batch H
+  (profile/settings) are DONE**, one commit each, every one green on the full
+  suite: `49871cd` 24a · `3b4941b` 24b · `7b08026` inactivity copy ·
+  `1b7027a` 24c · `bbee1ba` 24d · `f60a949` H1–H3 · `4bae4d1` H4 · `9de506a`
+  H5 (plus doc commits `203e9c1`, `fdf14d3`). Batch G before that:
+  `6fe18b0` G1 · `4f4b047` G2 · `508dcca` friends = permission · `3d0e1fc`
+  groups · `d8f5e4e` minute locks · `8a2cb6e` Request Plan · `af4ca73` Uh-Oh
+  · `d688fb0` 5b · `c751f43` Home · `8e8b8e2` Track Time removed ·
+  `1df7447` bigger Play/X.
+- Test counts at `9de506a`: Flutter 861, rules 282, Worker 176, Kotlin green.
+- **Deploys — all confirmed by the user and verified 2026-09-27:** live rules
+  `ddd77d4d…` match `firestore.rules` byte-for-byte (24d `memberStats`
+  change; `scripts/check-deployed-rules.sh`). Worker redeployed after the
+  inactivity copy (`94cbabca`) and again after H4 (two push bodies). Re-run
+  `scripts/check-deployed-rules.sh` before any device pass anyway.
+- **Every phone needs a fresh APK:** strict minute locks (`d8f5e4e`) reject
+  plans from older builds, and 24d's rules reject pre-24d group-stat writes.
+- Completed: Items **1–32, 34, 35**, Batches **A–H**.
+- Next: **the deferred device pass** (needs the user and phones), then
+  **Item 33** (competitor review, research only; can run any time). Nothing
+  built since Batch A has been checked on a phone.
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
 
 ## Product model now (2026-09-27 — read before touching planning or alarms)
@@ -105,6 +106,18 @@
 - **Tones (F3 + item 6):** only alarms ring; pushes use the phone's normal tone
   on `planner_activity` / `app_nudges` — except "{Y} was unavailable to dismiss
   the task…", which plays the bundled CC0 "Uh-Oh!" on `planner_unavailable`.
+- **Stats (item 24):** Stats pillar = a PRIVATE dashboard (`buildMyStats`);
+  profiles publish only tasks completed, current + best streak and
+  follow-through (≥5 answered plans). Humane streak: plan-less and skip-only
+  days are neutral, only a missed (unanswered) alarm breaks it. Group
+  progress counts only that group's plans, current members only, ranked
+  after 5 answered. Absent numbers show a word (Soon / Private / Not yet).
+- **You = your own profile (H1–H3):** the You pillar renders the profile as
+  others see it (`ProfileBody`) with Edit profile + a Settings gear.
+  Settings (`/settings`) holds permissions, quiet hours (instant save), app
+  lock, startup sound, theme, the guide, dev menu, sign out. Edit profile =
+  picture, name, timezone, username, about you, public toggle.
+- **No em dashes in any app text (H4)** — `test/no_em_dash_test.dart`.
 - **Voice replays (F5):** 15–20 s → 3 plays, 10–15 s → 4, 5–10 s → 5,
   under 5 s → 6; notes are 1–20 s. **Library (32d):** every sent note is
   saved, newest 20; bigger Play/X on a chosen note (item 9).
@@ -144,6 +157,14 @@
 
 Install a fresh **debug** build on every phone first (strict locks). Needs a
 second account/phone for most of it.
+- **Item 24 + Batch H (2026-09-27):** Stats page with real history (week
+  hero, Not yet below 5, streak survives a plan-less day, breaks on a missed
+  alarm, 8-week bars, "Most plans from") in light + dark; a friend's profile
+  shows only the four stats; group progress (leaderboard vs Getting started,
+  removed member disappears); You opens your profile with Edit profile +
+  Settings gear; quiet hours save from Settings and survive an Edit profile
+  save; About you clear; guide text; a 6-hour inactivity nudge reads the new
+  copy.
 - **Batch G:** a friend sets an alarm with no permission step; unfriend blocks
   it; WhatsApp groups (admin add, code request → every admin pushed → one
   approves, make/remove admin, remove member); a busy minute shows the red
@@ -495,7 +516,7 @@ unanimous group approval, flexible-window and multi-friend requests. Full
 reasoning: the dated 2026-09-27 DECISIONS.md entries; commits in "Current
 state". Phone checks: "Deferred device checks".
 
-### 24 — Stats and product review (IN PROGRESS — audited + decided 2026-09-27)
+### 24 — Stats and product review — DONE 2026-09-27 (all committed)
 
 Findings and the four user decisions: DECISIONS.md "Stats review — findings
 and decisions". Decided: humane streak (plan-less days neutral; only an
@@ -519,50 +540,58 @@ separate and group-scoped, and group plans also count individually.
   "24c — what a profile shows"). Published/visible stats trimmed to tasks
   completed, current streak, best streak, follow-through (≥5 only). Missed
   alarms and who-plans-for-you are never published.
-- **24d — group progress (rules deploy).** BUILT 2026-09-27, awaiting rules
-  deploy + commit (DECISIONS.md "24d — group progress"). Numbers from that group's plans
+- **24d — group progress.** BUILT + committed + rules deployed 2026-09-27
+  (DECISIONS.md "24d — group progress"). Numbers from that group's plans
   only; current members only (delete `memberStats` on leave/remove, admin
-  delete in rules); minimum sample before ranking; shared streak as
-  "N of M kept it going". Also: `memberStats.followThrough` still writes 0
-  below the sample (the published value is now absent) — replace it.
+  delete in rules); minimum sample before ranking; "N of M kept their streak
+  going"; `followThrough` no longer stored (derived by readers).
 
-### Batch H — Profile & Settings restructure (added 2026-09-27, after 24d)
+### Batch H — Profile & Settings restructure — DONE 2026-09-27 (all committed)
 
-User-directed. One item at a time, plan → sign-off → build; UI changes follow
-UI-RULES (DECISIONS → UI-RULES → code for any new recipe/token).
+User-directed. Reasoning: DECISIONS.md "You = your profile; Settings holds
+the rest", "No em dashes in app text", "How this app works rewritten".
 
-- **H1–H3 BUILT + committed 2026-09-27** (DECISIONS.md "You = your
-  profile; Settings holds the rest"). App only.
-- **H1 — "You" = your own profile (Instagram model).** Tapping You opens the
-  signed-in user's profile rendered exactly as others see it
-  (`user_profile_screen.dart`), plus an **Edit Profile** button shown only on
-  your own profile. Friends and Voice notes stay reachable from it.
-- **H2 — Settings screen.** A separate **Settings** button on your profile
-  holds everything else that lived under You today: How this app works,
-  Reminders & permissions, Theme, Dev menu (debug), Sign out — plus, moved in
-  from Edit Profile: the two "This device" options (**App lock**, **Startup
-  sound**) and **Quiet hours**.
-- **H3 — Edit Profile, in full:** edit username, edit identity (name), change
-  timezone, edit/remove profile picture, edit/remove "About you", public
-  profile toggle. Nothing else (quiet hours and device options moved to H2).
-- **H4 BUILT + committed + Worker deployed 2026-09-27** (DECISIONS.md "No
-  em dashes in app text").
-- **H4 — No em dashes in any in-app text, app-wide.** User-facing strings
-  only (copy, notifications from the Worker included); code comments are not
-  in scope. Replace with commas, colons, periods or "to" as the sentence
-  needs; the empty-value glyph "—" on stat tiles becomes a non-dash
-  placeholder decided in the plan. Add a regression test that scans
-  user-facing strings.
-- **H5 BUILT 2026-09-27, awaiting commit** (DECISIONS.md "How this app works
-  rewritten"). Batch H is then complete.
-- **H5 — "How this app works" rewritten** shorter and plainer, matching the
-  current app (Plan · Request · ⊕ · Stats · You/Settings after H1–H2).
+- **H1–H3** (`f60a949`): You = your own profile via the shared
+  `ProfileBody` (Edit profile only on your own; Friends + Voice notes under
+  the header; "N friends" opens Friends). Settings screen with permissions,
+  quiet hours (own instant write, `updateQuietHours`), app lock, startup
+  sound, theme, guide, dev menu, sign out. Edit profile = picture, name,
+  timezone, username, about you (one-tap clear), public toggle.
+- **H4** (`4bae4d1`, Worker deployed): 66 string literals rewritten; stat
+  tiles show Soon / Private / Not yet; a test scans Dart, Worker and Kotlin
+  strings. Comments are exempt.
+- **H5** (`9de506a`): the guide is 13 short entries in three sections; a test
+  blocks the retired permission / request wording.
 
 ### Inactivity copy — BUILT + Worker DEPLOYED 2026-09-27 (version `94cbabca`)
 
 The 50 six-hour nudges now talk about this app (DECISIONS.md "Inactivity
 pushes rewritten for this app"). Live version `94cbabca-c91f-…` at 100%,
 confirmed with `wrangler deployments status`.
+
+### Device fixes 2026-09-27 — BUILT, awaiting commit + Worker deploy
+
+Slow Send + false "not delivered" (voice-library copy moved to waitUntil),
+missing Uh-Oh "unavailable" push (index.js event list), triple "dismissed"
+(atomic claim in the Worker + per-process client guard). DECISIONS.md
+"Device fixes: slow Send, missing Uh-Oh push, triple dismissed". Known
+limit kept: reports come from Dart, so a dead app reports late.
+
+### Group voice notes + clean timezone view (added 2026-09-27, NEXT)
+
+User-directed; plan → sign-off → build.
+- A group plan offers the same **Default Alarm / Voice Note** choice as a plan
+  for one friend (F4 / 32 flow: record or pick from the library, plays 3–6×,
+  same Worker checks), replacing the v1 "no voice notes for groups" rule.
+- The planner sees **every member's local time** (the G2 timezone view) and
+  is told **who will get the alarm and who won't** (busy minute per the
+  item 4 lock logic) before and after Send.
+- **Redesign the group timezone pop-up**: today it stacks every member and
+  gets cluttered; it must stay readable at any group size (e.g. members
+  grouped by timezone, collapsed sections, a scrollable list).
+- Needs a Worker/rules check that group plans may carry `voiceNote`
+  (32a restricted it to other-person plans; the Worker authorizes uploads
+  against a friendship) and a per-member voice download.
 
 ### 33 — Competitor review (last)
 
@@ -586,11 +615,13 @@ confirmed with `wrangler deployments status`.
 
 ## Immediate next action
 
-1. Confirm the deploys (see "Current state"), then install a fresh debug build
-   on every phone — the strict locks reject plans from older builds.
+1. Run `scripts/check-deployed-rules.sh`, then install a fresh debug build on
+   every phone (strict locks and 24d rules reject older builds).
 2. Collect device results (Redmi, the tester abroad) against "Deferred device
-   checks". Fix anything reported before new work; record verified items in
-   CLAUDE.md "Parked & unverified" / DECISIONS.md.
-3. Item 24: 24a–24c committed; 24d built — deploy rules, verify, commit.
-4. Batch H done (H5 awaiting commit). Then the deferred device pass.
-5. Item 33 (competitor review) last.
+   checks", starting with the item 24 + Batch H block. Fix anything reported
+   before new work; record verified items in CLAUDE.md "Parked &
+   unverified" / DECISIONS.md.
+3. Group voice notes + timezone pop-up redesign (plan first).
+4. Item 33 (competitor review, PingPal + SnoozeSquad): research only,
+   current first-party evidence; propose findings, change nothing without
+   sign-off. Can run before the device pass if the user prefers.

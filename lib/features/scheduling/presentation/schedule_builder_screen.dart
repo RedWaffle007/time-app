@@ -419,15 +419,11 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            delivery != null && !delivery.delivered
-                ? 'Plan saved, but the notification was not delivered '
-                      '(${delivery.reason}). Ask your friend to open or update '
-                      'Checkmate, then try again.'
-                : _isSelf
-                ? 'Added to your schedule.'
-                : voiceNote != null
-                ? 'Voice alarm sent.'
-                : 'Alarm sent.',
+            sendConfirmationText(
+              delivery: delivery,
+              isSelf: _isSelf,
+              isVoice: voiceNote != null,
+            ),
           ),
         ),
       );
@@ -1068,4 +1064,24 @@ class _TimeThereLineState extends State<TimeThereLine> {
       ),
     );
   }
+}
+
+/// The snackbar after Send (2026-09-27 device fix). Only a DEFINITE Worker
+/// answer ("no phone to notify", "FCM refused") says the notification was not
+/// delivered. A transport problem (timeout, no network) proves nothing: the
+/// plan is saved and the push has usually gone out already, so claiming "not
+/// delivered" misreported a successful send.
+String sendConfirmationText({
+  required NotificationDeliveryResult? delivery,
+  required bool isSelf,
+  required bool isVoice,
+}) {
+  if (isSelf) return 'Added to your schedule.';
+  final sent = isVoice ? 'Voice alarm sent.' : 'Alarm sent.';
+  if (delivery == null || delivery.delivered) return sent;
+  if (delivery.reason.startsWith('transport-error')) {
+    return '$sent Their notification may take a moment.';
+  }
+  return 'Alarm saved, but their phone was not notified. Ask your friend to '
+      'open or update Checkmate.';
 }

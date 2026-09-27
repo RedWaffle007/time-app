@@ -7177,3 +7177,35 @@ works, Where things are), down from 16, and every retired rule is gone (the
 old copy still described planning permissions, multi-friend and time-window
 requests, and "turn the permission off"). A widget test fails if that
 wording returns. The "Replay the guided tour" button is unchanged.
+
+## Device fixes: slow Send, missing Uh-Oh push, triple "dismissed" (2026-09-27)
+
+Reported on the debug build after Batch H. Three separate causes:
+
+1. **Send waited ~10 s, then said "notification was not delivered"** while
+   the friend got the alarm and the push. For a voice alarm the Worker sent
+   the push, then AWAITED the voice-library copy (download + upload +
+   Firestore) before replying, past the app's 10 s timeout. The copy now runs
+   after the response (`execCtx.waitUntil`); the hourly sweep still retries
+   it. The app's snackbar only says "not notified" on a definite Worker
+   answer (no tokens, FCM refused), never on a timeout
+   (`sendConfirmationText`).
+2. **No "unavailable" push (the Uh-Oh tone) at all.** `index.js` kept its own
+   allow-list of item events that never gained `unavailable` (added to
+   `notify.js` in Batch G item 6), so every such call was a 400. Tests called
+   `notify.js` directly and never saw the door. `index.js` now imports
+   `ITEM_EVENTS` from `notify.js` (one list); a test drives every event
+   through the real `fetch`.
+3. **"Task dismissed" arrived three times.** Several paths report one
+   dismissal (alarm screen, then the replayed native row), and the Worker's
+   dedup was read-check-send-stamp, so simultaneous calls all passed. The
+   Worker now CLAIMS the event's slot with a compare-and-set on the item's
+   `updateTime` before sending (`claimSlot`; released if nothing was
+   delivered, retried if an unrelated write raced it). The app also drops
+   repeat reports per process (a report that never reached the Worker may
+   retry).
+
+**Still true, not fixed here:** a dismissal or timeout is reported by the
+app's Dart side, so if the app process is dead at ring time the planner
+hears only when the target's app next runs. Closing that needs the native
+side to call the Worker (its own design). **Deploy:** Worker, then app.
