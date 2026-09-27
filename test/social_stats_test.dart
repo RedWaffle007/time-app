@@ -89,13 +89,21 @@ void main() {
       }
     });
 
-    test('a stat with no stored value renders as a placeholder tile', () {
+    test('a missing value: sampled → insufficient, others → placeholder', () {
       final stats = statsFromSnapshot(const ProfileStatsSnapshot(values: {}));
       expect(stats.length, kProfileStatDefinitions.length);
-      expect(
-        stats.every((s) => s.state == ProfileStatState.placeholder),
-        isTrue,
-      );
+      for (final stat in stats) {
+        final def = kProfileStatDefinitions.firstWhere(
+          (d) => d.key == stat.key,
+        );
+        expect(
+          stat.state,
+          def.sampled
+              ? ProfileStatState.insufficient
+              : ProfileStatState.placeholder,
+          reason: stat.key,
+        );
+      }
     });
 
     test('an UNKNOWN stored key is ignored, not an error', () {
@@ -136,8 +144,8 @@ void main() {
     });
   });
 
-  group('followThrough', () {
-    test('is done over everything that reached an outcome', () {
+  group('followThrough (sampled, item 24c)', () {
+    test('is done over everything answered, once five are answered', () {
       final values = computeStatValues(
         inputs(
           target: [
@@ -145,30 +153,61 @@ void main() {
             at(2026, 8, 19, done: true),
             at(2026, 8, 18, done: true),
             at(2026, 8, 17, skipped: true),
+            missedAt(2026, 8, 16),
           ],
         ),
       );
-      expect(values['followThrough'], 75);
+      expect(values['followThrough'], 60);
     });
 
-    test('an approved future item does NOT count against you', () {
-      // The denominator is settled items, not everything approved — otherwise
-      // the number would fall every time someone planned ahead, punishing the
-      // exact behaviour the app exists to encourage.
-      final withPlans = computeStatValues(
+    test('below five answered it is NOT published — never 0% or 100%', () {
+      final values = computeStatValues(
+        inputs(
+          target: [for (var d = 17; d <= 20; d++) at(2026, 8, d, done: true)],
+        ),
+      );
+      expect(values.containsKey('followThrough'), isFalse);
+      expect(computeStatValues(inputs()).containsKey('followThrough'), false);
+    });
+
+    test('an upcoming plan does NOT count against you', () {
+      final values = computeStatValues(
         inputs(
           target: [
-            at(2026, 8, 20, done: true),
+            for (var d = 16; d <= 20; d++) at(2026, 8, d, done: true),
             at(2026, 12, 25), // approved, not yet due
-            at(2026, 12, 26),
           ],
         ),
       );
-      expect(withPlans['followThrough'], 100);
+      expect(values['followThrough'], 100);
     });
 
-    test('reads zero with no outcomes at all', () {
-      expect(computeStatValues(inputs())['followThrough'], 0);
+    test('cancelled plans count nowhere', () {
+      final values = computeStatValues(
+        inputs(
+          target: [
+            for (var d = 16; d <= 20; d++) at(2026, 8, d, done: true),
+            at(2026, 8, 15, skipped: true, cancelled: true),
+          ],
+        ),
+      );
+      expect(values['followThrough'], 100);
+    });
+  });
+
+  group('bestStreak', () {
+    test('is the longest humane run in history', () {
+      final values = computeStatValues(
+        inputs(
+          target: [
+            at(2026, 8, 21, done: true),
+            missedAt(2026, 8, 20),
+            for (var d = 14; d <= 17; d++) at(2026, 8, d, done: true),
+          ],
+        ),
+      );
+      expect(values['currentStreak'], 1);
+      expect(values['bestStreak'], 4);
     });
   });
 
@@ -253,45 +292,50 @@ void main() {
     });
   });
 
-  group('plansCreated', () {
-    test('counts what the user planned for other people', () {
-      final values = computeStatValues(
-        inputs(planner: [at(2026, 8, 20), at(2026, 8, 19), at(2026, 8, 18)]),
-      );
-      expect(values['plansCreated'], 3);
-    });
-
-    test('excludes self-plans — they are not "for others" (item 24a)', () {
+  group('what a profile may show (item 24c)', () {
+    test('exactly the humane four — nothing else is ever published', () {
       final values = computeStatValues(
         inputs(
-          planner: [
-            at(2026, 8, 20),
-            at(2026, 8, 19, self: true, done: true),
-            at(2026, 8, 18, self: true),
+          target: [
+            for (var d = 15; d <= 20; d++) at(2026, 8, d, done: true),
+            missedAt(2026, 8, 14),
           ],
+          planner: [at(2026, 8, 20), at(2026, 8, 19)],
         ),
       );
-      expect(values['plansCreated'], 1);
+      expect(values.keys.toSet(), {
+        'tasksCompleted',
+        'currentStreak',
+        'bestStreak',
+        'followThrough',
+      });
     });
 
-    test('excludes cancelled / withdrawn / rejected plans (item 24a)', () {
-      final values = computeStatValues(
-        inputs(
-          planner: [
-            at(2026, 8, 20, done: true),
-            at(2026, 8, 19, cancelled: true),
-            at(2026, 8, 18, cancelled: true, approved: false),
-          ],
-        ),
-      );
-      expect(values['plansCreated'], 1);
+    test('private-page stats never enter the registry', () {
+      final keys = kProfileStatDefinitions.map((d) => d.key).toSet();
+      for (final private in [
+        'plansCreated',
+        'missed',
+        'answeredWhenRang',
+        'topPlanners',
+        'setForYou',
+        'alarmsSet',
+        'requestsFulfilled',
+        'onTimeRate',
+        'avgLateMinutes',
+      ]) {
+        expect(keys, isNot(contains(private)), reason: private);
+      }
     });
 
-    test('keeps its published key; the label says what it counts', () {
-      final def = kProfileStatDefinitions.firstWhere(
-        (d) => d.key == 'plansCreated',
-      );
-      expect(def.label, 'Alarms you set for others');
+    test('only percentages are sampled', () {
+      for (final def in kProfileStatDefinitions) {
+        expect(
+          def.sampled,
+          def.unit == ProfileStatUnit.percent,
+          reason: def.key,
+        );
+      }
     });
   });
 

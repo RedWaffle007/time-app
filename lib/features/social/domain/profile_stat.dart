@@ -138,19 +138,27 @@ class ProfileStatDefinition {
     required this.label,
     required this.unit,
     this.compute,
+    this.sampled = false,
   });
 
   final String key;
   final String label;
   final ProfileStatUnit unit;
 
-  /// Derives the value from the signed-in user's OWN record. Null → placeholder.
+  /// A sampled stat (a percentage) is omitted from the published map until
+  /// [kMinStatSample] plans stand behind it, and a missing value renders as
+  /// [ProfileStatState.insufficient] rather than a placeholder (item 24c).
+  final bool sampled;
+
+  /// Derives the value from the signed-in user's OWN record. A null FUNCTION
+  /// makes a placeholder; a null RESULT means "not publishable yet" (below the
+  /// sample) and the key is omitted, never written as zero.
   ///
   /// The input is intentionally a narrow, plain-Dart bundle ([StatInputs])
   /// rather than a `WidgetRef`: it keeps every stat a pure function, which is
   /// what lets `test/social_stats_test.dart` cover them with no Firebase and no
   /// widget tree.
-  final num Function(StatInputs inputs)? compute;
+  final num? Function(StatInputs inputs)? compute;
 
   bool get isPlaceholder => compute == null;
 }

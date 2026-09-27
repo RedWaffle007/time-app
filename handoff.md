@@ -65,7 +65,7 @@
   ANY plan against the current rules.** Every phone — including the external
   tester's — needs a fresh APK.
 - Completed: Items **1–23, 25–32, 34, 35**, Batches **A–G**.
-- Next: **Item 24 (24a committed, 24b built; 24c → 24d) → Item 33** (research-first;
+- Next: **Item 24 (24a, 24b committed; 24c built; 24d next) → Item 33** (research-first;
   propose, wait for sign-off). Nothing built since Batch A has been checked on a phone — see
   "Deferred device checks".
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
@@ -507,7 +507,7 @@ separate and group-scoped, and group plans also count individually.
   Late = Done (Late) only (no "0 min late"); On-time rate + Avg late by
   removed; "Alarms you set for others" excludes self/cancelled; Goals
   placeholder removed; locale-correct numbers; stale copy + UI-RULES §6.14.
-- **24b — new Stats page (app only).** BUILT 2026-09-27, awaiting commit
+- **24b — new Stats page (app only).** BUILT + committed 2026-09-27
   (DECISIONS.md "24b — the new Stats page"; `buildMyStats`, `streak_policy`,
   `Sizes.weekBarsHeight`). This week vs last (done / skipped /
   missed), follow-through, "Answered when it rang", current + best streak
@@ -515,13 +515,15 @@ separate and group-scoped, and group plans also count individually.
   eyes only), alarms you set + their completion, requests fulfilled /
   answered, last-8-weeks bars (§2.8). Percentages need ≥5 answered plans.
   DECISIONS → UI-RULES → code.
-- **24c — profile subset.** Published/visible stats trimmed to tasks
+- **24c — profile subset.** BUILT 2026-09-27, awaiting commit (DECISIONS.md
+  "24c — what a profile shows"). Published/visible stats trimmed to tasks
   completed, current streak, best streak, follow-through (≥5 only). Missed
   alarms and who-plans-for-you are never published.
 - **24d — group progress (rules deploy).** Numbers from that group's plans
   only; current members only (delete `memberStats` on leave/remove, admin
   delete in rules); minimum sample before ranking; shared streak as
-  "N of M kept it going".
+  "N of M kept it going". Also: `memberStats.followThrough` still writes 0
+  below the sample (the published value is now absent) — replace it.
 
 ### Inactivity copy — BUILT + Worker DEPLOYED 2026-09-27 (version `94cbabca`)
 
@@ -556,6 +558,6 @@ confirmed with `wrangler deployments status`.
 2. Collect device results (Redmi, the tester abroad) against "Deferred device
    checks". Fix anything reported before new work; record verified items in
    CLAUDE.md "Parked & unverified" / DECISIONS.md.
-3. Item 24: audit done and decided; 24a built. Continue 24b → 24c → 24d,
+3. Item 24: 24a–24c done (24c awaiting commit). Next 24d (rules deploy),
    one at a time, stopping for review after each.
 4. Item 33 (competitor review) last.

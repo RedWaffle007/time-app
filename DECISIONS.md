@@ -7089,3 +7089,24 @@ of day (the push lands at any hour), and none threatens a streak (plan-less
 days never break one, item 24b). Order, count (50), the ≤60-character limit,
 the rotation cursor and the title are unchanged. A Worker test pins the
 banned words and requires most lines to name a feature. **Deploy:** Worker.
+
+### 24c — what a profile shows (2026-09-27)
+
+`kProfileStatDefinitions` — the published list friends (or anyone, if
+public) and group members can see — is now exactly four humane stats:
+**Tasks completed, Current streak, Best streak, Follow-through.** Effort and
+consistency, never failure detail.
+
+- **Follow-through is sampled:** below `kMinStatSample` (5) answered plans it
+  is omitted from the published map (never written as 0), and a visitor's
+  tile reads "—" / "After 5 answered plans" (`ProfileStatState.insufficient`,
+  via the new `ProfileStatDefinition.sampled`). A compute returning null now
+  means "not publishable yet".
+- **Removed from publishing:** "Alarms you set for others" (`plansCreated`) —
+  it lives on the private page. Missed alarms, lateness, answered-when-it-rang,
+  who plans for you and request counts are private and must never be added.
+- **Stale keys disappear by themselves:** `publish()` is a full `set`, so the
+  next publish from a 24c build drops `plansCreated`, `onTimeRate` and
+  `avgLateMinutes` from the stored document. No rules change, no migration.
+- Group `memberStats.followThrough` still falls back to 0 below the sample —
+  24d replaces it with group-scoped numbers.

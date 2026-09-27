@@ -13,9 +13,14 @@ import 'streak_policy.dart';
 /// ("Goals achieved") was removed in item 24a. The mechanism stays.
 ///
 /// **Order is display order.** Every stat is computed from the schedule
-/// record. "On-time rate" and "Avg late by" were removed in item 24a: under
-/// the ringing-alarm model they measured the ring, not the person (DECISIONS.md
-/// "Stats review — findings and decisions").
+/// record.
+///
+/// **This list IS what other people may see** (item 24c, DECISIONS.md "24c —
+/// what a profile shows"): friends always, anyone when the profile is public,
+/// and group members via `memberStats`. It is deliberately the small, humane
+/// subset — effort and consistency, never failure detail. Missed alarms,
+/// lateness, who plans for you and how often you plan for others stay on the
+/// private Stats page (`buildMyStats`) and are NEVER added here.
 const List<ProfileStatDefinition> kProfileStatDefinitions = [
   ProfileStatDefinition(
     key: 'tasksCompleted',
@@ -30,18 +35,17 @@ const List<ProfileStatDefinition> kProfileStatDefinitions = [
     compute: _currentStreak,
   ),
   ProfileStatDefinition(
+    key: 'bestStreak',
+    label: 'Best streak',
+    unit: ProfileStatUnit.days,
+    compute: _bestStreak,
+  ),
+  ProfileStatDefinition(
     key: 'followThrough',
     label: 'Follow-through',
     unit: ProfileStatUnit.percent,
     compute: _followThrough,
-  ),
-  // The key predates the rename and is never renamed (it is a published map
-  // key); the label says what it counts.
-  ProfileStatDefinition(
-    key: 'plansCreated',
-    label: 'Alarms you set for others',
-    unit: ProfileStatUnit.count,
-    compute: _plansCreated,
+    sampled: true,
   ),
 ];
 
@@ -54,7 +58,7 @@ const List<ProfileStatDefinition> kProfileStatDefinitions = [
 Map<String, num> computeStatValues(StatInputs inputs) {
   return {
     for (final def in kProfileStatDefinitions)
-      if (def.compute != null) def.key: def.compute!(inputs),
+      def.key: ?def.compute?.call(inputs),
   };
 }
 
@@ -79,7 +83,9 @@ List<ProfileStat> statsFromSnapshot(ProfileStatsSnapshot snapshot) {
           key: def.key,
           label: def.label,
           unit: def.unit,
-          state: ProfileStatState.placeholder,
+          state: def.sampled
+              ? ProfileStatState.insufficient
+              : ProfileStatState.placeholder,
         ),
   ];
 }
@@ -109,26 +115,20 @@ List<ProfileStat> hiddenStats() => [
 num _tasksCompleted(StatInputs i) =>
     i.itemsAsTarget.where((it) => it.isDone).length;
 
-/// Alarms the user set for OTHER people that actually stood: self-plans are
-/// not "for others", and a cancelled/withdrawn/rejected plan never rang.
-num _plansCreated(StatInputs i) =>
-    i.itemsAsPlanner.where((it) => !it.isSelfPlan && !it.isCancelled).length;
-
-/// Done as a share of everything that reached an outcome.
+/// Done as a share of everything answered — done + skipped, where skipped
+/// includes missed (a deliberate Skip counts against follow-through, item
+/// 24b). An upcoming plan is not a broken commitment and is not counted.
 ///
-/// The denominator is done + skipped, NOT everything approved. An approved item
-/// whose time has not arrived is not a broken commitment, and counting it as
-/// one would make the number fall every time someone plans ahead — punishing
-/// exactly the behaviour the app is for.
-///
-/// Returns 0 with no outcomes yet. The tile shows 0% only once there is at
-/// least one, because [computeStatValues] publishes it either way; a profile
-/// with no history reads 0% for a moment, which is why the empty state on the
-/// section suppresses the whole block until something has happened.
-num _followThrough(StatInputs i) {
-  final settled = i.itemsAsTarget.where((it) => it.hasOutcome).length;
-  if (settled == 0) return 0;
-  final done = i.itemsAsTarget.where((it) => it.isDone).length;
+/// Null — so NOT published — below [kMinStatSample] answered plans: 1 of 1 is
+/// not "100%" to anyone reading a profile.
+num? _followThrough(StatInputs i) {
+  final settled = i.itemsAsTarget
+      .where((it) => !it.isCancelled && it.hasOutcome)
+      .length;
+  if (settled < kMinStatSample) return null;
+  final done = i.itemsAsTarget
+      .where((it) => !it.isCancelled && it.isDone)
+      .length;
   return ((done / settled) * 100).round();
 }
 
@@ -137,3 +137,7 @@ num _followThrough(StatInputs i) {
 /// [computeStreaks] for the rule.
 num _currentStreak(StatInputs i) =>
     computeStreaks(i.itemsAsTarget, i.timezone).current;
+
+/// The longest run under the same humane rule.
+num _bestStreak(StatInputs i) =>
+    computeStreaks(i.itemsAsTarget, i.timezone).best;

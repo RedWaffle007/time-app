@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/intl.dart';
 import 'package:time_app/core/theme/app_theme.dart';
+import 'package:time_app/features/social/application/stats_registry.dart';
 import 'package:time_app/features/social/domain/profile_stat.dart';
 import 'package:time_app/features/social/presentation/stats_section.dart';
 
@@ -68,5 +69,36 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('42'), findsNothing);
+  });
+
+  testWidgets('a visitor sees follow-through withheld below the sample', (
+    tester,
+  ) async {
+    // Item 24c: a profile published without `followThrough` (fewer than five
+    // answered plans) must read as "not enough yet", never 0% or a
+    // "Coming soon" feature tile.
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: StatsGrid(
+            stats: statsFromSnapshot(
+              const ProfileStatsSnapshot(
+                values: {
+                  'tasksCompleted': 3,
+                  'currentStreak': 2,
+                  'bestStreak': 5,
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('Follow-through'), findsOneWidget);
+    expect(find.text('After 5 answered plans'), findsOneWidget);
+    expect(find.text('0%'), findsNothing);
+    expect(find.text('Coming soon'), findsNothing);
+    expect(find.text('5 days'), findsOneWidget);
   });
 }
