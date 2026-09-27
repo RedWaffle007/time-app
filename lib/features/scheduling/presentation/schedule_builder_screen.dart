@@ -776,7 +776,13 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
+              key: const ValueKey('library-choice-play'),
               tooltip: _libraryPlaying ? 'Stop' : 'Play',
+              iconSize: Sizes.voiceChoiceIcon,
+              constraints: const BoxConstraints.tightFor(
+                width: Sizes.voiceChoiceButton,
+                height: Sizes.voiceChoiceButton,
+              ),
               onPressed: _saving ? null : () => _toggleLibraryPreview(note),
               icon: Icon(
                 _libraryPlaying
@@ -787,6 +793,11 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
             IconButton(
               key: const ValueKey('library-choice-remove'),
               tooltip: 'Record instead',
+              iconSize: Sizes.voiceChoiceIcon,
+              constraints: const BoxConstraints.tightFor(
+                width: Sizes.voiceChoiceButton,
+                height: Sizes.voiceChoiceButton,
+              ),
               onPressed: _saving
                   ? null
                   : () async {

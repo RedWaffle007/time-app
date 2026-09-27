@@ -126,6 +126,12 @@ abstract final class Sizes {
   /// labels, so the two choices that set WHEN read first (F4).
   static const double pickerButton = 56;
 
+  /// The Play/Stop and X on a voice note chosen from the library (item 9):
+  /// a larger glyph in a larger-than-minimum target, since they are the
+  /// card's only actions.
+  static const double voiceChoiceIcon = 32;
+  static const double voiceChoiceButton = 56;
+
   /// Plan's bottom-left text FABs, PLAN and REQUEST PLAN — slightly taller
   /// than the standard 56 so the two create actions are easy to spot (G6).
   static const double createFab = 60;

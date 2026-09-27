@@ -1203,6 +1203,35 @@ void main() {
       expect(find.byKey(const ValueKey('library-choice')), findsNothing);
     });
 
+    // Item 9 (2026-09-27): Play and X are big enough to hit, light and dark.
+    for (final dark in [false, true]) {
+      testWidgets('item 9: Play and X on a library note are 56 dp targets '
+          'with 32 dp icons (${dark ? 'dark' : 'light'})', (tester) async {
+        await pumpBuilder(tester, library: [saved()], dark: dark);
+        await tester.tap(find.text('Voice Note'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('choose-from-library')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Rise and shine'));
+        await tester.pumpAndSettle();
+        for (final key in ['library-choice-play', 'library-choice-remove']) {
+          final finder = find.byKey(ValueKey(key));
+          final size = tester.getSize(finder);
+          expect(size.width, greaterThanOrEqualTo(Sizes.voiceChoiceButton));
+          expect(size.height, greaterThanOrEqualTo(Sizes.voiceChoiceButton));
+          expect(
+            tester.widget<IconButton>(finder).iconSize,
+            Sizes.voiceChoiceIcon,
+          );
+        }
+        expect(
+          Sizes.voiceChoiceButton,
+          greaterThanOrEqualTo(Sizes.touchTarget),
+        );
+        expect(tester.takeException(), isNull);
+      });
+    }
+
     testWidgets('removing the library choice goes back to recording', (
       tester,
     ) async {

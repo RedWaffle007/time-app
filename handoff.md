@@ -552,7 +552,8 @@ mode and multi-friend selection.
    (option d), REQUEST PLAN dropped from Plan; awaiting rules deploy →
    commit** (DECISIONS.md "Track Time removed; Request takes its pillar"). Was: entirely (feature folder, entry points, voice-parser
    hooks, stats reading it, tests, `trackedTime` rules block + deploy).
-9. **Bigger Play and X** on a library-attached voice note (≥ 48 dp, theme
+9. **Bigger Play and X** — **BUILT 2026-09-27; app-only; awaiting commit**
+   (DECISIONS.md "Bigger Play and X on a library voice note"). on a library-attached voice note (≥ 48 dp, theme
    tokens, light + dark).
 
 ### 24 — Stats and product review (after Batch G)

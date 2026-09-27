@@ -6990,3 +6990,15 @@ beside PLAN is dropped (user-directed).
   (`forward_to_inbox`).
 - **Plan** keeps only **PLAN** at the bottom-left.
 - **Deploy:** rules (the removed block). App-only otherwise.
+
+---
+
+## Bigger Play and X on a library voice note (2026-09-27, Batch G item 9)
+
+**User-reported:** after choosing a voice note from the library in the Plan
+screen, its Play and X (remove) controls were too small to hit comfortably.
+They now use two new tokens — `Sizes.voiceChoiceIcon` (32) for the glyph and
+`Sizes.voiceChoiceButton` (56) for the tap target, above the 48dp floor
+(UI-RULES §6.4 / §7) — so the two controls on that card read and hit like
+buttons, not decorations. Light and dark are the same widgets; no colour
+change.

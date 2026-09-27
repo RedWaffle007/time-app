@@ -485,6 +485,12 @@ fill; 5.62 light / 4.48 dark on the strong fill).
 
 One primary action per screen. Minimum touch target 48dp.
 
+**Media controls on a chosen voice note** (the Plan screen's library choice:
+Play/Stop and the X that goes back to recording) are icon buttons at
+`Sizes.voiceChoiceIcon` (32) inside a `Sizes.voiceChoiceButton` (56) target —
+bigger than a default icon button because they are the card's only actions
+(2026-09-27, DECISIONS.md "Bigger Play and X").
+
 ### 6.5 Empty state
 
 Icon at 40px in **`primary`** (structure — §2.7), `Space.md` gap, `titleMedium`
