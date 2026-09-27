@@ -110,7 +110,7 @@ class _CalendarItemSheet extends ConsumerWidget {
                 icon: AppIcons.person,
                 text: isMine
                     ? 'Planned by ${counterpartName ?? 'someone in your group'}'
-                    : 'For ${counterpartName ?? 'them'} — their local time',
+                    : 'For ${counterpartName ?? 'them'}, in their local time',
               ),
 
             if (item.note case final note? when note.trim().isNotEmpty) ...[

@@ -41,7 +41,7 @@ class VoiceLibraryScreen extends ConsumerWidget {
             padding: Space.screenListSafe(context),
             children: [
               Text(
-                'Every voice note you send is kept here — the newest '
+                'Every voice note you send is kept here: the newest '
                 '$kVoiceLibraryLimit. Reuse one from the Plan screen.',
                 style: context.text.bodySmall?.copyWith(
                   color: context.colors.onSurfaceVariant,

@@ -547,10 +547,10 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
                 children: [
                   Text(
                     _isSelf
-                        ? "You're building in your local time — $timezone."
+                        ? "You're building in your local time: $timezone."
                         : "You're building in "
-                              '${possessive(selectedProfile?.name)} local time '
-                              '— $timezone.',
+                              '${possessive(selectedProfile?.name)} local time'
+                              ': $timezone.',
                     style: context.text.bodySmall?.copyWith(
                       color: context.colors.onSurfaceVariant,
                     ),
@@ -1005,10 +1005,10 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     final text = switch (res.anomaly) {
       DstAnomaly.none => null,
       DstAnomaly.skipped =>
-        "That clock time doesn't exist on this date — "
+        "That clock time doesn't exist on this date: "
             "clocks spring forward. It'll fire at $actual instead.",
       DstAnomaly.ambiguous =>
-        'That clock time happens twice on this date — '
+        'That clock time happens twice on this date: '
             'clocks fall back. It\'ll use the first: $actual.',
     };
     return text == null ? const SizedBox.shrink() : WarningPanel(text);

@@ -117,7 +117,7 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
                         padding: const EdgeInsets.symmetric(vertical: Space.xs),
                         child: Text(
                           now == null
-                              ? '$name: —'
+                              ? '$name: time unknown'
                               : '$name: ${formatWallDate(context, now)}, '
                                     '${formatWallTimeOfDay(context, now)}',
                           style: context.text.bodyMedium,
@@ -322,8 +322,7 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
             const SizedBox(height: Space.xs),
             Text(
               count == 0
-                  ? "You can't plan for anyone in this group yet — members grant "
-                        'you permission first.'
+                  ? "You can't plan for anyone in this group yet."
                   : 'Rings for $count ${count == 1 ? 'member' : 'members'} '
                         '(you included), each at this time in their own local '
                         'zone.',

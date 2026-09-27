@@ -21,7 +21,7 @@ class WalkthroughStepCopy {
 const kWalkthroughStepCopy = <WalkthroughStepCopy>[
   WalkthroughStepCopy(
     'Plan',
-    'Your schedule, in three tabs — Home, Activity, Groups. Tap PLAN '
+    'Your schedule, in three tabs: Home, Activity, Groups. Tap PLAN '
         '(bottom-left) to plan an item, on any of them.',
   ),
   WalkthroughStepCopy(
@@ -31,7 +31,7 @@ const kWalkthroughStepCopy = <WalkthroughStepCopy>[
   ),
   WalkthroughStepCopy(
     'Speak to create',
-    'The centre mic: tap and talk to plan a reminder, hands-free — you review '
+    'The centre mic: tap and talk to plan a reminder, hands-free. You review '
         'it before anything saves.',
   ),
   WalkthroughStepCopy(

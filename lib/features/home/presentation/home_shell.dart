@@ -266,7 +266,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       context,
       ref,
       promptText: 'Please give alarm details',
-      hintText: 'Say the day, time and name — '
+      hintText: 'Say the day, time and name, '
           'e.g. "Monday 7am gym" or "30 Aug 9pm study".',
     );
     if (!mounted) return;

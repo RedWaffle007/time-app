@@ -45,7 +45,7 @@ class ArchivedScreen extends ConsumerWidget {
         emptyIcon: AppIcons.emptyArchive,
         emptyMessage:
             "You haven't archived anything.\n"
-            'Archiving hides a finished item from your own views — it never '
+            'Archiving hides a finished item from your own views. It never '
             'changes the record or what anyone else sees.',
         builder: (context, items) {
           final groups = _grouped(context, items);

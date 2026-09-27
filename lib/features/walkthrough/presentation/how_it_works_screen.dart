@@ -30,7 +30,7 @@ class HowItWorksScreen extends ConsumerWidget {
         padding: Space.screenFormSafe(context),
         children: [
           Text(
-            'Checkmate lets people you trust set alarms on your phone — only '
+            'Checkmate lets people you trust set alarms on your phone, only '
             'people you have allowed, and you can stop it at any time. Here is '
             'every part of it.',
             style: context.text.bodyMedium?.copyWith(
@@ -44,7 +44,7 @@ class HowItWorksScreen extends ConsumerWidget {
             icon: AppIcons.navSchedule,
             title: 'Plan',
             body:
-                'Your schedule across three tabs — Home (your day, next task '
+                'Your schedule across three tabs: Home (your day, next task '
                 'first, plus plans you set for others until they answer), '
                 'Activity (their answers) and Groups. Tap PLAN, bottom-left, to '
                 'plan an item on any of them.',
@@ -53,8 +53,8 @@ class HowItWorksScreen extends ConsumerWidget {
             icon: AppIcons.navRequest,
             title: 'Request',
             body:
-                'Ask one friend to plan a reminder for you — the time, the task '
-                'and a note — and answer what friends ask of you. Tap REQUEST '
+                'Ask one friend to plan a reminder for you (the time, the task '
+                'and a note) and answer what friends ask of you. Tap REQUEST '
                 'PLAN, bottom-left, to ask.',
           ),
           const _Feature(
@@ -91,7 +91,7 @@ class HowItWorksScreen extends ConsumerWidget {
             icon: AppIcons.permissions,
             title: 'Friends plan for each other',
             body:
-                'Friends can set alarms for each other — no extra permission. '
+                'Friends can set alarms for each other. No extra permission. '
                 'To stop one, mark it Done or Skip before it rings, or '
                 'unfriend.',
           ),
@@ -118,7 +118,7 @@ class HowItWorksScreen extends ConsumerWidget {
             icon: AppIcons.reminders,
             title: 'Reminders',
             body:
-                'Alarms ring when they are due — scheduled on this device, '
+                'Alarms ring when they are due, scheduled on this device, '
                 'nothing leaving it.',
           ),
           const _Feature(
@@ -133,7 +133,7 @@ class HowItWorksScreen extends ConsumerWidget {
             title: 'Accountability',
             body:
                 'When you mark an item done or skipped, the person who planned '
-                'it is notified — that is what closes the loop.',
+                'it is notified. That is what closes the loop.',
           ),
 
           const SizedBox(height: Space.md),

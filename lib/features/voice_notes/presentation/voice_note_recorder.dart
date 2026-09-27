@@ -260,10 +260,10 @@ class _VoiceNoteRecorderState extends ConsumerState<VoiceNoteRecorder> {
             Text(
               switch (_phase) {
                 _Phase.idle when _tooShort =>
-                  'Too short — record at least 1 second.',
+                  'Too short. Record at least 1 second.',
                 _Phase.idle =>
                   "Plays instead of the ringtone when ${widget.recipientName}'s "
-                      'alarm rings — 3 to 6 times, shorter notes more. '
+                      'alarm rings, 3 to 6 times, shorter notes more. '
                       '1 to 20 seconds.',
                 _Phase.recording =>
                   'Recording… ${formatVoiceLength(_elapsed)} / '

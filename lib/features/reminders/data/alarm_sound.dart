@@ -43,7 +43,7 @@ class PlatformAlarmSound implements AlarmSound {
     } on MissingPluginException {
       return null;
     } on PlatformException catch (e) {
-      debugPrint('alarm_sound: headline failed — $e');
+      debugPrint('alarm_sound: headline failed: $e');
       return null;
     }
   }
@@ -60,7 +60,7 @@ class PlatformAlarmSound implements AlarmSound {
       // wake-lock-backed sound is Android-only.
       debugPrint('alarm_sound: no platform handler ($method)');
     } on PlatformException catch (e) {
-      debugPrint('alarm_sound: $method failed — $e');
+      debugPrint('alarm_sound: $method failed: $e');
     }
   }
 }

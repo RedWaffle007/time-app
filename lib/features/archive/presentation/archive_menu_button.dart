@@ -96,7 +96,7 @@ class ArchiveMenuButton extends ConsumerWidget {
       SnackBar(
         persist: false,
         duration: undoWindow,
-        content: const Text('Archived — hidden from your views only.'),
+        content: const Text('Archived. Hidden from your views only.'),
         action: SnackBarAction(
           label: 'Undo',
           onPressed: () {

@@ -107,7 +107,7 @@ class _AsyncViewState<T> extends State<AsyncView<T>> {
         icon: AppIcons.timeout,
         title: 'Taking longer than expected',
         detail:
-            'Still no response. Check your connection and try again — if it '
+            'Still no response. Check your connection and try again. If it '
             'keeps happening, the data may not be loading.',
         onRetry: _retry,
       );

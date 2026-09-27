@@ -288,7 +288,7 @@ class _RelationshipActionsState extends ConsumerState<_RelationshipActions> {
         // what the user just did.
         return _Action(
           icon: AppIcons.declineFriend,
-          label: 'Requested — tap to withdraw',
+          label: 'Requested. Tap to withdraw',
           filled: false,
           busy: _busy,
           onPressed: request == null
@@ -468,7 +468,7 @@ class _ProfileOverflowMenu extends ConsumerWidget {
               title: 'Block this person?',
               body: "You won't see each other's profiles, and any friendship, "
                   'pending request and permission to plan on your schedule is '
-                  'removed. Existing plans stay — you can withdraw or reject '
+                  'removed. Existing plans stay; you can withdraw or reject '
                   'them yourself.',
               action: 'Block',
             );

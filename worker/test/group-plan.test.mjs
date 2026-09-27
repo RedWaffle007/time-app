@@ -58,7 +58,7 @@ test('a verified busy member is told, in THEIR zone; the planner gets the summar
   const toBusy = h.sent.find((s) => s.token === 'busy-token').message;
   assert.equal(
     toBusy.notification.body,
-    'Group task "Evacuate" from Test Planner wasn\'t set for you at 6:00 PM — you already have a plan then.',
+    'Group task "Evacuate" from Test Planner wasn\'t set for you at 6:00 PM. You already have a plan then.',
   );
   const toPlanner = h.sent.find((s) => s.token === 'planner-token').message;
   assert.equal(

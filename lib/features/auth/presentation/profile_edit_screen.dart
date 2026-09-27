@@ -264,7 +264,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                   labelText: 'Username',
                   prefixIcon: const Icon(AppIcons.username),
                   helperText:
-                      'How people find you — $kUsernameMinLength–'
+                      'How people find you: $kUsernameMinLength to '
                       '$kUsernameMaxLength chars, lowercase letters, numbers '
                       'and _, starting with a letter.',
                   // The rule is long; show it in full instead of clipping it to

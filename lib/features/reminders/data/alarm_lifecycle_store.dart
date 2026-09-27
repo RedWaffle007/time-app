@@ -95,7 +95,7 @@ class PlatformAlarmLifecycleStore implements AlarmLifecycleStore {
     } on MissingPluginException {
       return const [];
     } on PlatformException catch (error) {
-      debugPrint('alarm_lifecycle: read failed — $error');
+      debugPrint('alarm_lifecycle: read failed: $error');
       return const [];
     }
   }
@@ -132,7 +132,7 @@ class PlatformAlarmLifecycleStore implements AlarmLifecycleStore {
     } on MissingPluginException {
       // Expected outside Android.
     } on PlatformException catch (error) {
-      debugPrint('alarm_lifecycle: $method failed — $error');
+      debugPrint('alarm_lifecycle: $method failed: $error');
       rethrow;
     }
   }

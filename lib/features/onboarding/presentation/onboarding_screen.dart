@@ -181,7 +181,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             children: [
               Text(
                 'For reminders to reach you, this phone needs a few '
-                'permissions. Grant what you can — you can change these later.',
+                'permissions. Grant what you can; you can change these later.',
                 style: context.text.bodyMedium?.copyWith(
                   color: context.colors.onSurfaceVariant,
                 ),
@@ -248,7 +248,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           icon: AppIcons.exactTiming,
           title: 'Remind me on time',
           why:
-              'Without this, reminders can arrive late — sometimes hours late '
+              'Without this, reminders can arrive late, sometimes hours late '
               'overnight. Opens Android settings.',
           action: 'Fix timing',
           granted: state.exactAlarmsAllowed,
@@ -325,7 +325,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         return const [
           'Open Settings → Apps → Checkmate → Battery.',
           'Set to "Unrestricted".',
-          'Then Settings → Battery → Background usage limits — make sure '
+          'Then Settings → Battery → Background usage limits, and make sure '
               'Checkmate is not in "Sleeping apps".',
         ];
       case OemFamily.other:

@@ -91,7 +91,7 @@ class GroupDetailScreen extends ConsumerWidget {
                   // The one place codeDisplay exists for — a named token rather
                   // than an inline exception to the no-font-sizes rule.
                   subtitle: Text(
-                    group?.joinCode ?? '—',
+                    group?.joinCode ?? 'Loading…',
                     style: context.codeDisplay,
                   ),
                   trailing: Row(

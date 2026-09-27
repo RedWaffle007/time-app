@@ -282,7 +282,7 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
       FirebaseCrashlytics.instance.recordError(
         e,
         st,
-        reason: 'Reminder scheduling failed — this reminder will never fire',
+        reason: 'Reminder scheduling failed; this reminder will never fire',
         fatal: false,
       );
       debugPrint(

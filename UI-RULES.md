@@ -660,15 +660,15 @@ from the available width against `Sizes.statTileMinWidth` (148), so three
 columns become two become one as the screen narrows. No breakpoint, and no
 clipped labels.
 
-**Absence is an em dash, never a zero.** A stat with no value renders `—`, in
-`onSurfaceVariant` so it cannot compete with the real numbers beside it. Two
-different absences exist and each carries its own explanation rather than its
-own glyph:
+**Absence is a word, never a zero and never a dash** (Batch H4). A stat with
+no value renders a short word in `onSurfaceVariant`, so it cannot compete with
+the real numbers beside it, and the word itself says which absence it is:
 
 | State | Tile | Explained by |
 |---|---|---|
-| `placeholder` | `—` | "Coming soon" caption under the label |
-| `hidden` | `—` | A line above the grid: this profile is private |
+| `placeholder` | `Soon` | "Coming soon" caption under the label |
+| `hidden` | `Private` | A line above the grid: this profile is private |
+| `insufficient` | `Not yet` | "After 5 answered plans" caption |
 
 A zero would be a lie in both cases — indistinguishable from a measured zero,
 and confidently wrong.
@@ -802,12 +802,19 @@ A". Recipes so it stays Hearth:
 
 Removed with Track Time, 2026-09-27 (DECISIONS.md "Track Time removed").
 
+### 6.13a No em dashes in app text (Batch H4)
+
+No user-facing string (screens, notifications, Worker push copy, native
+alarm text, even log lines) contains an em dash. Use a comma, colon, period
+or parentheses as the sentence needs. `test/no_em_dash_test.dart` scans
+every string literal; comments are exempt.
+
 ### 6.14 The Stats dashboard
 
 Composes primitives that already exist — it invents nothing:
 
-- **Stat tiles** are §6.9 exactly: flat, outlined, reflowing, `—` for absence
-  (never zero). Every number — count, percent, days, minutes — renders through
+- **Stat tiles** are §6.9 exactly: flat, outlined, reflowing, a word for
+  absence (never zero). Every number — count, percent, days, minutes — renders through
   `datetime_format.dart` (`formatCount` / `formatPercent` /
   `formatDurationMinutes`), never `'$value'`, so digits follow the locale. No
   "Coming soon" tile ships for a feature that does not exist (item 24a).
@@ -824,7 +831,7 @@ Composes primitives that already exist — it invents nothing:
   `labelSmall` / `chartAxisLabel` through `formatCount`, and the whole strip
   carries one `Semantics` label stating every number in words.
 - **Percentages need a sample.** A percentage tile with fewer than five plans
-  behind it renders `—` with the caption "After 5 answered plans" — never a
+  behind it renders `Not yet` with the caption "After 5 answered plans", never a
   confident 100% from one plan.
 - **Charts** pull every colour from §2.8 (`AppDataVizColors`) and every meter from
   §6.7. Personal-dashboard numbers are distinct from the social-profile stats on

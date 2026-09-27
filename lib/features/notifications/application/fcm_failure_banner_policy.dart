@@ -44,7 +44,7 @@ class FcmRegistrationBanner extends MaterialBanner {
          content: Text(
            mode == FcmFailureBannerMode.retrying
                ? 'Setting up notifications…'
-               : "Couldn't set up notifications on this device — you may not be "
+               : "Couldn't set up notifications on this device. You may not be "
                      'notified when someone plans or completes an item.',
          ),
          leading: const Icon(AppIcons.notificationsOff),

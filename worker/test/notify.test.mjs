@@ -1131,7 +1131,7 @@ test('a recorded voice fallback tells the planner, once', async () => {
   assert.equal(result.recipientUid, 'planner');
   assert.deepEqual(harness.sent[0].notification, {
     title: "Voice note didn't play",
-    body: "Test Target's alarm for Wake up rang with the normal ringtone — your voice note couldn't play.",
+    body: "Test Target's alarm for Wake up rang with the normal ringtone. Your voice note couldn't play.",
   });
   assert.equal(harness.patched[0].fields.notifiedVoiceFallback, true);
 });

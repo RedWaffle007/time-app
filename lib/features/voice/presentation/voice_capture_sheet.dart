@@ -222,7 +222,7 @@ class _VoiceCaptureSheetState extends ConsumerState<_VoiceCaptureSheet> {
       case _Phase.intro:
         return [
           Text(
-            'Speak and it fills in the form for you to confirm — nothing is '
+            'Speak and it fills in the form for you to confirm. Nothing is '
             'saved until you do. This uses the microphone.',
             style: context.text.bodyMedium
                 ?.copyWith(color: context.colors.onSurfaceVariant),
@@ -262,7 +262,7 @@ class _VoiceCaptureSheetState extends ConsumerState<_VoiceCaptureSheet> {
         }
         return [
           Text(
-            'Tap to speak, then pause when you\'re done — it stops on its own.',
+            'Tap to speak, then pause when you\'re done. It stops on its own.',
             style: context.text.bodyMedium
                 ?.copyWith(color: context.colors.onSurfaceVariant),
           ),
@@ -342,7 +342,7 @@ class _VoiceCaptureSheetState extends ConsumerState<_VoiceCaptureSheet> {
         return [
           Text(
             "The microphone isn't available, so voice is off for now. You can "
-            'still type it in — everything is doable by hand.',
+            'still type it in. Everything is doable by hand.',
             style: context.text.bodyMedium
                 ?.copyWith(color: context.colors.onSurfaceVariant),
           ),

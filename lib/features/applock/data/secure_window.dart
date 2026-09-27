@@ -30,7 +30,7 @@ class PlatformSecureWindow implements SecureWindow {
       // The lock itself still works; only the recents-blanking is Android-only.
       debugPrint('secure_window: no platform handler (expected off Android)');
     } on PlatformException catch (e) {
-      debugPrint('secure_window: failed to set $value — $e');
+      debugPrint('secure_window: failed to set $value: $e');
     }
   }
 }

@@ -194,12 +194,21 @@ class _StatTile extends StatelessWidget {
 
   /// The rendered value.
   ///
-  /// An em dash for both [ProfileStatState.placeholder] and
-  /// [ProfileStatState.hidden] — but they are never confusable, because a
-  /// placeholder says "Coming soon" underneath and a withheld section says why
-  /// above it. Two different explanations, one neutral glyph for "no number".
+  /// A short word for every no-number state ("Soon", "Private", "Not yet"),
+  /// muted so it never competes with a real number beside it.
   String _value(BuildContext context) {
-    if (stat.state != ProfileStatState.ready || stat.value == null) return '—';
+    // Absence is a WORD, never a zero and never a dash (Batch H4: no em
+    // dashes in app text). Each state says why there is no number.
+    switch (stat.state) {
+      case ProfileStatState.placeholder:
+        return 'Soon';
+      case ProfileStatState.hidden:
+        return 'Private';
+      case ProfileStatState.insufficient:
+        return 'Not yet';
+      case ProfileStatState.ready:
+        if (stat.value == null) return 'Not yet';
+    }
     final value = stat.value!;
     // Every digit goes through the locale (worldwide requirement, UI-RULES
     // §6.14) — never '$value'.

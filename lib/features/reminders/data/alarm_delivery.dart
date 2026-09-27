@@ -43,7 +43,7 @@ class AlarmDelivery {
     } on MissingPluginException {
       return 'unavailable';
     } on PlatformException catch (e) {
-      debugPrint('AlarmDelivery: arm failed — $e');
+      debugPrint('AlarmDelivery: arm failed: $e');
       return 'platform_error';
     }
   }
@@ -58,7 +58,7 @@ class AlarmDelivery {
     } on MissingPluginException {
       // Expected off Android and in unit tests.
     } on PlatformException catch (e) {
-      debugPrint('AlarmDelivery: $method failed — $e');
+      debugPrint('AlarmDelivery: $method failed: $e');
     }
   }
 }

@@ -127,7 +127,7 @@ class _UserSearchScreenState extends ConsumerState<UserSearchScreen> {
           ),
           const SizedBox(height: Space.md),
           Text(
-            'Search matches a full username exactly — people are not '
+            'Search matches a full username exactly. People are not '
             'listed or browsable, so ask for theirs the way you would a '
             'phone number.',
             style: context.text.bodySmall?.copyWith(color: muted),

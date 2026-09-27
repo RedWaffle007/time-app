@@ -296,7 +296,7 @@ export function buildMessage(event, subtype, item, targetUid, itemId, names = {}
     case 'voiceFallback':
       notification = {
         title: "Voice note didn't play",
-        body: `${who}'s alarm for ${title}${inGroup} rang with the normal ringtone — your voice note couldn't play.`,
+        body: `${who}'s alarm for ${title}${inGroup} rang with the normal ringtone. Your voice note couldn't play.`,
       };
       break;
     case 'unavailable':

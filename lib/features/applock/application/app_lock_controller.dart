@@ -179,7 +179,7 @@ class AppLockController extends ChangeNotifier {
       if (!await _auth.canAuthenticate()) {
         _notice = 'This device has no screen lock or biometric set up. Add a '
             'PIN, pattern, password or fingerprint in your device settings '
-            'first — otherwise the app lock could never be opened.';
+            'first. Otherwise the app lock could never be opened.';
         notifyListeners();
         return false;
       }

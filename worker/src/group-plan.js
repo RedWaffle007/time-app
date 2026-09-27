@@ -56,7 +56,7 @@ function cleanTitle(title) {
 export function busyMemberMessage({ title, plannerName, time }) {
   return {
     title: 'Group task not set',
-    body: `Group task "${title}" from ${plannerName} wasn't set for you at ${time} — you already have a plan then.`,
+    body: `Group task "${title}" from ${plannerName} wasn't set for you at ${time}. You already have a plan then.`,
   };
 }
 

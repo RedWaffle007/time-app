@@ -61,7 +61,7 @@ class DevMenuScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('DEV MENU — scaffolding only'),
+        title: const Text('DEV MENU: scaffolding only'),
         // Line work, not a fill: an orange FILL means state (UI-RULES.md §2.7)
         // and this banner is decoration. Orange text plus the rule below says
         // "dev scaffolding" without spending the signal a Pending chip relies

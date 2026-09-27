@@ -135,7 +135,7 @@ class ReminderPrimerCard extends ConsumerWidget {
         icon: AppIcons.exactTiming,
         title: 'Reminders may arrive late',
         body: 'One more permission lets the app wake your phone at the exact '
-            'time. Without it, reminders can be late — much later while asleep.',
+            'time. Without it, reminders can be late, much later while asleep.',
         action: 'Fix timing',
       );
     }
@@ -205,7 +205,7 @@ Future<void> runReminderPrimer(BuildContext context, WidgetRef ref) async {
       context,
       title: 'Remind me on time',
       body: 'Lets the app wake your phone at the exact time. Without it, '
-          'reminders can be late — sometimes hours overnight. Opens Android’s '
+          'reminders can be late, sometimes hours overnight. Opens Android’s '
           'settings.',
       confirm: 'Open settings',
     );

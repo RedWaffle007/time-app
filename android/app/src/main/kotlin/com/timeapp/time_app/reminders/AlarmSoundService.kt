@@ -178,7 +178,7 @@ class AlarmSoundService : Service() {
             )
         }
         AlarmLifecycleChannel.notifyChanged()
-        Log.i(TAG, "one-minute ring cap reached — stopping")
+        Log.i(TAG, "one-minute ring cap reached; stopping")
         stopAlarm()
     }
 

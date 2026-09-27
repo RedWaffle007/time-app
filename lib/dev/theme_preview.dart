@@ -135,17 +135,17 @@ class PanelPreview extends StatelessWidget {
       child: ListView(
         padding: Space.screenList,
         children: [
-          _heading(context, 'Warning panel — on background'),
+          _heading(context, 'Warning panel on background'),
           const WarningPanel(
             'This falls in their quiet hours (10:00 pm–7:00 am). '
-            'You can still send it — it will ring at that time.',
+            'You can still send it. It will ring at that time.',
           ),
           const WarningPanel(
-            "That clock time doesn't exist on this date — clocks spring "
+            "That clock time doesn't exist on this date: clocks spring "
             "forward. It'll fire at 24 Mar 2026, 3:30 am instead.",
           ),
           const WarningPanel(
-            'That clock time happens twice on this date — clocks fall back. '
+            'That clock time happens twice on this date: clocks fall back. '
             "It'll use the first: 1 Nov 2026, 1:30 am.",
           ),
           const SizedBox(height: Space.xl),
@@ -169,7 +169,7 @@ class PanelPreview extends StatelessWidget {
 
           // The panel also appears inside a card in the builder form, where it
           // sits on `surface` rather than `background`.
-          _heading(context, 'Warning panel — on a card surface'),
+          _heading(context, 'Warning panel on a card surface'),
           Card(
             child: Padding(
               padding: Space.cardPadding,
@@ -187,7 +187,7 @@ class PanelPreview extends StatelessWidget {
                   ),
                   const WarningPanel(
                     'This falls in late night (11pm–6am). You can still send '
-                    'it — it will ring at that time.',
+                    'it. It will ring at that time.',
                   ),
                 ],
               ),

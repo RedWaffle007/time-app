@@ -279,7 +279,7 @@ String describeAvatarRejection(AvatarRejection rejection, String mime) {
       // just be shrunk.
       if (kAnimatedCapableMimes.contains(mime)) {
         return 'That animated image is over ${mb}MB. It can\'t be compressed '
-            'without losing the animation — try a shorter or smaller one.';
+            'without losing the animation. Try a shorter or smaller one.';
       }
       return 'That picture is over ${mb}MB. Pick a smaller one.';
   }

@@ -500,7 +500,7 @@ void main() {
       await tester.pump();
       expect(changes.single, isNull);
       expect(
-        find.text('Too short — record at least 1 second.'),
+        find.text('Too short. Record at least 1 second.'),
         findsOneWidget,
       );
       expect(find.text('Record'), findsOneWidget);

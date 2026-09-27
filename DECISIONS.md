@@ -7157,3 +7157,15 @@ depend on each other.
   username, about you (with a one-tap clear), public toggle. Quiet hours and
   the device section left it.
 - New icon concepts: `AppIcons.settings`, `AppIcons.clearField`.
+
+## No em dashes in app text (2026-09-27, Batch H4, user-directed)
+
+Every em dash in a string literal was rewritten (66 literals: screens,
+onboarding, the guide and tour, Worker push copy in `group-plan.js` and
+`notify.js`, native Kotlin, and debug log lines). Comments were left alone;
+they are not app text. The stat-tile absence glyph "—" became a word per
+state: **Soon** (placeholder), **Private** (hidden), **Not yet** (below the
+sample). Other empty values: invite code "Loading…", unknown member time
+"time unknown", missing request task "Not given". UI-RULES §6.13a + §6.9.
+`test/no_em_dash_test.dart` scans Dart string literals under `lib/` plus the
+Worker and Kotlin sources. **Deploy:** Worker (two push bodies changed).

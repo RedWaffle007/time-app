@@ -256,7 +256,7 @@ class MessagingService {
             e,
             st,
             reason:
-                'FCM token refresh save failed — pushes may stop after rotation',
+                'FCM token refresh save failed; pushes may stop after rotation',
             fatal: false,
           );
           debugPrint('MessagingService: token refresh save failed: $e');
@@ -272,7 +272,7 @@ class MessagingService {
         e,
         st,
         reason:
-            'FCM token register/save failed — device may never receive pushes',
+            'FCM token register/save failed; device may never receive pushes',
         fatal: false,
       );
       debugPrint('MessagingService: register failed: $e');

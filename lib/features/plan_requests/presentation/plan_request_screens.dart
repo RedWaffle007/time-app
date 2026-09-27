@@ -197,7 +197,7 @@ class _CreatePlanRequestScreenState
               const SectionHeader('Ask one friend'),
               if (friends.isEmpty)
                 Text(
-                  'Add a friend first — any friend can plan for you.',
+                  'Add a friend first. Any friend can plan for you.',
                   style: context.text.bodyMedium?.copyWith(
                     color: context.colors.onSurfaceVariant,
                   ),
@@ -215,7 +215,7 @@ class _CreatePlanRequestScreenState
                 ),
               const SectionHeader('When do you need the reminder?'),
               Text(
-                'In your local time — $zone.',
+                'In your local time: $zone.',
                 style: context.text.bodySmall?.copyWith(
                   color: context.colors.onSurfaceVariant,
                 ),
@@ -507,7 +507,7 @@ class _FulfillPlanRequestScreenState
                 style: context.text.titleMedium,
               ),
               const SizedBox(height: Space.lg),
-              _Detail(label: 'Task', value: task.isEmpty ? '—' : task),
+              _Detail(label: 'Task', value: task.isEmpty ? 'Not given' : task),
               _Detail(
                 label: 'When',
                 value:
