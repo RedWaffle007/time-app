@@ -65,7 +65,7 @@
   ANY plan against the current rules.** Every phone — including the external
   tester's — needs a fresh APK.
 - Completed: Items **1–23, 25–32, 34, 35**, Batches **A–G**.
-- Next: **Item 24 (24a, 24b committed; 24c built; 24d next) → Item 33** (research-first;
+- Next: **Item 24 (24a–24c committed; 24d next) → Batch H → Item 33** (research-first;
   propose, wait for sign-off). Nothing built since Batch A has been checked on a phone — see
   "Deferred device checks".
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
@@ -515,7 +515,7 @@ separate and group-scoped, and group plans also count individually.
   eyes only), alarms you set + their completion, requests fulfilled /
   answered, last-8-weeks bars (§2.8). Percentages need ≥5 answered plans.
   DECISIONS → UI-RULES → code.
-- **24c — profile subset.** BUILT 2026-09-27, awaiting commit (DECISIONS.md
+- **24c — profile subset.** BUILT + committed 2026-09-27 (DECISIONS.md
   "24c — what a profile shows"). Published/visible stats trimmed to tasks
   completed, current streak, best streak, follow-through (≥5 only). Missed
   alarms and who-plans-for-you are never published.
@@ -524,6 +524,32 @@ separate and group-scoped, and group plans also count individually.
   delete in rules); minimum sample before ranking; shared streak as
   "N of M kept it going". Also: `memberStats.followThrough` still writes 0
   below the sample (the published value is now absent) — replace it.
+
+### Batch H — Profile & Settings restructure (added 2026-09-27, after 24d)
+
+User-directed. One item at a time, plan → sign-off → build; UI changes follow
+UI-RULES (DECISIONS → UI-RULES → code for any new recipe/token).
+
+- **H1 — "You" = your own profile (Instagram model).** Tapping You opens the
+  signed-in user's profile rendered exactly as others see it
+  (`user_profile_screen.dart`), plus an **Edit Profile** button shown only on
+  your own profile. Friends and Voice notes stay reachable from it.
+- **H2 — Settings screen.** A separate **Settings** button on your profile
+  holds everything else that lived under You today: How this app works,
+  Reminders & permissions, Theme, Dev menu (debug), Sign out — plus, moved in
+  from Edit Profile: the two "This device" options (**App lock**, **Startup
+  sound**) and **Quiet hours**.
+- **H3 — Edit Profile, in full:** edit username, edit identity (name), change
+  timezone, edit/remove profile picture, edit/remove "About you", public
+  profile toggle. Nothing else (quiet hours and device options moved to H2).
+- **H4 — No em dashes in any in-app text, app-wide.** User-facing strings
+  only (copy, notifications from the Worker included); code comments are not
+  in scope. Replace with commas, colons, periods or "to" as the sentence
+  needs; the empty-value glyph "—" on stat tiles becomes a non-dash
+  placeholder decided in the plan. Add a regression test that scans
+  user-facing strings.
+- **H5 — "How this app works" rewritten** shorter and plainer, matching the
+  current app (Plan · Request · ⊕ · Stats · You/Settings after H1–H2).
 
 ### Inactivity copy — BUILT + Worker DEPLOYED 2026-09-27 (version `94cbabca`)
 
@@ -558,6 +584,6 @@ confirmed with `wrangler deployments status`.
 2. Collect device results (Redmi, the tester abroad) against "Deferred device
    checks". Fix anything reported before new work; record verified items in
    CLAUDE.md "Parked & unverified" / DECISIONS.md.
-3. Item 24: 24a–24c done (24c awaiting commit). Next 24d (rules deploy),
-   one at a time, stopping for review after each.
-4. Item 33 (competitor review) last.
+3. Item 24: 24a–24c committed. Next 24d (rules deploy), plan → sign-off.
+4. Batch H (Profile & Settings restructure), one item at a time.
+5. Item 33 (competitor review) last.
