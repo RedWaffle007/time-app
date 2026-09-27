@@ -1,4 +1,4 @@
-# Checkmate handoff — 2026-09-27 (end of item 24 + Batch H)
+# Checkmate handoff — 2026-09-27 (after device fixes, group voice notes, faster Send)
 
 ## Operating rules
 
@@ -48,27 +48,35 @@
 
 ## Current state
 
-- Branch `main`, clean after `9de506a`. **Item 24 (stats) and Batch H
-  (profile/settings) are DONE**, one commit each, every one green on the full
-  suite: `49871cd` 24a · `3b4941b` 24b · `7b08026` inactivity copy ·
+- Branch `main`, clean after `caecaf7` (ignore the untracked build cache
+  `android/.kotlin/`). Since `9de506a`: `7b4c9a8` device fixes (slow Send,
+  missing Uh-Oh push, triple dismissed) · `da70877` group plans (Plan-screen
+  layout, voice notes, who gets it, grouped timezones) · `caecaf7` faster
+  Send, no Approved badge, ended alarms skip Dismiss, group reset script.
+- **Item 24 (stats) and Batch H (profile/settings) are DONE**, one commit
+  each: `49871cd` 24a · `3b4941b` 24b · `7b08026` inactivity copy ·
   `1b7027a` 24c · `bbee1ba` 24d · `f60a949` H1–H3 · `4bae4d1` H4 · `9de506a`
   H5 (plus doc commits `203e9c1`, `fdf14d3`). Batch G before that:
   `6fe18b0` G1 · `4f4b047` G2 · `508dcca` friends = permission · `3d0e1fc`
   groups · `d8f5e4e` minute locks · `8a2cb6e` Request Plan · `af4ca73` Uh-Oh
   · `d688fb0` 5b · `c751f43` Home · `8e8b8e2` Track Time removed ·
   `1df7447` bigger Play/X.
-- Test counts at `9de506a`: Flutter 861, rules 282, Worker 176, Kotlin green.
+- Test counts at `caecaf7`: Flutter 895, rules 287, Worker 191, Kotlin green.
 - **Deploys — all confirmed by the user and verified 2026-09-27:** live rules
   `ddd77d4d…` match `firestore.rules` byte-for-byte (24d `memberStats`
   change; `scripts/check-deployed-rules.sh`). Worker redeployed after the
-  inactivity copy (`94cbabca`) and again after H4 (two push bodies). Re-run
-  `scripts/check-deployed-rules.sh` before any device pass anyway.
+  inactivity copy (`94cbabca`), after H4, after `7b4c9a8` and after
+  `da70877` (all confirmed). **`caecaf7` changed the Worker (parallel notify
+  reads): confirm it was deployed** (`npx wrangler deployments status`).
+  No rules change since `ddd77d4d`. Re-run `scripts/check-deployed-rules.sh`
+  before any device pass anyway.
 - **Every phone needs a fresh APK:** strict minute locks (`d8f5e4e`) reject
   plans from older builds, and 24d's rules reject pre-24d group-stat writes.
 - Completed: Items **1–32, 34, 35**, Batches **A–H**.
-- Next: **the deferred device pass** (needs the user and phones), then
-  **Item 33** (competitor review, research only; can run any time). Nothing
-  built since Batch A has been checked on a phone.
+- Next: the user is building a **release APK** (`flutter build apk
+  --release --target-platform android-arm64`), then **the deferred device
+  pass**, then **Item 33** (competitor review, research only; can run any
+  time). **Group reset is DEFERRED** by the user (see "Faster Send" below).
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
 
 ## Product model now (2026-09-27 — read before touching planning or alarms)
@@ -117,6 +125,17 @@
   Settings (`/settings`) holds permissions, quiet hours (instant save), app
   lock, startup sound, theme, the guide, dev menu, sign out. Edit profile =
   picture, name, timezone, username, about you, public toggle.
+- **Group plans (`da70877`)** use the Plan screen's layout: glowing pickers,
+  Voice Note / Default Alarm, task name, note. A voice group plan goes to the
+  OTHER members only (one upload, then Worker `/voice/copy` per member).
+  Before Send the sheet shows who gets it and who is busy (Worker
+  `groupAvailability`); "Everyone's time" is grouped by timezone.
+- **Send (`caecaf7`)**: "sent" shows once the plan is saved (push in the
+  background); the Send-time clash check reads only the minute lock; a
+  recording uploads after "Use this recording" (a library pick counts), and
+  Send reuses that upload. A live alarm shows **no status badge**; an alarm
+  that already ended (timed out / answered) never shows the alarm screen's
+  Dismiss, only the missed popup.
 - **No em dashes in any app text (H4)** — `test/no_em_dash_test.dart`.
 - **Voice replays (F5):** 15–20 s → 3 plays, 10–15 s → 4, 5–10 s → 5,
   under 5 s → 6; notes are 1–20 s. **Library (32d):** every sent note is
@@ -157,6 +176,14 @@
 
 Install a fresh **debug** build on every phone first (strict locks). Needs a
 second account/phone for most of it.
+- **Latest (2026-09-27, `7b4c9a8`…`caecaf7`):** Send feels instant (default
+  alarm; voice after "Use this recording"); re-record after confirming needs
+  a fresh confirm; no "Approved" badge on set alarms; let an alarm ring out,
+  open the app → only the missed popup (no Dismiss screen, no second tone);
+  Uh-Oh push on a missed alarm; one "dismissed" push, not three; a voice
+  group plan to 2+ members rings each with the note (planner excluded); busy
+  preview names a busy member; "Everyone's time" with members in several
+  zones, light + dark.
 - **Item 24 + Batch H (2026-09-27):** Stats page with real history (week
   hero, Not yet below 5, streak survives a plan-less day, breaks on a missed
   alarm, 8-week bars, "Most plans from") in light + dark; a friend's profile
@@ -596,7 +623,7 @@ User-directed; plan → sign-off → build.
   (32a restricted it to other-person plans; the Worker authorizes uploads
   against a friendship) and a per-member voice download.
 
-### Faster Send + device fixes + groups reset — BUILT 2026-09-27, awaiting Worker deploy + commit
+### Faster Send + device fixes + groups reset — BUILT + committed (`caecaf7`); Worker deploy to confirm
 
 DECISIONS.md "Faster Send, no Approved badge, ended alarms leave, groups
 reset". **Group reset DEFERRED by the user (2026-09-27)**: when wanted, run
@@ -628,14 +655,18 @@ builds can still create groups.
 
 ## Immediate next action
 
-1. Run `scripts/check-deployed-rules.sh`, then install a fresh debug build on
-   every phone (strict locks and 24d rules reject older builds).
-2. Collect device results (Redmi, the tester abroad) against "Deferred device
-   checks", starting with the item 24 + Batch H block. Fix anything reported
-   before new work; record verified items in CLAUDE.md "Parked &
+1. Confirm the `caecaf7` Worker deploy, then build the release APK
+   (`flutter build apk --release --target-platform android-arm64`). On the
+   Redmi a release build needs an uninstall of the debug build first (wipes
+   data and sign-in); use debug/profile there unless checking the shared APK.
+2. Device pass on every phone with the fresh build: "Deferred device checks",
+   starting with the "Latest" block, then item 24 + Batch H. Fix anything
+   reported before new work; record verified items in CLAUDE.md "Parked &
    unverified" / DECISIONS.md.
-3. Group voice notes: deploy the Worker, install, and check on phones
-   (voice group plan to 2+ members, busy preview, Everyone's time).
-4. Item 33 (competitor review, PingPal + SnoozeSquad): research only,
-   current first-party evidence; propose findings, change nothing without
-   sign-off. Can run before the device pass if the user prefers.
+3. When the user wants groups to start fresh: the deferred group reset
+   (command in "Faster Send" above), just before sharing a build.
+4. Item 33 (competitor review, PingPal + SnoozeSquad): research only;
+   propose findings, change nothing without sign-off.
+5. Open design question, only if the user asks: reporting a dismissal /
+   missed alarm when the target's app process is dead (today it reports on
+   next launch; would need the native side to call the Worker).
