@@ -7282,3 +7282,16 @@ named.
   profiles stay). Emulator-tested. Run by the user with the Worker's service
   account; group pictures in Supabase are listed for manual removal.
 **Deploy:** Worker, then app. No rules change.
+
+## Voice confirm step removed (2026-09-27)
+
+User-directed, after a device report: with a voice plan (Plan tab, a friend
+picked), recording → "Use this recording" → picking date and time left Send
+grey and untappable. A widget test of the same steps shows Send enabled, so
+the device cause was not pinned down; the user chose to remove the step
+rather than keep it. **Supersedes "Confirmed voice notes upload before Send"
+in the entry above.** The recorder is record / play / re-record / discard
+only; the note (or a library pick) uploads when Send is tapped, exactly as
+before `caecaf7`, and Send shows its spinner during that upload. Everything
+else from "Faster Send" (background push, minute-lock-only Send check)
+stays. No Worker or rules change.

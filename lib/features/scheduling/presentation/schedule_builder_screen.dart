@@ -138,11 +138,6 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
   /// copies it onto the plan at Send.
   VoiceLibraryNote? _libraryNote;
 
-  /// The voice note uploaded ahead of Send once the user confirmed it
-  /// (2026-09-27): keyed by what it was made for, so a different recording,
-  /// library note or recipient never reuses it.
-  ({String key, String itemId, Future<VoiceNoteMeta> meta})? _preparedVoice;
-
   /// Bumped to give the recorder a fresh state (after a save or a target
   /// change) — the recorder owns its phase; the builder only resets it.
   int _voiceRecorderGen = 0;
@@ -354,20 +349,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       final fromLibrary = _isVoice && draft == null ? _libraryNote : null;
       String? preparedId;
       VoiceNoteMeta? voiceNote;
-      // Already uploaded after the user confirmed it (2026-09-27)? Use that
-      // upload, so Send only saves the plan. Any mismatch or failure falls
-      // back to uploading now, exactly as before.
-      final prepared = _preparedVoice;
-      if (prepared != null && prepared.key == _voiceKey()) {
-        try {
-          voiceNote = await prepared.meta;
-          preparedId = prepared.itemId;
-        } catch (_) {
-          voiceNote = null;
-          preparedId = null;
-        }
-      }
-      if (voiceNote == null && (draft != null || fromLibrary != null)) {
+      if (draft != null || fromLibrary != null) {
         preparedId = repository.newItemId(_targetUid!);
         final client = ref.read(voiceNoteClientProvider);
         final groupId = (_groupId ?? '').isEmpty ? null : _groupId;
@@ -686,8 +668,6 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
                 enabled: !_saving,
                 onChanged: (note) => setState(() {
                   _voiceDraft = note;
-                  // A new recording (or none) must be confirmed again.
-                  _preparedVoice = null;
                   if (note != null) _voiceError = false;
                 }),
               ),
@@ -705,7 +685,6 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
                   ),
                 ),
             ],
-            _voiceConfirm(),
             if (_voiceError) _errorLine(kVoiceNoteRequired),
           ] else ...[
             Text('Name of the Task', style: context.text.titleMedium),
@@ -771,92 +750,6 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     );
   }
 
-  /// What a prepared upload must match to be reused on Send.
-  String? _voiceKey() {
-    final target = _targetUid;
-    if (target == null || !_isVoice) return null;
-    final group = _groupId ?? '';
-    if (_libraryNote case final note?) return 'lib:${note.id}|$target|$group';
-    if (_voiceDraft case final draft?) {
-      return 'rec:${draft.path}|$target|$group';
-    }
-    return null;
-  }
-
-  /// Upload the confirmed note now, in the background, so Send only has to
-  /// save the plan. A recording is prepared only after "Use this recording";
-  /// a library pick is itself the confirmation.
-  void _prepareVoice() {
-    final key = _voiceKey();
-    final target = _targetUid;
-    if (key == null || target == null || _preparedVoice?.key == key) return;
-    final itemId = ref.read(scheduleRepositoryProvider).newItemId(target);
-    final client = ref.read(voiceNoteClientProvider);
-    final group = (_groupId ?? '').isEmpty ? null : _groupId;
-    final library = _libraryNote;
-    final draft = _voiceDraft;
-    final Future<VoiceNoteMeta> meta = library != null
-        ? client.attachFromLibrary(
-            noteId: library.id,
-            targetUid: target,
-            itemId: itemId,
-            groupId: group,
-          )
-        : File(draft!.path).readAsBytes().then(
-            (bytes) => client.upload(
-              bytes: bytes,
-              targetUid: target,
-              itemId: itemId,
-              groupId: group,
-            ),
-          );
-    // Never an unhandled error: Send re-uploads if this one failed.
-    unawaited(meta.then((_) {}, onError: (_) {}));
-    setState(() => _preparedVoice = (key: key, itemId: itemId, meta: meta));
-  }
-
-  /// "Use this recording" and its progress, under the recorder.
-  Widget _voiceConfirm() {
-    final prepared = _preparedVoice;
-    final key = _voiceKey();
-    if (_voiceDraft == null || _libraryNote != null) {
-      return const SizedBox.shrink();
-    }
-    if (prepared == null || prepared.key != key) {
-      return Align(
-        alignment: AlignmentDirectional.centerStart,
-        child: FilledButton.tonalIcon(
-          key: const ValueKey('voice-confirm'),
-          onPressed: _saving ? null : _prepareVoice,
-          icon: const Icon(AppIcons.approved),
-          label: const Text('Use this recording'),
-        ),
-      );
-    }
-    return FutureBuilder<VoiceNoteMeta>(
-      future: prepared.meta,
-      builder: (context, snap) {
-        final muted = context.colors.onSurfaceVariant;
-        final String text;
-        if (snap.hasError) {
-          text = "Couldn't upload yet. It will upload when you tap Send.";
-        } else if (snap.hasData) {
-          text = 'Voice note ready to send.';
-        } else {
-          text = 'Getting your voice note ready…';
-        }
-        return Padding(
-          padding: const EdgeInsets.only(top: Space.sm),
-          child: Text(
-            text,
-            key: const ValueKey('voice-confirm-status'),
-            style: context.text.bodySmall?.copyWith(color: muted),
-          ),
-        );
-      },
-    );
-  }
-
   Future<void> _chooseFromLibrary() async {
     final picked = await showVoiceLibraryPicker(context);
     if (picked == null || !mounted) return;
@@ -864,7 +757,6 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       _libraryNote = picked;
       _voiceError = false;
     });
-    _prepareVoice();
   }
 
   /// The chosen library note (shared widget, also used by the group sheet).

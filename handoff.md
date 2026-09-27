@@ -131,9 +131,10 @@
   Before Send the sheet shows who gets it and who is busy (Worker
   `groupAvailability`); "Everyone's time" is grouped by timezone.
 - **Send (`caecaf7`)**: "sent" shows once the plan is saved (push in the
-  background); the Send-time clash check reads only the minute lock; a
-  recording uploads after "Use this recording" (a library pick counts), and
-  Send reuses that upload. A live alarm shows **no status badge**; an alarm
+  background); the Send-time clash check reads only the minute lock. The
+  "Use this recording" confirm step was REMOVED (2026-09-27, user-directed:
+  on the device Send stayed grey after it); a voice note or library pick
+  uploads at Send, as before `caecaf7`. A live alarm shows **no status badge**; an alarm
   that already ended (timed out / answered) never shows the alarm screen's
   Dismiss, only the missed popup.
 - **No em dashes in any app text (H4)** — `test/no_em_dash_test.dart`.
@@ -177,8 +178,8 @@
 Install a fresh **debug** build on every phone first (strict locks). Needs a
 second account/phone for most of it.
 - **Latest (2026-09-27, `7b4c9a8`…`caecaf7`):** Send feels instant (default
-  alarm; voice after "Use this recording"); re-record after confirming needs
-  a fresh confirm; no "Approved" badge on set alarms; let an alarm ring out,
+  alarm); a voice plan: record → pick date/time → Send is tappable and sends
+  (no confirm step; Send spins while the note uploads); no "Approved" badge on set alarms; let an alarm ring out,
   open the app → only the missed popup (no Dismiss screen, no second tone);
   Uh-Oh push on a missed alarm; one "dismissed" push, not three; a voice
   group plan to 2+ members rings each with the note (planner excluded); busy

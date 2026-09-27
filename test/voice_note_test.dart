@@ -742,8 +742,7 @@ void main() {
     Future<void> send(WidgetTester tester) async {
       // The form can be taller than the test screen (the G2 "It's now …
       // there" line added a row), so bring Send into view like a user would.
-      // 2026-09-27: "Use this recording" adds a row, so scroll (the list is
-      // lazy) rather than assume Send is already built.
+      // Scroll (the list is lazy) rather than assume Send is already built.
       await tester.scrollUntilVisible(
         find.text('Send'),
         200,
@@ -1079,67 +1078,58 @@ void main() {
 
     // ---- 2026-09-27: faster Send ----
 
-    testWidgets('"Use this recording" uploads now; Send reuses that upload', (
+    // 2026-09-27: the "Use this recording" confirm step is gone (on a device
+    // it left Send looking dead). Record, pick date and time, Send; the note
+    // uploads once, at Send.
+    testWidgets('no confirm step: record, then pick date and time, and Send '
+        'is on', (tester) async {
+      final (_, client) = await pumpBuilder(tester, seeded: false);
+      await fillAndRecord(tester);
+      await tester.pumpAndSettle();
+      expect(find.text('Use this recording'), findsNothing);
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('pick-date')),
+        -200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await pickDefaults(tester);
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('plan-send')),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(sendEnabled(tester), isTrue);
+      expect(client.uploads, isEmpty, reason: 'nothing uploads before Send');
+    });
+
+    testWidgets('Send uploads the recording once, then saves the plan', (
       tester,
     ) async {
       final (repo, client) = await pumpBuilder(tester);
       await fillAndRecord(tester);
-      await tester.scrollUntilVisible(
-        find.byKey(const ValueKey('voice-confirm')),
-        200,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.tap(find.byKey(const ValueKey('voice-confirm')));
-      await settleIo(tester);
       await tester.pumpAndSettle();
-      expect(client.uploads, hasLength(1));
-      expect(find.text('Voice note ready to send.'), findsOneWidget);
+      expect(client.uploads, isEmpty);
 
       await send(tester);
-      expect(client.uploads, hasLength(1), reason: 'no second upload');
+      expect(client.uploads, hasLength(1));
       expect(repo.created.single['itemId'], client.uploads.single.$2);
       expect(find.text('Voice alarm sent.'), findsOneWidget);
     });
 
-    testWidgets('nothing uploads before the recording is confirmed', (
-      tester,
-    ) async {
-      final (_, client) = await pumpBuilder(tester);
-      await fillAndRecord(tester);
-      await tester.pumpAndSettle();
-      expect(client.uploads, isEmpty);
-      expect(find.byKey(const ValueKey('voice-confirm')), findsOneWidget);
-    });
-
-    testWidgets('discarding a confirmed recording needs a fresh confirm', (
-      tester,
-    ) async {
+    testWidgets('re-recording sends only the latest recording', (tester) async {
       final (repo, client) = await pumpBuilder(tester);
       await fillAndRecord(tester);
-      await tester.scrollUntilVisible(
-        find.byKey(const ValueKey('voice-confirm')),
-        200,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.tap(find.byKey(const ValueKey('voice-confirm')));
-      await settleIo(tester);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Discard'));
-      await settleIo(tester);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Record'));
+      await tester.tap(find.text('Re-record'));
       await settleIo(tester);
       await tester.pump();
       await tester.pump(const Duration(seconds: 3));
       await tester.tap(find.text('Stop'));
       await settleIo(tester);
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('voice-confirm')), findsOneWidget);
 
       await send(tester);
-      // The discarded upload is NOT reused: Send uploads the new recording.
-      expect(client.uploads, hasLength(2));
-      expect(repo.created.single['itemId'], client.uploads.last.$2);
+      expect(client.uploads, hasLength(1), reason: 'one upload, at Send');
+      expect(repo.created.single['itemId'], client.uploads.single.$2);
     });
 
     testWidgets('Send checks only the minute lock, and a taken minute is the '
@@ -1424,9 +1414,8 @@ void main() {
       expect(find.byKey(const ValueKey('voice-note-recorder')), findsOneWidget);
       await send(tester);
       expect(find.text(kVoiceNoteRequired), findsOneWidget);
-      // Picking the note prepared it once (2026-09-27); removing it means
-      // Send neither reuses it nor attaches again, and saves nothing.
-      expect(client.attaches, hasLength(1));
+      // Nothing is attached until Send, and a removed choice is never sent.
+      expect(client.attaches, isEmpty);
       expect(repo.created, isEmpty);
     });
   });
