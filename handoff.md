@@ -26,6 +26,13 @@
 
 - After a green run, give one exact `git add ... && git commit -m "..."` line.
   A push does not deploy Firestore rules or the Cloudflare Worker.
+- **Worker deploy = ONE command:** `(cd worker && npx wrangler deploy)` makes
+  the new version live at 100% (verified 2026-09-27: `wrangler deployments
+  status` showed the fresh version live with no `versions deploy` step).
+  `npx wrangler deployments status` confirms it. Only if it ever shows an
+  older version live: `npx wrangler versions list`, then
+  `npx wrangler versions deploy <Version ID>@100%` with the real ID. The
+  `*.workers.dev` route can lag a few minutes; crons are unaffected.
 - Device builds: **profile** to judge smoothness/lag (debug is JIT-janky);
   **debug** for alarm diagnostics (dev menu, reminder audit CSV). Both share the
   debug signature, so `adb install -r` keeps data. Never release on the Redmi —
@@ -516,11 +523,11 @@ separate and group-scoped, and group plans also count individually.
   delete in rules); minimum sample before ranking; shared streak as
   "N of M kept it going".
 
-### Inactivity copy — BUILT 2026-09-27, awaiting commit + Worker deploy
+### Inactivity copy — BUILT + Worker DEPLOYED 2026-09-27 (version `94cbabca`)
 
 The 50 six-hour nudges now talk about this app (DECISIONS.md "Inactivity
-pushes rewritten for this app"). Worker-only: `(cd worker && npx wrangler
-deploy)`, then promote the version.
+pushes rewritten for this app"). Live version `94cbabca-c91f-…` at 100%,
+confirmed with `wrangler deployments status`.
 
 ### 33 — Competitor review (last)
 

@@ -253,9 +253,11 @@ is two-device-DEFERRED — see the single checklist at the end of this section.*
    holds the written grant). Fired fire-and-forget from the profile "Ask" and
    the inbox "Allow". **Worker DEPLOYED and `wrangler tail`-confirmed `sent:1`**
    to the recipient for both a normal and an emergency request (2026-08-26).
-   **Gotcha worth keeping:** on this account `wrangler deploy` only UPLOADS a
-   version; you must `wrangler versions deploy <id>@100%` to promote it — and
-   even then the live `*.workers.dev` route lags the version by a few minutes
+   **Superseded 2026-09-27:** `wrangler deploy` alone now makes the version
+   live at 100% (confirmed with `wrangler deployments status`); the old
+   "only uploads, then `versions deploy <id>@100%`" gotcha no longer holds —
+   see handoff.md "Operating rules". The live `*.workers.dev` route can still
+   lag the version by a few minutes
    (the version PREVIEW url `<id>-time-app-notify.timeapp.workers.dev` serves the
    new code instantly, which is how to confirm a deploy without waiting).
 
