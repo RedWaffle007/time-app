@@ -621,6 +621,10 @@ planning your schedule and triggering your alarms was already built — groups +
 `plannerGrants` + the `pending → approved` machine + FCM + the reminder layer.
 The social layer does NOT replace or extend it.
 
+**Track Time is REMOVED (2026-09-27):** the bar is `Plan · Request · ⊕ · Stats
+· You` — Request (plan requests) took Track's pillar; the voice ⊕ plans only;
+`users/{uid}/trackedTime` has no rule. DECISIONS.md "Track Time removed".
+
 **No double-booking, strict (2026-09-27):** every plan is written with a lock on
 its exact minute (`scheduleMinutes/{target}/minutes/{epochMinute}`); a minute
 held by a live plan refuses a second one (self-plans too); a settled plan's

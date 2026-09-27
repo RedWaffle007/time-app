@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_icons.dart';
-import '../../../core/theme/app_tokens.dart';
 import '../../../routing/app_router.dart';
 import '../../groups/presentation/groups_screen.dart';
 import '../../outcomes/presentation/outcome_screen.dart';
@@ -171,27 +170,15 @@ class _PlanShellState extends ConsumerState<PlanShell>
       // Its own heroTag prevents a collision with the voice FAB during a route
       // transition.
       floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
-      // G6 (2026-09-27): REQUEST PLAN sits beside PLAN. Size and bold label
-      // come from the FAB theme (UI-RULES §6.12), never from here.
-      floatingActionButton: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          FloatingActionButton.extended(
-            key: const ValueKey('plan-fab'),
-            heroTag: 'planCreateFab',
-            tooltip: 'Plan an item',
-            onPressed: () => context.push('${Routes.plan}/schedule-builder'),
-            label: const Text('PLAN'),
-          ),
-          const SizedBox(width: Space.md),
-          FloatingActionButton.extended(
-            key: const ValueKey('request-plan-fab'),
-            heroTag: 'requestPlanFab',
-            tooltip: 'Ask a friend to plan a reminder',
-            onPressed: () => context.push(Routes.requestPlan),
-            label: const Text('REQUEST PLAN'),
-          ),
-        ],
+      // The size and bold label come from the FAB theme (G6, UI-RULES §6.12).
+      // REQUEST PLAN no longer sits beside it: requests have their own pillar
+      // (item 8, 2026-09-27).
+      floatingActionButton: FloatingActionButton.extended(
+        key: const ValueKey('plan-fab'),
+        heroTag: 'planCreateFab',
+        tooltip: 'Plan an item',
+        onPressed: () => context.push('${Routes.plan}/schedule-builder'),
+        label: const Text('PLAN'),
       ),
       body: TabBodyInset(
         child: TabBarView(

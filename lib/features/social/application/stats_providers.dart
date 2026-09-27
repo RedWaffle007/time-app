@@ -3,8 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
-import '../../time_tracking/application/time_tracking_providers.dart';
-import '../../time_tracking/domain/tracked_entry.dart';
 import '../domain/profile_stat.dart';
 import '../domain/profile_visibility.dart';
 import 'social_providers.dart';
@@ -27,10 +25,6 @@ StatItem _toStatItem(ScheduleItem item) => StatItem(
   completedAt: item.outcome?.completedAt,
 );
 
-/// Map tracked-time's authoritative whole-minute record into the stats shape.
-StatTrackedEntry _toStatTrackedEntry(TrackedEntry entry) =>
-    StatTrackedEntry(durationMinutes: entry.durationMinutes);
-
 /// The signed-in user's freshly computed stat values.
 ///
 /// **Reads the RECORD providers, never the filtered views**, which is the one
@@ -42,7 +36,6 @@ StatTrackedEntry _toStatTrackedEntry(TrackedEntry entry) =>
 final myComputedStatsProvider = Provider<AsyncValue<Map<String, num>>>((ref) {
   final asTarget = ref.watch(allItemsAsTargetProvider);
   final asPlanner = ref.watch(allItemsAsPlannerProvider);
-  final trackedEntries = ref.watch(myTrackedEntriesProvider);
   final profile = ref.watch(profileProvider);
 
   if (asTarget.hasError) {
@@ -54,18 +47,11 @@ final myComputedStatsProvider = Provider<AsyncValue<Map<String, num>>>((ref) {
       asPlanner.stackTrace ?? StackTrace.empty,
     );
   }
-  if (trackedEntries.hasError) {
-    return AsyncError(
-      trackedEntries.error!,
-      trackedEntries.stackTrace ?? StackTrace.empty,
-    );
-  }
 
   final target = asTarget.value;
   final planner = asPlanner.value;
-  final tracked = trackedEntries.value;
   final home = profile.value?.homeTimezone;
-  if (target == null || planner == null || tracked == null || home == null) {
+  if (target == null || planner == null || home == null) {
     return const AsyncLoading();
   }
 
@@ -74,7 +60,6 @@ final myComputedStatsProvider = Provider<AsyncValue<Map<String, num>>>((ref) {
       StatInputs(
         itemsAsTarget: target.map(_toStatItem).toList(),
         itemsAsPlanner: planner.map(_toStatItem).toList(),
-        trackedEntries: tracked.map(_toStatTrackedEntry).toList(),
         // A real clock, on purpose: the streak has to know what "today" is, and
         // the pure function it feeds takes `now` as an argument precisely so
         // the impurity stops here and the computation stays testable.

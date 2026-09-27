@@ -57,22 +57,9 @@ const List<ProfileStatDefinition> kProfileStatDefinitions = [
     compute: _plansCreated,
   ),
 
-  // ---- tracked-time record ----
-  //
-  // These have no `compute`, which is what marks them placeholder. They are
-  // The first two derive from tracked-time's authoritative whole-minute record.
-  ProfileStatDefinition(
-    key: 'hoursTracked',
-    label: 'Time tracked',
-    unit: ProfileStatUnit.minutes,
-    compute: _hoursTracked,
-  ),
-  ProfileStatDefinition(
-    key: 'focusSessions',
-    label: 'Focus sessions',
-    unit: ProfileStatUnit.count,
-    compute: _focusSessions,
-  ),
+  // ---- placeholders (no `compute`) ----
+  // "Time tracked" and "Focus sessions" were removed with Track Time
+  // (2026-09-27, Batch G item 8).
   ProfileStatDefinition(
     key: 'goalsAchieved',
     label: 'Goals achieved',
@@ -145,14 +132,6 @@ num _tasksCompleted(StatInputs i) =>
     i.itemsAsTarget.where((it) => it.isDone).length;
 
 num _plansCreated(StatInputs i) => i.itemsAsPlanner.length;
-
-/// All logged whole minutes, including an honest measured zero when no entry
-/// exists yet.
-num _hoursTracked(StatInputs i) =>
-    i.trackedEntries.fold<int>(0, (sum, entry) => sum + entry.durationMinutes);
-
-/// One tracked record is one focus session.
-num _focusSessions(StatInputs i) => i.trackedEntries.length;
 
 /// Done as a share of everything that reached an outcome.
 ///

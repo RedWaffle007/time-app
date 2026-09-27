@@ -6,9 +6,6 @@ import 'package:time_app/features/auth/application/auth_providers.dart';
 import 'package:time_app/features/scheduling/application/schedule_providers.dart';
 import 'package:time_app/features/scheduling/domain/schedule_item.dart';
 import 'package:time_app/features/scheduling/presentation/planner_activity_screen.dart';
-import 'package:time_app/features/time_tracking/application/time_tracking_providers.dart';
-import 'package:time_app/features/time_tracking/domain/tracked_entry.dart';
-import 'package:time_app/features/time_tracking/presentation/track_screen.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 
 void main() {
@@ -67,67 +64,6 @@ void main() {
           theme: AppTheme.light,
           home: const PlannerActivityScreen(),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('February 2026 · 1 item'), findsOneWidget);
-    expect(find.text('January 2026 · 1 item'), findsOneWidget);
-  });
-
-  testWidgets('Track keeps its explainer visible in the empty state', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          myTrackedEntriesProvider.overrideWithValue(const AsyncData([])),
-        ],
-        child: MaterialApp(theme: AppTheme.light, home: const TrackScreen()),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('Track the time you spend.'), findsOneWidget);
-    expect(
-      find.ancestor(
-        of: find.text('Track the time you spend.'),
-        matching: find.byType(Card),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.textContaining("You haven't logged any time yet."),
-      findsOneWidget,
-    );
-    expect(find.byTooltip('Log item'), findsOneWidget);
-    expect(find.byIcon(Icons.add), findsOneWidget);
-    expect(find.text('PLAN'), findsNothing);
-  });
-
-  testWidgets('Track uses month categories as soon as two months exist', (
-    tester,
-  ) async {
-    final entries = [
-      TrackedEntry(
-        id: 'february-entry',
-        taskName: 'February work',
-        durationMinutes: 30,
-        logDate: '2026-02-02',
-      ),
-      TrackedEntry(
-        id: 'january-entry',
-        taskName: 'January work',
-        durationMinutes: 30,
-        logDate: '2026-01-02',
-      ),
-    ];
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          myTrackedEntriesProvider.overrideWithValue(AsyncData(entries)),
-        ],
-        child: MaterialApp(theme: AppTheme.light, home: const TrackScreen()),
       ),
     );
     await tester.pumpAndSettle();

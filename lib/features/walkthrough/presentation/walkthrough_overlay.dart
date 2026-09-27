@@ -5,7 +5,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 
 /// The per-step copy for the first-run orientation tour — one short line each,
-/// in **spatial bottom-bar order**: Plan · Track · ⊕voice · Stats · You.
+/// in **spatial bottom-bar order**: Plan · Request · ⊕voice · Stats · You.
 ///
 /// Pure data with no keys or widgets, so it is unit-testable on its own
 /// (`walkthrough_test.dart`). `HomeShell` pairs each entry, by index, with the
@@ -22,17 +22,17 @@ const kWalkthroughStepCopy = <WalkthroughStepCopy>[
   WalkthroughStepCopy(
     'Plan',
     'Your schedule, in three tabs — Home, Activity, Groups. Tap PLAN '
-        '(bottom-left) to plan an item, or REQUEST PLAN to ask a friend.',
+        '(bottom-left) to plan an item, on any of them.',
   ),
   WalkthroughStepCopy(
-    'Track',
-    "Log time you've already spent. Tap the ＋ button (bottom-right) to add an "
-        'entry, and see where your hours go.',
+    'Request',
+    'Ask a friend to plan a reminder for you, and answer what friends ask of '
+        'you. Tap REQUEST PLAN (bottom-left) to ask.',
   ),
   WalkthroughStepCopy(
     'Speak to create',
-    'The centre mic: tap and talk to log time or plan a reminder, hands-free — '
-        'you review it before anything saves.',
+    'The centre mic: tap and talk to plan a reminder, hands-free — you review '
+        'it before anything saves.',
   ),
   WalkthroughStepCopy(
     'Stats',

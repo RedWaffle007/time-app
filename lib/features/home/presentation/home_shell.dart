@@ -8,7 +8,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/theme/status_style.dart';
 import '../../../routing/app_router.dart';
-import '../../time_tracking/presentation/log_time_sheet.dart';
+import '../../plan_requests/application/plan_request_providers.dart';
 import '../../voice/application/voice_parsers.dart';
 import '../../voice/presentation/plan_target_picker.dart';
 import '../../voice/presentation/voice_capture_sheet.dart';
@@ -19,10 +19,10 @@ import '../../invites/presentation/pending_invite_listener.dart';
 /// The app home: the five-PILLAR bottom bar with the docked centre voice FAB
 /// (redesign slice S5; UI-RULES.md §6.12).
 ///
-/// `[ Plan · Track · ⊕ voice · Stats · You ]`. The four pillars are branches of
-/// the [StatefulNavigationShell]; the ⊕ is NOT a branch but a docked FAB that
-/// opens a two-choice sheet (Track time / Plan time), both reachable manually so
-/// the FAB is additive. The old three delegation stances (Groups / My Schedule /
+/// `[ Plan · Request · ⊕ voice · Stats · You ]`. The four pillars are branches
+/// of the [StatefulNavigationShell]; the ⊕ is NOT a branch but a docked FAB that
+/// starts the voice Plan flow (Track Time and its voice choice were
+/// removed 2026-09-27, Batch G item 8; Request took Track's slot). The old three delegation stances (Groups / My Schedule /
 /// Activity) are now the keep-alive sub-tabs inside the Plan pillar.
 ///
 /// The bar is a [BottomAppBar] with a circular notch rather than a
@@ -56,7 +56,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   // is persistent, so these are always laid out — the tour reads their rects
   // directly.
   final _planKey = GlobalKey();
-  final _trackKey = GlobalKey();
+  final _requestKey = GlobalKey();
   final _voiceKey = GlobalKey();
   final _statsKey = GlobalKey();
   final _youKey = GlobalKey();
@@ -75,7 +75,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         ),
         WalkthroughStep(
           copy: kWalkthroughStepCopy[1],
-          targetKey: _trackKey,
+          targetKey: _requestKey,
           spotlightRadius: Radii.md,
         ),
         WalkthroughStep(
@@ -206,11 +206,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               ),
               _PillarButton(
                 index: 1,
-                label: 'Track',
-                icon: AppIcons.navTrack,
-                selectedIcon: AppIcons.navTrackSelected,
+                label: 'Request',
+                icon: AppIcons.navRequest,
+                selectedIcon: AppIcons.navRequestSelected,
+                // Plan requests waiting on me (§2.7 attention count).
+                badgeCount: ref.watch(incomingPlanRequestCountProvider),
                 shell: shell,
-                spotlightKey: _trackKey,
+                spotlightKey: _requestKey,
               ),
               // The gap the notch + FAB occupy.
               const SizedBox(width: Sizes.touchTarget),
@@ -247,72 +249,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     );
   }
 
-  /// The voice FAB's two-choice sheet (§6.12). No STT yet (S6): each choice opens
-  /// the same manual flow it always had, so the FAB is additive from day one.
-  ///
-  /// Uses the State's own `context` (not a passed one) so the `mounted` guards
-  /// below actually cover the context used after the await.
-  Future<void> _showVoiceSheet() async {
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetCtx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(AppIcons.logTime),
-              title: const Text('Track time'),
-              subtitle: const Text('Log time you spent on something'),
-              onTap: () => Navigator.pop(sheetCtx, 'track'),
-            ),
-            ListTile(
-              leading: const Icon(AppIcons.navPlan),
-              title: const Text('Plan time'),
-              subtitle: const Text('Schedule an item for someone'),
-              onTap: () => Navigator.pop(sheetCtx, 'plan'),
-            ),
-            const SizedBox(height: Space.sm),
-          ],
-        ),
-      ),
-    );
-    if (!mounted) return;
-    switch (choice) {
-      case 'track':
-        await _voiceTrack();
-      case 'plan':
-        await _voicePlan();
-    }
-  }
-
-  /// Voice "Track time" (S6): speak "What are we logging?", parse the reply into
-  /// a task + minutes, and open the log sheet PRE-FILLED for confirm/edit.
-  /// Nothing is committed here — the sheet is always the confirm step. Every
-  /// branch falls back to the identical manual sheet, so a dismissal, a denial
-  /// or a misparse all stay usable by hand.
-  Future<void> _voiceTrack() async {
-    final outcome = await showVoiceCaptureSheet(
-      context,
-      ref,
-      promptText: 'What are we logging?',
-      hintText: 'Say the task and how long — e.g. "walking 30 minutes".',
-    );
-    if (!mounted) return;
-    // Dismissed → do nothing. Type-instead → the empty manual sheet.
-    if (outcome == null) return;
-    if (outcome.transcript == null) {
-      await showLogTimeSheet(context, ref);
-      return;
-    }
-    final draft = parseTrackUtterance(outcome.transcript!);
-    await showLogTimeSheet(
-      context,
-      ref,
-      prefillTaskName: draft.taskName.isEmpty ? null : draft.taskName,
-      prefillMinutes: draft.minutes,
-    );
-  }
+  /// The voice FAB (§6.12) starts the voice Plan flow directly — the old
+  /// two-choice sheet went with Track Time (item 8).
+  Future<void> _showVoiceSheet() => _voicePlan();
 
   /// Voice "Plan time" (S6): pick the target FIRST (the person-picker), then
   /// speak "Please give alarm details", parse "[Day][Time][Alarm name]", and

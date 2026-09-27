@@ -39,14 +39,12 @@ void main() {
   StatInputs inputs({
     List<StatItem> target = const [],
     List<StatItem> planner = const [],
-    List<StatTrackedEntry> tracked = const [],
     DateTime? now,
     String timezone = zone,
   }) {
     return StatInputs(
       itemsAsTarget: target,
       itemsAsPlanner: planner,
-      trackedEntries: tracked,
       now: now ?? DateTime.utc(2026, 8, 21, 7), // 12:00 in Karachi
       timezone: timezone,
     );
@@ -66,7 +64,7 @@ void main() {
     });
 
     test('placeholders are NOT published as zero', () {
-      // A stored `hoursTracked: 0` is indistinguishable from a measured zero,
+      // A stored zero is indistinguishable from a measured zero,
       // so a visitor's device would render a confident, wrong number.
       final values = computeStatValues(inputs());
       for (final def in kProfileStatDefinitions.where((d) => d.isPlaceholder)) {
@@ -273,40 +271,12 @@ void main() {
     });
   });
 
-  group('tracked time', () {
-    test(
-      'hoursTracked sums authoritative whole minutes and is zero when empty',
-      () {
-        expect(
-          computeStatValues(
-            inputs(
-              tracked: const [
-                StatTrackedEntry(durationMinutes: 45),
-                StatTrackedEntry(durationMinutes: 75),
-                StatTrackedEntry(durationMinutes: 30),
-              ],
-            ),
-          )['hoursTracked'],
-          150,
-        );
-        expect(computeStatValues(inputs())['hoursTracked'], 0);
-      },
-    );
-
-    test('focusSessions counts entries and is zero when empty', () {
-      expect(
-        computeStatValues(
-          inputs(
-            tracked: const [
-              StatTrackedEntry(durationMinutes: 15),
-              StatTrackedEntry(durationMinutes: 20),
-              StatTrackedEntry(durationMinutes: 25),
-            ],
-          ),
-        )['focusSessions'],
-        3,
-      );
-      expect(computeStatValues(inputs())['focusSessions'], 0);
-    });
+  test('Track Time\'s stats are gone (item 8, 2026-09-27)', () {
+    final keys = kProfileStatDefinitions.map((d) => d.key).toSet();
+    expect(keys, isNot(contains('hoursTracked')));
+    expect(keys, isNot(contains('focusSessions')));
+    final values = computeStatValues(inputs());
+    expect(values.containsKey('hoursTracked'), isFalse);
+    expect(values.containsKey('focusSessions'), isFalse);
   });
 }

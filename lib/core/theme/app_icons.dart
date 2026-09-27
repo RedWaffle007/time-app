@@ -63,8 +63,9 @@ abstract final class AppIcons {
   // (`event`), which now names only the My Schedule *sub-tab* inside Plan.
   static const IconData navPlan = Icons.event_note_outlined;
   static const IconData navPlanSelected = Icons.event_note;
-  static const IconData navTrack = track; // timer_outlined
-  static const IconData navTrackSelected = trackSelected; // timer
+  // Request took Track's slot (Batch G item 8, 2026-09-27).
+  static const IconData navRequest = Icons.forward_to_inbox_outlined;
+  static const IconData navRequestSelected = Icons.forward_to_inbox;
   static const IconData navStats = Icons.bar_chart_outlined;
   static const IconData navStatsSelected = Icons.bar_chart;
 
@@ -455,15 +456,8 @@ abstract final class AppIcons {
   /// is a good thing, which is exactly what the other two glyphs fail to say.
   static const IconData emptyDay = Icons.event_available_outlined;
 
-  // ---- time-tracking (the Track pillar) ----
-
-  /// The Track pillar and its account-popup entry, outlined / filled per the
-  /// §6.6 nav convention (the filled form is for the future bottom-bar slot).
-  static const IconData track = Icons.timer_outlined;
-  static const IconData trackSelected = Icons.timer;
-
-  /// The Track pillar's bottom-right "log time" create action.
-  static const IconData logTime = Icons.more_time_outlined;
+  // ---- durations and owned-entry edits ----
+  // (The Track pillar's own glyphs were retired with it, 2026-09-27.)
 
   /// A logged entry's duration, and its optional time-of-day range.
   static const IconData duration = Icons.hourglass_bottom_outlined;
@@ -471,10 +465,6 @@ abstract final class AppIcons {
   /// Editing and deleting an owned entry.
   static const IconData edit = Icons.edit_outlined;
   static const IconData delete = Icons.delete_outline;
-
-  /// "You have logged no time yet" — a fourth emptiness, distinct from the
-  /// inbox / archive / free-day ones (§emptyGeneric).
-  static const IconData emptyTrack = Icons.timelapse_outlined;
 
   // ---- the You hub (account pillar) ----
 

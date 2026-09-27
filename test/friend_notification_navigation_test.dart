@@ -102,23 +102,22 @@ void main() {
   testWidgets('a plan request push opens the actionable request inbox', (
     tester,
   ) async {
+    // Plan requests have their own pillar since item 8 (2026-09-27).
     final router = GoRouter(
       initialLocation: Routes.friends,
       routes: [
         GoRoute(
           path: Routes.friends,
           builder: (_, _) => const Text('Friends'),
+        ),
+        GoRoute(
+          path: Routes.requests,
+          builder: (_, _) => const Text('Plan requests'),
           routes: [
             GoRoute(
-              path: 'plan-requests',
-              builder: (_, _) => const Text('Plan requests'),
-              routes: [
-                GoRoute(
-                  path: 'fulfill/:requestId',
-                  builder: (_, state) =>
-                      Text('Fulfill ${state.pathParameters['requestId']}'),
-                ),
-              ],
+              path: 'fulfill/:requestId',
+              builder: (_, state) =>
+                  Text('Fulfill ${state.pathParameters['requestId']}'),
             ),
           ],
         ),

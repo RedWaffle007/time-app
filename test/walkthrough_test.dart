@@ -13,7 +13,7 @@ void main() {
   test('covers exactly the five bar targets, in spatial order', () {
     expect(kWalkthroughStepCopy.map((s) => s.heading).toList(), [
       'Plan',
-      'Track',
+      'Request',
       'Speak to create',
       'Stats',
       'You',
@@ -31,10 +31,13 @@ void main() {
     }
   });
 
-  test('Plan coach copy names the PLAN button while Track keeps its plus', () {
+  test('Plan names PLAN; Request (Track\'s old slot) names REQUEST PLAN', () {
     expect(kWalkthroughStepCopy[0].body, contains('Tap PLAN'));
     expect(kWalkthroughStepCopy[0].body, isNot(contains('＋')));
-    expect(kWalkthroughStepCopy[1].body, contains('＋ button'));
+    expect(kWalkthroughStepCopy[1].body, contains('REQUEST PLAN'));
+    for (final step in kWalkthroughStepCopy) {
+      expect(step.body, isNot(contains('log time')), reason: step.heading);
+    }
   });
 
   testWidgets('How this app works names the PLAN button', (tester) async {

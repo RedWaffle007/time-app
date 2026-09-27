@@ -29,7 +29,6 @@ import '../features/scheduling/presentation/schedule_builder_screen.dart';
 import '../features/home/presentation/you_screen.dart';
 import '../features/plan/presentation/plan_shell.dart';
 import '../features/stats/presentation/stats_screen.dart';
-import '../features/time_tracking/presentation/track_screen.dart';
 import '../features/voice_notes/presentation/voice_library_screen.dart';
 import 'go_router_refresh_stream.dart';
 import '../features/invites/application/pending_invite.dart';
@@ -148,7 +147,8 @@ class Routes {
   /// **Your voice-note library** (32d): every voice note you send, newest 20.
   /// In You's branch, pushed from its tile.
   static const voiceNotes = '/you/voice-notes';
-  static const planRequests = '$friends/plan-requests';
+  // Plan requests moved from You → Friends to their own pillar (item 8).
+  static const planRequests = requests;
   static const newPlanRequest = '$planRequests/new';
   static const fulfillPlanRequest = '$planRequests/fulfill';
 
@@ -170,12 +170,10 @@ class Routes {
 
   static String userProfileFor(String uid) => '$userProfile/$uid';
 
-  /// **The Track pillar** (personal time-tracking). Top-level and pushed for now,
-  /// reached through a TEMPORARY account-popup entry (the redesign's
-  /// temporary-door strategy — DECISIONS.md "UI redesign — Hearth + Candidate
-  /// A"). Since the S5 cutover it is the **Track pillar** — a branch of the
-  /// five-pillar shell, no longer a pushed route.
-  static const track = '/track';
+  /// **The Request pillar** (Batch G item 8, 2026-09-27): plan requests sent
+  /// and received, and "Request a plan". It took the retired Track pillar's
+  /// slot in the bar.
+  static const requests = '/requests';
 
   /// **The You pillar** (profile / friends / calendar / permissions / sign
   /// out / dev). The old account popup, promoted to the fifth
@@ -208,10 +206,6 @@ class Routes {
   /// The planner's create flow — a Plan sub-route so it stacks over the shell.
   /// (Was `/activity/schedule-builder` before the S5 cutover.)
   static const scheduleBuilder = '$plan/schedule-builder';
-
-  /// Ask ONE friend to plan a reminder for you (Batch G item 5), pushed from
-  /// the REQUEST PLAN button beside PLAN.
-  static const requestPlan = '$plan/request-plan';
 
   /// Voice-flow query params seeding [scheduleBuilder] (S6). The Plan voice flow
   /// picks the target first, parses the spoken details, and pushes the builder
@@ -361,7 +355,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       // The five-PILLAR home (S5 cutover). Each pillar is a BRANCH with its own
       // navigator, so a screen is registered exactly once and anything pushed
       // inside a branch keeps the bottom bar beneath it. The bar names the app's
-      // pillars — Plan · Track · ⊕voice · Stats · You — where the ⊕ voice FAB is
+      // pillars — Plan · Request · ⊕voice · Stats · You — where the ⊕ voice FAB is
       // NOT a branch but a docked FAB on `HomeShell` (§6.12). The three old
       // delegation stances (Groups / My Schedule / Activity) are now the
       // keep-alive sub-tabs INSIDE Plan (`PlanShell`), not branches here.
@@ -388,11 +382,6 @@ final routerProvider = Provider<GoRouter>((ref) {
                 // this branch page, so query-only changes were unreliable.
                 builder: (context, state) => const PlanShell(),
                 routes: [
-                  GoRoute(
-                    path: 'request-plan',
-                    builder: (context, state) =>
-                        const CreatePlanRequestScreen(),
-                  ),
                   GoRoute(
                     path: 'schedule-builder',
                     // Voice-flow seeds (S6) ride in as query params on the pushed
@@ -439,12 +428,26 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
             ],
           ),
-          // Pillar 1 — Track.
+          // Pillar 1 — Request (item 8: took Track's slot). The list of plan
+          // requests; asking and fulfilling are its sub-routes.
           StatefulShellBranch(
             routes: [
               GoRoute(
-                path: Routes.track,
-                builder: (context, state) => const TrackScreen(),
+                path: Routes.requests,
+                builder: (context, state) => const PlanRequestsScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'new',
+                    builder: (context, state) =>
+                        const CreatePlanRequestScreen(),
+                  ),
+                  GoRoute(
+                    path: 'fulfill/:requestId',
+                    builder: (context, state) => FulfillPlanRequestScreen(
+                      requestId: state.pathParameters['requestId']!,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -490,24 +493,6 @@ final routerProvider = Provider<GoRouter>((ref) {
                       GoRoute(
                         path: 'blocked',
                         builder: (context, state) => const BlockedUsersScreen(),
-                      ),
-                      GoRoute(
-                        path: 'plan-requests',
-                        builder: (context, state) => const PlanRequestsScreen(),
-                        routes: [
-                          GoRoute(
-                            path: 'new',
-                            builder: (context, state) =>
-                                const CreatePlanRequestScreen(),
-                          ),
-                          GoRoute(
-                            path: 'fulfill/:requestId',
-                            builder: (context, state) =>
-                                FulfillPlanRequestScreen(
-                                  requestId: state.pathParameters['requestId']!,
-                                ),
-                          ),
-                        ],
                       ),
                     ],
                   ),

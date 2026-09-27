@@ -6964,3 +6964,29 @@ saving directly:
   item on Home while open, in Activity once answered.
 - Group plans I sent count per member: each member's copy stays on Home until
   that member answers.
+
+---
+
+## Track Time removed; Request takes its pillar (2026-09-27, Batch G item 8)
+
+**User-directed.** Track Time is removed entirely; its bottom-bar slot becomes
+the **Request** pillar (option (d), user-chosen), and the REQUEST PLAN button
+beside PLAN is dropped (user-directed).
+
+- **Gone:** `lib/features/time_tracking/` (Track screen, log sheet, repository,
+  providers, model), the `/track` branch, the voice ⊕ "Track time / Plan time"
+  sheet (⊕ now starts the voice Plan flow directly) and the track voice parser,
+  the "Time tracked" and "Focus sessions" stats (a stale published copy clears
+  when the owner's app next republishes), Track's icons, tour step and
+  "How this app works" entry, UI-RULES §6.13, and the `users/{uid}/trackedTime`
+  rules block — with no rule, leftover entries are unreadable and unwritable
+  by every client; they stay in the database until cleared from the console.
+  Supersedes "Stats capture foundation — Step 2" (2026-08-25).
+- **Request pillar** (`/requests`, branch 1): the plan-request list (waiting on
+  you / sent), with **REQUEST PLAN** at the bottom-left (FAB theme, G6) opening
+  the form (`/requests/new`); fulfilment at `/requests/fulfill/:id`. Its bar
+  icon carries the count of requests waiting on you (§2.7). Plan requests left
+  You → Friends. Icons: `AppIcons.navRequest` / `navRequestSelected`
+  (`forward_to_inbox`).
+- **Plan** keeps only **PLAN** at the bottom-left.
+- **Deploy:** rules (the removed block). App-only otherwise.

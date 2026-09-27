@@ -548,7 +548,9 @@ mode and multi-friend selection.
    (no deploy); awaiting commit** (DECISIONS.md "Home: 'My Schedule' renamed…"). Rename "My Schedule" to "Home"
    everywhere user-facing; plans the user set for others stay on Home until
    the recipient marks Done/Skipped (or lapse/cancel), then move to Activity.
-8. **Remove Track Time** entirely (feature folder, entry points, voice-parser
+8. **Remove Track Time** — **BUILT 2026-09-27: Request took Track's pillar
+   (option d), REQUEST PLAN dropped from Plan; awaiting rules deploy →
+   commit** (DECISIONS.md "Track Time removed; Request takes its pillar"). Was: entirely (feature folder, entry points, voice-parser
    hooks, stats reading it, tests, `trackedTime` rules block + deploy).
 9. **Bigger Play and X** on a library-attached voice note (≥ 48 dp, theme
    tokens, light + dark).

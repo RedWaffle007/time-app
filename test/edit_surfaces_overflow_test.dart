@@ -17,7 +17,6 @@ import 'package:time_app/features/scheduling/application/schedule_providers.dart
 import 'package:time_app/features/scheduling/presentation/group_plan_sheet.dart';
 import 'package:time_app/features/social/application/social_providers.dart';
 import 'package:time_app/features/social/application/stats_providers.dart';
-import 'package:time_app/features/time_tracking/presentation/log_time_sheet.dart';
 import 'package:time_app/features/outcomes/presentation/outcome_screen.dart';
 import 'package:time_app/features/stats/presentation/stats_screen.dart';
 
@@ -71,14 +70,6 @@ void main() {
     final profile = _profile();
     for (final scale in [1.0, 1.3]) {
       for (final theme in [AppTheme.light, AppTheme.dark]) {
-        await _assertNoOverflow(
-          tester,
-          _launcher((context, ref) async {
-            await showLogTimeSheet(context, ref);
-          }),
-          theme: theme,
-          scale: scale,
-        );
         await _assertNoOverflow(
           tester,
           _launcher((context, ref) async {

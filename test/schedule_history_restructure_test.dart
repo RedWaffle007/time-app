@@ -157,9 +157,9 @@ void main() {
         );
         expect(fab.isExtended, isTrue);
         expect(fab.heroTag, 'planCreateFab');
-        // G6 (2026-09-27): REQUEST PLAN sits beside it; the bold label comes
-        // from the FAB theme, not the screen.
-        expect(find.text('REQUEST PLAN'), findsOneWidget);
+        // The bold label comes from the FAB theme, not the screen. REQUEST
+        // PLAN left Plan for its own pillar (item 8).
+        expect(find.text('REQUEST PLAN'), findsNothing);
         final fabTheme = Theme.of(
           tester.element(find.byKey(const ValueKey('plan-fab'))),
         ).floatingActionButtonTheme;

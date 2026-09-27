@@ -11,6 +11,7 @@ import '../../../core/theme/app_tokens.dart';
 import '../../../core/timezone/tz_resolver.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../core/widgets/section_header.dart';
+import '../../../core/widgets/tab_body_inset.dart';
 import '../../../routing/app_router.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../notifications/application/friend_notifier.dart';
@@ -339,36 +340,43 @@ class PlanRequestsScreen extends ConsumerWidget {
     final outgoing = ref.watch(outgoingPlanRequestsProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Plan requests')),
+      // The Request pillar's create action (item 8), bottom-LEFT like PLAN so
+      // it clears the docked voice button (UI-RULES §6.12).
+      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
       floatingActionButton: FloatingActionButton.extended(
+        key: const ValueKey('request-plan-fab'),
         heroTag: 'planRequestsListFab',
+        tooltip: 'Ask a friend to plan a reminder',
         onPressed: () => context.push(Routes.newPlanRequest),
-        icon: const Icon(AppIcons.add),
-        label: const Text('Request'),
+        label: const Text('REQUEST PLAN'),
       ),
-      body: AsyncView<List<PlanRequest>>(
-        value: incoming,
-        onRetry: () => ref.invalidate(incomingPlanRequestsProvider),
-        builder: (context, received) {
-          final sent = outgoing.value ?? const <PlanRequest>[];
-          if (received.isEmpty && sent.isEmpty) {
-            return const Center(child: Text('No plan requests yet.'));
-          }
-          return ListView(
-            padding: Space.screenListSafe(context),
-            children: [
-              if (received.isNotEmpty) ...[
-                const SectionHeader('Waiting on you', attention: true),
-                for (final request in received)
-                  _PlanRequestCard(request: request, incoming: true),
+      // A main-tab body since item 8: the shared tab gutter (UI-RULES §4).
+      body: TabBodyInset(
+        child: AsyncView<List<PlanRequest>>(
+          value: incoming,
+          onRetry: () => ref.invalidate(incomingPlanRequestsProvider),
+          builder: (context, received) {
+            final sent = outgoing.value ?? const <PlanRequest>[];
+            if (received.isEmpty && sent.isEmpty) {
+              return const Center(child: Text('No plan requests yet.'));
+            }
+            return ListView(
+              padding: Space.screenList,
+              children: [
+                if (received.isNotEmpty) ...[
+                  const SectionHeader('Waiting on you', attention: true),
+                  for (final request in received)
+                    _PlanRequestCard(request: request, incoming: true),
+                ],
+                if (sent.isNotEmpty) ...[
+                  const SectionHeader('Sent'),
+                  for (final request in sent)
+                    _PlanRequestCard(request: request, incoming: false),
+                ],
               ],
-              if (sent.isNotEmpty) ...[
-                const SectionHeader('Sent'),
-                for (final request in sent)
-                  _PlanRequestCard(request: request, incoming: false),
-              ],
-            ],
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }

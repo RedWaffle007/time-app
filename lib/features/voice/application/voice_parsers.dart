@@ -3,8 +3,9 @@
 /// why `test/voice_parsers_test.dart` can pin all of it without a device (same
 /// doctrine as `reminder_policy.dart`).
 ///
-/// **Neither parser ever commits anything.** Both only produce a DRAFT that
-/// pre-fills the existing editable sheet/builder, so a misparse is a visible
+/// **The parser never commits anything.** It only produces a DRAFT that
+/// pre-fills the existing editable builder (the Track parser went with Track
+/// Time, 2026-09-27), so a misparse is a visible
 /// edit the user corrects, never a bad write. When a field cannot be read it is
 /// left null/empty for the user to fill — the parser guesses toward "leave it
 /// blank", not toward a confident wrong value.
@@ -16,16 +17,6 @@
 library;
 
 import 'package:flutter/material.dart' show TimeOfDay;
-
-/// What "Track time" voice capture yields: a task name and, when a duration was
-/// clearly stated, the minutes. [minutes] is null when no `<number> <unit>`
-/// group was found — the log sheet then focuses its empty minutes field.
-class TrackDraft {
-  const TrackDraft({required this.taskName, this.minutes});
-
-  final String taskName;
-  final int? minutes;
-}
 
 /// What "Plan time" voice capture yields: a title, and the day/time when they
 /// were recognised. Any of [date]/[time] may be null; the builder's `_canSave`
@@ -40,102 +31,6 @@ class PlanDraft {
   final DateTime? date;
   final TimeOfDay? time;
   final String title;
-}
-
-// ── Track ─────────────────────────────────────────────────────────────────
-
-/// Parse a Track utterance shaped "[task] [duration]", e.g. "walking 30 mins"
-/// → task "walking", 30 min. The duration is the LAST `<number> <unit>` group;
-/// everything before it is the task. A bare trailing number with no unit
-/// ("route 66") stays part of the task — a unit token is required to read a
-/// duration, so a number that is really part of the name is not mistaken for one.
-TrackDraft parseTrackUtterance(String utterance) {
-  final original = _collapseSpaces(utterance);
-  if (original.isEmpty) return const TrackDraft(taskName: '');
-
-  final tokens = original.split(' ');
-  final lower = tokens.map((t) => _stripPunct(t.toLowerCase())).toList();
-
-  // A fused token like "30min"/"45mins"/"1.5h" — split it so the unit scan sees
-  // a distinct unit token, without disturbing the original casing used for the
-  // task text (a fused token is never part of the task anyway).
-  final fused = RegExp(r'^(\d+(?:\.\d+)?)(m|min|mins|minute|minutes'
-      r'|h|hr|hrs|hour|hours)$');
-
-  // Find the last unit token (possibly fused).
-  var unitIdx = -1;
-  var fusedNumber = <String>[];
-  var unitIsHours = false;
-  for (var i = lower.length - 1; i >= 0; i--) {
-    final m = fused.firstMatch(lower[i]);
-    if (m != null) {
-      unitIdx = i;
-      fusedNumber = [m.group(1)!];
-      unitIsHours = m.group(2)!.startsWith('h');
-      break;
-    }
-    if (_minuteUnits.contains(lower[i]) || _hourUnits.contains(lower[i])) {
-      unitIdx = i;
-      unitIsHours = _hourUnits.contains(lower[i]);
-      break;
-    }
-  }
-
-  if (unitIdx == -1) {
-    // No duration stated — the whole utterance is the task.
-    return TrackDraft(taskName: original);
-  }
-
-  // Gather the number phrase immediately before the unit (unless fused).
-  int numberStart;
-  double? value;
-  if (fusedNumber.isNotEmpty) {
-    numberStart = unitIdx;
-    value = double.tryParse(fusedNumber.first);
-  } else {
-    var j = unitIdx - 1;
-    while (j >= 0 && _isNumberWord(lower[j])) {
-      j--;
-    }
-    numberStart = j + 1;
-    var numWords = lower.sublist(numberStart, unitIdx);
-    // A trailing "a"/"an" is the article of the unit, not a number: "half an
-    // hour" is 0.5 hour, not 1.5. Drop it — but only when there is another
-    // number word to keep, so a bare "an hour" still reads as 1.
-    if (numWords.length > 1 &&
-        (numWords.last == 'a' || numWords.last == 'an')) {
-      numWords = numWords.sublist(0, numWords.length - 1);
-    }
-    value = _phraseToNumber(numWords);
-  }
-
-  // "... and a half" / "... and a quarter" AFTER the unit, e.g. "an hour and a
-  // half" → +30 min.
-  var extraMinutes = 0.0;
-  final tail = lower.sublist((unitIdx + 1).clamp(0, lower.length));
-  if (tail.length >= 3 &&
-      tail[0] == 'and' &&
-      (tail[1] == 'a' || tail[1] == 'an')) {
-    if (tail[2] == 'half') {
-      extraMinutes = unitIsHours ? 30 : 0.5;
-    } else if (tail[2] == 'quarter') {
-      extraMinutes = unitIsHours ? 15 : 0.25;
-    }
-  }
-
-  if (value == null) {
-    // A unit with no readable number ("walking minutes") — keep the words as
-    // task, no duration.
-    return TrackDraft(taskName: original);
-  }
-
-  final minutes = (value * (unitIsHours ? 60 : 1) + extraMinutes).round();
-  // The task is everything before the number; tokens at/after the number never
-  // leak in. If it ends up empty, the sheet focuses the name field.
-  final task = tokens.sublist(0, numberStart).join(' ').trim();
-  // Clamp to a valid entry is the sheet's job (1..1440); a value under a minute
-  // is treated as "no duration stated".
-  return TrackDraft(taskName: task, minutes: minutes < 1 ? null : minutes);
 }
 
 // ── Plan ──────────────────────────────────────────────────────────────────
@@ -361,9 +256,6 @@ int _applyMeridian(int hour, String? meridian) {
 
 // ── Number & word helpers ────────────────────────────────────────────────────
 
-const _minuteUnits = {'m', 'min', 'mins', 'minute', 'minutes'};
-const _hourUnits = {'h', 'hr', 'hrs', 'hour', 'hours'};
-
 const _ones = {
   'zero': 0, 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
   'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10, 'eleven': 11,
@@ -460,17 +352,6 @@ int? _clockNumber(String w) {
   final d = int.tryParse(w);
   if (d != null) return d;
   return _ones[w];
-}
-
-bool _isNumberWord(String w) {
-  if (RegExp(r'^\d+(?:\.\d+)?$').hasMatch(w)) return true;
-  return _ones.containsKey(w) ||
-      _tens.containsKey(w) ||
-      w == 'a' ||
-      w == 'an' ||
-      w == 'half' ||
-      w == 'quarter' ||
-      w == 'and';
 }
 
 /// Turn a small English number phrase into a value: "thirty" → 30,

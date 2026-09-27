@@ -363,7 +363,7 @@ back to the system font, preserving the app's locale coverage.
 Conventions: screen padding `xl` for forms, `lg` for lists. Card margin
 `symmetric(horizontal: md, vertical: sm)`. Card interior padding `lg`.
 
-**Main-tab gutter.** Every main-tab body (Plan's sub-tab view, Track, Stats,
+**Main-tab gutter.** Every main-tab body (Plan's sub-tab view, Request, Stats,
 You) sits inside `TabBodyInset`, which adds `Space.tabBodyInset` — symmetric
 horizontal `sm` — on top of the screen's own padding. Change the gutter there,
 never per screen (DECISIONS.md 2026-09-26).
@@ -748,15 +748,16 @@ has a custom blur, size, slot-row, or status-badge recipe.
 
 ### 6.12 Product-pillar navigation & the docked voice FAB
 
-The bar names the app's **pillars**: `Plan · Track · ⊕ · Stats · You` — a change
+The bar names the app's **pillars**: `Plan · Request · ⊕ · Stats · You` (Request
+took the retired Track pillar's slot, 2026-09-27) — a change
 from the earlier "three delegation stances" (those three are now sub-navigation
 *inside* Plan). Full reasoning in DECISIONS.md "UI redesign — Hearth + Candidate
 A". Recipes so it stays Hearth:
 
 - **The bar is flat chrome** (`Elevations.nav`), scaffold-background fill, active
   pillar = filled brand-green icon + label (§6.6 filled-selected), inactive = outline
-  icon in `onSurfaceVariant`. The pending-attention **count** rides the **Plan**
-  icon (aggregate) and the **My Schedule** sub-tab — the one orange the bar may
+  icon in `onSurfaceVariant`. The pending-attention **count** rides the
+  **Request** icon (plan requests waiting on you) — the one orange the bar may
   carry (§2.7), rendering nothing at zero.
 - **Two FABs, and only these two, each with a distinct job** (revised 2026-08-27,
   DECISIONS.md "Per-page create FABs"). The old "one FAB, always" rule is retired:
@@ -766,15 +767,15 @@ A". Recipes so it stays Hearth:
      FAB, mic glyph, *gentle* floating shadow (`Elevations.floating`). Speak-to-
      create. Owned by `HomeShell` (the outer scaffold), present on every pillar.
   2. A **manual-create FAB**, owned by the creating pillar's own (inner)
-     scaffold so it clears the bottom bar. **Plan** uses TWO rounded text FABs
-     side by side at the bottom-LEFT (`startFloat`) on all three sub-tabs —
-     **`PLAN`** and **`REQUEST PLAN`** (2026-09-27, DECISIONS.md "Request Plan
-     redesign") — `Sizes.createFab` tall with bold `titleMedium` labels, both
-     from the FAB theme's `extendedSizeConstraints` / `extendedTextStyle`
-     (never styled in the screen); **Track** retains its
-     circular **`AppIcons.add` (`＋`)** "Log item" FAB. Each carries its own
-     `heroTag` so it never collides with the voice FAB in a route transition.
-  The controls never merge: mic = voice, `PLAN` / `REQUEST PLAN` / `＋` = the
+     scaffold so it clears the bottom bar: a rounded text FAB at the
+     bottom-LEFT (`startFloat`) — **`PLAN`** on all three Plan sub-tabs, and
+     **`REQUEST PLAN`** on the Request pillar (2026-09-27, DECISIONS.md
+     "Request Plan redesign" and "Track Time removed") — `Sizes.createFab` tall
+     with bold `titleMedium` labels from the FAB theme's
+     `extendedSizeConstraints` / `extendedTextStyle` (never styled in the
+     screen). Each carries its own `heroTag` so it never collides with the
+     voice FAB in a route transition.
+  The controls never merge: mic = voice, `PLAN` / `REQUEST PLAN` = the
   pillar-specific manual actions.
   Manual create is **no longer** an app-bar `＋`. Detail/leaf pushed screens carry
   no FAB.
@@ -791,21 +792,9 @@ A". Recipes so it stays Hearth:
   all kept alive. It is nav between sub-screens, not a filter — so a TabBar, not
   segmented buttons. Labels are text; the bar carries no fill.
 
-### 6.13 The Track log sheet
+### 6.13 (retired) The Track log sheet
 
-Logging time is a bottom sheet, not a screen (`Radii.lg`, `Elevations.floating`):
-
-- **The minutes field is the primary control** — a numeric input, digits-only,
-  validated 1..1440 (`kMaxEntryMinutes`, §data model). Store minutes; display
-  rolls to `Xh Ym` only past 59 (the unit rule).
-- **Quick-add chips are brand green, not orange.** Optional `15 / 30 / 45 / 60` chips
-  are `ChoiceChip`s on a `primaryContainer` tint with `Radii.pill` — a convenience
-  fill, and a brand-green one, so it stays clear of the §2.7 firewall. They *set* the
-  minutes field; they never submit on their own.
-- **Actions:** `Not now` (text) / `Log` (filled brand green, §6.4). The Done→track prompt
-  (`log_from_done_prompt.dart`) is the same recipe with the task name pre-filled;
-  the voice flow is the same recipe with the minutes pre-filled — one sheet, three
-  entry points.
+Removed with Track Time, 2026-09-27 (DECISIONS.md "Track Time removed").
 
 ### 6.14 The Stats dashboard
 

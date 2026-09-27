@@ -11,7 +11,6 @@ import '../../../core/widgets/async_view.dart';
 import '../../../routing/app_router.dart';
 import '../../auth/application/auth_providers.dart';
 import '../application/social_providers.dart';
-import '../../plan_requests/application/plan_request_providers.dart';
 import '../domain/friendship.dart';
 import 'user_row.dart';
 import '../../invites/domain/invite_link.dart';
@@ -33,7 +32,6 @@ class FriendsScreen extends ConsumerWidget {
     final me = ref.watch(currentUidProvider);
     final friendships = ref.watch(myFriendshipsProvider);
     final pending = ref.watch(incomingRequestCountProvider);
-    final planRequests = ref.watch(incomingPlanRequestCountProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -95,26 +93,6 @@ class FriendsScreen extends ConsumerWidget {
               ),
               trailing: const Icon(AppIcons.openRow),
               onTap: () => context.push(Routes.friendRequests),
-            ),
-            ListTile(
-              contentPadding: const EdgeInsets.symmetric(vertical: Space.xs),
-              leading: PendingCountBadge(
-                count: planRequests,
-                child: const Icon(AppIcons.navSchedule),
-              ),
-              title: const Text('Plan requests'),
-              subtitle: Text(
-                planRequests == 0
-                    ? 'Ask friends to help plan your time'
-                    : planRequests == 1
-                    ? '1 request is waiting on you'
-                    : '$planRequests requests are waiting on you',
-                style: context.text.bodySmall?.copyWith(
-                  color: context.colors.onSurfaceVariant,
-                ),
-              ),
-              trailing: const Icon(AppIcons.openRow),
-              onTap: () => context.push(Routes.planRequests),
             ),
             const Divider(),
             if (friends.isEmpty)

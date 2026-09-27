@@ -267,7 +267,7 @@ void main() {
     test('every main-tab body sits in the gutter', () {
       for (final path in [
         'lib/features/plan/presentation/plan_shell.dart',
-        'lib/features/time_tracking/presentation/track_screen.dart',
+        'lib/features/plan_requests/presentation/plan_request_screens.dart',
         'lib/features/stats/presentation/stats_screen.dart',
         'lib/features/home/presentation/you_screen.dart',
       ]) {

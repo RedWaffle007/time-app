@@ -47,21 +47,22 @@ class HowItWorksScreen extends ConsumerWidget {
                 'Your schedule across three tabs — Home (your day, next task '
                 'first, plus plans you set for others until they answer), '
                 'Activity (their answers) and Groups. Tap PLAN, bottom-left, to '
-                'plan an item, or REQUEST PLAN to ask a friend.',
+                'plan an item on any of them.',
           ),
           const _Feature(
-            icon: AppIcons.navTrack,
-            title: 'Track',
+            icon: AppIcons.navRequest,
+            title: 'Request',
             body:
-                'Log time you have already spent and see where your hours go. '
-                'Tap the ＋ button, bottom-right, to add an entry.',
+                'Ask one friend to plan a reminder for you — the time, the task '
+                'and a note — and answer what friends ask of you. Tap REQUEST '
+                'PLAN, bottom-left, to ask.',
           ),
           const _Feature(
             icon: AppIcons.voice,
             title: 'Speak to create (centre mic)',
             body:
-                'Tap the centre mic to log time or plan a reminder by voice, '
-                'hands-free. You review it before anything is saved.',
+                'Tap the centre mic to plan a reminder by voice, hands-free. '
+                'You review it before anything is saved.',
           ),
           const _Feature(
             icon: AppIcons.stats,
