@@ -7244,3 +7244,41 @@ User-directed. Retires 32's "group plans excluded from voice notes (v1)".
   (`Sizes.modalMaxHeightFraction`) and scrolls.
 - The Plan screen's library card became the shared `LibraryNoteChoice`.
 **Deploy:** Worker (new route + event), then app. No rules change.
+
+## Faster Send, no Approved badge, ended alarms leave, groups reset (2026-09-27)
+
+User-directed after a device pass. Stable behaviour is unchanged except where
+named.
+
+- **Send no longer waits on the push.** "Alarm sent." shows once the plan is
+  saved; the `created` push runs in the background, and only a definite
+  Worker answer that the friend's phone was not reached shows a follow-up.
+- **Send's clash re-check is two small reads** (`minuteHeldByLivePlan`: the
+  minute lock, then its plan) instead of the target's whole history. The
+  check at time-pick is unchanged (it still catches pre-lock plans); the rules
+  remain the guard, and a refused save still becomes the red line.
+- **Confirmed voice notes upload before Send.** After recording, "Use this
+  recording" starts the upload in the background ("Getting your voice note
+  ready…" → "Voice note ready to send."); re-recording or discarding drops it
+  and needs a fresh confirm. A library pick counts as the confirmation. Send
+  reuses a matching upload (same recording or note, same recipient); any
+  mismatch or failure uploads at Send exactly as before. Unused uploads are
+  removed by the existing orphan sweep.
+- **Worker:** the notify path reads the permission and the recipient's tokens
+  together, the actor and group together, and sends to all devices at once.
+- **No "Approved" badge on a live alarm** (`itemStatusBadge`): there is no
+  approval step since F2. Answered, cancelled, withdrawn and legacy states
+  keep their badges; calendar dots keep their colours.
+- **An alarm that already ended no longer shows Dismiss.** Opening the app
+  after the one-minute cap landed on the alarm screen (and re-started the
+  tone) over the missed-alarm popup. The screen now checks, before ringing,
+  for the native timeout row or the item's answer / unavailable / dismissed
+  stamps (`alarmHasEnded`); if over, it leaves without recording a dismissal
+  and the missed-alarm popup shows alone. It also leaves if the item turns
+  out to have ended while it is up.
+- **Groups reset:** `scripts/clear-groups.mjs` (dry run by default, `--apply`
+  to delete) removes every group, all group subcollections, every join code
+  and every busy-notice row, and nothing else (schedule items, friendships,
+  profiles stay). Emulator-tested. Run by the user with the Worker's service
+  account; group pictures in Supabase are listed for manual removal.
+**Deploy:** Worker, then app. No rules change.

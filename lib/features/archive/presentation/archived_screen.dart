@@ -123,10 +123,7 @@ class _ArchivedCard extends ConsumerWidget {
                 const SizedBox(width: Space.sm),
                 // Same one-badge rule as everywhere else: an outcome replaces
                 // the approval status, because "Done" implies "Approved".
-                if (item.outcome != null)
-                  StatusBadge.itemOutcome(item, context)
-                else
-                  StatusBadge.status(item.status, context),
+                itemStatusBadge(item, context),
               ],
             ),
             const SizedBox(height: Space.xs),

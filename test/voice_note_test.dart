@@ -191,8 +191,26 @@ class _Repo implements ScheduleRepository {
   /// someone else just took).
   Object? failWith;
 
+  int _minted = 0;
+
+  /// The fast Send-time check (2026-09-27): is the minute held right now?
+  bool minuteTaken = false;
+  var minuteChecks = 0;
+
   @override
-  String newItemId(String targetUid) => 'prepared-id-000001';
+  Future<bool> minuteHeldByLivePlan(
+    String targetUid,
+    DateTime instantUtc,
+  ) async {
+    minuteChecks++;
+    return minuteTaken;
+  }
+
+  /// The first id matches what the older tests pin; each later one differs,
+  /// so a reused upload is distinguishable from a fresh one.
+  @override
+  String newItemId(String targetUid) =>
+      'prepared-id-${(++_minted).toString().padLeft(6, '0')}';
 
   @override
   Future<String> createItem({
@@ -234,6 +252,25 @@ class _Notifier implements NotificationEventNotifier {
     required String targetUid,
     required String itemId,
   }) async => const NotificationDeliveryResult(delivered: true, reason: 'sent');
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// A push that has not answered yet (2026-09-27: Send must not wait on it).
+class _SlowNotifier implements NotificationEventNotifier {
+  final gate = Completer<NotificationDeliveryResult>();
+  var calls = 0;
+
+  @override
+  Future<NotificationDeliveryResult> notifyConfirmed({
+    required NotifyEvent event,
+    required String targetUid,
+    required String itemId,
+  }) {
+    calls++;
+    return gate.future;
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -512,10 +549,7 @@ void main() {
       await settleIo(tester);
       await tester.pump();
       expect(changes.single, isNull);
-      expect(
-        find.text('Too short. Record at least 1 second.'),
-        findsOneWidget,
-      );
+      expect(find.text('Too short. Record at least 1 second.'), findsOneWidget);
       expect(find.text('Record'), findsOneWidget);
       expect(
         File('${temp.path}/draft-0.m4a').existsSync(),
@@ -589,6 +623,7 @@ void main() {
       DateTime? seedDate,
       PlanRequest? planRequest,
       _PlanRequests? planRequests,
+      NotificationEventNotifier? notifier,
     }) async {
       final repo = _Repo();
       final voice = client ?? _Client();
@@ -619,7 +654,9 @@ void main() {
               checker ?? ScheduleClashChecker(fetch: (_) async => []),
             ),
             scheduleRepositoryProvider.overrideWithValue(repo),
-            notificationEventNotifierProvider.overrideWithValue(_Notifier()),
+            notificationEventNotifierProvider.overrideWithValue(
+              notifier ?? _Notifier(),
+            ),
             voiceNoteClientProvider.overrideWithValue(voice),
             voiceLibraryProvider.overrideWith((ref) => Stream.value(library)),
             voiceRecorderFactoryProvider.overrideWithValue(
@@ -705,7 +742,13 @@ void main() {
     Future<void> send(WidgetTester tester) async {
       // The form can be taller than the test screen (the G2 "It's now …
       // there" line added a row), so bring Send into view like a user would.
-      await tester.ensureVisible(find.text('Send'));
+      // 2026-09-27: "Use this recording" adds a row, so scroll (the list is
+      // lazy) rather than assume Send is already built.
+      await tester.scrollUntilVisible(
+        find.text('Send'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.text('Send'));
       await settleIo(tester);
@@ -819,9 +862,10 @@ void main() {
       final (repo, _) = await pumpBuilder(
         tester,
         checker: ScheduleClashChecker(
-          // Free when first checked and right before saving; taken by the
-          // time the rules refuse the write.
-          fetch: (_) async => ++reads <= 2 ? [] : [existing(seededInstant())],
+          // Free when first checked (Send's own re-check is now the fast
+          // minute-lock read, 2026-09-27); taken by the time the rules refuse
+          // the write.
+          fetch: (_) async => ++reads <= 1 ? [] : [existing(seededInstant())],
           retryDelays: const [],
         ),
       );
@@ -1031,6 +1075,126 @@ void main() {
       expect(find.byKey(const ValueKey('alarm-kind')), findsNothing);
       expect(find.text('Voice Note'), findsNothing);
       expect(find.byKey(const ValueKey('task-name')), findsOneWidget);
+    });
+
+    // ---- 2026-09-27: faster Send ----
+
+    testWidgets('"Use this recording" uploads now; Send reuses that upload', (
+      tester,
+    ) async {
+      final (repo, client) = await pumpBuilder(tester);
+      await fillAndRecord(tester);
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('voice-confirm')),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.byKey(const ValueKey('voice-confirm')));
+      await settleIo(tester);
+      await tester.pumpAndSettle();
+      expect(client.uploads, hasLength(1));
+      expect(find.text('Voice note ready to send.'), findsOneWidget);
+
+      await send(tester);
+      expect(client.uploads, hasLength(1), reason: 'no second upload');
+      expect(repo.created.single['itemId'], client.uploads.single.$2);
+      expect(find.text('Voice alarm sent.'), findsOneWidget);
+    });
+
+    testWidgets('nothing uploads before the recording is confirmed', (
+      tester,
+    ) async {
+      final (_, client) = await pumpBuilder(tester);
+      await fillAndRecord(tester);
+      await tester.pumpAndSettle();
+      expect(client.uploads, isEmpty);
+      expect(find.byKey(const ValueKey('voice-confirm')), findsOneWidget);
+    });
+
+    testWidgets('discarding a confirmed recording needs a fresh confirm', (
+      tester,
+    ) async {
+      final (repo, client) = await pumpBuilder(tester);
+      await fillAndRecord(tester);
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('voice-confirm')),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.byKey(const ValueKey('voice-confirm')));
+      await settleIo(tester);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Discard'));
+      await settleIo(tester);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Record'));
+      await settleIo(tester);
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 3));
+      await tester.tap(find.text('Stop'));
+      await settleIo(tester);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('voice-confirm')), findsOneWidget);
+
+      await send(tester);
+      // The discarded upload is NOT reused: Send uploads the new recording.
+      expect(client.uploads, hasLength(2));
+      expect(repo.created.single['itemId'], client.uploads.last.$2);
+    });
+
+    testWidgets('Send checks only the minute lock, and a taken minute is the '
+        'red line', (tester) async {
+      var fullReads = 0;
+      final (repo, _) = await pumpBuilder(
+        tester,
+        checker: ScheduleClashChecker(
+          fetch: (_) async {
+            fullReads++;
+            return [];
+          },
+          retryDelays: const [],
+        ),
+      );
+      await tester.pumpAndSettle();
+      final readsBeforeSend = fullReads;
+      repo.minuteTaken = true;
+      await fillAndRecord(tester, record: false);
+      await send(tester);
+      expect(repo.minuteChecks, 1);
+      expect(fullReads, readsBeforeSend, reason: 'no full-history read');
+      expect(find.text(clashLine), findsOneWidget);
+      expect(repo.created, isEmpty);
+    });
+
+    testWidgets('"sent" shows at once; the push finishes in the background', (
+      tester,
+    ) async {
+      final slow = _SlowNotifier();
+      final (repo, _) = await pumpBuilder(tester, notifier: slow);
+      await fillAndRecord(tester, record: false);
+      await send(tester);
+      expect(repo.created, hasLength(1));
+      expect(slow.calls, 1);
+      expect(find.text('Alarm sent.'), findsOneWidget);
+      slow.gate.complete(
+        const NotificationDeliveryResult(delivered: true, reason: 'sent'),
+      );
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('a definite "not reached" answer follows up afterwards', (
+      tester,
+    ) async {
+      final slow = _SlowNotifier();
+      await pumpBuilder(tester, notifier: slow);
+      await fillAndRecord(tester, record: false);
+      await send(tester);
+      slow.gate.complete(
+        const NotificationDeliveryResult(delivered: false, reason: 'no-tokens'),
+      );
+      await tester.pump();
+      await tester.pumpAndSettle(const Duration(seconds: 5));
+      expect(find.textContaining('was not notified'), findsOneWidget);
     });
 
     testWidgets('the note is uploaded first, then the plan saved with it', (
@@ -1260,7 +1424,9 @@ void main() {
       expect(find.byKey(const ValueKey('voice-note-recorder')), findsOneWidget);
       await send(tester);
       expect(find.text(kVoiceNoteRequired), findsOneWidget);
-      expect(client.attaches, isEmpty);
+      // Picking the note prepared it once (2026-09-27); removing it means
+      // Send neither reuses it nor attaches again, and saves nothing.
+      expect(client.attaches, hasLength(1));
       expect(repo.created, isEmpty);
     });
   });

@@ -174,6 +174,19 @@ class PendingCountBadge extends StatelessWidget {
 ///
 /// Always carries its text label: colour reinforces state, it never informs on
 /// its own (UI-RULES.md §2.6).
+///
+/// The ONE badge for an item card: its outcome once there is one, otherwise
+/// its status — except a live `approved` alarm, which shows NO badge. Since F2
+/// there is no approval step, so "Approved" on every set alarm was a leftover
+/// from the approval phase (device report 2026-09-27).
+Widget itemStatusBadge(ScheduleItem item, BuildContext context) {
+  if (item.outcome != null) return StatusBadge.itemOutcome(item, context);
+  if (item.status == ScheduleItemStatus.approved) {
+    return const SizedBox.shrink();
+  }
+  return StatusBadge.status(item.status, context);
+}
+
 class StatusBadge extends StatelessWidget {
   const StatusBadge({super.key, required this.style, this.showIcon = false});
 

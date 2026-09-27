@@ -68,11 +68,24 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
       _keyEvents = keyEvents;
       keyEvents.listen(_leave);
       final sound = ref.read(alarmSoundProvider);
+      // Both reads start together: the "already ended?" check never delays
+      // the delivered sentence.
+      final ended = _alarmEnded();
       final delivered = await sound.headline(widget.itemId);
       if (!mounted) return;
       if (delivered != null && delivered.trim().isNotEmpty) {
         setState(() => _deliveredHeadline = delivered.trim());
       }
+      // An alarm that already ENDED (rang out unanswered, or was answered) is
+      // not rung again. Opening the app after the one-minute cap used to land
+      // here with a Dismiss button on top of the missed-alarm popup, and this
+      // screen re-started the tone (2026-09-27 device report). Leave quietly
+      // instead; the missed-alarm review shows over the Plan tab.
+      if (await ended) {
+        await _leaveEnded();
+        return;
+      }
+      if (!mounted) return;
       // The UI ownership claim must reach the native service before cancelling
       // the scheduled notification releases its native-delivery owner. These
       // used to race as two unawaited platform calls, briefly stopping and
@@ -101,6 +114,37 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
   void dispose() {
     _keyEvents?.listen(null);
     super.dispose();
+  }
+
+  /// Whether this alarm is already over, from the facts this phone has now:
+  /// the native timeout row (written the instant the ring cap is hit) or the
+  /// item's own answer / timeline stamps.
+  Future<bool> _alarmEnded() async {
+    List<AlarmLifecycleEvent> events;
+    try {
+      events = await ref.read(alarmLifecycleStoreProvider).read();
+    } catch (_) {
+      events = const [];
+    }
+    final item = ref
+        .read(allItemsAsTargetProvider)
+        .maybeWhen(data: _find, orElse: () => null);
+    return alarmHasEnded(itemId: widget.itemId, item: item, events: events);
+  }
+
+  /// Leave an alarm that already ended: no tone, no "dismissed" record (it was
+  /// NOT dismissed; the missed-alarm flow owns it), just clear the leftover
+  /// notification and land on the item in the Plan tab.
+  Future<void> _leaveEnded() async {
+    if (_dismissing) return;
+    _dismissing = true;
+    await ref.read(alarmSoundProvider).stop(widget.itemId);
+    await ref.read(reminderServiceProvider).dismiss(widget.itemId);
+    if (!mounted) return;
+    if (widget.itemId.isNotEmpty) {
+      ref.read(planIntentProvider.notifier).highlightItem(widget.itemId);
+    }
+    context.go(Routes.plan);
   }
 
   /// The best sentence available right now, or null when nothing trustworthy
@@ -169,6 +213,15 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
     final item = ref
         .watch(allItemsAsTargetProvider)
         .maybeWhen(data: _find, orElse: () => null);
+    // The ring cap can be hit while this screen is up (or the stream can
+    // arrive late and show it already ended): leave once the item says so.
+    if (item != null &&
+        !_dismissing &&
+        alarmHasEnded(itemId: widget.itemId, item: item, events: const [])) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _leaveEnded();
+      });
+    }
     final headline = item == null
         ? _deliveredHeadline
         : _resolveHeadline(
@@ -244,4 +297,22 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
       ),
     );
   }
+}
+
+/// True when an alarm is over and must not be shown or rung again: the native
+/// side recorded its timeout, or the item already has an answer, an
+/// "unavailable" fact or a dismissal. Pure, for tests.
+bool alarmHasEnded({
+  required String itemId,
+  required ScheduleItem? item,
+  required List<AlarmLifecycleEvent> events,
+}) {
+  final timedOut = events.any(
+    (e) => e.itemId == itemId && e.kind == AlarmLifecycleEventKind.timeout,
+  );
+  if (timedOut) return true;
+  if (item == null) return false;
+  return item.outcome != null ||
+      item.alarm?.unavailableAt != null ||
+      item.alarm?.dismissedAt != null;
 }

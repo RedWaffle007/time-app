@@ -52,6 +52,7 @@ void main() {
     _FakeAlarmKeyEvents? keys,
     Stream<List<ScheduleItem>>? items,
     Stream<UserProfile?> Function(String uid)? profiles,
+    List<AlarmLifecycleEvent> lifecycle = const [],
   }) {
     final service = ReminderService(
       scheduler: scheduler,
@@ -84,6 +85,9 @@ void main() {
           ),
         ),
         reminderServiceProvider.overrideWithValue(service),
+        alarmLifecycleStoreProvider.overrideWithValue(
+          _LifecycleStore(lifecycle),
+        ),
         allItemsAsTargetProvider.overrideWith(
           (ref) => items ?? Stream.value([item()]),
         ),
@@ -205,7 +209,10 @@ void main() {
     await t.pumpWidget(harness(sound, _FakeScheduler()));
     await t.pumpAndSettle();
 
-    expect(sound.startHeadlines.single, '{planner} planned Morning run for you');
+    expect(
+      sound.startHeadlines.single,
+      '{planner} planned Morning run for you',
+    );
   });
 
   testWidgets('cancels the fired notification on mount (no double tone)', (
@@ -273,6 +280,77 @@ void main() {
     expect(sound.stops, 1);
     expect(timeline.dismissed, ['a']);
     expect(find.text('PLAN'), findsOneWidget);
+  });
+
+  // ---- 2026-09-27: an alarm that already ended never shows Dismiss ----
+
+  AlarmLifecycleEvent timeoutRow() => AlarmLifecycleEvent(
+    key: 'k',
+    itemId: 'a',
+    occurredAtUtc: DateTime.utc(2030, 1, 1, 3, 31),
+    kind: AlarmLifecycleEventKind.timeout,
+    outcomeRecorded: false,
+    notificationDelivered: false,
+    reviewed: false,
+  );
+
+  testWidgets('opened after the ring cap: no tone, no Dismiss, lands on Plan', (
+    t,
+  ) async {
+    final sound = _FakeAlarmSound();
+    final timeline = _FakeAlarmTimelineRepository();
+    await t.pumpWidget(
+      harness(
+        sound,
+        _FakeScheduler(),
+        timeline: timeline,
+        lifecycle: [timeoutRow()],
+      ),
+    );
+    await t.pumpAndSettle();
+    expect(sound.starts, 0);
+    expect(find.text('Dismiss'), findsNothing);
+    expect(find.text('PLAN'), findsOneWidget);
+  });
+
+  testWidgets('an item already marked unavailable leaves too', (t) async {
+    final sound = _FakeAlarmSound();
+    final missed = ScheduleItem(
+      id: 'a',
+      targetUid: 'me',
+      createdByUid: 'planner',
+      groupId: '',
+      title: 'Morning run',
+      localWallTime: '',
+      timezone: 'Asia/Kolkata',
+      scheduledInstantUtc: DateTime.utc(2030, 1, 1, 3, 30),
+      status: ScheduleItemStatus.approved,
+      alarm: ScheduleAlarmTimeline(
+        rangAt: DateTime.utc(2030, 1, 1, 3, 30),
+        unavailableAt: DateTime.utc(2030, 1, 1, 3, 31),
+      ),
+    );
+    await t.pumpWidget(
+      harness(sound, _FakeScheduler(), items: Stream.value([missed])),
+    );
+    await t.pumpAndSettle();
+    expect(find.text('Dismiss'), findsNothing);
+    expect(find.text('PLAN'), findsOneWidget);
+  });
+
+  test('alarmHasEnded: only real endings count', () {
+    final live = item();
+    expect(alarmHasEnded(itemId: 'a', item: live, events: const []), isFalse);
+    expect(alarmHasEnded(itemId: 'a', item: null, events: const []), isFalse);
+    expect(
+      alarmHasEnded(itemId: 'a', item: null, events: [timeoutRow()]),
+      isTrue,
+    );
+    // Another item's timeout is not this alarm's.
+    expect(
+      alarmHasEnded(itemId: 'other', item: null, events: [timeoutRow()]),
+      isFalse,
+    );
   });
 }
 
@@ -359,4 +437,17 @@ class _FakeScheduler implements ReminderScheduler {
 
   @override
   Future<void> cancelAll() async {}
+}
+
+/// The native lifecycle rows, as the alarm screen reads them on mount.
+class _LifecycleStore implements AlarmLifecycleStore {
+  _LifecycleStore(this.events);
+
+  final List<AlarmLifecycleEvent> events;
+
+  @override
+  Future<List<AlarmLifecycleEvent>> read() async => events;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

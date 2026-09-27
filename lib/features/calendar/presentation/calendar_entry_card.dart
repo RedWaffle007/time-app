@@ -75,10 +75,7 @@ class CalendarEntryCard extends ConsumerWidget {
               ),
               const SizedBox(width: Space.sm),
               // ONE badge: the outcome replaces the status once there is one.
-              if (item.outcome != null)
-                StatusBadge.itemOutcome(item, context)
-              else
-                StatusBadge.status(item.status, context),
+              itemStatusBadge(item, context),
             ],
           ),
         ),

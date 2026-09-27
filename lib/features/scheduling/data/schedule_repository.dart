@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../core/timezone/tz_resolver.dart';
 import '../../celebrations/domain/completion_celebration.dart';
 import '../domain/minute_lock.dart';
+import '../domain/slot.dart';
 import '../domain/schedule_item.dart';
 
 /// Creates schedule items and drives their status/outcome transitions.
@@ -23,6 +24,24 @@ class ScheduleRepository {
       .doc(targetUid)
       .collection('minutes')
       .doc(minuteLockId(instantUtc));
+
+  /// Is [targetUid]'s minute at [instantUtc] held by a LIVE plan? The fast
+  /// check Send runs just before saving (2026-09-27): two small reads (the
+  /// lock, then the plan it names) instead of the whole schedule. Every plan
+  /// made since item 4 writes its lock, so this catches a minute taken since
+  /// the time was picked; the full-history check at pick time still covers
+  /// pre-lock plans, and the rules remain the real guard.
+  Future<bool> minuteHeldByLivePlan(
+    String targetUid,
+    DateTime instantUtc,
+  ) async {
+    final lock = await minuteLockRef(targetUid, instantUtc).get();
+    final itemId = lock.data()?['itemId'];
+    if (!lock.exists || itemId is! String) return false;
+    final holder = await _items(targetUid).doc(itemId).get();
+    if (!holder.exists) return false;
+    return blocksSlot(ScheduleItem.fromDoc(holder));
+  }
 
   /// The lock document's fields — kept in one place so every writer (a new
   /// plan, a plan-request fulfilment, the backfill) writes the same shape.

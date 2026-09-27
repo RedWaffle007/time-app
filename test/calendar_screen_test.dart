@@ -122,8 +122,9 @@ void main() {
 
     expect(find.text('Morning run'), findsOneWidget);
     expect(find.text('Nothing planned for this day.'), findsNothing);
-    // Rendered with the ONE status mapping, not a local switch.
-    expect(find.text('Approved'), findsOneWidget);
+    // A live alarm carries no badge: there is no approval step since F2
+    // (2026-09-27 device report), so "Approved" is never shown.
+    expect(find.text('Approved'), findsNothing);
   });
 
   testWidgets('an item on another day is NOT shown until that day is selected', (

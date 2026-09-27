@@ -577,7 +577,7 @@ missing Uh-Oh "unavailable" push (index.js event list), triple "dismissed"
 "Device fixes: slow Send, missing Uh-Oh push, triple dismissed". Known
 limit kept: reports come from Dart, so a dead app reports late.
 
-### Group voice notes + clean timezone view — BUILT 2026-09-27, awaiting Worker deploy + commit
+### Group voice notes + clean timezone view — BUILT + committed + Worker deployed 2026-09-27
 
 DECISIONS.md "Group plans match the Plan screen; group voice notes; timezone
 view grouped". Original brief:
@@ -595,6 +595,16 @@ User-directed; plan → sign-off → build.
 - Needs a Worker/rules check that group plans may carry `voiceNote`
   (32a restricted it to other-person plans; the Worker authorizes uploads
   against a friendship) and a per-member voice download.
+
+### Faster Send + device fixes + groups reset — BUILT 2026-09-27, awaiting Worker deploy + commit
+
+DECISIONS.md "Faster Send, no Approved badge, ended alarms leave, groups
+reset". **Group reset DEFERRED by the user (2026-09-27)**: when wanted, run
+`node scripts/clear-groups.mjs --project time-app-1e1c9 --token "$(gcloud auth
+print-access-token)"` (dry run; check the first line says time-app-1e1c9),
+then again with `--apply`, remove the listed `group-avatars/…` folders in
+Supabase, and rebuild. Run it just before sharing a new build, since old
+builds can still create groups.
 
 ### 33 — Competitor review (last)
 

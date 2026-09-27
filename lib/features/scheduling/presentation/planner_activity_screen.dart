@@ -316,10 +316,7 @@ class PlannerItemCard extends ConsumerWidget {
                   // ONE badge. Once an outcome exists it replaces the approval
                   // status, because "Done" strictly implies "Approved" — showing
                   // both states the same fact twice.
-                  if (item.outcome != null)
-                    StatusBadge.itemOutcome(item, context)
-                  else
-                    StatusBadge.status(item.status, context),
+                  itemStatusBadge(item, context),
                   // Done or skipped — the planner may clear it from their own
                   // feed when they're ready, from the card overflow. Rejected and
                   // withdrawn rows never render here at all: they are auto-hidden

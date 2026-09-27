@@ -138,6 +138,11 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
   /// copies it onto the plan at Send.
   VoiceLibraryNote? _libraryNote;
 
+  /// The voice note uploaded ahead of Send once the user confirmed it
+  /// (2026-09-27): keyed by what it was made for, so a different recording,
+  /// library note or recipient never reuses it.
+  ({String key, String itemId, Future<VoiceNoteMeta> meta})? _preparedVoice;
+
   /// Bumped to give the recorder a fresh state (after a save or a target
   /// change) — the recorder owns its phase; the builder only resets it.
   int _voiceRecorderGen = 0;
@@ -250,6 +255,20 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     return result;
   }
 
+  /// The fast Send-time minute check. A read that fails (offline, a
+  /// friendship seconds old) is not a clash: the rules still refuse a taken
+  /// minute when the plan is saved, and that refusal shows the red line.
+  Future<bool> _minuteTakenNow(String targetUid, DateTime instantUtc) async {
+    try {
+      return await ref
+          .read(scheduleRepositoryProvider)
+          .minuteHeldByLivePlan(targetUid, instantUtc)
+          .timeout(const Duration(seconds: 4));
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// The red line (item 4). Self-plans say "You"; others name the person.
   String _clashMessage(String? name) => _isSelf
       ? 'You already have a plan scheduled for this time. '
@@ -305,20 +324,25 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       return;
     }
 
+    // Captured before any await: the background push result may land after
+    // this screen has gone (a fulfilled request pops it).
+    final messenger = ScaffoldMessenger.of(context);
     setState(() => _saving = true);
     // A last check right before saving (item 4): the minute may have been
     // taken since it was first checked. The rules are the real guard; this
     // just avoids uploading a voice note for a plan that cannot land.
+    // 2026-09-27: two small reads (the minute lock + its plan) instead of the
+    // target's whole history, which made Send wait seconds. The full check at
+    // pick time is unchanged.
     final key = '${_targetUid!}|${instantUtc.millisecondsSinceEpoch}';
     _clashKey = key;
-    final preCheck = await _checkClash(
-      key: key,
-      targetUid: _targetUid!,
-      instantUtc: instantUtc,
-    );
+    final taken = await _minuteTakenNow(_targetUid!, instantUtc);
     if (!mounted) return;
-    if (preCheck == ClashResult.clash) {
-      setState(() => _saving = false);
+    if (taken) {
+      setState(() {
+        _saving = false;
+        if (_clashKey == key) _clashBlocked = true;
+      });
       return;
     }
     try {
@@ -330,7 +354,20 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       final fromLibrary = _isVoice && draft == null ? _libraryNote : null;
       String? preparedId;
       VoiceNoteMeta? voiceNote;
-      if (draft != null || fromLibrary != null) {
+      // Already uploaded after the user confirmed it (2026-09-27)? Use that
+      // upload, so Send only saves the plan. Any mismatch or failure falls
+      // back to uploading now, exactly as before.
+      final prepared = _preparedVoice;
+      if (prepared != null && prepared.key == _voiceKey()) {
+        try {
+          voiceNote = await prepared.meta;
+          preparedId = prepared.itemId;
+        } catch (_) {
+          voiceNote = null;
+          preparedId = null;
+        }
+      }
+      if (voiceNote == null && (draft != null || fromLibrary != null)) {
         preparedId = repository.newItemId(_targetUid!);
         final client = ref.read(voiceNoteClientProvider);
         final groupId = (_groupId ?? '').isEmpty ? null : _groupId;
@@ -399,24 +436,41 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
             );
       // The draft was uploaded and is now the plan's; drop the local copy.
       if (draft != null) unawaited(_deleteQuietly(draft.path));
-      // Notify the target that a plan was created for them. Self-planned items
-      // have no one else to tell (the Worker would skip them anyway).
-      NotificationDeliveryResult? delivery;
+      // Tell the friend in the BACKGROUND (2026-09-27): the plan is saved, so
+      // "sent" shows now instead of after the Worker round trip (it made Send
+      // wait seconds). Only a definite Worker answer that their phone was not
+      // reached earns a follow-up message; a slow network never does.
       if (!_isSelf) {
-        delivery = await ref
-            .read(notificationEventNotifierProvider)
-            .notifyConfirmed(
-              event: NotifyEvent.created,
-              targetUid: _targetUid!,
-              itemId: itemId,
+        final notifier = ref.read(notificationEventNotifierProvider);
+        final targetUid = _targetUid!;
+        unawaited(() async {
+          final delivery = await notifier.notifyConfirmed(
+            event: NotifyEvent.created,
+            targetUid: targetUid,
+            itemId: itemId,
+          );
+          if (!delivery.delivered &&
+              !delivery.reason.startsWith('transport-error')) {
+            messenger.showSnackBar(
+              SnackBar(
+                content: Text(
+                  sendConfirmationText(
+                    delivery: delivery,
+                    isSelf: false,
+                    isVoice: voiceNote != null,
+                  ),
+                ),
+              ),
             );
+          }
+        }());
       }
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         SnackBar(
           content: Text(
             sendConfirmationText(
-              delivery: delivery,
+              delivery: null,
               isSelf: _isSelf,
               isVoice: voiceNote != null,
             ),
@@ -632,6 +686,8 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
                 enabled: !_saving,
                 onChanged: (note) => setState(() {
                   _voiceDraft = note;
+                  // A new recording (or none) must be confirmed again.
+                  _preparedVoice = null;
                   if (note != null) _voiceError = false;
                 }),
               ),
@@ -649,6 +705,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
                   ),
                 ),
             ],
+            _voiceConfirm(),
             if (_voiceError) _errorLine(kVoiceNoteRequired),
           ] else ...[
             Text('Name of the Task', style: context.text.titleMedium),
@@ -714,6 +771,92 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     );
   }
 
+  /// What a prepared upload must match to be reused on Send.
+  String? _voiceKey() {
+    final target = _targetUid;
+    if (target == null || !_isVoice) return null;
+    final group = _groupId ?? '';
+    if (_libraryNote case final note?) return 'lib:${note.id}|$target|$group';
+    if (_voiceDraft case final draft?) {
+      return 'rec:${draft.path}|$target|$group';
+    }
+    return null;
+  }
+
+  /// Upload the confirmed note now, in the background, so Send only has to
+  /// save the plan. A recording is prepared only after "Use this recording";
+  /// a library pick is itself the confirmation.
+  void _prepareVoice() {
+    final key = _voiceKey();
+    final target = _targetUid;
+    if (key == null || target == null || _preparedVoice?.key == key) return;
+    final itemId = ref.read(scheduleRepositoryProvider).newItemId(target);
+    final client = ref.read(voiceNoteClientProvider);
+    final group = (_groupId ?? '').isEmpty ? null : _groupId;
+    final library = _libraryNote;
+    final draft = _voiceDraft;
+    final Future<VoiceNoteMeta> meta = library != null
+        ? client.attachFromLibrary(
+            noteId: library.id,
+            targetUid: target,
+            itemId: itemId,
+            groupId: group,
+          )
+        : File(draft!.path).readAsBytes().then(
+            (bytes) => client.upload(
+              bytes: bytes,
+              targetUid: target,
+              itemId: itemId,
+              groupId: group,
+            ),
+          );
+    // Never an unhandled error: Send re-uploads if this one failed.
+    unawaited(meta.then((_) {}, onError: (_) {}));
+    setState(() => _preparedVoice = (key: key, itemId: itemId, meta: meta));
+  }
+
+  /// "Use this recording" and its progress, under the recorder.
+  Widget _voiceConfirm() {
+    final prepared = _preparedVoice;
+    final key = _voiceKey();
+    if (_voiceDraft == null || _libraryNote != null) {
+      return const SizedBox.shrink();
+    }
+    if (prepared == null || prepared.key != key) {
+      return Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: FilledButton.tonalIcon(
+          key: const ValueKey('voice-confirm'),
+          onPressed: _saving ? null : _prepareVoice,
+          icon: const Icon(AppIcons.approved),
+          label: const Text('Use this recording'),
+        ),
+      );
+    }
+    return FutureBuilder<VoiceNoteMeta>(
+      future: prepared.meta,
+      builder: (context, snap) {
+        final muted = context.colors.onSurfaceVariant;
+        final String text;
+        if (snap.hasError) {
+          text = "Couldn't upload yet. It will upload when you tap Send.";
+        } else if (snap.hasData) {
+          text = 'Voice note ready to send.';
+        } else {
+          text = 'Getting your voice note ready…';
+        }
+        return Padding(
+          padding: const EdgeInsets.only(top: Space.sm),
+          child: Text(
+            text,
+            key: const ValueKey('voice-confirm-status'),
+            style: context.text.bodySmall?.copyWith(color: muted),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _chooseFromLibrary() async {
     final picked = await showVoiceLibraryPicker(context);
     if (picked == null || !mounted) return;
@@ -721,6 +864,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       _libraryNote = picked;
       _voiceError = false;
     });
+    _prepareVoice();
   }
 
   /// The chosen library note (shared widget, also used by the group sheet).

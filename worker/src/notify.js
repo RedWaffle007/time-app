@@ -100,13 +100,15 @@ export async function sendEventNotification(ctx, { event, targetUid, itemId }) {
   const recipientUid = NOTIFIES_TARGET.has(event) ? targetUid : plannerUid;
 
   // Active grant required in BOTH directions — a revoked grant means no push,
-  // whichever way the notification flows (see hasActiveItemGrant).
-  if (!(await hasActiveItemGrant(ctx.db, item, plannerUid, targetUid))) {
-    return result(0, 0, recipientUid, 'no-active-grant');
-  }
-
-  // Recipient's registered device tokens.
-  const tokens = await ctx.db.listDocIds(`users/${recipientUid}/fcmTokens`);
+  // whichever way the notification flows (see hasActiveItemGrant). The
+  // permission check and the recipient's tokens are read TOGETHER
+  // (2026-09-27): independent reads, and the push lands sooner. Nothing is
+  // sent before the permission check has passed.
+  const [granted, tokens] = await Promise.all([
+    hasActiveItemGrant(ctx.db, item, plannerUid, targetUid),
+    ctx.db.listDocIds(`users/${recipientUid}/fcmTokens`),
+  ]);
+  if (!granted) return result(0, 0, recipientUid, 'no-active-grant');
   if (tokens.length === 0) return result(0, 0, recipientUid, 'no-tokens');
 
   // Claim this event's slot BEFORE sending. The read above and the stamp used
@@ -119,16 +121,19 @@ export async function sendEventNotification(ctx, { event, targetUid, itemId }) {
   // actor is whoever performed this event (the planner for created/withdrawn,
   // the target for decided/outcome). A missing profile degrades to 'Someone'.
   const actorUid = NOTIFIES_TARGET.has(event) ? plannerUid : targetUid;
-  const actor = await ctx.db.getDoc(`users/${actorUid}`);
-  const group = groupId ? await ctx.db.getDoc(`groups/${groupId}`) : null;
+  const [actor, group] = await Promise.all([
+    ctx.db.getDoc(`users/${actorUid}`),
+    groupId ? ctx.db.getDoc(`groups/${groupId}`) : Promise.resolve(null),
+  ]);
   const message = buildMessage(event, derived.subtype, item, targetUid, itemId, {
     actorName: actor && actor.name ? String(actor.name) : null,
     groupName: groupId ? (group && group.name ? String(group.name) : '') : null,
   });
 
+  // Every device at once (2026-09-27) rather than one after another.
   let sent = 0;
   let cleaned = 0;
-  for (const token of tokens) {
+  await Promise.all(tokens.map(async (token) => {
     const res = await ctx.fcm.send(token, message);
     if (res.ok) {
       sent += 1;
@@ -138,7 +143,7 @@ export async function sendEventNotification(ctx, { event, targetUid, itemId }) {
       cleaned += 1;
     }
     // 'OTHER' (transient) errors are left alone — no send counted, not cleaned.
-  }
+  }));
 
   // Keep the stamp only if a push actually went out, so a run that reached no
   // live token can still deliver on a later, genuine attempt.

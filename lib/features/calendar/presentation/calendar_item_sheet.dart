@@ -77,10 +77,7 @@ class _CalendarItemSheet extends ConsumerWidget {
                   child: Text(item.title, style: context.text.titleLarge),
                 ),
                 const SizedBox(width: Space.sm),
-                if (item.outcome != null)
-                  StatusBadge.itemOutcome(item, context)
-                else
-                  StatusBadge.status(item.status, context),
+                itemStatusBadge(item, context),
               ],
             ),
             const SizedBox(height: Space.lg),
