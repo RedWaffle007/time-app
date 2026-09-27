@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  handleGroupAvailability,
   busyMemberMessage,
   epochMinute,
   formatTimeIn,
@@ -144,4 +145,45 @@ test('copy helpers and zone formatting', () => {
     plannerSummaryMessage({ title: 'T', setCount: 1, busyNames: ['A', 'B'] }).body,
     /set for 1 member\. 2 \(A, B\) were busy/,
   );
+});
+
+
+// ---- before Send: groupAvailability (2026-09-27, group voice notes) ----
+
+test('availability names the busy members and pushes nobody', async () => {
+  const h = harness();
+  const res = await handleGroupAvailability(h.ctx, 'planner', {
+    groupId: 'g1',
+    members: [
+      { uid: 'busy', instantUtc: SIX_PM.toISOString() },
+      { uid: 'free', instantUtc: SIX_PM.toISOString() },
+    ],
+  });
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.busyUids, ['busy']);
+  assert.equal(h.sent.length, 0);
+  assert.equal(h.patched.length, 0);
+});
+
+test('availability: your own earlier plan for this group IS a clash', async () => {
+  const h = harness({
+    'scheduleItems/busy/items/theirs': {
+      status: 'approved', createdByUid: 'planner', groupId: 'g1',
+    },
+  });
+  const res = await handleGroupAvailability(h.ctx, 'planner', {
+    groupId: 'g1', members: [{ uid: 'busy', instantUtc: SIX_PM.toISOString() }],
+  });
+  assert.deepEqual(res.body.busyUids, ['busy']);
+});
+
+test('availability is for members only, and validates its body', async () => {
+  const h = harness();
+  const outsider = await handleGroupAvailability(h.ctx, 'stranger', {
+    groupId: 'g1', members: [],
+  });
+  assert.equal(outsider.status, 403);
+  for (const bad of [{}, { groupId: 'g1' }, { groupId: 'a/b', members: [] }]) {
+    assert.equal((await handleGroupAvailability(h.ctx, 'planner', bad)).status, 400);
+  }
 });

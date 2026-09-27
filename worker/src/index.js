@@ -29,7 +29,7 @@ import {
   handleGroupAvatarDelete,
 } from './avatar.js';
 import { sendDueInactivityNotifications } from './inactivity.js';
-import { handleGroupPlanned } from './group-plan.js';
+import { handleGroupAvailability, handleGroupPlanned } from './group-plan.js';
 import { sendPlanRequestReminders } from './plan-request-reminders.js';
 import { settleLapsedItems } from './lapse.js';
 import { rescueUndeliveredVoiceNotes } from './voice-rescue.js';
@@ -38,6 +38,7 @@ import {
   MAX_VOICE_BYTES,
   makeVoiceStorage,
   sweepVoiceUploads,
+  voiceCopy,
   voiceDownload,
   voiceUpload,
 } from './voice.js';
@@ -155,6 +156,9 @@ export default {
     // Item 4: a group plan that met double-booked members (group-plan.js).
     if (body && body.event === 'groupPlanned') {
       return handleGroupPlannedRoute(request, env, body);
+    }
+    if (body && body.event === 'groupAvailability') {
+      return handleGroupPlannedRoute(request, env, body, handleGroupAvailability);
     }
 
     const { event, targetUid, itemId } = body || {};
@@ -323,8 +327,11 @@ export function cronJobFor(cron) {
 async function handleVoiceRequest(request, env, url) {
   const isUpload = url.pathname === '/voice';
   const isAttach = url.pathname === '/voice/attach';
+  const isCopy = url.pathname === '/voice/copy';
   const libraryMatch = /^\/voice\/library\/([^/]+)$/.exec(url.pathname);
-  const allowed = isUpload || isAttach ? ['POST'] : libraryMatch ? ['GET', 'DELETE'] : ['GET'];
+  const allowed = isUpload || isAttach || isCopy
+    ? ['POST']
+    : libraryMatch ? ['GET', 'DELETE'] : ['GET'];
   if (!allowed.includes(request.method)) {
     return json({ error: 'method-not-allowed' }, 405, { Allow: allowed.join(', ') });
   }
@@ -356,6 +363,16 @@ async function handleVoiceRequest(request, env, url) {
       const res = await libraryAttach(ctx, {
         callerUid,
         noteId: request.headers.get('x-note-id') || '',
+        targetUid: request.headers.get('x-target-uid') || '',
+        itemId: request.headers.get('x-item-id') || '',
+        groupId: request.headers.get('x-group-id') || '',
+      });
+      return json(res.body, res.status);
+    }
+    if (isCopy) {
+      const res = await voiceCopy(ctx, {
+        callerUid,
+        fromItemId: request.headers.get('x-from-item-id') || '',
         targetUid: request.headers.get('x-target-uid') || '',
         itemId: request.headers.get('x-item-id') || '',
         groupId: request.headers.get('x-group-id') || '',
@@ -564,7 +581,7 @@ async function handleFriendEvent(request, env, body) {
   }
 }
 
-async function handleGroupPlannedRoute(request, env, body) {
+async function handleGroupPlannedRoute(request, env, body, handler = handleGroupPlanned) {
   const projectId = env.PROJECT_ID;
   let callerUid;
   try {
@@ -586,8 +603,8 @@ async function handleGroupPlannedRoute(request, env, body) {
       fcm: makeFcm(projectId, accessToken),
       now: new Date(),
     };
-    const res = await handleGroupPlanned(ctx, callerUid, body);
-    console.log(JSON.stringify({ groupPlanned: res.body }));
+    const res = await handler(ctx, callerUid, body);
+    console.log(JSON.stringify({ [body.event]: res.body }));
     return json(res.body, res.status);
   } catch (e) {
     return json({ error: 'send-failed', detail: String(e && e.message) }, 500);

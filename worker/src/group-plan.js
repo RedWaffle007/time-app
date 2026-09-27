@@ -106,35 +106,12 @@ export async function handleGroupPlanned(ctx, callerUid, body) {
   const plannerName = planner && planner.name ? String(planner.name) : 'A group member';
   const now = ctx.now || new Date();
 
-  const verified = [];
-  const seen = new Set();
-  for (const entry of busy) {
-    const uid = entry && entry.uid;
-    const instant = new Date(entry && entry.instantUtc);
-    if (typeof uid !== 'string' || !uid || uid.includes('/') || uid === callerUid
-      || seen.has(uid) || Number.isNaN(instant.getTime())) continue;
-    seen.add(uid);
-    // Only plans still ahead (with a little slack for the round trip).
-    if (instant.getTime() < now.getTime() - 5 * 60 * 1000) continue;
-    if (!(await bothInGroup(ctx.db, groupId, callerUid, uid))) continue;
-
-    const minute = epochMinute(instant);
-    const lock = await ctx.db.getDoc(`scheduleMinutes/${uid}/minutes/${minute}`);
-    if (!lock || typeof lock.itemId !== 'string') continue;
-    const holder = await ctx.db.getDoc(`scheduleItems/${uid}/items/${lock.itemId}`);
-    if (!isLive(holder)) continue;
-    // Not busy with THIS plan: the planner's own copy for this group.
-    if (holder.createdByUid === callerUid && holder.groupId === groupId) continue;
-
-    const member = await ctx.db.getDoc(`users/${uid}`);
-    verified.push({
-      uid,
-      name: member && member.name ? String(member.name) : 'A member',
-      zone: member && member.homeTimezone ? String(member.homeTimezone) : 'UTC',
-      instant,
-      minute,
-    });
-  }
+  const verified = await verifyBusyMembers(ctx, callerUid, groupId, busy, {
+    now,
+    // After Send: a member holding THIS plan (the planner's own copy for this
+    // group) is not busy with anything else.
+    ignoreOwnGroupPlan: true,
+  });
 
   let sent = 0;
   for (const m of verified) {
@@ -159,4 +136,68 @@ export async function handleGroupPlanned(ctx, callerUid, body) {
     status: 200,
     body: { sent, busyUids: verified.map((m) => m.uid) },
   };
+}
+
+/**
+ * The members of [entries] (`{ uid, instantUtc }`) who are VERIFIED busy: the
+ * minute lock at that instant names a plan that is still live. Shared by the
+ * after-Send report and the before-Send preview so both judge alike.
+ */
+async function verifyBusyMembers(ctx, callerUid, groupId, entries, {
+  now, ignoreOwnGroupPlan,
+}) {
+  const verified = [];
+  const seen = new Set();
+  for (const entry of entries) {
+    const uid = entry && entry.uid;
+    const instant = new Date(entry && entry.instantUtc);
+    if (typeof uid !== 'string' || !uid || uid.includes('/') || uid === callerUid
+      || seen.has(uid) || Number.isNaN(instant.getTime())) continue;
+    seen.add(uid);
+    // Only plans still ahead (with a little slack for the round trip).
+    if (instant.getTime() < now.getTime() - 5 * 60 * 1000) continue;
+    if (!(await bothInGroup(ctx.db, groupId, callerUid, uid))) continue;
+
+    const minute = epochMinute(instant);
+    const lock = await ctx.db.getDoc(`scheduleMinutes/${uid}/minutes/${minute}`);
+    if (!lock || typeof lock.itemId !== 'string') continue;
+    const holder = await ctx.db.getDoc(`scheduleItems/${uid}/items/${lock.itemId}`);
+    if (!isLive(holder)) continue;
+    if (ignoreOwnGroupPlan
+      && holder.createdByUid === callerUid && holder.groupId === groupId) continue;
+
+    const member = await ctx.db.getDoc(`users/${uid}`);
+    verified.push({
+      uid,
+      name: member && member.name ? String(member.name) : 'A member',
+      zone: member && member.homeTimezone ? String(member.homeTimezone) : 'UTC',
+      instant,
+      minute,
+    });
+  }
+  return verified;
+}
+
+/**
+ * Before Send (2026-09-27, group voice notes): which members are busy at the
+ * chosen minute, so the sheet can say "Rings for 5 · Busy: 2" up front. A
+ * non-friend member's schedule is unreadable from the phone, so the Worker
+ * answers, with the SAME check as the after-Send report and NO pushes. It
+ * reveals only what Send would reveal anyway, and only to a fellow member.
+ * Body: `{ event: 'groupAvailability', groupId, members: [{uid, instantUtc}] }`.
+ */
+export async function handleGroupAvailability(ctx, callerUid, body) {
+  const { groupId, members } = body || {};
+  if (typeof groupId !== 'string' || !groupId || groupId.includes('/')
+    || !Array.isArray(members) || members.length > MAX_BUSY) {
+    return { status: 400, body: { error: 'invalid-body' } };
+  }
+  const group = await ctx.db.getDoc(`groups/${groupId}`);
+  const roster = group && Array.isArray(group.memberUids) ? group.memberUids : [];
+  if (!roster.includes(callerUid)) return { status: 403, body: { error: 'forbidden' } };
+  const busy = await verifyBusyMembers(ctx, callerUid, groupId, members, {
+    now: ctx.now || new Date(),
+    ignoreOwnGroupPlan: false,
+  });
+  return { status: 200, body: { busyUids: busy.map((m) => m.uid) } };
 }

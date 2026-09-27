@@ -161,6 +161,19 @@ class _Client implements VoiceNoteClient {
     return _metaFor(_audio);
   }
 
+  final copies = <(String, String, String, String)>[];
+
+  @override
+  Future<VoiceNoteMeta> copyToMember({
+    required String fromItemId,
+    required String targetUid,
+    required String itemId,
+    required String groupId,
+  }) async {
+    copies.add((fromItemId, targetUid, itemId, groupId));
+    return _metaFor(_audio);
+  }
+
   @override
   Future<void> deleteLibrary(String noteId) async => libraryDeletes.add(noteId);
 

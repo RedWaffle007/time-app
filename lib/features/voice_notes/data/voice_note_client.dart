@@ -43,6 +43,15 @@ abstract interface class VoiceNoteClient {
     required String itemId,
     String? groupId,
   });
+
+  /// Group voice notes (2026-09-27): copy the planner's ONE upload (made for
+  /// [fromItemId]) server side onto another member's not-yet-created alarm.
+  Future<VoiceNoteMeta> copyToMember({
+    required String fromItemId,
+    required String targetUid,
+    required String itemId,
+    required String groupId,
+  });
 }
 
 /// The words for each Worker refusal.
@@ -157,6 +166,28 @@ class HttpVoiceNoteClient implements VoiceNoteClient {
             'x-target-uid': targetUid,
             'x-item-id': itemId,
             if (groupId != null && groupId.isNotEmpty) 'x-group-id': groupId,
+          },
+        )
+        .timeout(const Duration(seconds: 30));
+    return parseUploadResponse(response.statusCode, response.body);
+  }
+
+  @override
+  Future<VoiceNoteMeta> copyToMember({
+    required String fromItemId,
+    required String targetUid,
+    required String itemId,
+    required String groupId,
+  }) async {
+    final response = await _http
+        .post(
+          Uri.parse('$kNotifyEndpoint/voice/copy'),
+          headers: {
+            'Authorization': 'Bearer ${await _token()}',
+            'x-from-item-id': fromItemId,
+            'x-target-uid': targetUid,
+            'x-item-id': itemId,
+            'x-group-id': groupId,
           },
         )
         .timeout(const Duration(seconds: 30));

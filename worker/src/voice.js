@@ -171,6 +171,57 @@ export async function voiceUpload(ctx, { callerUid, targetUid, itemId, groupId, 
   return reply(200, { sha256, durationMs, sizeBytes: bytes.length });
 }
 
+/**
+ * Group voice notes (2026-09-27): copy the planner's ONE upload, server side,
+ * onto another member's not-yet-created alarm, so the phone uploads once no
+ * matter how big the group is. Only for a group plan; the caller must own the
+ * source upload and share the group with the member. The copy is marked
+ * saved-to-library, so the planner's library gets the note once (from the
+ * source), never once per member.
+ */
+export async function voiceCopy(ctx, { callerUid, fromItemId, targetUid, itemId, groupId }) {
+  if (!ITEM_ID.test(fromItemId || '') || !UID.test(targetUid || '')
+      || !ITEM_ID.test(itemId || '') || !ITEM_ID.test(groupId || '')
+      || fromItemId === itemId) {
+    return reply(400, { error: 'invalid-request' });
+  }
+  if (callerUid === targetUid) return reply(403, { error: 'self-plan' });
+  const source = await ctx.db.getDoc(`voiceUploads/${fromItemId}`);
+  if (!source || source.uploaderUid !== callerUid) {
+    return reply(404, { error: 'source-not-found' });
+  }
+  if (!(await callerMayPlanFor(ctx.db, callerUid, targetUid, groupId))) {
+    return reply(403, { error: 'no-planning-permission' });
+  }
+  if (await ctx.db.getDoc(`scheduleItems/${targetUid}/items/${itemId}`)) {
+    return reply(409, { error: 'item-exists' });
+  }
+  const recordPath = `voiceUploads/${itemId}`;
+  const existing = await ctx.db.getDoc(recordPath);
+  if (existing && (existing.uploaderUid !== callerUid || existing.targetUid !== targetUid)) {
+    return reply(403, { error: 'not-yours' });
+  }
+  const bytes = await ctx.storage.get(objectKey(source.targetUid, fromItemId));
+  if (!bytes) return reply(410, { error: 'gone' });
+  const sha256 = await sha256Hex(bytes);
+  if (sha256 !== source.sha256) return reply(409, { error: 'integrity-mismatch' });
+  if (!(await ctx.storage.put(objectKey(targetUid, itemId), bytes))) {
+    return reply(502, { error: 'store-failed' });
+  }
+  const now = ctx.now || new Date();
+  await ctx.db.patchDoc(recordPath, {
+    uploaderUid: callerUid,
+    targetUid,
+    sha256,
+    durationMs: source.durationMs,
+    sizeBytes: bytes.length,
+    createdAt: now,
+    expiresAt: new Date(now.getTime() + ORPHAN_TTL_MS),
+    librarySavedAt: now,
+  });
+  return reply(200, { sha256, durationMs: source.durationMs, sizeBytes: bytes.length });
+}
+
 /** Download policy. Returns `{ status, body }` or `{ status, bytes, sha256 }`. */
 export async function voiceDownload(ctx, { callerUid, targetUid, itemId }) {
   if (!UID.test(targetUid || '') || !ITEM_ID.test(itemId || '')) {

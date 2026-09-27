@@ -120,6 +120,38 @@ describe('voice note on create', () => {
   });
 });
 
+// Group voice notes (2026-09-27): a fellow GROUP member (not a friend) may
+// put a voice note on a member's group alarm; the same upload check applies.
+describe('voice note on a group alarm', () => {
+  const GROUP = 'groupVoice0000000001';
+  beforeEach(async () => {
+    await seed({ upload: { uploaderUid: C } });
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'groups', GROUP), {
+        name: 'Team', ownerUid: C, joinCode: 'ABC234', memberUids: [A, C],
+      });
+    });
+  });
+
+  it('a group member attaches the checked note to a group alarm', async () => {
+    await assertSucceeds(plan(as(C), itemPath, item({
+      createdByUid: C, groupId: GROUP, status: 'approved',
+    })));
+  });
+
+  it('DENIES it from someone outside the group', async () => {
+    await seed({ upload: { uploaderUid: B } });
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'groups', GROUP), {
+        name: 'Team', ownerUid: C, joinCode: 'ABC234', memberUids: [A, C],
+      });
+    });
+    await assertFails(plan(as(B), itemPath, item({
+      createdByUid: B, groupId: GROUP, status: 'approved',
+    })));
+  });
+});
+
 describe('voiceUploads is Worker-only', () => {
   beforeEach(() => seed());
 

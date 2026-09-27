@@ -569,7 +569,7 @@ The 50 six-hour nudges now talk about this app (DECISIONS.md "Inactivity
 pushes rewritten for this app"). Live version `94cbabca-c91f-…` at 100%,
 confirmed with `wrangler deployments status`.
 
-### Device fixes 2026-09-27 — BUILT, awaiting commit + Worker deploy
+### Device fixes 2026-09-27 — BUILT + committed + Worker deployed
 
 Slow Send + false "not delivered" (voice-library copy moved to waitUntil),
 missing Uh-Oh "unavailable" push (index.js event list), triple "dismissed"
@@ -577,7 +577,10 @@ missing Uh-Oh "unavailable" push (index.js event list), triple "dismissed"
 "Device fixes: slow Send, missing Uh-Oh push, triple dismissed". Known
 limit kept: reports come from Dart, so a dead app reports late.
 
-### Group voice notes + clean timezone view (added 2026-09-27, NEXT)
+### Group voice notes + clean timezone view — BUILT 2026-09-27, awaiting Worker deploy + commit
+
+DECISIONS.md "Group plans match the Plan screen; group voice notes; timezone
+view grouped". Original brief:
 
 User-directed; plan → sign-off → build.
 - A group plan offers the same **Default Alarm / Voice Note** choice as a plan
@@ -621,7 +624,8 @@ User-directed; plan → sign-off → build.
    checks", starting with the item 24 + Batch H block. Fix anything reported
    before new work; record verified items in CLAUDE.md "Parked &
    unverified" / DECISIONS.md.
-3. Group voice notes + timezone pop-up redesign (plan first).
+3. Group voice notes: deploy the Worker, install, and check on phones
+   (voice group plan to 2+ members, busy preview, Everyone's time).
 4. Item 33 (competitor review, PingPal + SnoozeSquad): research only,
    current first-party evidence; propose findings, change nothing without
    sign-off. Can run before the device pass if the user prefers.

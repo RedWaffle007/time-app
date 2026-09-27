@@ -15,6 +15,14 @@ abstract class GroupPlanReporter {
     required int setCount,
     required List<({String uid, DateTime instantUtc})> failed,
   });
+
+  /// Before Send (2026-09-27): which of [members] are busy at their instant,
+  /// VERIFIED by the Worker (a non-friend member's schedule is unreadable
+  /// from this phone). No pushes. Null when the Worker could not answer.
+  Future<Set<String>?> availability({
+    required String groupId,
+    required List<({String uid, DateTime instantUtc})> members,
+  });
 }
 
 final groupPlanReporterProvider = Provider<GroupPlanReporter>((ref) {

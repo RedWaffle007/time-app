@@ -185,6 +185,19 @@ class ScheduleRepository {
     required String title,
     String? note,
     required DateTime wall,
+    // Group voice notes (2026-09-27): given, each member's copy of the note
+    // is put in place (upload / server copy / library attach) under a freshly
+    // minted id BEFORE that member's alarm is created, exactly like a
+    // single-friend voice alarm. A member whose copy fails is skipped.
+    Future<VoiceNoteMeta> Function({
+      required String targetUid,
+      required String itemId,
+    })?
+    attachVoice,
+    // Members the Worker already verified busy at this minute (the before-Send
+    // preview): not attempted, reported in `failed` so the busy notices still
+    // go out, and no voice copy is wasted on them.
+    Set<String> knownBusy = const {},
   }) async {
     final sent = <({String uid, String itemId, bool isSelf})>[];
     final failed = <({String uid, DateTime instantUtc})>[];
@@ -197,8 +210,28 @@ class ScheduleRepository {
         skippedPast++;
         continue;
       }
+      if (knownBusy.contains(t.uid)) {
+        skippedOther++;
+        failed.add((uid: t.uid, instantUtc: instant));
+        continue;
+      }
+      String? preparedId;
+      VoiceNoteMeta? voiceNote;
+      if (attachVoice != null && !t.isSelf) {
+        preparedId = newItemId(t.uid);
+        try {
+          voiceNote = await attachVoice(targetUid: t.uid, itemId: preparedId);
+        } catch (_) {
+          // No note, no alarm for this member: a voice plan never silently
+          // degrades to a plain ringtone on the way out.
+          skippedOther++;
+          continue;
+        }
+      }
       try {
         final id = await createItem(
+          itemId: preparedId,
+          voiceNote: voiceNote,
           targetUid: t.uid,
           createdByUid: createdByUid,
           groupId: t.isSelf ? null : groupId,

@@ -24,11 +24,10 @@ import '../../plan_requests/application/plan_request_providers.dart';
 import '../../plan_requests/domain/plan_request.dart';
 import '../../social/application/social_providers.dart';
 import '../../voice_notes/application/voice_note_providers.dart';
-import '../../voice_notes/application/voice_note_cache.dart';
 import '../../voice_notes/data/voice_note_client.dart';
 import '../../voice_notes/domain/voice_library_note.dart';
+import '../../voice_notes/presentation/library_note_choice.dart';
 import '../../voice_notes/presentation/voice_library_picker.dart';
-import '../../voice_notes/presentation/voice_library_screen.dart';
 import '../../voice_notes/presentation/voice_note_recorder.dart';
 import '../application/schedule_clash.dart';
 import '../application/schedule_providers.dart';
@@ -138,8 +137,6 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
   /// A note chosen from the library instead of recording (32d); the Worker
   /// copies it onto the plan at Send.
   VoiceLibraryNote? _libraryNote;
-  bool _libraryPlaying = false;
-  StreamSubscription<void>? _libraryDone;
 
   /// Bumped to give the recorder a fresh state (after a save or a target
   /// change) — the recorder owns its phase; the builder only resets it.
@@ -177,7 +174,6 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
 
   @override
   void dispose() {
-    _libraryDone?.cancel();
     _scrollController.dispose();
     _titleController.dispose();
     _noteController.dispose();
@@ -727,86 +723,14 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     });
   }
 
-  Future<void> _stopLibraryPreview() async {
-    if (!_libraryPlaying) return;
-    await ref.read(voicePlayerProvider).stop();
-    if (mounted) setState(() => _libraryPlaying = false);
-  }
-
-  Future<void> _toggleLibraryPreview(VoiceLibraryNote note) async {
-    if (_libraryPlaying) return _stopLibraryPreview();
-    final player = ref.read(voicePlayerProvider);
-    try {
-      final path = await ref.read(voiceNoteCacheProvider).ensureLibrary(note);
-      _libraryDone?.cancel();
-      _libraryDone = player.completed.listen((_) {
-        if (mounted) setState(() => _libraryPlaying = false);
-      });
-      await player.play(path);
-      if (mounted) setState(() => _libraryPlaying = true);
-    } on VoiceNoteFailure catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(e.message)));
-      }
-    }
-  }
-
-  /// The chosen library note, with a preview and the way back to recording.
-  Widget _libraryChoice(VoiceLibraryNote note) {
-    return Card(
-      key: const ValueKey('library-choice'),
-      child: ListTile(
-        leading: const Icon(AppIcons.voiceLibrary),
-        title: Text(
-          voiceNoteLabel(context, note),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Text(
-          'From your library · ${formatVoiceLength(note.length)} · '
-          'plays ${voicePlaysFor(note.length)} times',
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              key: const ValueKey('library-choice-play'),
-              tooltip: _libraryPlaying ? 'Stop' : 'Play',
-              iconSize: Sizes.voiceChoiceIcon,
-              constraints: const BoxConstraints.tightFor(
-                width: Sizes.voiceChoiceButton,
-                height: Sizes.voiceChoiceButton,
-              ),
-              onPressed: _saving ? null : () => _toggleLibraryPreview(note),
-              icon: Icon(
-                _libraryPlaying
-                    ? AppIcons.voiceNoteStopPlaying
-                    : AppIcons.voiceNotePlay,
-              ),
-            ),
-            IconButton(
-              key: const ValueKey('library-choice-remove'),
-              tooltip: 'Record instead',
-              iconSize: Sizes.voiceChoiceIcon,
-              constraints: const BoxConstraints.tightFor(
-                width: Sizes.voiceChoiceButton,
-                height: Sizes.voiceChoiceButton,
-              ),
-              onPressed: _saving
-                  ? null
-                  : () async {
-                      await _stopLibraryPreview();
-                      if (mounted) setState(() => _libraryNote = null);
-                    },
-              icon: const Icon(AppIcons.voiceNoteDiscard),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  /// The chosen library note (shared widget, also used by the group sheet).
+  Widget _libraryChoice(VoiceLibraryNote note) => LibraryNoteChoice(
+    note: note,
+    enabled: !_saving,
+    onRemove: () {
+      if (mounted) setState(() => _libraryNote = null);
+    },
+  );
 
   /// Pick date / Pick time: taller, `titleMedium`, with the field glow (F4).
   Widget _pickerButton({

@@ -11,7 +11,11 @@ import 'package:time_app/features/notifications/application/group_plan_reporter.
 import 'package:time_app/features/notifications/application/outcome_notifier.dart';
 import 'package:time_app/features/scheduling/application/schedule_providers.dart';
 import 'package:time_app/features/scheduling/data/schedule_repository.dart';
+import 'package:time_app/features/scheduling/domain/schedule_item.dart';
 import 'package:time_app/features/scheduling/presentation/group_plan_sheet.dart';
+import 'package:time_app/features/voice_notes/application/voice_note_providers.dart';
+import 'package:time_app/features/voice_notes/data/voice_note_client.dart';
+import 'package:time_app/features/voice_notes/domain/voice_library_note.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 
 /// Group alarms after F2 (2026-09-26): no approval and no Emergency switch —
@@ -44,23 +48,44 @@ class _Repo implements ScheduleRepository {
     required String title,
     String? note,
     required DateTime wall,
+    Future<VoiceNoteMeta> Function({
+      required String targetUid,
+      required String itemId,
+    })?
+    attachVoice,
+    Set<String> knownBusy = const {},
   }) async {
     calls.add([for (final t in targets) t.uid]);
+    titles.add(title);
+    lastKnownBusy = knownBusy;
+    final unavailable = {...busy, ...knownBusy};
+    if (attachVoice != null) {
+      for (final t in targets) {
+        if (t.isSelf || unavailable.contains(t.uid)) continue;
+        voiceAttached.add(
+          await attachVoice(targetUid: t.uid, itemId: 'i-${t.uid}'),
+        );
+      }
+    }
     return (
       sent: [
         for (final t in targets)
-          if (!busy.contains(t.uid))
+          if (!unavailable.contains(t.uid))
             (uid: t.uid, itemId: 'i-${t.uid}', isSelf: t.isSelf),
       ],
       skippedPast: 0,
-      skippedOther: targets.where((t) => busy.contains(t.uid)).length,
+      skippedOther: targets.where((t) => unavailable.contains(t.uid)).length,
       failed: [
         for (final t in targets)
-          if (busy.contains(t.uid))
+          if (unavailable.contains(t.uid))
             (uid: t.uid, instantUtc: DateTime.utc(2030, 1, 1, 18)),
       ],
     );
   }
+
+  final titles = <String>[];
+  Set<String> lastKnownBusy = const {};
+  final voiceAttached = <VoiceNoteMeta>[];
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -108,6 +133,57 @@ class _Reporter implements GroupPlanReporter {
     reports.add((setCount: setCount, uids: [for (final f in failed) f.uid]));
     return verdict;
   }
+
+  /// Before-Send preview: the same verdict, restricted to who was asked.
+  Set<String>? preview;
+  final previews = <List<String>>[];
+
+  @override
+  Future<Set<String>?> availability({
+    required String groupId,
+    required List<({String uid, DateTime instantUtc})> members,
+  }) async {
+    previews.add([for (final m in members) m.uid]);
+    return preview;
+  }
+}
+
+/// Records every voice call the sheet makes.
+class _VoiceClient implements VoiceNoteClient {
+  final attaches = <String>[];
+  final copies = <(String, String)>[];
+  final uploads = <String>[];
+
+  static const _meta = VoiceNoteMeta(
+    durationMs: 8000,
+    sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    sizeBytes: 9000,
+  );
+
+  @override
+  Future<VoiceNoteMeta> attachFromLibrary({
+    required String noteId,
+    required String targetUid,
+    required String itemId,
+    String? groupId,
+  }) async {
+    attaches.add('$noteId:$targetUid:$groupId');
+    return _meta;
+  }
+
+  @override
+  Future<VoiceNoteMeta> copyToMember({
+    required String fromItemId,
+    required String targetUid,
+    required String itemId,
+    required String groupId,
+  }) async {
+    copies.add((fromItemId, targetUid));
+    return _meta;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 Future<(_Repo, _Notifier)> _open(
@@ -122,6 +198,8 @@ Future<(_Repo, _Notifier)> _open(
   Map<String, String> zones = const {},
   Set<String> busy = const {},
   _Reporter? reporter,
+  _VoiceClient? voiceClient,
+  List<VoiceLibraryNote> library = const [],
 }) async {
   tester.view.physicalSize = Size(width * 3, 900 * 3);
   tester.view.devicePixelRatio = 3;
@@ -145,6 +223,10 @@ Future<(_Repo, _Notifier)> _open(
         ),
         groupPlanReporterProvider.overrideWithValue(reporter ?? _Reporter({})),
         notificationEventNotifierProvider.overrideWithValue(notifier),
+        voiceNoteClientProvider.overrideWithValue(
+          voiceClient ?? _VoiceClient(),
+        ),
+        voiceLibraryProvider.overrideWith((ref) => Stream.value(library)),
       ],
       child: MaterialApp(
         theme: theme ?? AppTheme.light,
@@ -179,7 +261,10 @@ Future<void> _continuePastTimes(WidgetTester tester) async {
 }
 
 Future<void> _fillAndSend(WidgetTester tester) async {
-  await tester.enterText(find.byType(TextField).first, 'Evacuate');
+  await tester.enterText(
+    find.byKey(const ValueKey('group-task-name')),
+    'Evacuate',
+  );
   await tester.tap(find.text('Pick date'));
   await tester.pumpAndSettle();
   await _continuePastTimes(tester);
@@ -234,8 +319,16 @@ void main() {
       for (final uid in ['PLANNER', 'MEMBER_A', 'MEMBER_B']) {
         expect(find.byKey(ValueKey('member-time-$uid')), findsOneWidget);
       }
-      expect(find.textContaining('You: '), findsOneWidget);
-      expect(find.textContaining('Name MEMBER_A: '), findsOneWidget);
+      // Grouped by timezone (2026-09-27): one section per zone.
+      expect(find.byKey(const ValueKey('zone-UTC')), findsOneWidget);
+      expect(find.byKey(const ValueKey('zone-Asia/Kolkata')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('zone-America/Vancouver')),
+        findsOneWidget,
+      );
+      expect(find.text('You'), findsOneWidget);
+      expect(find.text('Name MEMBER_A'), findsOneWidget);
+      expect(find.textContaining('Kolkata'), findsOneWidget);
       await tester.tap(find.text('Continue'));
       await tester.pumpAndSettle();
       // …then the date picker itself.
@@ -314,4 +407,161 @@ void main() {
       expect(source, isNot(contains('revokeMyPlannerGrant')));
     },
   );
+
+  group('group voice notes + who gets it (2026-09-27)', () {
+    final note = VoiceLibraryNote(
+      id: 'note-1',
+      sha256:
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      durationMs: 8000,
+      sizeBytes: 9000,
+      createdAt: DateTime.utc(2026, 9, 1),
+    );
+
+    Future<void> pickDateAndTime(WidgetTester tester) async {
+      await tester.tap(find.text('Pick date'));
+      await tester.pumpAndSettle();
+      await _continuePastTimes(tester);
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Pick time'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the Plan screen layout: glowing pickers and both kinds', (
+      tester,
+    ) async {
+      await _open(tester);
+      expect(find.byKey(const ValueKey('group-pick-date')), findsOneWidget);
+      expect(find.byKey(const ValueKey('group-pick-time')), findsOneWidget);
+      expect(find.text('Voice Note'), findsOneWidget);
+      expect(find.text('Default Alarm'), findsOneWidget);
+      expect(find.text('Name of the Task'), findsOneWidget);
+      expect(find.byKey(const ValueKey('group-note')), findsOneWidget);
+    });
+
+    testWidgets('Default Alarm needs a task name, said in red on Send', (
+      tester,
+    ) async {
+      final (repo, _) = await _open(tester);
+      await pickDateAndTime(tester);
+      await tester.tap(find.text('Send to the group'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Please write task name. It is mandatory.'),
+        findsOneWidget,
+      );
+      expect(repo.calls, isEmpty);
+    });
+
+    testWidgets('Voice Note needs a note, said in red on Send', (tester) async {
+      final (repo, _) = await _open(tester);
+      await tester.tap(find.text('Voice Note'));
+      await tester.pumpAndSettle();
+      await pickDateAndTime(tester);
+      await tester.ensureVisible(find.text('Send to the group'));
+      await tester.tap(find.text('Send to the group'));
+      await tester.pumpAndSettle();
+      expect(find.text('Please record a voice note.'), findsOneWidget);
+      expect(repo.calls, isEmpty);
+    });
+
+    testWidgets('a voice plan goes to the others only, each with the note', (
+      tester,
+    ) async {
+      final client = _VoiceClient();
+      final (repo, notifier) = await _open(
+        tester,
+        voiceClient: client,
+        library: [note],
+      );
+      await tester.tap(find.text('Voice Note'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('not to you'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('group-choose-from-library')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('voice-library-pick-note-1')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('library-choice')), findsOneWidget);
+      await pickDateAndTime(tester);
+      await tester.ensureVisible(find.text('Send to the group'));
+      await tester.tap(find.text('Send to the group'));
+      await tester.pumpAndSettle();
+
+      expect(repo.calls.single, ['MEMBER_A', 'MEMBER_B']); // not PLANNER
+      expect(repo.titles.single, 'Voice alarm');
+      expect(client.attaches, [
+        'note-1:MEMBER_A:group',
+        'note-1:MEMBER_B:group',
+      ]);
+      expect(repo.voiceAttached, hasLength(2));
+      expect(notifier.created, ['MEMBER_A', 'MEMBER_B']);
+    });
+
+    testWidgets('who gets it is shown before Send, busy members named', (
+      tester,
+    ) async {
+      final reporter = _Reporter({'MEMBER_B'})..preview = {'MEMBER_B'};
+      final (repo, _) = await _open(tester, reporter: reporter);
+      await pickDateAndTime(tester);
+      expect(reporter.previews.last, ['MEMBER_A', 'MEMBER_B']);
+      expect(find.text('Rings for 2: You, Name MEMBER_A.'), findsOneWidget);
+      expect(
+        find.text("Busy then, won't get it: Name MEMBER_B."),
+        findsOneWidget,
+      );
+      // Everyone's time tags the busy member.
+      await tester.tap(find.byKey(const ValueKey('everyones-time')));
+      await tester.pumpAndSettle();
+      expect(find.text('Busy'), findsOneWidget);
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('group-task-name')),
+        'Evacuate',
+      );
+      await tester.ensureVisible(find.text('Send to the group'));
+      await tester.tap(find.text('Send to the group'));
+      await tester.pumpAndSettle();
+      // The known-busy member is not attempted, but still reported.
+      expect(repo.lastKnownBusy, {'MEMBER_B'});
+      expect(reporter.reports.single.uids, ['MEMBER_B']);
+    });
+
+    testWidgets('an unreachable Worker says so and still lets you send', (
+      tester,
+    ) async {
+      await _open(tester, reporter: _Reporter({}));
+      await pickDateAndTime(tester);
+      expect(find.textContaining("Couldn't check who is busy"), findsOneWidget);
+    });
+
+    testWidgets(
+      'a 40-member group stays tidy: grouped, collapsed, no overflow',
+      (tester) async {
+        const zones = ['Asia/Kolkata', 'Europe/London', 'America/Chicago'];
+        final candidates = [
+          _self,
+          for (var i = 0; i < 39; i++) (uid: 'M$i', isSelf: false),
+        ];
+        await _open(
+          tester,
+          candidates: candidates,
+          zones: {for (var i = 0; i < 39; i++) 'M$i': zones[i % 3]},
+        );
+        await tester.tap(find.byKey(const ValueKey('everyones-time')));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.byKey(const ValueKey('zone-Asia/Kolkata')), findsOneWidget);
+        // 13 members in the zone → 3 shown + "+10 more".
+        expect(find.text('+10 more'), findsWidgets);
+        await tester.tap(find.byKey(const ValueKey('zone-more-Asia/Kolkata')));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      },
+    );
+  });
 }

@@ -15,6 +15,7 @@ import {
   sha256Hex,
   sniffM4a,
   sweepVoiceUploads,
+  voiceCopy,
   voiceDownload,
   voiceUpload,
 } from '../src/voice.js';
@@ -340,4 +341,77 @@ test('whole numbers are written as Firestore integers', async () => {
   }
   assert.deepEqual(body.fields.durationMs, { integerValue: '12000' });
   assert.deepEqual(body.fields.ratio, { doubleValue: 0.5 });
+});
+
+
+// ---------------------------------------------------------------- group copy (2026-09-27)
+
+const GROUP = 'group000000000000001';
+const SOURCE = 'item0000000000000001';
+const COPY = 'item0000000000000002';
+const groupStore = () => ({
+  [`groups/${GROUP}`]: { memberUids: ['B', 'A', 'C'] },
+});
+const copy = (h, o = {}) => voiceCopy(h.ctx, {
+  callerUid: 'B', fromItemId: SOURCE, targetUid: 'C', itemId: COPY, groupId: GROUP, ...o,
+});
+
+async function withSource(extra = {}) {
+  const h = harness({ ...groupStore(), ...extra });
+  const res = await upload(h, { groupId: GROUP, itemId: SOURCE });
+  assert.equal(res.status, 200);
+  return h;
+}
+
+test('group copy: the planner\'s one upload lands on another member\'s alarm', async () => {
+  const h = await withSource();
+  const res = await copy(h);
+  assert.equal(res.status, 200);
+  const source = h.store[`voiceUploads/${SOURCE}`];
+  const record = h.store[`voiceUploads/${COPY}`];
+  assert.equal(record.uploaderUid, 'B');
+  assert.equal(record.targetUid, 'C');
+  assert.equal(record.sha256, source.sha256);
+  assert.deepEqual(h.objects[objectKey('C', COPY)], h.objects[objectKey('A', SOURCE)]);
+  // Saved to the library once, from the source — never once per member.
+  assert.equal(source.librarySavedAt, null);
+  assert.ok(record.librarySavedAt instanceof Date);
+});
+
+test('group copy: only the source\'s uploader may copy it', async () => {
+  const h = await withSource();
+  const res = await copy(h, { callerUid: 'C', targetUid: 'A' });
+  assert.equal(res.status, 404);
+});
+
+test('group copy: the member must share the group with the planner', async () => {
+  const h = await withSource({ [`groups/${GROUP}`]: { memberUids: ['B', 'A'] } });
+  assert.equal((await copy(h)).status, 403);
+});
+
+test('group copy: needs a group, never a self-plan, never an existing alarm', async () => {
+  const h = await withSource();
+  assert.equal((await copy(h, { groupId: '' })).status, 400);
+  assert.equal((await copy(h, { targetUid: 'B' })).status, 403);
+  h.store[`scheduleItems/C/items/${COPY}`] = { targetUid: 'C' };
+  assert.equal((await copy(h)).status, 409);
+});
+
+test('group copy: a tampered source is refused', async () => {
+  const h = await withSource();
+  h.objects[objectKey('A', SOURCE)] = m4a({ ms: 5000 });
+  assert.equal((await copy(h)).status, 409);
+});
+
+test('group copy: a missing source object is gone', async () => {
+  const h = await withSource();
+  delete h.objects[objectKey('A', SOURCE)];
+  assert.equal((await copy(h)).status, 410);
+});
+
+test('the /voice/copy route is POST-only and authenticated', async () => {
+  const env = { PROJECT_ID: 'demo', VOICE_BUCKET_URL: 'x', SUPABASE_URL: 'https://s.example', SUPABASE_SERVICE_KEY: 'k' };
+  const get = await worker.fetch(new Request('https://w.example/voice/copy'), env);
+  assert.equal(get.status, 405);
+  assert.equal(get.headers.get('allow'), 'POST');
 });

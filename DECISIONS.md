@@ -7209,3 +7209,38 @@ Reported on the debug build after Batch H. Three separate causes:
 app's Dart side, so if the app process is dead at ring time the planner
 hears only when the target's app next runs. Closing that needs the native
 side to call the Worker (its own design). **Deploy:** Worker, then app.
+
+## Group plans match the Plan screen; group voice notes; timezone view grouped (2026-09-27)
+
+User-directed. Retires 32's "group plans excluded from voice notes (v1)".
+
+- **Same interface as a plan for one friend:** the group sheet now has the
+  glowing Pick date / Pick time pills, the always-offered **Voice Note /
+  Default Alarm** choice, "Name of the Task" (mandatory, red on Send), the
+  recorder or "Choose from library" (red "Please record a voice note."), the
+  optional note, and Send, plus the group extras below.
+- **Voice plans go to the other members only.** It is the planner's voice and
+  a self-plan can never carry a note (F4), so the planner's own copy is left
+  out; a Default Alarm still includes the planner.
+- **One upload, server copies.** `GroupVoiceAttacher`: a fresh recording is
+  uploaded once (first member), and each later member gets a server-side copy
+  via the new Worker route **`POST /voice/copy`** (caller must own the source
+  upload and share the group with the member; the alarm must not exist yet;
+  hash re-checked). Copies are marked saved-to-library, so the library gets the
+  note once. A library note uses the existing per-member attach. A member whose
+  copy fails gets no alarm (never a silent ringtone). Rules unchanged: the
+  existing voice-note create rule already accepts a group member's upload
+  (emulator test added).
+- **Who gets it, before Send:** once a date and time are picked the sheet asks
+  the Worker (**`groupAvailability`**, read-only, same verification as the
+  after-Send `groupPlanned`, no pushes) and shows "Rings for N: names" and
+  "Busy then, won't get it: names" (attention colour as text, §2.7). Known-busy
+  members are not attempted (no wasted voice copy) but are still reported, so
+  their notices and the planner's summary go out as before.
+- **"Everyone's time" grouped by timezone** (`groupMembersByZone`): one
+  section per zone with its current time and city, your zone first, then west
+  to east, unknown last; more than four members in a zone collapse to three
+  names + "+N more"; busy members are tagged; the dialog is height-capped
+  (`Sizes.modalMaxHeightFraction`) and scrolls.
+- The Plan screen's library card became the shared `LibraryNoteChoice`.
+**Deploy:** Worker (new route + event), then app. No rules change.
