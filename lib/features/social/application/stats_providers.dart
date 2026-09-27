@@ -22,7 +22,8 @@ StatItem _toStatItem(ScheduleItem item) => StatItem(
   isApproved: item.status == ScheduleItemStatus.approved,
   isDone: item.outcome?.result == OutcomeResult.done,
   isSkipped: item.outcome?.result == OutcomeResult.skipped,
-  completedAt: item.outcome?.completedAt,
+  isSelfPlan: item.createdByUid == item.targetUid,
+  isCancelled: item.isAutoArchived,
 );
 
 /// The signed-in user's freshly computed stat values.

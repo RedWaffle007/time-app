@@ -279,20 +279,27 @@ class ScheduleItem {
   bool get isSettled => isAutoArchived || isManuallyArchivable;
 
   /// How late completion was, relative to the scheduled instant. Null unless the
-  /// item was marked **done** and completion landed AFTER the scheduled time (an
-  /// on-time or early completion has no delay to show).
+  /// item is **Done (Late)** — marked done after its alarm went unanswered
+  /// ([wasUnavailableAtAlarmTime]) — and at least a whole minute late.
+  ///
+  /// Late is NOT merely "completed after the scheduled instant": since F2 the
+  /// alarm rings AT that instant, so a Done tapped while it rings always lands
+  /// a few seconds after it. Counting that as late marked nearly every
+  /// completion late and printed "0 min late" beside a plain Done badge
+  /// (item 24a). Tying lateness to the same fact the badge uses means the two
+  /// can never disagree.
   ///
   /// **Derived, never stored.** The delay is `completedAt - scheduledInstantUtc`
-  /// and both are already persisted — a stored `delayMinutes` would only be a
-  /// second copy to drift. A done item with no `completedAt` (legacy data) has
-  /// no measurable delay and returns null rather than a guessed one.
+  /// and both are already persisted. A done item with no `completedAt` (legacy
+  /// data) has no measurable delay and returns null rather than a guessed one.
   Duration? get completionDelay {
     final o = outcome;
     if (o == null || o.result != OutcomeResult.done) return null;
+    if (!wasUnavailableAtAlarmTime) return null;
     final done = o.completedAt;
     if (done == null) return null;
     final d = done.difference(scheduledInstantUtc);
-    return d > Duration.zero ? d : null;
+    return d >= const Duration(minutes: 1) ? d : null;
   }
 
   /// Completed, but after its scheduled time — honest data surfaced in the UI

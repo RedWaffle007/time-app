@@ -101,6 +101,16 @@ String formatDurationMinutes(BuildContext context, int minutes) {
   return m == 0 ? '${n.format(h)}h' : '${n.format(h)}h ${n.format(m)}m';
 }
 
+/// A plain count (tasks, days, members) with localized digits — never
+/// `'$n'`, which is Latin digits in every locale (worldwide requirement).
+String formatCount(BuildContext context, num value) =>
+    NumberFormat.decimalPattern(_locale(context)).format(value);
+
+/// A 0–100 percentage with localized digits and the locale's percent sign
+/// placement, e.g. "86%" / "٪٨٦".
+String formatPercent(BuildContext context, num percent) =>
+    NumberFormat.percentPattern(_locale(context)).format(percent / 100);
+
 // ---------------------------------------------------------------------------
 // The calendar (UI-RULES.md §6.10).
 //

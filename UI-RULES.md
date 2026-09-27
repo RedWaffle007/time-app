@@ -807,9 +807,10 @@ Removed with Track Time, 2026-09-27 (DECISIONS.md "Track Time removed").
 Composes primitives that already exist — it invents nothing:
 
 - **Stat tiles** are §6.9 exactly: flat, outlined, reflowing, `—` for absence
-  (never zero). Until the stat computations land (a separate, ungreenlit build)
-  every tile is a `placeholder` with its "Coming soon" caption — the dashboard is
-  shipped empty-but-honest, not faked.
+  (never zero). Every number — count, percent, days, minutes — renders through
+  `datetime_format.dart` (`formatCount` / `formatPercent` /
+  `formatDurationMinutes`), never `'$value'`, so digits follow the locale. No
+  "Coming soon" tile ships for a feature that does not exist (item 24a).
 - **A number-hero** — the one large figure a dashboard may lead with (a streak, a
   total) — reuses `AppText.displaySmall`. This is a **sanctioned third use** of
   that token (alongside the auth hero and the My Schedule band); it is still not a

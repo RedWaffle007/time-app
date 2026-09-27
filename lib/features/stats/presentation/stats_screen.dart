@@ -26,7 +26,7 @@ class StatsScreen extends ConsumerWidget {
           children: [
             const SectionHeader('Your numbers'),
             Text(
-              'Your activity across planning, follow-through and tracked time.',
+              'Your activity across planning and follow-through.',
               style: context.text.bodySmall?.copyWith(
                 color: context.colors.onSurfaceVariant,
               ),

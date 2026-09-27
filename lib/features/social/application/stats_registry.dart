@@ -5,21 +5,19 @@ import '../domain/profile_stat.dart';
 /// **The stats registry — the one list of what a profile can show.**
 ///
 /// This is the extension point the whole stats section exists to provide. To
-/// add a statistic later (hours tracked, focus sessions, goal completion), add
-/// one [ProfileStatDefinition] here. Nothing else changes: the tile renders,
-/// the value publishes, another user's device reads it, and the privacy gate
-/// covers it — all off this list.
+/// add a statistic, add one [ProfileStatDefinition] here. Nothing else changes:
+/// the tile renders, the value publishes, another user's device reads it, and
+/// the privacy gate covers it — all off this list.
 ///
-/// To turn an existing PLACEHOLDER into a live stat, give it a `compute`
-/// function. That is the only edit. The tile, the key, the label and the
-/// published-document slot already exist, which is the point of shipping the
-/// placeholders now rather than leaving gaps to be designed into later.
+/// A definition with no `compute` is a PLACEHOLDER tile (drawn, never
+/// published). None ships today: a tile for a feature that does not exist
+/// ("Goals achieved") was removed in item 24a. The mechanism stays.
 ///
-/// **Order is display order.** The first four are live off the delegation loop
-/// that already ships; the rest are the tracker stats named for future
-/// goals tile stays a placeholder because it has no source.
+/// **Order is display order.** Every stat is computed from the schedule
+/// record. "On-time rate" and "Avg late by" were removed in item 24a: under
+/// the ringing-alarm model they measured the ring, not the person (DECISIONS.md
+/// "Stats review — findings and decisions").
 const List<ProfileStatDefinition> kProfileStatDefinitions = [
-  // ---- live today, computed from the schedule record ----
   ProfileStatDefinition(
     key: 'tasksCompleted',
     label: 'Tasks completed',
@@ -38,32 +36,13 @@ const List<ProfileStatDefinition> kProfileStatDefinitions = [
     unit: ProfileStatUnit.percent,
     compute: _followThrough,
   ),
-  ProfileStatDefinition(
-    key: 'onTimeRate',
-    label: 'On-time rate',
-    unit: ProfileStatUnit.percent,
-    compute: _onTimeRate,
-  ),
-  ProfileStatDefinition(
-    key: 'avgLateMinutes',
-    label: 'Avg late by',
-    unit: ProfileStatUnit.minutes,
-    compute: _avgLateMinutes,
-  ),
+  // The key predates the rename and is never renamed (it is a published map
+  // key); the label says what it counts.
   ProfileStatDefinition(
     key: 'plansCreated',
-    label: 'Plans made for others',
+    label: 'Alarms you set for others',
     unit: ProfileStatUnit.count,
     compute: _plansCreated,
-  ),
-
-  // ---- placeholders (no `compute`) ----
-  // "Time tracked" and "Focus sessions" were removed with Track Time
-  // (2026-09-27, Batch G item 8).
-  ProfileStatDefinition(
-    key: 'goalsAchieved',
-    label: 'Goals achieved',
-    unit: ProfileStatUnit.count,
   ),
 ];
 
@@ -131,7 +110,10 @@ List<ProfileStat> hiddenStats() => [
 num _tasksCompleted(StatInputs i) =>
     i.itemsAsTarget.where((it) => it.isDone).length;
 
-num _plansCreated(StatInputs i) => i.itemsAsPlanner.length;
+/// Alarms the user set for OTHER people that actually stood: self-plans are
+/// not "for others", and a cancelled/withdrawn/rejected plan never rang.
+num _plansCreated(StatInputs i) =>
+    i.itemsAsPlanner.where((it) => !it.isSelfPlan && !it.isCancelled).length;
 
 /// Done as a share of everything that reached an outcome.
 ///
@@ -149,33 +131,6 @@ num _followThrough(StatInputs i) {
   if (settled == 0) return 0;
   final done = i.itemsAsTarget.where((it) => it.isDone).length;
   return ((done / settled) * 100).round();
-}
-
-/// Of the tasks the user COMPLETED, the share finished at or before their
-/// scheduled time. A late completion is honest data, counted here as not-on-time
-/// rather than dropped. Denominator is done items only — a skip is a different
-/// failure that [_followThrough] already captures, and an approved item whose
-/// time has not arrived is neither on-time nor late yet.
-///
-/// A done item with no `completedAt` (legacy) counts as on-time — [StatItem]
-/// declines to guess lateness it cannot measure. Returns 0 with nothing done.
-num _onTimeRate(StatInputs i) {
-  final done = i.itemsAsTarget.where((it) => it.isDone).toList();
-  if (done.isEmpty) return 0;
-  final onTime = done.where((it) => !it.wasLate).length;
-  return ((onTime / done.length) * 100).round();
-}
-
-/// The average lateness (whole minutes) across the completions that WERE late.
-/// The denominator is late items only, so it reads "when late, typically by
-/// this much" rather than being diluted by every on-time task. 0 when nothing
-/// was ever late — a meaningful "never late", and the section stays suppressed
-/// until there is history anyway.
-num _avgLateMinutes(StatInputs i) {
-  final late = i.itemsAsTarget.where((it) => it.wasLate).toList();
-  if (late.isEmpty) return 0;
-  final total = late.fold<int>(0, (sum, it) => sum + it.latenessMinutes);
-  return (total / late.length).round();
 }
 
 /// Consecutive days, ending today or yesterday, on which at least one item was

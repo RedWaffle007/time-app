@@ -68,8 +68,7 @@ class HowItWorksScreen extends ConsumerWidget {
             icon: AppIcons.stats,
             title: 'Stats',
             body:
-                'Your totals, streaks, follow-through and on-time rate at a '
-                'glance.',
+                'Your totals, streaks and follow-through at a glance.',
           ),
           const _Feature(
             icon: AppIcons.navYou,

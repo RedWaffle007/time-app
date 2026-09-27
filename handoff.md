@@ -58,8 +58,8 @@
   ANY plan against the current rules.** Every phone — including the external
   tester's — needs a fresh APK.
 - Completed: Items **1–23, 25–32, 34, 35**, Batches **A–G**.
-- Next: **Item 24 → Item 33** (both research-first; propose, wait for
-  sign-off). Nothing built since Batch A has been checked on a phone — see
+- Next: **Item 24 (24a built; 24b → 24c → 24d) → Item 33** (research-first;
+  propose, wait for sign-off). Nothing built since Batch A has been checked on a phone — see
   "Deferred device checks".
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
 
@@ -488,14 +488,31 @@ unanimous group approval, flexible-window and multi-friend requests. Full
 reasoning: the dated 2026-09-27 DECISIONS.md entries; commits in "Current
 state". Phone checks: "Deferred device checks".
 
-### 24 — Stats and product review (NEXT)
+### 24 — Stats and product review (IN PROGRESS — audited + decided 2026-09-27)
 
-- Last product-surface change: audit/reuse existing stats; prioritize useful,
-  privacy-safe signals over surveillance/vanity metrics.
-- Cover minimum samples, relationship changes (friendship = permission,
-  group membership), timezone ranges, trends, empty states, and humane streaks.
-- Track Time is gone (item 8): the "Time tracked" / "Focus sessions" stats were
-  removed; stats now come from the schedule record only.
+Findings and the four user decisions: DECISIONS.md "Stats review — findings
+and decisions". Decided: humane streak (plan-less days neutral; only an
+unanswered alarm breaks it); Skip counts against follow-through but Missed is
+shown separately; self-plans count, with the split shown; group stats are
+separate and group-scoped, and group plans also count individually.
+
+- **24a — correctness (app only).** BUILT 2026-09-27, awaiting commit.
+  Late = Done (Late) only (no "0 min late"); On-time rate + Avg late by
+  removed; "Alarms you set for others" excludes self/cancelled; Goals
+  placeholder removed; locale-correct numbers; stale copy + UI-RULES §6.14.
+- **24b — new Stats page (app only).** This week vs last (done / skipped /
+  missed), follow-through, "Answered when it rang", current + best streak
+  (humane rule), "Set for you" vs self split, who plans for you most (own
+  eyes only), alarms you set + their completion, requests fulfilled /
+  answered, last-8-weeks bars (§2.8). Percentages need ≥5 answered plans.
+  DECISIONS → UI-RULES → code.
+- **24c — profile subset.** Published/visible stats trimmed to tasks
+  completed, current streak, best streak, follow-through (≥5 only). Missed
+  alarms and who-plans-for-you are never published.
+- **24d — group progress (rules deploy).** Numbers from that group's plans
+  only; current members only (delete `memberStats` on leave/remove, admin
+  delete in rules); minimum sample before ranking; shared streak as
+  "N of M kept it going".
 
 ### 33 — Competitor review (last)
 
@@ -524,6 +541,6 @@ state". Phone checks: "Deferred device checks".
 2. Collect device results (Redmi, the tester abroad) against "Deferred device
    checks". Fix anything reported before new work; record verified items in
    CLAUDE.md "Parked & unverified" / DECISIONS.md.
-3. Item 24 (stats and product review): research and audit first, present
-   findings and a proposal, wait for sign-off before changing anything.
+3. Item 24: audit done and decided; 24a built. Continue 24b → 24c → 24d,
+   one at a time, stopping for review after each.
 4. Item 33 (competitor review) last.

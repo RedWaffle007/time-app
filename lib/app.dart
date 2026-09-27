@@ -444,7 +444,8 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     // local day a pending plan is rejected ("Not approved in time") and an
     // approved-but-untouched item is skipped ("Did not respond"), off the item
     // stream, never off a transition. Late completions before that boundary are
-    // ordinary Done writes and keep their delay (ScheduleItem.completionDelay).
+    // ordinary Done writes; after an unanswered alarm they read Done (Late)
+    // with their delay (ScheduleItem.completionDelay).
     ref.watch(itemLapseSyncProvider);
 
     // VOICE-NOTE DELIVERY (item 32c): the same shape again — keep a verified

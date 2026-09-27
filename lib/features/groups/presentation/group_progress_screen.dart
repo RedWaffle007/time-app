@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/format/datetime_format.dart';
 import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
@@ -115,16 +116,21 @@ class _SharedHeader extends StatelessWidget {
             const SizedBox(height: Space.sm),
             Text(
               sharedStreak == 0
-                  ? "0 days — the group's streak needs everyone showing up."
+                  ? "${formatCount(context, 0)} days — the group's streak "
+                      'needs everyone showing up.'
                   : sharedStreak == 1
-                      ? '1 day — everyone kept it going.'
-                      : '$sharedStreak days — everyone kept it going.',
+                      ? '${formatCount(context, 1)} day — everyone kept it '
+                          'going.'
+                      : '${formatCount(context, sharedStreak)} days — '
+                          'everyone kept it going.',
               style: context.text.bodyMedium,
             ),
             const SizedBox(height: Space.md),
             Text(
-              'Group follow-through: ${avgFollowThrough.round()}% '
-              'across $memberCount ${memberCount == 1 ? 'member' : 'members'}.',
+              'Group follow-through: '
+              '${formatPercent(context, avgFollowThrough.round())} across '
+              '${formatCount(context, memberCount)} '
+              '${memberCount == 1 ? 'member' : 'members'}.',
               style: context.text.bodySmall
                   ?.copyWith(color: context.colors.onSurfaceVariant),
             ),
@@ -154,19 +160,20 @@ class _LeaderRow extends StatelessWidget {
             color: context.colors.primaryContainer,
             borderRadius: Radii.md,
           ),
-          child: Text('$rank',
+          child: Text(formatCount(context, rank),
               style: context.text.titleMedium
                   ?.copyWith(color: context.colors.onPrimaryContainer)),
         ),
         title: Text(stat.name.isEmpty ? '—' : stat.name),
         subtitle: Text(
-          '${stat.tasksCompleted} done · '
-          '${stat.currentStreak} ${stat.currentStreak == 1 ? 'day' : 'days'} streak',
+          '${formatCount(context, stat.tasksCompleted)} done · '
+          '${formatCount(context, stat.currentStreak)} '
+          '${stat.currentStreak == 1 ? 'day' : 'days'} streak',
           style: context.text.bodySmall
               ?.copyWith(color: context.colors.onSurfaceVariant),
         ),
         trailing: Text(
-          '${stat.followThrough.round()}%',
+          formatPercent(context, stat.followThrough.round()),
           style: context.text.titleMedium,
         ),
       ),

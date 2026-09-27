@@ -112,45 +112,74 @@ void main() {
     });
   });
 
-  group('completionDelay (late completions are honest data)', () {
-    test('done after the scheduled time reports the delay', () {
-      final scheduled = DateTime.utc(2026, 8, 26, 4); // 09:00 Karachi
-      final i = ScheduleItem(
-        id: '1',
-        targetUid: 't',
-        createdByUid: 'p',
-        groupId: 'g',
-        title: 'x',
-        localWallTime: '',
-        timezone: zone,
-        scheduledInstantUtc: scheduled,
-        status: ScheduleItemStatus.approved,
-        outcome: ScheduleOutcome(
-          result: OutcomeResult.done,
-          completedAt: scheduled.add(const Duration(hours: 2, minutes: 15)),
-        ),
+  group('completionDelay (late = Done (Late), item 24a)', () {
+    final scheduled = DateTime.utc(2026, 8, 26, 4); // 09:00 Karachi
+
+    ScheduleItem doneAt(
+      Duration after, {
+      bool unavailable = false,
+      String? skipReason,
+    }) => ScheduleItem(
+      id: '1',
+      targetUid: 't',
+      createdByUid: 'p',
+      groupId: 'g',
+      title: 'x',
+      localWallTime: '',
+      timezone: zone,
+      scheduledInstantUtc: scheduled,
+      status: ScheduleItemStatus.approved,
+      alarm: unavailable
+          ? ScheduleAlarmTimeline(
+              rangAt: scheduled,
+              unavailableAt: scheduled.add(const Duration(minutes: 1)),
+            )
+          : null,
+      outcome: ScheduleOutcome(
+        result: OutcomeResult.done,
+        completedAt: scheduled.add(after),
+        skipReason: skipReason,
+      ),
+    );
+
+    test('Done after an unanswered alarm reports the delay', () {
+      final i = doneAt(
+        const Duration(hours: 2, minutes: 15),
+        unavailable: true,
       );
       expect(i.wasCompletedLate, isTrue);
       expect(i.completionDelay, const Duration(hours: 2, minutes: 15));
     });
 
-    test('done on time reports no delay', () {
-      final scheduled = DateTime.utc(2026, 8, 26, 4);
-      final i = ScheduleItem(
-        id: '2',
-        targetUid: 't',
-        createdByUid: 'p',
-        groupId: 'g',
-        title: 'x',
-        localWallTime: '',
-        timezone: zone,
-        scheduledInstantUtc: scheduled,
-        status: ScheduleItemStatus.approved,
-        outcome: ScheduleOutcome(
-          result: OutcomeResult.done,
-          completedAt: scheduled.subtract(const Duration(minutes: 5)),
-        ),
+    test('Done tapped while the alarm rings is NOT late', () {
+      // The F2 regression: the alarm rings AT the instant, so this Done lands
+      // seconds after it and used to render "0 min late".
+      final i = doneAt(const Duration(seconds: 40));
+      expect(i.wasCompletedLate, isFalse);
+      expect(i.completionDelay, isNull);
+    });
+
+    test('Done hours later without an unanswered alarm is not late', () {
+      // The badge reads plain Done here, so the card line must agree.
+      final i = doneAt(const Duration(hours: 3));
+      expect(i.completionDelay, isNull);
+    });
+
+    test('under a minute is never shown as late', () {
+      final i = doneAt(const Duration(seconds: 59), unavailable: true);
+      expect(i.completionDelay, isNull);
+    });
+
+    test('legacy timeout skip-reason still counts as unavailable', () {
+      final i = doneAt(
+        const Duration(minutes: 30),
+        skipReason: kUserUnavailableSkipReason,
       );
+      expect(i.completionDelay, const Duration(minutes: 30));
+    });
+
+    test('done early reports no delay', () {
+      final i = doneAt(const Duration(minutes: -5), unavailable: true);
       expect(i.wasCompletedLate, isFalse);
       expect(i.completionDelay, isNull);
     });

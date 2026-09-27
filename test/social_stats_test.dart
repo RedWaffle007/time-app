@@ -25,6 +25,8 @@ void main() {
     bool done = false,
     bool skipped = false,
     bool approved = true,
+    bool self = false,
+    bool cancelled = false,
   }) {
     // Karachi is UTC+5 year-round, so subtracting five hours gives the instant.
     final utc = DateTime.utc(year, month, day, hour - 5);
@@ -33,6 +35,8 @@ void main() {
       isApproved: approved,
       isDone: done,
       isSkipped: skipped,
+      isSelfPlan: self,
+      isCancelled: cancelled,
     );
   }
 
@@ -56,11 +60,16 @@ void main() {
       expect(keys.toSet().length, keys.length);
     });
 
-    test('ships both live stats and placeholders', () {
-      // The mechanism the feature was asked for: a tile that exists now and
-      // fills in later without a refactor.
+    test('ships live stats and no "Coming soon" tile (item 24a)', () {
+      // A placeholder advertised a feature that does not exist ("Goals
+      // achieved"). The mechanism stays — see the empty-snapshot test below —
+      // but nothing ships as one.
       expect(kProfileStatDefinitions.any((d) => d.compute != null), isTrue);
-      expect(kProfileStatDefinitions.any((d) => d.isPlaceholder), isTrue);
+      expect(kProfileStatDefinitions.any((d) => d.isPlaceholder), isFalse);
+      expect(
+        kProfileStatDefinitions.map((d) => d.key),
+        isNot(contains('goalsAchieved')),
+      );
     });
 
     test('placeholders are NOT published as zero', () {
@@ -269,6 +278,52 @@ void main() {
       );
       expect(values['plansCreated'], 3);
     });
+
+    test('excludes self-plans — they are not "for others" (item 24a)', () {
+      final values = computeStatValues(
+        inputs(
+          planner: [
+            at(2026, 8, 20),
+            at(2026, 8, 19, self: true, done: true),
+            at(2026, 8, 18, self: true),
+          ],
+        ),
+      );
+      expect(values['plansCreated'], 1);
+    });
+
+    test('excludes cancelled / withdrawn / rejected plans (item 24a)', () {
+      final values = computeStatValues(
+        inputs(
+          planner: [
+            at(2026, 8, 20, done: true),
+            at(2026, 8, 19, cancelled: true),
+            at(2026, 8, 18, cancelled: true, approved: false),
+          ],
+        ),
+      );
+      expect(values['plansCreated'], 1);
+    });
+
+    test('keeps its published key; the label says what it counts', () {
+      final def = kProfileStatDefinitions.firstWhere(
+        (d) => d.key == 'plansCreated',
+      );
+      expect(def.label, 'Alarms you set for others');
+    });
+  });
+
+  test('On-time rate and Avg late by are gone (item 24a)', () {
+    // Under the ringing-alarm model they measured the ring, not the person:
+    // a Done tapped while the alarm rings always lands after the instant.
+    final keys = kProfileStatDefinitions.map((d) => d.key).toSet();
+    expect(keys, isNot(contains('onTimeRate')));
+    expect(keys, isNot(contains('avgLateMinutes')));
+    final values = computeStatValues(
+      inputs(target: [at(2026, 8, 20, done: true)]),
+    );
+    expect(values.containsKey('onTimeRate'), isFalse);
+    expect(values.containsKey('avgLateMinutes'), isFalse);
   });
 
   test('Track Time\'s stats are gone (item 8, 2026-09-27)', () {

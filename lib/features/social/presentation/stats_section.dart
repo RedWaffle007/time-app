@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/format/datetime_format.dart';
 import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
@@ -78,7 +79,7 @@ class StatsGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // "Coming soon" placeholders (e.g. Goals achieved) are a build-time device
+    // "Coming soon" placeholders (none ship today) are a build-time device
     // for wiring stats modularly; a shipped app should not advertise features
     // that aren't there. They stay visible in debug so the modular design is
     // exercised, and are dropped from release only.
@@ -181,22 +182,20 @@ class _StatTile extends StatelessWidget {
   String _value(BuildContext context) {
     if (stat.state != ProfileStatState.ready || stat.value == null) return '—';
     final value = stat.value!;
+    // Every digit goes through the locale (worldwide requirement, UI-RULES
+    // §6.14) — never '$value'.
     switch (stat.unit) {
       case ProfileStatUnit.count:
-        return '$value';
+        return formatCount(context, value);
       case ProfileStatUnit.percent:
-        return '$value%';
+        return formatPercent(context, value);
       case ProfileStatUnit.days:
         // Singular matters: "1 days" is the kind of detail that makes an app
         // feel unfinished.
-        return value == 1 ? '1 day' : '$value days';
+        final n = formatCount(context, value);
+        return value == 1 ? '$n day' : '$n days';
       case ProfileStatUnit.minutes:
-        final total = value.round();
-        final hours = total ~/ 60;
-        final minutes = total % 60;
-        if (hours == 0) return '${minutes}m';
-        if (minutes == 0) return '${hours}h';
-        return '${hours}h ${minutes}m';
+        return formatDurationMinutes(context, value.round());
     }
   }
 }

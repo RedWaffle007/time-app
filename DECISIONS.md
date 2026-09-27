@@ -7002,3 +7002,49 @@ They now use two new tokens — `Sizes.voiceChoiceIcon` (32) for the glyph and
 (UI-RULES §6.4 / §7) — so the two controls on that card read and hit like
 buttons, not decorations. Light and dark are the same widgets; no colour
 change.
+
+---
+
+## Stats review — findings and decisions (2026-09-27, item 24)
+
+**Audit (research only, no code):** under F2's ringing-alarm model "On-time
+rate" and "Avg late by" are wrong — Done tapped while the alarm rings lands
+after the scheduled instant, so nearly every completion counted late, and
+cards read "Done · 0 min late" while the badge (which keys off the permanent
+`alarm.unavailableAt` fact) said plain Done. "Plans made for others" counted
+self-plans and cancelled alarms. "Goals achieved" advertised an unbuilt
+feature. Stat tiles and the group progress screen rendered Latin digits and
+English units (worldwide requirement). The group board used each member's
+OVERALL numbers, kept removed members, and ranked 1-of-1 above 49-of-50.
+
+**User-decided 2026-09-27:**
+1. **Humane streak.** Days with no plans are neutral (neither extend nor
+   break). Only an unanswered alarm (auto-skip "Did not respond" or
+   "User unavailable" with no later Done) breaks the streak.
+2. **A deliberate Skip counts against follow-through**, but **Missed**
+   (unanswered) is shown separately from Skipped.
+3. **Self-plans count in follow-through**, with the self vs "set for you"
+   split shown on the Stats page.
+4. **Group stats exist separately, scoped to that group's plans** — and
+   group plans ALSO count toward the individual's own profile stats (they
+   already do: the target's record includes every item).
+
+**Build order:** 24a correctness (app only) → 24b new Stats page → 24c
+profile subset + minimum sample → 24d group-scoped progress (rules deploy).
+
+### 24a — correctness fixes (built 2026-09-27)
+
+- **Late = Done (Late).** `ScheduleItem.completionDelay` now reports a delay
+  only when the alarm went unanswered (`wasUnavailableAtAlarmTime`) and the
+  delay is at least one minute. The card line and the badge can no longer
+  disagree, and "0 min late" is gone.
+- **"On-time rate" and "Avg late by" removed** (they measured the ring, not
+  the person). Their replacement, "Answered when it rang", arrives in 24b.
+- **"Plans made for others" → "Alarms you set for others"**: excludes
+  self-plans and cancelled/withdrawn/rejected plans. The key `plansCreated`
+  is unchanged (published keys are never renamed).
+- **"Goals achieved" placeholder removed.** The placeholder mechanism stays.
+- **Locale:** tiles and the group progress screen render every number via
+  `NumberFormat` (`formatCount` / `formatPercent` in `datetime_format.dart`).
+- **Copy:** "tracked time" / "on-time rate" dropped from the Stats subtitle,
+  the tour and "How this app works"; UI-RULES §6.14 updated.

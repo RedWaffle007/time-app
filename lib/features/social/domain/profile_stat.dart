@@ -142,7 +142,7 @@ class ProfileStatDefinition {
 
 /// Everything a [ProfileStatDefinition.compute] is allowed to see.
 ///
-/// Adding a field here is how a future tracker (hours logged, sessions, goals)
+/// Adding a field here is how a new data source (e.g. plan requests)
 /// feeds the stats layer — the registry does not need to know where the data
 /// came from, only that it arrived.
 class StatInputs {
@@ -176,7 +176,8 @@ class StatItem {
     required this.isApproved,
     required this.isDone,
     required this.isSkipped,
-    this.completedAt,
+    this.isSelfPlan = false,
+    this.isCancelled = false,
   });
 
   final DateTime instantUtc;
@@ -184,21 +185,14 @@ class StatItem {
   final bool isDone;
   final bool isSkipped;
 
-  /// When a DONE item was actually completed. Null on non-done items and on
-  /// legacy done items that predate the field. Combined with [instantUtc] it is
-  /// the whole delay story — see [wasLate] / [latenessMinutes].
-  final DateTime? completedAt;
+  /// The user planned this for themselves (creator == target).
+  final bool isSelfPlan;
+
+  /// Cancelled by the planner, withdrawn or rejected — the alarm never stood,
+  /// so it is not an alarm anyone "set".
+  final bool isCancelled;
 
   bool get hasOutcome => isDone || isSkipped;
-
-  /// Completed after its scheduled time. A done item with no [completedAt]
-  /// (legacy) is treated as on-time, not guessed late.
-  bool get wasLate =>
-      isDone && completedAt != null && completedAt!.isAfter(instantUtc);
-
-  /// How many whole minutes late, or 0 when on time / not applicable.
-  int get latenessMinutes =>
-      wasLate ? completedAt!.difference(instantUtc).inMinutes : 0;
 }
 
 /// The published stats document, `users/{uid}/profileStats/summary`.

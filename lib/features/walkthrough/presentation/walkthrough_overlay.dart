@@ -36,7 +36,7 @@ const kWalkthroughStepCopy = <WalkthroughStepCopy>[
   ),
   WalkthroughStepCopy(
     'Stats',
-    'Your totals, streaks, follow-through and on-time rate at a glance.',
+    'Your totals, streaks and follow-through at a glance.',
   ),
   WalkthroughStepCopy(
     'You',
