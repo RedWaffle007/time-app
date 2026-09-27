@@ -56,4 +56,43 @@ void main() {
       findsNothing,
     );
   });
+
+  testWidgets('the guide is short and has no retired rules (H5)', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(400 * 3, 3000 * 3);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: const HowItWorksScreen(),
+        ),
+      ),
+    );
+    final texts = tester
+        .widgetList<Text>(find.byType(Text))
+        .map((t) => t.data ?? '')
+        .join('\n');
+    // Friendship IS the permission; requests ask one friend for one time.
+    for (final retired in [
+      'permission to plan',
+      'turn the permission off',
+      'given permission',
+      'fill a time window',
+      'one or more',
+      'Plan requests',
+    ]) {
+      expect(texts, isNot(contains(retired)), reason: retired);
+    }
+    for (final heading in [
+      'The bottom bar',
+      'How it works',
+      'Where things are',
+    ]) {
+      expect(find.text(heading), findsOneWidget, reason: heading);
+    }
+    expect(find.text('Replay the guided tour'), findsOneWidget);
+  });
 }

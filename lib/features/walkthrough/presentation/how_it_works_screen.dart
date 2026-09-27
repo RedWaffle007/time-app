@@ -11,7 +11,7 @@ import '../application/walkthrough_providers.dart';
 
 /// **The complete "How this app works" guide**, reached from the account menu.
 ///
-/// A scrollable reference — one tight blurb per page and feature — for the
+/// A short, plain reference (rewritten in Batch H5, 2026-09-27) for the
 /// question the five-step coach tour is too short to answer. The tour is spatial
 /// orientation over the nav bar; this is the full map. The two are complementary:
 /// the "Replay the guided tour" button at the end re-runs the coach marks.
@@ -30,9 +30,8 @@ class HowItWorksScreen extends ConsumerWidget {
         padding: Space.screenFormSafe(context),
         children: [
           Text(
-            'Checkmate lets people you trust set alarms on your phone, only '
-            'people you have allowed, and you can stop it at any time. Here is '
-            'every part of it.',
+            "Friends set alarms on each other's phones. You answer with Done "
+            'or Skip, and they find out.',
             style: context.text.bodyMedium?.copyWith(
               color: context.colors.onSurfaceVariant,
             ),
@@ -44,127 +43,88 @@ class HowItWorksScreen extends ConsumerWidget {
             icon: AppIcons.navSchedule,
             title: 'Plan',
             body:
-                'Your schedule across three tabs: Home (your day, next task '
-                'first, plus plans you set for others until they answer), '
-                'Activity (their answers) and Groups. Tap PLAN, bottom-left, to '
-                'plan an item on any of them.',
+                "Home shows what's next, Activity shows friends' answers, and "
+                'Groups are your groups. Tap PLAN, bottom-left, to set an '
+                'alarm.',
           ),
           const _Feature(
             icon: AppIcons.navRequest,
             title: 'Request',
             body:
-                'Ask one friend to plan a reminder for you (the time, the task '
-                'and a note) and answer what friends ask of you. Tap REQUEST '
-                'PLAN, bottom-left, to ask.',
+                'Ask a friend to set an alarm for you at a time you pick. '
+                "Friends' requests to you show here too.",
           ),
           const _Feature(
             icon: AppIcons.voice,
-            title: 'Speak to create (centre mic)',
+            title: 'Centre mic',
             body:
-                'Tap the centre mic to plan a reminder by voice, hands-free. '
-                'You review it before anything is saved.',
+                'Say it out loud, like "Monday 7am gym". You check it before '
+                'it saves.',
           ),
           const _Feature(
             icon: AppIcons.stats,
             title: 'Stats',
-            body:
-                'Your totals, streaks and follow-through at a glance.',
+            body: 'Your streaks and how often you follow through.',
           ),
           const _Feature(
             icon: AppIcons.navYou,
             title: 'You',
-            body:
-                'Your profile, as others see it, with Friends and Voice '
-                'notes. The gear opens Settings.',
+            body: 'Your profile, as others see it. The gear opens Settings.',
           ),
 
           const SizedBox(height: Space.md),
-          const SectionHeader('Planning together'),
+          const SectionHeader('How it works'),
           const _Feature(
-            icon: AppIcons.group,
-            title: 'Groups & invites',
-            body:
-                'Create a group and invite people with a code. Members can be '
-                'given permission to plan for each other.',
-          ),
-          const _Feature(
-            icon: AppIcons.permissions,
+            icon: AppIcons.friends,
             title: 'Friends plan for each other',
             body:
-                'Friends can set alarms for each other. No extra permission. '
-                'To stop one, mark it Done or Skip before it rings, or '
-                'unfriend.',
+                'Friends can set alarms for each other. To stop one, mark it '
+                'Done or Skip before it rings, or unfriend.',
           ),
           const _Feature(
-            icon: AppIcons.navSchedule,
-            title: 'Request a plan',
+            icon: AppIcons.group,
+            title: 'Groups',
             body:
-                'From You → Friends → Plan requests, ask one or more trusted '
-                'friends to plan one item or fill a time window. They still '
-                'need your permission to set alarms for you.',
-          ),
-          const _Feature(
-            icon: AppIcons.approved,
-            title: 'Your permission',
-            body:
-                'Only friends you allow (on their profile) or members of a '
-                'group you allow can set alarms for you. Their alarms ring at '
-                'the time they choose; turn the permission off to stop them.',
-          ),
-
-          const SizedBox(height: Space.md),
-          const SectionHeader('Reminders & alarms'),
-          const _Feature(
-            icon: AppIcons.reminders,
-            title: 'Reminders',
-            body:
-                'Alarms ring when they are due, scheduled on this device, '
-                'nothing leaving it.',
+                'Join with a code or an invite link. Any member can plan for '
+                'the whole group; admins add and remove people.',
           ),
           const _Feature(
             icon: AppIcons.ringOverApps,
-            title: 'Alarm mode',
+            title: 'Alarms',
             body:
-                'With the right permissions a reminder rings like a real '
-                'alarm: on time, over other apps, and on the lock screen.',
+                'They ring at the planned time, even over other apps or on '
+                'the lock screen. A friend can send a voice note instead of '
+                'a ringtone.',
           ),
           const _Feature(
-            icon: AppIcons.approved,
-            title: 'Accountability',
+            icon: AppIcons.done,
+            title: 'Done or Skip',
             body:
-                'When you mark an item done or skipped, the person who planned '
-                'it is notified. That is what closes the loop.',
+                "The person who planned it is told right away. If you don't "
+                "answer, it's marked missed at the end of the day.",
           ),
 
           const SizedBox(height: Space.md),
-          const SectionHeader('More'),
-          const _Feature(
-            icon: AppIcons.stats,
-            title: 'Group progress & leaderboard',
-            body:
-                "How the group is doing on plans made in it, and a "
-                'leaderboard once members have five answered plans.',
-          ),
-          const _Feature(
-            icon: AppIcons.friends,
-            title: 'Friends  ·  in the You tab',
-            body:
-                'Add people, manage requests, and control who can see your '
-                'profile. Open the You tab → Friends.',
-          ),
+          const SectionHeader('Where things are'),
           const _Feature(
             icon: AppIcons.calendar,
-            title: 'Calendar  ·  on Home',
-            body:
-                'A month, week and day view over everything scheduled, in each '
-                "item's own timezone. Open it beside Upcoming Plans.",
+            title: 'Calendar',
+            body: 'On Home.',
           ),
           const _Feature(
-            icon: AppIcons.permissions,
-            title: 'Reminders & permissions  ·  in Settings',
-            body:
-                'Review and fix the permissions reliable reminders need, any '
-                'time.',
+            icon: AppIcons.archive,
+            title: 'Archive',
+            body: 'Plan menu, top right.',
+          ),
+          const _Feature(
+            icon: AppIcons.voiceLibrary,
+            title: 'Friends and Voice notes',
+            body: 'On You.',
+          ),
+          const _Feature(
+            icon: AppIcons.settings,
+            title: 'Permissions, quiet hours, app lock, theme',
+            body: 'In Settings.',
           ),
 
           const SizedBox(height: Space.lg),

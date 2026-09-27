@@ -65,7 +65,7 @@
   ANY plan against the current rules.** Every phone — including the external
   tester's — needs a fresh APK.
 - Completed: Items **1–23, 25–32, 34, 35**, Batches **A–G**.
-- Next: **Item 24 (24a–24c committed; 24d built, rules deploy pending) → Batch H (H1–H4 built; H5 next) → Item 33** (research-first;
+- Next: **Item 24 (24a–24c committed; 24d built, rules deploy pending) → Batch H (all built; H5 awaiting commit) → Item 33** (research-first;
   propose, wait for sign-off). Nothing built since Batch A has been checked on a phone — see
   "Deferred device checks".
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
@@ -545,7 +545,7 @@ UI-RULES (DECISIONS → UI-RULES → code for any new recipe/token).
 - **H3 — Edit Profile, in full:** edit username, edit identity (name), change
   timezone, edit/remove profile picture, edit/remove "About you", public
   profile toggle. Nothing else (quiet hours and device options moved to H2).
-- **H4 BUILT 2026-09-27, awaiting commit + Worker deploy** (DECISIONS.md "No
+- **H4 BUILT + committed + Worker deployed 2026-09-27** (DECISIONS.md "No
   em dashes in app text").
 - **H4 — No em dashes in any in-app text, app-wide.** User-facing strings
   only (copy, notifications from the Worker included); code comments are not
@@ -553,6 +553,8 @@ UI-RULES (DECISIONS → UI-RULES → code for any new recipe/token).
   needs; the empty-value glyph "—" on stat tiles becomes a non-dash
   placeholder decided in the plan. Add a regression test that scans
   user-facing strings.
+- **H5 BUILT 2026-09-27, awaiting commit** (DECISIONS.md "How this app works
+  rewritten"). Batch H is then complete.
 - **H5 — "How this app works" rewritten** shorter and plainer, matching the
   current app (Plan · Request · ⊕ · Stats · You/Settings after H1–H2).
 
@@ -590,5 +592,5 @@ confirmed with `wrangler deployments status`.
    checks". Fix anything reported before new work; record verified items in
    CLAUDE.md "Parked & unverified" / DECISIONS.md.
 3. Item 24: 24a–24c committed; 24d built — deploy rules, verify, commit.
-4. Batch H (Profile & Settings restructure), one item at a time.
+4. Batch H done (H5 awaiting commit). Then the deferred device pass.
 5. Item 33 (competitor review) last.

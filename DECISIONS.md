@@ -7169,3 +7169,11 @@ sample). Other empty values: invite code "Loading…", unknown member time
 "time unknown", missing request task "Not given". UI-RULES §6.13a + §6.9.
 `test/no_em_dash_test.dart` scans Dart string literals under `lib/` plus the
 Worker and Kotlin sources. **Deploy:** Worker (two push bodies changed).
+
+## "How this app works" rewritten (2026-09-27, Batch H5)
+
+Shorter and plainer: 13 entries in three sections (The bottom bar, How it
+works, Where things are), down from 16, and every retired rule is gone (the
+old copy still described planning permissions, multi-friend and time-window
+requests, and "turn the permission off"). A widget test fails if that
+wording returns. The "Replay the guided tour" button is unchanged.
