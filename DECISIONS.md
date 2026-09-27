@@ -7315,3 +7315,34 @@ optional seed parameters stay (tests use them; no route passes them).
 dry run found 0. Schedule items, friendships and profiles were kept. The 7
 `group-avatars/{groupId}/` folders in Supabase are left for the user to
 remove from the dashboard.
+
+## Silent "Uh-Oh!", Send closes the Plan screen, alarm-kind emoji, Voice notes pre-load (2026-09-27)
+
+From the first release-build device pass after the ⊕ removal.
+
+- **"Uh-Oh!" was silent in release.** Release builds shrink resources, and
+  `res/raw/uh_oh.mp3` was only ever named inside the `planner_unavailable`
+  channel's sound URI (`android.resource://…/raw/uh_oh`, built by name by
+  flutter_local_notifications), never through `R.raw`, so the shrinker
+  deleted it (confirmed: the release APK carried `tick.wav` but no mp3).
+  `res/raw/time_app_keep.xml` now `tools:keep`s it. The channel is NOT
+  renamed: its frozen sound is that name-based URI, which resolves as soon as
+  the file ships, so phones that already created the channel get the sound
+  back with the new build. No Worker change.
+- **Send closes the Plan screen.** A successful Send (not a request
+  fulfilment, which already pops back to its request) now opens My Schedule
+  (`planIntentProvider` → `PlanTab.mySchedule`, `go(Routes.plan)`) and the
+  existing confirmation ("Alarm sent." / "Voice alarm sent." / "Added to
+  your schedule.") shows there, mirroring how Request Plan leaves. A refused
+  Send stays on the form.
+- **Alarm-kind emoji:** 🔊 beside Voice Note and ⏰ beside Default Alarm, in
+  the segmented choice on the Plan screen and the group sheet
+  (`kVoiceNoteEmoji` / `kDefaultAlarmEmoji`, in the icon slot the Material
+  icons used). A label, never a status, so the §2 emoji-status lint does not
+  apply.
+- **Voice notes lag:** the screen started its Firestore read on open, so the
+  page slid in on a spinner that then swapped to the list. The You screen
+  now `ref.listen`s `voiceLibraryProvider`, so the list is already loaded
+  when Voice notes opens. Not profiled on the device (adb input injection is
+  blocked on the Redmi without "USB debugging (Security settings)"); confirm
+  by feel on the next pass.

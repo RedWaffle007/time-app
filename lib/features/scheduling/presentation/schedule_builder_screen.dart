@@ -5,6 +5,7 @@ import 'package:clock/clock.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/format/datetime_format.dart';
 import '../../../core/theme/app_icons.dart';
@@ -20,6 +21,7 @@ import '../../auth/application/auth_providers.dart';
 import '../../auth/domain/user_profile.dart';
 import '../../groups/domain/planner_grant.dart';
 import '../../notifications/application/outcome_notifier.dart';
+import '../../plan/application/plan_intent.dart';
 import '../../plan_requests/application/plan_request_providers.dart';
 import '../../plan_requests/domain/plan_request.dart';
 import '../../social/application/social_providers.dart';
@@ -29,12 +31,19 @@ import '../../voice_notes/domain/voice_library_note.dart';
 import '../../voice_notes/presentation/library_note_choice.dart';
 import '../../voice_notes/presentation/voice_library_picker.dart';
 import '../../voice_notes/presentation/voice_note_recorder.dart';
+import '../../../routing/app_router.dart';
 import '../application/schedule_clash.dart';
 import '../application/schedule_providers.dart';
 import '../domain/schedule_item.dart';
 
 /// The two kinds of alarm (F4). A self-plan is always [defaultAlarm].
 enum AlarmKind { voiceNote, defaultAlarm }
+
+/// Beside each alarm-kind choice, on the Plan screen and the group sheet
+/// (2026-09-27, user-directed): a speaker for Voice Note, an alarm clock for
+/// Default Alarm. They label the choice, never a status.
+const kVoiceNoteEmoji = '🔊';
+const kDefaultAlarmEmoji = '⏰';
 
 /// The fixed title a voice alarm is stored with: it has no name field (F4) —
 /// the recording is the message — but the model and rules need a title.
@@ -461,6 +470,15 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
         Navigator.of(context).pop();
         return;
       }
+      // Sent: leave the builder for My Schedule, where the confirmation shows
+      // (2026-09-27, user-directed; the Request flow already leaves the same
+      // way). Only without a router (a bare embedding) does it stay and reset.
+      final router = GoRouter.maybeOf(context);
+      if (router != null) {
+        ref.read(planIntentProvider.notifier).openTab(PlanTab.mySchedule);
+        router.go(Routes.plan);
+        return;
+      }
       // Reset for the next item, keep the same target.
       setState(() {
         _titleController.clear();
@@ -634,12 +652,12 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
                 segments: const [
                   ButtonSegment(
                     value: AlarmKind.voiceNote,
-                    icon: Icon(AppIcons.voiceNote),
+                    icon: Text(kVoiceNoteEmoji),
                     label: Text('Voice Note'),
                   ),
                   ButtonSegment(
                     value: AlarmKind.defaultAlarm,
-                    icon: Icon(AppIcons.defaultAlarm),
+                    icon: Text(kDefaultAlarmEmoji),
                     label: Text('Default Alarm'),
                   ),
                 ],

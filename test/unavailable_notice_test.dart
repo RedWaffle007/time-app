@@ -35,6 +35,15 @@ void main() {
     expect(NotifyEvent.unavailable.name, 'unavailable');
   });
 
+  // 2026-09-27: release resource shrinking deleted uh_oh.mp3 (nothing names
+  // it through R.raw), so the notice arrived silent. A keep rule pins it.
+  test('release builds keep the "Uh-Oh!" file', () {
+    final keep = File(
+      'android/app/src/main/res/raw/time_app_keep.xml',
+    ).readAsStringSync();
+    expect(keep, contains('tools:keep="@raw/uh_oh"'));
+  });
+
   test('both places that create channels create it', () {
     final scheduler = File(
       'lib/features/reminders/data/local_notifications_reminder_scheduler.dart',

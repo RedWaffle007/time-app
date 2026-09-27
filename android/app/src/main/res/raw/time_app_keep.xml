@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Release builds shrink resources and delete any raw file nothing references
+     through R.raw. The "Uh-Oh!" notice sound is only named in the
+     planner_unavailable channel's sound URI (android.resource://…/raw/uh_oh),
+     so without this it was stripped and the notice played silently
+     (2026-09-27). -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@raw/uh_oh" />

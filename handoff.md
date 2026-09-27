@@ -80,6 +80,10 @@
   `group-avatars/…` folders in Supabase are the user's to remove). **Centre ⊕
   voice button REMOVED 2026-09-27** (DECISIONS.md "Centre voice button
   removed"); Voice Note alarms stay.
+  **Then (2026-09-27):** silent Uh-Oh fixed (release shrinker had deleted
+  `uh_oh.mp3`; keep rule added), Send now closes the Plan screen onto My
+  Schedule, 🔊/⏰ beside the alarm kinds, Voice notes pre-loaded from You
+  (DECISIONS.md "Silent Uh-Oh!…").
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
 
 ## Product model now (2026-09-27 — read before touching planning or alarms)

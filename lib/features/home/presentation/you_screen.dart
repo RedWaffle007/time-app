@@ -9,6 +9,7 @@ import '../../../routing/app_router.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../social/application/social_providers.dart';
 import '../../social/presentation/user_profile_screen.dart';
+import '../../voice_notes/application/voice_note_providers.dart';
 
 /// **The You pillar = your own profile** (Batch H1, DECISIONS.md "You = your
 /// profile; Settings holds the rest").
@@ -26,6 +27,11 @@ class YouScreen extends ConsumerWidget {
     final uid = ref.watch(currentUidProvider);
     final profile = ref.watch(profileProvider).value;
     final pendingRequests = ref.watch(incomingRequestCountProvider);
+    // Keep the Voice notes list loaded while You is on screen, so opening it
+    // shows the notes at once instead of a spinner that swaps to the list
+    // mid-transition (the lag reported 2026-09-27). Listened, not watched:
+    // a new note never rebuilds this screen.
+    ref.listen(voiceLibraryProvider, (_, _) {});
     final username = profile?.username;
 
     return Scaffold(

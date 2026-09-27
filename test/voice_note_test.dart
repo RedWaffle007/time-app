@@ -8,12 +8,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:time_app/core/theme/app_theme.dart';
 import 'package:time_app/features/auth/application/auth_providers.dart';
 import 'package:time_app/features/auth/data/auth_repository.dart';
 import 'package:time_app/features/auth/domain/user_profile.dart';
 import 'package:time_app/features/groups/domain/planner_grant.dart';
 import 'package:time_app/features/notifications/application/outcome_notifier.dart';
+import 'package:time_app/features/plan/application/plan_intent.dart';
 import 'package:time_app/features/plan_requests/application/plan_request_providers.dart';
 import 'package:time_app/features/plan_requests/data/plan_request_repository.dart';
 import 'package:time_app/features/plan_requests/domain/plan_request.dart';
@@ -624,6 +626,7 @@ void main() {
       PlanRequest? planRequest,
       _PlanRequests? planRequests,
       NotificationEventNotifier? notifier,
+      bool routed = false,
     }) async {
       final repo = _Repo();
       final voice = client ?? _Client();
@@ -631,6 +634,41 @@ void main() {
       tester.view.physicalSize = const Size(1080, 3200);
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.reset);
+      Widget builderScreen() => ScheduleBuilderScreen(
+        initialTargetUid: target,
+        initialIsSelf: target == 'me',
+        initialGroupId: target == 'me' ? null : '',
+        initialDate: seeded
+            ? (seedDate ?? DateTime.now().add(const Duration(days: 2)))
+            : null,
+        initialTime: seeded ? const TimeOfDay(hour: 10, minute: 0) : null,
+      );
+      // With a router, the builder is pushed over a stand-in Plan page that
+      // shows which sub-tab the Plan intent asked for.
+      final router = routed
+          ? GoRouter(
+              initialLocation: '/plan',
+              routes: [
+                GoRoute(
+                  path: '/plan',
+                  builder: (context, state) => Scaffold(
+                    body: Consumer(
+                      builder: (context, ref, _) => Text(
+                        'Plan page: ${ref.watch(planIntentProvider)?.tab}',
+                      ),
+                    ),
+                  ),
+                  routes: [
+                    GoRoute(
+                      path: 'schedule-builder',
+                      builder: (context, state) =>
+                          Scaffold(body: builderScreen()),
+                    ),
+                  ],
+                ),
+              ],
+            )
+          : null;
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
@@ -670,42 +708,36 @@ void main() {
               planRequests ?? _PlanRequests(),
             ),
           ],
-          child: MaterialApp(
-            theme: dark ? AppTheme.dark : AppTheme.light,
-            // Request mode (item 5b) is pushed over the request screen and
-            // pops itself after Send, so give it something to pop back to.
-            home: planRequest != null
-                ? Builder(
-                    builder: (context) => Scaffold(
-                      body: TextButton(
-                        onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) =>
-                                ScheduleBuilderScreen(planRequest: planRequest),
+          child: router != null
+              ? MaterialApp.router(theme: AppTheme.light, routerConfig: router)
+              : MaterialApp(
+                  theme: dark ? AppTheme.dark : AppTheme.light,
+                  // Request mode (item 5b) is pushed over the request screen and
+                  // pops itself after Send, so give it something to pop back to.
+                  home: planRequest != null
+                      ? Builder(
+                          builder: (context) => Scaffold(
+                            body: TextButton(
+                              onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => ScheduleBuilderScreen(
+                                    planRequest: planRequest,
+                                  ),
+                                ),
+                              ),
+                              child: const Text('Request screen'),
+                            ),
                           ),
-                        ),
-                        child: const Text('Request screen'),
-                      ),
-                    ),
-                  )
-                : Scaffold(
-                    body: ScheduleBuilderScreen(
-                      initialTargetUid: target,
-                      initialIsSelf: target == 'me',
-                      initialGroupId: target == 'me' ? null : '',
-                      initialDate: seeded
-                          ? (seedDate ??
-                                DateTime.now().add(const Duration(days: 2)))
-                          : null,
-                      initialTime: seeded
-                          ? const TimeOfDay(hour: 10, minute: 0)
-                          : null,
-                    ),
-                  ),
-          ),
+                        )
+                      : Scaffold(body: builderScreen()),
+                ),
         ),
       );
       await tester.pumpAndSettle();
+      if (router != null) {
+        router.push('/plan/schedule-builder');
+        await tester.pumpAndSettle();
+      }
       if (planRequest != null) {
         await tester.tap(find.text('Request screen'));
         await tester.pumpAndSettle();
@@ -1130,6 +1162,52 @@ void main() {
       await send(tester);
       expect(client.uploads, hasLength(1), reason: 'one upload, at Send');
       expect(repo.created.single['itemId'], client.uploads.single.$2);
+    });
+
+    // 2026-09-27 (user-directed): once sent, the builder closes and My
+    // Schedule opens, with the confirmation showing there.
+    testWidgets('after Send the builder closes onto My Schedule', (
+      tester,
+    ) async {
+      final (repo, _) = await pumpBuilder(tester, routed: true);
+      expect(find.byType(ScheduleBuilderScreen), findsOneWidget);
+      await fillAndRecord(tester, record: false);
+      await send(tester);
+      expect(repo.created, hasLength(1));
+      expect(find.byType(ScheduleBuilderScreen), findsNothing);
+      expect(find.text('Plan page: ${PlanTab.mySchedule}'), findsOneWidget);
+      expect(find.text('Alarm sent.'), findsOneWidget);
+    });
+
+    testWidgets('a refused Send stays on the builder', (tester) async {
+      final (repo, _) = await pumpBuilder(tester, routed: true);
+      repo.minuteTaken = true;
+      await fillAndRecord(tester, record: false);
+      await send(tester);
+      expect(repo.created, isEmpty);
+      expect(find.byType(ScheduleBuilderScreen), findsOneWidget);
+    });
+
+    testWidgets('the alarm kinds carry a speaker and an alarm clock', (
+      tester,
+    ) async {
+      await pumpBuilder(tester);
+      expect(kVoiceNoteEmoji, '🔊');
+      expect(kDefaultAlarmEmoji, '⏰');
+      for (final (emoji, label) in [
+        (kVoiceNoteEmoji, 'Voice Note'),
+        (kDefaultAlarmEmoji, 'Default Alarm'),
+      ]) {
+        final segment = find.ancestor(
+          of: find.text(label),
+          matching: find.byType(InkWell),
+        );
+        expect(
+          find.descendant(of: segment.first, matching: find.text(emoji)),
+          findsOneWidget,
+          reason: label,
+        );
+      }
     });
 
     testWidgets('Send checks only the minute lock, and a taken minute is the '

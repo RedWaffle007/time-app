@@ -23,7 +23,13 @@ import '../../voice_notes/presentation/voice_note_recorder.dart';
 import '../application/group_member_times.dart';
 import '../application/schedule_providers.dart';
 import 'schedule_builder_screen.dart'
-    show AlarmKind, kTaskNameRequired, kVoiceAlarmTitle, kVoiceNoteRequired;
+    show
+        AlarmKind,
+        kDefaultAlarmEmoji,
+        kTaskNameRequired,
+        kVoiceAlarmTitle,
+        kVoiceNoteEmoji,
+        kVoiceNoteRequired;
 
 /// One eligible group-plan recipient: a member the planner selected, plus
 /// whether it is the planner themselves (self items skip the queue).
@@ -574,12 +580,12 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
               segments: const [
                 ButtonSegment(
                   value: AlarmKind.voiceNote,
-                  icon: Icon(AppIcons.voiceNote),
+                  icon: Text(kVoiceNoteEmoji),
                   label: Text('Voice Note'),
                 ),
                 ButtonSegment(
                   value: AlarmKind.defaultAlarm,
-                  icon: Icon(AppIcons.defaultAlarm),
+                  icon: Text(kDefaultAlarmEmoji),
                   label: Text('Default Alarm'),
                 ),
               ],

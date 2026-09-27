@@ -438,6 +438,9 @@ void main() {
       expect(find.byKey(const ValueKey('group-pick-time')), findsOneWidget);
       expect(find.text('Voice Note'), findsOneWidget);
       expect(find.text('Default Alarm'), findsOneWidget);
+      // A speaker and an alarm clock beside the two kinds (2026-09-27).
+      expect(find.text('🔊'), findsOneWidget);
+      expect(find.text('⏰'), findsOneWidget);
       expect(find.text('Name of the Task'), findsOneWidget);
       expect(find.byKey(const ValueKey('group-note')), findsOneWidget);
     });
