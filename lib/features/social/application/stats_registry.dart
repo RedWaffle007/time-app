@@ -1,6 +1,5 @@
-import 'package:timezone/timezone.dart' as tz;
-
 import '../domain/profile_stat.dart';
+import 'streak_policy.dart';
 
 /// **The stats registry — the one list of what a profile can show.**
 ///
@@ -133,59 +132,8 @@ num _followThrough(StatInputs i) {
   return ((done / settled) * 100).round();
 }
 
-/// Consecutive days, ending today or yesterday, on which at least one item was
-/// completed.
-///
-/// **Days are counted in the user's home timezone**, not UTC and not the
-/// device's current zone. A streak is a lived thing — it breaks at the
-/// midnight the person actually slept through — and the app already anchors
-/// every commitment to `homeTimezone` for exactly this reason.
-///
-/// Ending "today or yesterday" is deliberate: a streak must not break at
-/// midnight while the user is asleep and reappear when they complete something
-/// the next morning. Today counts if it has a completion; if it does not, the
-/// run is measured back from yesterday and stays intact for the whole day.
-num _currentStreak(StatInputs i) {
-  if (i.itemsAsTarget.isEmpty) return 0;
-
-  final tz.Location location;
-  try {
-    location = tz.getLocation(i.timezone);
-  } catch (_) {
-    // An unknown or empty zone must not throw inside a stats pass and take the
-    // whole profile down. No zone means no honest day boundary, so no streak.
-    return 0;
-  }
-
-  int dayNumber(DateTime utc) {
-    final local = tz.TZDateTime.from(utc, location);
-    // Days since the epoch in local terms. DateTime.utc on the local Y/M/D is
-    // the standard trick for a calendar-day ordinal that is immune to the
-    // zone's own offset — including across a DST shift, where a local day is
-    // 23 or 25 hours long but still exactly one day.
-    return DateTime.utc(
-      local.year,
-      local.month,
-      local.day,
-    ).difference(DateTime.utc(1970, 1, 1)).inDays;
-  }
-
-  final completedDays = <int>{
-    for (final item in i.itemsAsTarget)
-      if (item.isDone) dayNumber(item.instantUtc),
-  };
-  if (completedDays.isEmpty) return 0;
-
-  final today = dayNumber(i.now);
-  // Anchor on today if it has a completion, otherwise on yesterday. Anything
-  // older means the run has already ended.
-  var cursor = completedDays.contains(today) ? today : today - 1;
-  if (!completedDays.contains(cursor)) return 0;
-
-  var streak = 0;
-  while (completedDays.contains(cursor)) {
-    streak++;
-    cursor--;
-  }
-  return streak;
-}
+/// The humane current streak (item 24b) — the same function the Stats page
+/// uses, so a profile and the dashboard can never disagree. See
+/// [computeStreaks] for the rule.
+num _currentStreak(StatInputs i) =>
+    computeStreaks(i.itemsAsTarget, i.timezone).current;

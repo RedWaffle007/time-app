@@ -816,6 +816,16 @@ Composes primitives that already exist — it invents nothing:
   that token (alongside the auth hero and the My Schedule band); it is still not a
   general-purpose big-text slot. Hearth allows the figure to feel celebratory
   through *size and spacing*, never through a new hue.
+- **The week bars** (item 24b) — the dashboard's one chart: eight rolling weeks
+  of Done counts as vertical bars in a strip `Sizes.weekBarsHeight` (96) tall.
+  Each bar is a `seriesPrimary` fill with `Radii.sm` corners over a
+  `progressTrack` column; the tallest week fills the strip and a zero week
+  shows only its track (never a fake stub). The count sits under each bar in
+  `labelSmall` / `chartAxisLabel` through `formatCount`, and the whole strip
+  carries one `Semantics` label stating every number in words.
+- **Percentages need a sample.** A percentage tile with fewer than five plans
+  behind it renders `—` with the caption "After 5 answered plans" — never a
+  confident 100% from one plan.
 - **Charts** pull every colour from §2.8 (`AppDataVizColors`) and every meter from
   §6.7. Personal-dashboard numbers are distinct from the social-profile stats on
   `/u/:uid`: same tile recipe, different surface and framing ("my dashboard", not

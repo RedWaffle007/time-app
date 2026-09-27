@@ -6,10 +6,13 @@ import 'package:time_app/core/theme/app_theme.dart';
 import 'package:time_app/core/theme/app_tokens.dart';
 import 'package:time_app/core/widgets/accent_card.dart';
 import 'package:time_app/core/widgets/section_header.dart';
+import 'package:time_app/features/stats/application/my_stats_providers.dart';
 import 'package:time_app/features/stats/presentation/stats_screen.dart';
 import 'package:time_app/features/social/application/stats_providers.dart';
 import 'package:time_app/features/social/domain/profile_stat.dart';
 import 'package:time_app/features/social/presentation/stats_section.dart';
+
+import 'fixtures/my_stats_fixture.dart';
 
 /// Regression guards for the CHECKMATE redesign. Each pumps a real widget under
 /// the real theme and fails on any layout overflow or thrown exception — the two
@@ -100,23 +103,17 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          myComputedStatsProvider.overrideWithValue(
-            const AsyncData({'tasksCompleted': 3, 'followThrough': 75}),
-          ),
+          myStatsProvider.overrideWithValue(AsyncData(sampleMyStats())),
         ],
         child: host(const StatsScreen()),
       ),
     );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    // The screen must actually render its tiles and copy.
     expect(find.text('Stats'), findsOneWidget);
-    expect(find.text('Tasks completed'), findsOneWidget);
-    expect(find.text('3'), findsOneWidget);
-    expect(find.text('75%'), findsOneWidget);
-    expect(find.text('Coming soon'), findsWidgets);
-    // Em-dash placeholder values present.
-    expect(find.text('—'), findsWidgets);
+    expect(find.text('Showing up'), findsOneWidget);
+    expect(find.text('86%'), findsOneWidget);
+    expect(find.text('Coming soon'), findsNothing);
   });
 
   testWidgets('StatsScreen renders at a narrow phone width without overflow', (
@@ -128,9 +125,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          myComputedStatsProvider.overrideWithValue(
-            const AsyncData({'tasksCompleted': 3}),
-          ),
+          myStatsProvider.overrideWithValue(AsyncData(sampleMyStats())),
         ],
         child: host(const StatsScreen()),
       ),

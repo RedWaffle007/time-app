@@ -150,6 +150,25 @@ class _StatTile extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
+            if (stat.caption case final caption?) ...[
+              const SizedBox(height: Space.xs),
+              Text(
+                caption,
+                style: context.text.labelSmall?.copyWith(color: muted),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+            if (stat.state == ProfileStatState.insufficient) ...[
+              const SizedBox(height: Space.xs),
+              Text(
+                'After ${formatCount(context, kMinStatSample)} '
+                'answered plans',
+                style: context.text.labelSmall?.copyWith(color: muted),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
             if (stat.state == ProfileStatState.placeholder) ...[
               const SizedBox(height: Space.xs),
               Row(

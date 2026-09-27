@@ -40,6 +40,14 @@ void main() {
     );
   }
 
+  StatItem missedAt(int year, int month, int day) => StatItem(
+    instantUtc: DateTime.utc(year, month, day, 7),
+    isApproved: true,
+    isDone: false,
+    isSkipped: true,
+    isMissed: true,
+  );
+
   StatInputs inputs({
     List<StatItem> target = const [],
     List<StatItem> planner = const [],
@@ -164,8 +172,8 @@ void main() {
     });
   });
 
-  group('currentStreak', () {
-    test('counts consecutive days ending today', () {
+  group('currentStreak (humane rule, item 24b)', () {
+    test('counts consecutive done days', () {
       final values = computeStatValues(
         inputs(
           target: [
@@ -178,56 +186,35 @@ void main() {
       expect(values['currentStreak'], 3);
     });
 
-    test('survives a today with nothing done yet', () {
-      // The streak must not break at midnight while the user is asleep and
-      // reappear when they complete something the next morning.
+    test('a plan-less gap is neutral — rest days never cost a streak', () {
       final values = computeStatValues(
         inputs(
-          target: [at(2026, 8, 20, done: true), at(2026, 8, 19, done: true)],
+          target: [
+            at(2026, 8, 21, done: true),
+            // 19th and 20th: nothing planned.
+            at(2026, 8, 18, done: true),
+            at(2026, 8, 17, done: true),
+          ],
         ),
       );
-      expect(values['currentStreak'], 2);
+      expect(values['currentStreak'], 3);
     });
 
-    test('breaks once the run ended before yesterday', () {
-      final values = computeStatValues(
-        inputs(
-          target: [at(2026, 8, 18, done: true), at(2026, 8, 17, done: true)],
-        ),
-      );
-      expect(values['currentStreak'], 0);
-    });
-
-    test('a gap ends the run — only the CURRENT streak counts', () {
+    test('a missed plan breaks the run', () {
       final values = computeStatValues(
         inputs(
           target: [
             at(2026, 8, 21, done: true),
             at(2026, 8, 20, done: true),
-            // 19th missing.
+            missedAt(2026, 8, 19),
             at(2026, 8, 18, done: true),
-            at(2026, 8, 17, done: true),
-            at(2026, 8, 16, done: true),
           ],
         ),
       );
       expect(values['currentStreak'], 2);
     });
 
-    test('several completions on one day count once', () {
-      final values = computeStatValues(
-        inputs(
-          target: [
-            at(2026, 8, 21, hour: 9, done: true),
-            at(2026, 8, 21, hour: 14, done: true),
-            at(2026, 8, 21, hour: 20, done: true),
-          ],
-        ),
-      );
-      expect(values['currentStreak'], 1);
-    });
-
-    test('skipped items do not extend a streak', () {
+    test('a deliberate skip is neutral', () {
       final values = computeStatValues(
         inputs(
           target: [
@@ -237,29 +224,24 @@ void main() {
           ],
         ),
       );
-      expect(values['currentStreak'], 1);
+      expect(values['currentStreak'], 2);
     });
 
     test('day boundaries follow the HOME zone, not UTC', () {
-      // 02:00 on the 21st in Karachi is 21:00 on the 20th in UTC. Counting in
-      // UTC would put these two completions on different days and report a
-      // 2-day streak where the person lived one.
+      // 02:00 on the 21st in Karachi is 21:00 on the 20th in UTC.
       final lateNight = StatItem(
         instantUtc: DateTime.utc(2026, 8, 20, 21),
         isApproved: true,
         isDone: true,
         isSkipped: false,
       );
-      final sameDayMorning = at(2026, 8, 21, hour: 9, done: true);
-
       final values = computeStatValues(
-        inputs(target: [lateNight, sameDayMorning]),
+        inputs(target: [lateNight, at(2026, 8, 21, hour: 9, done: true)]),
       );
       expect(values['currentStreak'], 1);
     });
 
     test('an unknown timezone yields no streak rather than throwing', () {
-      // A bad zone must not take down a whole profile's stats pass.
       final values = computeStatValues(
         inputs(target: [at(2026, 8, 21, done: true)], timezone: 'Not/AZone'),
       );

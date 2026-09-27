@@ -7048,3 +7048,44 @@ profile subset + minimum sample → 24d group-scoped progress (rules deploy).
   `NumberFormat` (`formatCount` / `formatPercent` in `datetime_format.dart`).
 - **Copy:** "tracked time" / "on-time rate" dropped from the Stats subtitle,
   the tour and "How this app works"; UI-RULES §6.14 updated.
+
+### 24b — the new Stats page (2026-09-27)
+
+The Stats pillar becomes a private dashboard built by ONE pure function,
+`buildMyStats()` (`lib/features/stats/application/my_stats.dart`), over the
+signed-in user's record plus their outgoing plan requests. Nothing on it is
+published; the profile subset is 24c.
+
+- **Missed** = an auto-skip ("Did not respond" lapse or "User unavailable"
+  timeout) with no later Done. **Skipped** = a deliberate skip. Done (Late) is
+  done. Follow-through = done ÷ (done + skipped + missed).
+- **Answered when it rang** = settled plans neither missed nor unavailable at
+  alarm time (early Done/Skip counts as answered). Replaces On-time rate.
+- **Humane streak** (`streak_policy.dart`, shared with the published
+  `currentStreak`): home-zone days; a day with ≥1 Done and no Missed extends,
+  a Missed breaks, plan-less and skip-only days are neutral; best streak uses
+  the same rule. The published `currentStreak` changes meaning with it — a
+  reader only renders the number, so no version bump.
+- **Minimum sample:** any percentage needs ≥5 plans in its denominator
+  (`kMinStatSample`), otherwise "—" with "After 5 answered plans".
+- **Windows are rolling**: last 7 days vs the 7 before, and 8 rolling weeks
+  for the bars — no locale week-start ambiguity.
+- **Requests:** fulfilled = your plans for others carrying `planRequestId`;
+  answered = your requests `fulfilled` out of those closed (fulfilled,
+  declined, or open past their window), cancelled ones excluded.
+- **"Most plans from"** (top 3 by count) is shown only to the user.
+- **New token `Sizes.weekBarsHeight` (96)** for the 8-week bar strip
+  (UI-RULES §6.14). Bars are `seriesPrimary` fills on a `progressTrack`
+  track, always with the numbers in words for screen readers.
+
+## Inactivity pushes rewritten for this app (2026-09-27, user-directed)
+
+The 50 six-hour inactivity lines (`worker/src/inactivity.js`) were generic
+productivity copy ("Give your next hour a purpose"). They now speak about
+Checkmate itself — setting alarms for friends, Request, voice alarms, the
+voice-note library, groups, Stats, streaks — while staying true for ANY user:
+none assumes a friend is waiting or a group exists as fact, none names a time
+of day (the push lands at any hour), and none threatens a streak (plan-less
+days never break one, item 24b). Order, count (50), the ≤60-character limit,
+the rotation cursor and the title are unchanged. A Worker test pins the
+banned words and requires most lines to name a feature. **Deploy:** Worker.

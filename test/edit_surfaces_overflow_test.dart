@@ -16,9 +16,11 @@ import 'package:time_app/features/scheduling/domain/schedule_item.dart';
 import 'package:time_app/features/scheduling/application/schedule_providers.dart';
 import 'package:time_app/features/scheduling/presentation/group_plan_sheet.dart';
 import 'package:time_app/features/social/application/social_providers.dart';
-import 'package:time_app/features/social/application/stats_providers.dart';
 import 'package:time_app/features/outcomes/presentation/outcome_screen.dart';
+import 'package:time_app/features/stats/application/my_stats_providers.dart';
 import 'package:time_app/features/stats/presentation/stats_screen.dart';
+
+import 'fixtures/my_stats_fixture.dart';
 
 void main() {
   testWidgets('theme selector stays below its label at narrow widths', (
@@ -149,22 +151,19 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('StatsScreen renders computed values and honest placeholders', (
+  testWidgets('StatsScreen renders the 24b dashboard at 320px', (
     tester,
   ) async {
     await _pump(
       tester,
       const StatsScreen(),
       overrides: [
-        myComputedStatsProvider.overrideWithValue(
-          const AsyncData({'tasksCompleted': 4, 'followThrough': 80}),
-        ),
+        myStatsProvider.overrideWithValue(AsyncData(sampleMyStats())),
       ],
     );
-    expect(find.text('Tasks completed'), findsOneWidget);
-    expect(find.text('4'), findsOneWidget);
-    expect(find.text('80%'), findsOneWidget);
-    expect(find.text('Coming soon'), findsWidgets);
+    expect(find.text('Follow-through'), findsOneWidget);
+    expect(find.text('86%'), findsOneWidget);
+    expect(find.text('Coming soon'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

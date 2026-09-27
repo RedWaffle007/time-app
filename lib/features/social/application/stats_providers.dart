@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/application/auth_providers.dart';
+import '../../scheduling/application/item_lapse_policy.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
 import '../domain/profile_stat.dart';
@@ -17,14 +18,25 @@ import 'stats_registry.dart';
 /// A deliberate narrowing (see [StatItem]): it keeps `social/` from depending
 /// on the whole scheduling domain, and it is the seam a future tracker feeds
 /// through without becoming a schedule item.
-StatItem _toStatItem(ScheduleItem item) => StatItem(
+StatItem toStatItem(ScheduleItem item) => StatItem(
   instantUtc: item.scheduledInstantUtc,
   isApproved: item.status == ScheduleItemStatus.approved,
   isDone: item.outcome?.result == OutcomeResult.done,
   isSkipped: item.outcome?.result == OutcomeResult.skipped,
   isSelfPlan: item.createdByUid == item.targetUid,
   isCancelled: item.isAutoArchived,
+  isMissed: isMissedOutcome(item.outcome),
+  wasUnavailable: item.wasUnavailableAtAlarmTime,
+  creatorUid: item.createdByUid,
+  fromPlanRequest: item.planRequestId != null,
 );
+
+/// An automatic skip — nobody answered. Both automatic reasons are fixed
+/// domain strings written by the app / Worker, never user text.
+bool isMissedOutcome(ScheduleOutcome? outcome) =>
+    outcome?.result == OutcomeResult.skipped &&
+    (outcome?.skipReason == kLapsedSkipReason ||
+        outcome?.skipReason == kUserUnavailableSkipReason);
 
 /// The signed-in user's freshly computed stat values.
 ///
@@ -59,8 +71,8 @@ final myComputedStatsProvider = Provider<AsyncValue<Map<String, num>>>((ref) {
   return AsyncData(
     computeStatValues(
       StatInputs(
-        itemsAsTarget: target.map(_toStatItem).toList(),
-        itemsAsPlanner: planner.map(_toStatItem).toList(),
+        itemsAsTarget: target.map(toStatItem).toList(),
+        itemsAsPlanner: planner.map(toStatItem).toList(),
         // A real clock, on purpose: the streak has to know what "today" is, and
         // the pure function it feeds takes `now` as an argument precisely so
         // the impurity stops here and the computation stays testable.

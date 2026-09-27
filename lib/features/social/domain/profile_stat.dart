@@ -34,6 +34,11 @@ library;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+/// A percentage needs at least this many plans behind it (item 24b). Below
+/// that it renders [ProfileStatState.insufficient] — "—" and the reason —
+/// never a confident 100% from one plan.
+const kMinStatSample = 5;
+
 /// How a statistic should be rendered right now.
 enum ProfileStatState {
   /// A real, computed number.
@@ -50,6 +55,11 @@ enum ProfileStatState {
   /// [placeholder] on purpose — "not yet measured" and "not yours to see" are
   /// different messages and must never render identically.
   hidden,
+
+  /// Measured, but too few plans stand behind it to be honest (a percentage
+  /// below `kMinStatSample`). Renders an em dash and "After 5 answered plans".
+  /// Distinct from [placeholder]: the feature exists, the sample does not.
+  insufficient,
 }
 
 /// How to format a stat's raw number for display.
@@ -80,6 +90,7 @@ class ProfileStat {
     required this.unit,
     required this.state,
     this.value,
+    this.caption,
   });
 
   /// Stable machine key. **Never renamed** — it is the map key inside the
@@ -94,6 +105,10 @@ class ProfileStat {
 
   /// Null whenever [state] is not [ProfileStatState.ready].
   final num? value;
+
+  /// Optional muted line under the label (e.g. "Set for you 90% · Self 80%").
+  /// Already formatted by the presentation layer that built it.
+  final String? caption;
 
   ProfileStat asPlaceholder() => ProfileStat(
     key: key,
@@ -178,6 +193,10 @@ class StatItem {
     required this.isSkipped,
     this.isSelfPlan = false,
     this.isCancelled = false,
+    this.isMissed = false,
+    this.wasUnavailable = false,
+    this.creatorUid,
+    this.fromPlanRequest = false,
   });
 
   final DateTime instantUtc;
@@ -192,7 +211,25 @@ class StatItem {
   /// so it is not an alarm anyone "set".
   final bool isCancelled;
 
+  /// Auto-skipped because nobody answered: the end-of-day lapse ("Did not
+  /// respond") or the ring-cap timeout ("User unavailable"), with no later
+  /// Done. Always also [isSkipped]. The one thing that breaks a streak.
+  final bool isMissed;
+
+  /// The alarm rang out unanswered (`alarm.unavailableAt`), whatever the
+  /// outcome later became — a Done here is Done (Late).
+  final bool wasUnavailable;
+
+  /// Who set it. Null only in tests that do not care.
+  final String? creatorUid;
+
+  /// Created while fulfilling a friend's plan request (`planRequestId`).
+  final bool fromPlanRequest;
+
   bool get hasOutcome => isDone || isSkipped;
+
+  /// Skipped on purpose — a skip that is not [isMissed].
+  bool get isDeliberateSkip => isSkipped && !isMissed;
 }
 
 /// The published stats document, `users/{uid}/profileStats/summary`.

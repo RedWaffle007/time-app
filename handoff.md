@@ -58,7 +58,7 @@
   ANY plan against the current rules.** Every phone — including the external
   tester's — needs a fresh APK.
 - Completed: Items **1–23, 25–32, 34, 35**, Batches **A–G**.
-- Next: **Item 24 (24a built; 24b → 24c → 24d) → Item 33** (research-first;
+- Next: **Item 24 (24a committed, 24b built; 24c → 24d) → Item 33** (research-first;
   propose, wait for sign-off). Nothing built since Batch A has been checked on a phone — see
   "Deferred device checks".
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
@@ -496,11 +496,13 @@ unanswered alarm breaks it); Skip counts against follow-through but Missed is
 shown separately; self-plans count, with the split shown; group stats are
 separate and group-scoped, and group plans also count individually.
 
-- **24a — correctness (app only).** BUILT 2026-09-27, awaiting commit.
+- **24a — correctness (app only).** BUILT + committed 2026-09-27.
   Late = Done (Late) only (no "0 min late"); On-time rate + Avg late by
   removed; "Alarms you set for others" excludes self/cancelled; Goals
   placeholder removed; locale-correct numbers; stale copy + UI-RULES §6.14.
-- **24b — new Stats page (app only).** This week vs last (done / skipped /
+- **24b — new Stats page (app only).** BUILT 2026-09-27, awaiting commit
+  (DECISIONS.md "24b — the new Stats page"; `buildMyStats`, `streak_policy`,
+  `Sizes.weekBarsHeight`). This week vs last (done / skipped /
   missed), follow-through, "Answered when it rang", current + best streak
   (humane rule), "Set for you" vs self split, who plans for you most (own
   eyes only), alarms you set + their completion, requests fulfilled /
@@ -513,6 +515,12 @@ separate and group-scoped, and group plans also count individually.
   only; current members only (delete `memberStats` on leave/remove, admin
   delete in rules); minimum sample before ranking; shared streak as
   "N of M kept it going".
+
+### Inactivity copy — BUILT 2026-09-27, awaiting commit + Worker deploy
+
+The 50 six-hour nudges now talk about this app (DECISIONS.md "Inactivity
+pushes rewritten for this app"). Worker-only: `(cd worker && npx wrangler
+deploy)`, then promote the version.
 
 ### 33 — Competitor review (last)
 

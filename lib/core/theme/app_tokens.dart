@@ -196,6 +196,9 @@ abstract final class Sizes {
   /// two to one as the screen narrows instead of clipping a label.
   static const double statTileMinWidth = 148;
 
+  /// Height of the Stats dashboard's 8-week bar strip (UI-RULES.md §6.14).
+  static const double weekBarsHeight = 96;
+
   /// **The calendar** (UI-RULES.md §6.10).
   ///
   /// [calendarCellHeight] is the 48dp TOUCH TARGET, not a layout preference: a
