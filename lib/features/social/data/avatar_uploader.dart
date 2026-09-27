@@ -52,6 +52,15 @@ abstract class AvatarUploader {
   });
 }
 
+/// How long the profile/group write after a stored upload may take before the
+/// spinner stops (2026-09-27: offline, a Firestore write never completes, so
+/// the spinner ran forever). The write stays queued and lands once back online.
+const kAvatarSaveTimeout = Duration(seconds: 15);
+
+/// Shown when that write is still waiting on the connection.
+const kAvatarSavePendingMessage =
+    "Picture uploaded. It will show for everyone once you're back online.";
+
 /// An upload that did not happen, carrying copy the UI can show verbatim.
 class AvatarUploadFailure implements Exception {
   const AvatarUploadFailure(this.message);

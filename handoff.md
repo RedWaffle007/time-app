@@ -84,6 +84,9 @@
   `uh_oh.mp3`; keep rule added), Send now closes the Plan screen onto My
   Schedule, 🔊/⏰ beside the alarm kinds, Voice notes pre-loaded from You
   (DECISIONS.md "Silent Uh-Oh!…").
+  Picture upload now always stops (timeouts; offline save queued with a
+  message) and my avatar is pre-loaded for the You tab (DECISIONS.md
+  "Picture upload never spins forever").
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
 
 ## Product model now (2026-09-27 — read before touching planning or alarms)

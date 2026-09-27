@@ -7,6 +7,7 @@ import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/theme/status_style.dart';
+import '../../auth/application/auth_providers.dart';
 import '../../plan_requests/application/plan_request_providers.dart';
 import '../../walkthrough/application/walkthrough_providers.dart';
 import '../../walkthrough/presentation/walkthrough_overlay.dart';
@@ -56,6 +57,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   final _youKey = GlobalKey();
 
   bool _walkthroughVisible = false;
+
+  /// The avatar URL already warmed into the image cache (see build).
+  String? _warmedAvatarUrl;
 
   /// The first-run auto-show fires at most once per shell lifetime; replay comes
   /// through [walkthroughTriggerProvider], not this latch.
@@ -147,6 +151,21 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       _autoShowChecked = true;
       WidgetsBinding.instance
           .addPostFrameCallback((_) => _startWalkthrough());
+    }
+    // Warm my own picture as soon as the app is up (2026-09-27): the You tab
+    // is built on first visit, so its `Image.network` only started the
+    // download then and the initial showed for a few seconds. Fetched once
+    // per URL into the image cache the avatar then reads from.
+    final myAvatarUrl = ref.watch(
+      profileProvider.select((p) => p.value?.displayAvatarUrl),
+    );
+    if (myAvatarUrl != null && myAvatarUrl != _warmedAvatarUrl) {
+      _warmedAvatarUrl = myAvatarUrl;
+      precacheImage(
+        NetworkImage(myAvatarUrl),
+        context,
+        onError: (_, _) {}, // The avatar falls back to the initial itself.
+      );
     }
     // Replay from the You hub — a nonce bump, orthogonal to the flag above.
     ref.listen<int>(walkthroughTriggerProvider, (prev, next) {

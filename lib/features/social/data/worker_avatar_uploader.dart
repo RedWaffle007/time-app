@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -54,7 +55,14 @@ class WorkerAvatarUploader implements AvatarUploader {
     return base.replace(path: path);
   }
 
-  static const _timeout = Duration(seconds: 60);
+  /// The whole upload, and the sign-in token before it. Tight on purpose
+  /// (2026-09-27): on a dead connection the spinner must stop quickly with a
+  /// clear message, not spin for a minute or forever.
+  static const _timeout = Duration(seconds: 30);
+  static const _tokenTimeout = Duration(seconds: 15);
+
+  static const _offlineMessage =
+      'Could not reach the server. Check your connection and try again.';
 
   @override
   Future<ProfileAvatar> upload({
@@ -123,8 +131,12 @@ class WorkerAvatarUploader implements AvatarUploader {
             body: bytes,
           )
           .timeout(_timeout);
-    } catch (e) {
-      throw AvatarUploadFailure('Could not reach the server. $e');
+    } on TimeoutException {
+      throw const AvatarUploadFailure(
+        'The upload took too long. Check your connection and try again.',
+      );
+    } catch (_) {
+      throw const AvatarUploadFailure(_offlineMessage);
     }
 
     if (response.statusCode != 200) {
@@ -207,7 +219,12 @@ class WorkerAvatarUploader implements AvatarUploader {
     if (user == null) {
       throw const AvatarUploadFailure('You are signed out.');
     }
-    final token = await user.getIdToken();
+    final String? token;
+    try {
+      token = await user.getIdToken().timeout(_tokenTimeout);
+    } catch (_) {
+      throw const AvatarUploadFailure(_offlineMessage);
+    }
     if (token == null || token.isEmpty) {
       throw const AvatarUploadFailure(
         'Could not confirm who you are. Try again.',

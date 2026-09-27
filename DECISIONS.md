@@ -7346,3 +7346,21 @@ From the first release-build device pass after the ⊕ removal.
   when Voice notes opens. Not profiled on the device (adb input injection is
   blocked on the Redmi without "USB debugging (Security settings)"); confirm
   by feel on the next pass.
+
+## Picture upload never spins forever; own avatar pre-loaded (2026-09-27)
+
+- **Endless spinner on "Change" photo.** Device log: both attempts ran while
+  the phone could not resolve `firestore.googleapis.com` (DNS outage,
+  ~19:09–19:12). The flow awaited three network steps, two unbounded: the
+  ID-token fetch, the Worker upload (60 s), and the Firestore profile write,
+  which never completes offline. Now: token 15 s, upload 30 s (a timeout says
+  "took too long", any other transport error says "check your connection",
+  never a raw exception), and the profile/group write 15 s
+  (`kAvatarSaveTimeout`). On that last timeout the upload is already stored
+  and the write stays queued, so the user is told the picture shows once
+  they are back online. Same fix in the group picture editor (same code
+  path). The Worker and Supabase were probed and answer in under a second.
+- **Initial shown for seconds on the You tab.** `Image.network` has only an
+  in-memory cache and the You branch is built on first visit, so the download
+  began only then. `HomeShell` now `precacheImage`s my own
+  `displayAvatarUrl` once per URL as soon as the shell is up.

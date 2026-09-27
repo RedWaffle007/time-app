@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -109,9 +111,16 @@ class _GroupAvatarEditorState extends ConsumerState<GroupAvatarEditor> {
             mime: selection.mime,
             previousKey: widget.group.avatar?.storageKey,
           );
-      await ref
-          .read(groupRepositoryProvider)
-          .setAvatar(groupId: widget.group.id, avatar: avatar);
+      // Bounded, like the profile picture (2026-09-27): offline, the write
+      // never completes; it stays queued and lands when back online.
+      try {
+        await ref
+            .read(groupRepositoryProvider)
+            .setAvatar(groupId: widget.group.id, avatar: avatar)
+            .timeout(kAvatarSaveTimeout);
+      } on TimeoutException {
+        if (mounted) _toast(kAvatarSavePendingMessage);
+      }
       ref.invalidate(myGroupsProvider);
     } on AvatarUploadFailure catch (e) {
       if (mounted) _toast(e.message);

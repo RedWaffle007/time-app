@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -127,9 +129,17 @@ class _ProfileAvatarEditorState extends ConsumerState<ProfileAvatarEditor> {
       // Written only AFTER the bytes are stored and a URL exists. The reverse
       // order puts a URL on the profile that 404s for everyone who loads it
       // before the upload lands.
-      await ref
-          .read(profileRepositoryProvider)
-          .setAvatar(uid: profile.uid, avatar: avatar);
+      // Bounded: offline, this write never completes, which left the spinner
+      // running forever (2026-09-27). It stays queued and lands when back
+      // online; the user is told so.
+      try {
+        await ref
+            .read(profileRepositoryProvider)
+            .setAvatar(uid: profile.uid, avatar: avatar)
+            .timeout(kAvatarSaveTimeout);
+      } on TimeoutException {
+        if (mounted) _toast(kAvatarSavePendingMessage);
+      }
       // The stream normally receives Firestore's local write immediately. An
       // explicit refresh also covers a listener that was briefly disconnected
       // while the upload finished, so the editor and every shared avatar surface
