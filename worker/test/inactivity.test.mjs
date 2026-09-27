@@ -66,6 +66,13 @@ test('the copy bank has fifty short, distinct variants', () => {
   assert.equal(INACTIVITY_MESSAGES.length, 50);
   assert.equal(new Set(INACTIVITY_MESSAGES).size, 50);
   assert.equal(INACTIVITY_MESSAGES.every((copy) => copy.length <= 60), true);
+  // Pushes land at any hour and to users with no friends or group, and a
+  // plan-less day never breaks a streak — so no copy may pretend otherwise.
+  const banned = /\b(morning|tonight|evening|afternoon|lose|losing|break|miss out)\b/i;
+  assert.deepEqual(INACTIVITY_MESSAGES.filter((copy) => banned.test(copy)), []);
+  // About this app, not generic productivity: most lines name a feature.
+  const onBrand = /friend|mate|group|voice|Request|Stats|streak|alarm|remind/i;
+  assert.ok(INACTIVITY_MESSAGES.filter((copy) => onBrand.test(copy)).length >= 40);
 });
 
 test('a due state is leased, delivered, advanced, and scheduled six hours on', async () => {
