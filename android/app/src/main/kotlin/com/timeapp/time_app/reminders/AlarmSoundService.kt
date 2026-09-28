@@ -177,6 +177,8 @@ class AlarmSoundService : Service() {
                 note = endNote,
             )
         }
+        // Tell the planner now, not when the app is next opened (2026-09-27).
+        MissedAlarmReporter.report(this, ownership.itemIds().toList(), at)
         AlarmLifecycleChannel.notifyChanged()
         Log.i(TAG, "one-minute ring cap reached; stopping")
         stopAlarm()

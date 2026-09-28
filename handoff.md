@@ -87,7 +87,83 @@
   Picture upload now always stops (timeouts; offline save queued with a
   message) and my avatar is pre-loaded for the You tab (DECISIONS.md
   "Picture upload never spins forever").
+  **Committed since:** `9ded7d4` voice confirm removed · `2f16d57` ⊕ removed
+  + group reset · `7654413` Uh-Oh keep rule, Send → My Schedule, emoji ·
+  `945b251` picture timeouts + avatar pre-load. **Everything after
+  `945b251` is PARKED and UNCOMMITTED — see "PENDING — parked by the user"
+  right below.**
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
+
+## PENDING — parked by the user (2026-09-27): commit, deploy, decide later
+
+The user had no time to deploy or commit; nothing below is live. Do not
+start new work on top of it without asking; do not redo it.
+
+### P1. Uh-Oh at the moment the alarm stops — BUILT, UNCOMMITTED, Worker NOT deployed
+
+DECISIONS.md "Uh-Oh at the moment the alarm stops". The native one-minute
+auto-stop now reports straight to the Worker (`alarmTimeout`), which records
+`alarm.unavailableAt` and sends the `unavailable` push; the old
+next-app-run path stays as the fallback. Verified: `flutter analyze` clean,
+Flutter 882/882, Worker 201/201, Kotlin green (incl.
+`MissedAlarmReporterTest`), release APK builds with native `firebase-auth`.
+NOT verified on any phone.
+
+Worktree changes (the whole of the uncommitted diff):
+`worker/src/alarm-timeout.js` (new), `worker/src/index.js`,
+`worker/src/firestore-rest.js` (nested-mask option on
+`patchDocIfUnchanged`), `worker/test/alarm-timeout.test.mjs` (new),
+`android/app/build.gradle.kts` (firebase-bom 34.15.0 + firebase-auth),
+`.../reminders/MissedAlarmReporter.kt` (new), `.../reminders/AlarmSoundService.kt`,
+`android/app/src/test/.../MissedAlarmReporterTest.kt` (new),
+`test/missed_alarm_native_report_test.dart` (new), `DECISIONS.md`, this file.
+
+When the user is ready, in this order:
+1. Re-run the full verification (Operating rules) — the worktree may have
+   moved on.
+2. `(cd worker && npx wrangler deploy)`, then `npx wrangler deployments status`.
+3. Commit:
+   ```bash
+   git add worker/src/alarm-timeout.js worker/src/index.js worker/src/firestore-rest.js worker/test/alarm-timeout.test.mjs android/app/build.gradle.kts android/app/src/main/kotlin/com/timeapp/time_app/reminders/MissedAlarmReporter.kt android/app/src/main/kotlin/com/timeapp/time_app/reminders/AlarmSoundService.kt android/app/src/test/kotlin/com/timeapp/time_app/reminders/MissedAlarmReporterTest.kt test/missed_alarm_native_report_test.dart DECISIONS.md handoff.md && git commit -m "Send Uh-Oh when the alarm stops, reported natively"
+   ```
+4. Fresh release APK on every phone (the report comes from the phone that
+   RANG, so targets need it most).
+5. Device test: plan an alarm for a friend, let it ring out untouched with
+   their app closed → the planner's Uh-Oh should arrive about a minute
+   after the alarm time, not when they open the app. `wrangler tail` shows
+   `{"event":"alarmTimeout",…,"recorded":true,"sent":1}`.
+
+### P2. Plan requests expire + Request History + expiry notice — PROPOSED, awaiting the user's OK (nothing built)
+
+The user's idea (2026-09-27), agreed in principle: today a plan request
+never closes on its own (statuses are pending / inProgress / fulfilled /
+declined / cancelled; nothing expires), so a request whose time has passed
+stays "open".
+
+Proposed build:
+- The Worker's existing 2-minute plan-request cron
+  (`plan-request-reminders.js`) marks an open request `expired` once its
+  requested time passes with no plan set, claimed once, and notifies BOTH
+  people.
+- The Request tab stops listing expired requests as open.
+- A **History** button at the top of the Request tab: the same pattern as
+  the plan History (newest first, month + year headers).
+- Each person sees the time in their own zone, via the Worker's existing
+  `formatTimeIn`.
+- Caveat to tell the user: old builds parse an unknown status as `pending`,
+  so they show an expired request as open until updated.
+
+Proposed notification text (user to confirm):
+
+| To | Title | Body |
+|---|---|---|
+| Requester (X) | Plan request not set | {Y} didn't set your alarm for "{task}" at {time}. The requested time has passed. |
+| Friend who didn't plan (Y) | Plan request missed | You didn't set {X}'s alarm for "{task}" at {time}. The requested time has passed. |
+
+Open questions for the user before building:
+1. Approve the text above (or edit it).
+2. Does History hold ONLY expired requests, or every finished one
+   (set / declined / cancelled / expired)? Recommended: every finished one.
 
 ## Product model now (2026-09-27 — read before touching planning or alarms)
 
@@ -667,6 +743,8 @@ builds can still create groups.
 
 ## Immediate next action
 
+0. **First, the PENDING section above:** ask the user whether to commit +
+   deploy P1 now, and get answers on P2's two questions before building it.
 1. Confirm the `caecaf7` Worker deploy, then build the release APK
    (`flutter build apk --release --target-platform android-arm64`). On the
    Redmi a release build needs an uninstall of the debug build first (wipes
@@ -679,6 +757,6 @@ builds can still create groups.
    `group-avatars/…` folders in Supabase.
 4. Item 33 (competitor review, PingPal + SnoozeSquad): research only;
    propose findings, change nothing without sign-off.
-5. Open design question, only if the user asks: reporting a dismissal /
-   missed alarm when the target's app process is dead (today it reports on
-   next launch; would need the native side to call the Worker).
+5. (Done 2026-09-27 for missed alarms: the native stop reports to the
+   Worker, DECISIONS.md "Uh-Oh at the moment the alarm stops". A dismissal
+   with the app dead still reports on next launch.)

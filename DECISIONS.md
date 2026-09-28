@@ -7364,3 +7364,37 @@ From the first release-build device pass after the ⊕ removal.
   in-memory cache and the You branch is built on first visit, so the download
   began only then. `HomeShell` now `precacheImage`s my own
   `displayAvatarUrl` once per URL as soon as the shell is up.
+
+## Uh-Oh at the moment the alarm stops (2026-09-27)
+
+User-directed after a device test: the planner's "Uh-Oh!" arrived only when
+the target opened the app and answered Done/Skip. Cause: the one-minute
+auto-stop is native, and only the app's Dart side recorded
+`alarm.unavailableAt` and asked for the `unavailable` push, i.e. on the next
+app run. (The Uh-Oh sound itself was confirmed working on the Redmi: the log
+shows the push arriving and the channel sounding.)
+
+- **Native report:** `MissedAlarmReporter` (called from
+  `AlarmSoundService`'s auto-stop, before it stops) gets the signed-in
+  user's ID token from native Firebase Auth (`firebase-auth`, BoM 34.15.0,
+  the firebase_core plugin's own version) and POSTs
+  `{event:'alarmTimeout', targetUid, itemId, at}` to the Worker, on a
+  background thread under a 45 s partial wake lock, retrying 5xx/transport
+  failures up to 3 times. Best-effort.
+- **Worker (`alarm-timeout.js`):** only the item's target may report; the item
+  must be `approved`, not dismissed, and the report must come 30 s to 24 h
+  after the scheduled instant. The Worker writes only
+  `alarm.unavailableAt` (compare-and-set, nested field mask, the phone's time
+  clamped to [scheduled, now]) and then sends the existing `unavailable`
+  push, whose dedup slot makes every later report (a retry, the Dart path) a
+  no-op.
+- **Fallback unchanged:** the native lifecycle row is still written and the
+  app still reports on its next run, so no network at the stop only delays
+  the Uh-Oh to today's behaviour.
+- **Not covered:** a phone that is off or dead at the alarm time reports
+  nothing until it next runs the app (a server-side backstop was offered and
+  declined for its false-positive risk).
+
+**Deploy:** Worker first (`(cd worker && npx wrangler deploy)`), then the new
+APK on the TARGETS' phones (the report comes from the phone that rang). No
+rules change.

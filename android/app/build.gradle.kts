@@ -84,6 +84,13 @@ dependencies {
     // flutter_local_notifications 22.x documents as its minimum.
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 
+    // Native Firebase Auth, for the ID token the alarm's one-minute stop
+    // sends to the Worker while the app's Dart side is not running
+    // (MissedAlarmReporter, 2026-09-27). Same BoM as the firebase_core plugin
+    // (FirebaseSDKVersion in its gradle.properties), so nothing is duplicated.
+    implementation(platform("com.google.firebase:firebase-bom:34.15.0"))
+    implementation("com.google.firebase:firebase-auth")
+
     // Firebase App Distribution — the in-app "new version available" prompt for
     // tester builds. DEBUG ONLY, and this is not optional: the full
     // `firebase-appdistribution` SDK self-downloads/installs APKs, which Google

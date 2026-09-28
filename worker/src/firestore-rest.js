@@ -127,8 +127,11 @@ export function makeFirestoreDb(projectId, accessToken) {
       if (!resp.ok) throw new Error(`Firestore patch ${path} → ${resp.status}`);
     },
 
-    async patchDocIfUnchanged(path, fields, updateTime) {
-      const mask = Object.keys(fields)
+    // `maskPaths` (optional) names nested field paths to write, e.g.
+    // ['alarm.unavailableAt'] with fields { alarm: { unavailableAt } }, so a
+    // sibling in the same map is left untouched. Default: the top-level keys.
+    async patchDocIfUnchanged(path, fields, updateTime, maskPaths) {
+      const mask = (maskPaths || Object.keys(fields))
         .map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`)
         .join('&');
       const precondition = `currentDocument.updateTime=${encodeURIComponent(updateTime)}`;

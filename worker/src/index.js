@@ -34,6 +34,7 @@ import { sendPlanRequestReminders } from './plan-request-reminders.js';
 import { settleLapsedItems } from './lapse.js';
 import { rescueUndeliveredVoiceNotes } from './voice-rescue.js';
 import { handleInviteRequest } from './invite.js';
+import { ALARM_TIMEOUT_EVENT, recordAlarmTimeout } from './alarm-timeout.js';
 import {
   MAX_VOICE_BYTES,
   makeVoiceStorage,
@@ -151,6 +152,11 @@ export default {
     // as it was, and proven.
     if (FRIEND_EVENTS.has(body && body.event)) {
       return handleFriendEvent(request, env, body);
+    }
+
+    // The target's phone, the moment its alarm rang out (alarm-timeout.js).
+    if (body && body.event === ALARM_TIMEOUT_EVENT) {
+      return handleAlarmTimeout(request, env, body);
     }
 
     // Item 4: a group plan that met double-booked members (group-plan.js).
@@ -618,6 +624,81 @@ async function handleGroupPlannedRoute(request, env, body, handler = handleGroup
  * two copies of "parse the Bearer header, verify the token" is two places for
  * an accidental `if (!token) uid = 'anonymous'` to appear.
  */
+/**
+ * POST / {event:'alarmTimeout', targetUid, itemId, at?} from the target's
+ * phone (native, app not running). Only the item's TARGET may report; the
+ * Worker records `alarm.unavailableAt` and sends the `unavailable` push.
+ */
+async function handleAlarmTimeout(request, env, body) {
+  const { targetUid, itemId, at } = body || {};
+  if (
+    typeof targetUid !== 'string' ||
+    typeof itemId !== 'string' ||
+    !targetUid ||
+    !itemId ||
+    targetUid.includes('/') ||
+    itemId.includes('/') ||
+    (at !== undefined && typeof at !== 'number')
+  ) {
+    return json({ error: 'invalid-body' }, 400);
+  }
+
+  let callerUid;
+  try {
+    callerUid = await requireUid(request, env.PROJECT_ID);
+  } catch (e) {
+    if (e instanceof IdTokenError) return json({ error: 'unauthorized' }, 401);
+    throw e;
+  }
+  if (callerUid !== targetUid) return json({ error: 'forbidden' }, 403);
+
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
+  } catch {
+    return json({ error: 'server-misconfigured' }, 500);
+  }
+
+  try {
+    const accessToken = await getAccessToken(serviceAccount);
+    const db = makeFirestoreDb(env.PROJECT_ID, accessToken);
+    const res = await alarmTimeoutAndNotify(
+      { projectId: env.PROJECT_ID, db, fcm: makeFcm(env.PROJECT_ID, accessToken) },
+      { targetUid, itemId, reportedAtMs: at, nowMs: Date.now() },
+    );
+    console.log(JSON.stringify({ event: ALARM_TIMEOUT_EVENT, ...res }));
+    return json(res, res.status || 200);
+  } catch (e) {
+    return json({ error: 'send-failed', detail: String(e && e.message) }, 500);
+  }
+}
+
+/**
+ * The testable core of [handleAlarmTimeout], after authentication: the item
+ * must exist under the caller's own subtree, then the fact is recorded and
+ * the planner pushed.
+ */
+export async function alarmTimeoutAndNotify(ctx, { targetUid, itemId, reportedAtMs, nowMs }) {
+  const item = await ctx.db.getDoc(`scheduleItems/${targetUid}/items/${itemId}`);
+  if (!item) return { status: 404, error: 'item-not-found' };
+  if (item.targetUid !== targetUid) return { status: 403, error: 'forbidden' };
+  const recorded = await recordAlarmTimeout(ctx.db, {
+    targetUid,
+    itemId,
+    nowMs,
+    reportedAtMs,
+  });
+  if (!recorded.ready) {
+    return { recorded: false, sent: 0, reason: recorded.reason };
+  }
+  const push = await sendEventNotification(ctx, {
+    event: 'unavailable',
+    targetUid,
+    itemId,
+  });
+  return { recorded: recorded.recorded, ...push };
+}
+
 async function requireUid(request, projectId) {
   const authz = request.headers.get('authorization') || '';
   const idToken = authz.startsWith('Bearer ') ? authz.slice(7).trim() : '';
