@@ -73,7 +73,7 @@ void main() {
     test('friend invite carries the tap-to-open link', () {
       expect(
         friendInviteShareText('Ana_B'),
-        'Add me on RingaPop: $kNotifyEndpoint/i/u/ana_b',
+        'Add me on Mind Time: $kNotifyEndpoint/i/u/ana_b',
       );
     });
 
@@ -81,7 +81,7 @@ void main() {
       final text = groupInviteShareText('Family', 'HJK234');
       expect(text, contains('$kNotifyEndpoint/i/g/HJK234'));
       expect(text, contains('HJK234 in the app'));
-      expect(text, startsWith('Join my group "Family" on RingaPop: '));
+      expect(text, startsWith('Join my group "Family" on Mind Time: '));
     });
 
     test('the group screen and friends screen use them', () {

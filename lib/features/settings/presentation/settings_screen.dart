@@ -82,11 +82,10 @@ class SettingsScreen extends ConsumerWidget {
 /// no email app installed, shows the address with a Copy button instead.
 Future<void> sendFeedback(BuildContext context, WidgetRef ref) async {
   final launcher = ref.read(feedbackLauncherProvider);
-  final version = await launcher.appVersion();
   final opened = await launcher.compose(
     to: kFeedbackAddress,
     subject: kFeedbackSubject,
-    body: feedbackEmailBody(version),
+    body: '',
   );
   if (opened || !context.mounted) return;
   await showDialog<void>(

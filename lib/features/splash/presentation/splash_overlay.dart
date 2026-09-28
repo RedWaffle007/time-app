@@ -344,7 +344,7 @@ class _Wordmark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Text(
-      'RingaPop',
+      'Mind Time',
       maxLines: 1,
       textAlign: TextAlign.center,
       style: SplashTokens.wordmarkStyle.copyWith(color: color),
@@ -360,7 +360,7 @@ class _Tagline extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Text(
-      'A voice note that rings.',
+      'Good plans have a ring to them.',
       maxLines: 1,
       textAlign: TextAlign.center,
       style: SplashTokens.taglineStyle,

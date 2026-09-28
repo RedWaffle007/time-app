@@ -57,13 +57,13 @@ class InviteLink {
   String toString() => 'InviteLink($kind, $value)';
 }
 
-/// "Add me on RingaPop" — share text for a friend invite.
+/// "Add me on Mind Time" — share text for a friend invite.
 String friendInviteShareText(String username) =>
-    'Add me on RingaPop: ${InviteLink(InviteKind.user, canonicalUsername(username)).toUri()}';
+    'Add me on Mind Time: ${InviteLink(InviteKind.user, canonicalUsername(username)).toUri()}';
 
 /// "Join my group" — share text for a group invite. Keeps the code visible
 /// for anyone who prefers to type it.
 String groupInviteShareText(String groupName, String joinCode) =>
-    'Join my group "$groupName" on RingaPop: '
+    'Join my group "$groupName" on Mind Time: '
     '${InviteLink(InviteKind.group, joinCode.toUpperCase()).toUri()}\n'
     'Or enter the code $joinCode in the app.';

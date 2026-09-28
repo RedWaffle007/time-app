@@ -68,7 +68,7 @@ export const INACTIVITY_MESSAGES = [
   'A voice alarm repeats itself, so you only say it once.',
   'Who could use a nudge today? Set them a reminder.',
   'Let someone you trust plan your next step.',
-  'RingaPop works best with friends. Add one now.',
+  'Mind Time works best with friends. Add one now.',
   'Your follow-through lives in Stats. Take a look.',
   'Two minutes of planning beats an hour of drifting.',
   'Remind a friend of something that matters to them.',

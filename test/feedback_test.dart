@@ -21,9 +21,6 @@ class _Launcher implements FeedbackLauncher {
   final composed = <Map<String, String>>[];
 
   @override
-  Future<String?> appVersion() async => '1.2.3';
-
-  @override
   Future<bool> compose({
     required String to,
     required String subject,
@@ -61,10 +58,9 @@ void main() {
     return launcher;
   }
 
-  test('the message carries room to write, then the app version', () {
-    expect(feedbackEmailBody('1.2.3'), '\n\n---\nApp version: 1.2.3');
-    expect(feedbackEmailBody(null), contains('App version: unknown'));
-    expect(kFeedbackSubject, 'RingaPop feedback');
+  test('feedback uses the developer address and Mind Time subject', () {
+    expect(kFeedbackAddress, 'mjqsoftware.inc@gmail.com');
+    expect(kFeedbackSubject, 'Mind Time feedback');
   });
 
   testWidgets('Send feedback sits near the bottom of Settings', (tester) async {
@@ -93,8 +89,8 @@ void main() {
     expect(launcher.composed, [
       {
         'to': kFeedbackAddress,
-        'subject': 'RingaPop feedback',
-        'body': '\n\n---\nApp version: 1.2.3',
+        'subject': 'Mind Time feedback',
+        'body': '',
       },
     ]);
     expect(find.byType(AlertDialog), findsNothing);
@@ -129,7 +125,7 @@ void main() {
     expect(find.text('Address copied.'), findsOneWidget);
   });
 
-  test('the native side opens email apps only and reports the version', () {
+  test('the native side opens email apps only', () {
     final activity = File(
       'android/app/src/main/kotlin/com/timeapp/time_app/MainActivity.kt',
     ).readAsStringSync();
@@ -137,6 +133,6 @@ void main() {
     expect(activity, contains('Intent.ACTION_SENDTO'));
     expect(activity, contains('Uri.parse("mailto:")'));
     expect(activity, contains('ActivityNotFoundException'));
-    expect(activity, contains('"version"'));
+    expect(activity, isNot(contains('"version"')));
   });
 }

@@ -14,7 +14,7 @@ import 'package:time_app/features/social/presentation/stats_section.dart';
 
 import 'fixtures/my_stats_fixture.dart';
 
-/// Regression guards for the CHECKMATE redesign. Each pumps a real widget under
+/// Regression guards for the Mind Time redesign. Each pumps a real widget under
 /// the real theme and fails on any layout overflow or thrown exception — the two
 /// bug classes the redesign introduced (an empty Stats screen; an overflow
 /// hazard stripe on other screens).

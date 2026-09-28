@@ -368,7 +368,6 @@ class MainActivity : FlutterFragmentActivity() {
                             call.argument<String>("body") ?: "",
                         ),
                     )
-                    "version" -> result.success(appVersionName())
                     else -> result.notImplemented()
                 }
             }
@@ -542,12 +541,6 @@ class MainActivity : FlutterFragmentActivity() {
         } catch (e: android.content.ActivityNotFoundException) {
             false
         }
-    }
-
-    private fun appVersionName(): String? = try {
-        packageManager.getPackageInfo(packageName, 0).versionName
-    } catch (e: Exception) {
-        null
     }
 
     /** Launch the resolved autostart screen; false if none resolves or it throws. */

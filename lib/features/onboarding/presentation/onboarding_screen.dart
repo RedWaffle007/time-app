@@ -100,7 +100,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         title: const Text('Notifications are blocked'),
         content: const Text(
           "Android won't ask again from inside the app. You can turn "
-          'notifications on for RingaPop in system settings.',
+          'notifications on for Mind Time in system settings.',
         ),
         actions: [
           TextButton(
@@ -127,7 +127,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Allow ${oem.displayName} to keep RingaPop running'),
+        title: Text('Allow ${oem.displayName} to keep Mind Time running'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -269,14 +269,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           title: 'Keep working in the background',
           why:
               'Battery optimisation can stop reminders from firing while your '
-              'phone is idle. Exempting RingaPop prevents that.',
+              'phone is idle. Exempting Mind Time prevents that.',
           action: 'Allow',
           granted: state.batteryUnrestricted,
         );
       case OnboardingStep.autostart:
         return _StepView(
           icon: AppIcons.autostart,
-          title: 'Let ${oem.displayName} keep RingaPop running',
+          title: 'Let ${oem.displayName} keep Mind Time running',
           why:
               '${oem.displayName} phones can close background apps and stop '
               'their reminders. Autostart keeps them reliable. This one '
@@ -295,42 +295,42 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     switch (oem.family) {
       case OemFamily.xiaomi:
         return const [
-          'Open Settings → Apps → Manage apps → RingaPop.',
+          'Open Settings → Apps → Manage apps → Mind Time.',
           'Turn on "Autostart".',
           'Then Battery saver → set to "No restrictions".',
         ];
       case OemFamily.oppo:
         return const [
-          'Open Settings → Apps → RingaPop → Battery usage.',
+          'Open Settings → Apps → Mind Time → Battery usage.',
           'Enable "Allow background activity" and "Allow auto-launch".',
         ];
       case OemFamily.vivo:
         return const [
           'Open Settings → Battery → Background power consumption.',
-          'Allow RingaPop to run in the background.',
-          'Then i Manager → Autostart manager → enable RingaPop.',
+          'Allow Mind Time to run in the background.',
+          'Then i Manager → Autostart manager → enable Mind Time.',
         ];
       case OemFamily.oneplus:
         return const [
-          'Open Settings → Apps → RingaPop → Battery.',
+          'Open Settings → Apps → Mind Time → Battery.',
           'Set to "Don\'t optimise" and allow background activity.',
         ];
       case OemFamily.huawei:
         return const [
-          'Open Settings → Apps → RingaPop → App launch.',
+          'Open Settings → Apps → Mind Time → App launch.',
           'Turn off "Manage automatically", then allow Auto-launch and '
               'Run in background.',
         ];
       case OemFamily.samsung:
         return const [
-          'Open Settings → Apps → RingaPop → Battery.',
+          'Open Settings → Apps → Mind Time → Battery.',
           'Set to "Unrestricted".',
           'Then Settings → Battery → Background usage limits, and make sure '
-              'RingaPop is not in "Sleeping apps".',
+              'Mind Time is not in "Sleeping apps".',
         ];
       case OemFamily.other:
         return const [
-          'Open Settings → Apps → RingaPop → Battery.',
+          'Open Settings → Apps → Mind Time → Battery.',
           'Allow background activity / set to unrestricted.',
         ];
     }

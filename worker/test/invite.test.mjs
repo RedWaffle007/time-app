@@ -67,7 +67,7 @@ test('a friend invite page names the user and opens the app', async () => {
   assert.match(res.headers.get('content-type'), /text\/html/);
   assert.match(res.headers.get('content-security-policy'), /default-src 'none'/);
   const html = await res.text();
-  assert.match(html, /@ana_b invited you to RingaPop/);
+  assert.match(html, /@ana_b invited you to Mind Time/);
   assert.match(html, /intent:\/\/time-app-notify\.timeapp\.workers\.dev\/i\/u\/Ana_B#Intent;scheme=https;package=com\.timeapp\.time_app;end/);
   assert.match(html, /noindex/);
   assert.doesNotMatch(html, /<script/i);
@@ -82,10 +82,10 @@ test('a group invite page shows the code', async () => {
 test('the download button appears only when configured', () => {
   const url = new URL('https://x.example/i/u/ana');
   const invite = { kind: 'user', value: 'ana' };
-  assert.doesNotMatch(invitePage(invite, url, {}), /Get RingaPop/);
+  assert.doesNotMatch(invitePage(invite, url, {}), /Get Mind Time/);
   assert.match(invitePage(invite, url, {}), /Ask the person who sent this/);
   const withLink = invitePage(invite, url, { APP_DOWNLOAD_URL: 'https://example.com/app?a=1&b="2"' });
-  assert.match(withLink, /Get RingaPop/);
+  assert.match(withLink, /Get Mind Time/);
   assert.match(withLink, /href="https:\/\/example\.com\/app\?a=1&amp;b=&quot;2&quot;"/);
 });
 

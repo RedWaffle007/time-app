@@ -18,15 +18,18 @@ Widget _switchableHost({required bool skipReveal}) => Directionality(
 void main() {
   setUp(SplashOverlay.resetForTest);
 
-  testWidgets('cold start: single-line RingaPop reveal, then fades to app', (
+  testWidgets('cold start: single-line Mind Time reveal, then fades to app', (
     tester,
   ) async {
     await tester.pumpWidget(_host());
 
     // The wordmark is present during the reveal, on one line, exactly as typed.
-    final wordmark = find.text('RingaPop');
+    final wordmark = find.text('Mind Time');
     expect(wordmark, findsOneWidget);
     expect(tester.widget<Text>(wordmark).maxLines, 1);
+    final tagline = find.text('Good plans have a ring to them.');
+    expect(tagline, findsOneWidget);
+    expect(tester.widget<Text>(tagline).maxLines, 1);
 
     // The glow-heavy text is retained behind compositor-driven fade/scale
     // layers instead of being rebuilt by AnimatedBuilder on every tick.
@@ -49,7 +52,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Reveal gone, app shown.
-    expect(find.text('RingaPop'), findsNothing);
+    expect(find.text('Mind Time'), findsNothing);
     expect(find.text('APP'), findsOneWidget);
   });
 
@@ -81,7 +84,7 @@ void main() {
       // still opaque this instant — the reveal has only just begun.
       final veilFinder = find.byKey(SplashOverlay.revealVeilKey);
       expect(veilFinder, findsOneWidget);
-      expect(find.text('RingaPop'), findsOneWidget);
+      expect(find.text('Mind Time'), findsOneWidget);
       expect(
         tester.widget<FadeTransition>(veilFinder).opacity.value,
         greaterThan(0.5),
@@ -114,12 +117,12 @@ void main() {
     await tester.pump(SplashOverlay.introDuration);
     await tester.pump(SplashOverlay.outroDuration);
     await tester.pumpAndSettle();
-    expect(find.text('RingaPop'), findsNothing);
+    expect(find.text('Mind Time'), findsNothing);
 
     // A brand-new overlay (simulating a rebuild in the same live process) must
     // pass straight through to the child with no reveal on the very first frame.
     await tester.pumpWidget(_host());
-    expect(find.text('RingaPop'), findsNothing);
+    expect(find.text('Mind Time'), findsNothing);
     expect(find.text('APP'), findsOneWidget);
   });
 
@@ -127,13 +130,13 @@ void main() {
     'a notification launch dismisses an in-progress cold-start reveal',
     (tester) async {
       await tester.pumpWidget(_switchableHost(skipReveal: false));
-      expect(find.text('RingaPop'), findsOneWidget);
+      expect(find.text('Mind Time'), findsOneWidget);
 
       // Mirrors getInitialMessage completing after the first frame.
       await tester.pumpWidget(_switchableHost(skipReveal: true));
       await tester.pump();
 
-      expect(find.text('RingaPop'), findsNothing);
+      expect(find.text('Mind Time'), findsNothing);
       expect(find.text('APP'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },

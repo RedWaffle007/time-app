@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('every Android notification path uses the RingaPop small icon', () {
+  test('every Android notification path uses the Mind Time small icon', () {
     final manifest = File(
       'android/app/src/main/AndroidManifest.xml',
     ).readAsStringSync();
@@ -42,7 +42,7 @@ void main() {
     );
   });
 
-  test('the small-icon resource is the generated RingaPop mark, white only '
+  test('the small-icon resource is the generated Mind Time mark, white only '
       '(DECISIONS.md "RingaPop rebrand")', () {
     final icon = File(
       'android/app/src/main/res/drawable/ic_notification.xml',

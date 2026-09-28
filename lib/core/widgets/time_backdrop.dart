@@ -10,7 +10,7 @@ import '../theme/app_theme.dart';
 /// hourglasses, calendars, paperclips — tinted in the brand green and the
 /// categorical accents.
 ///
-/// This is RingaPop's take on DESIGN-NOTES §8's `AutomotiveBackdrop`: same idea
+/// This is Mind Time's take on DESIGN-NOTES §8's `AutomotiveBackdrop`: same idea
 /// (a subtle texture that ties the *subject* to an otherwise-clean surface,
 /// never competing with content), but the subject is *time and study*, not cars.
 ///

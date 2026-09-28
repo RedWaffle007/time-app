@@ -116,7 +116,7 @@ void main() {
       final strikes = _captureStrikes(tester);
       await tester.pumpWidget(_splash());
       expect(strikes, ['play']);
-      expect(find.text('RingaPop'), findsOneWidget);
+      expect(find.text('Mind Time'), findsOneWidget);
       await tester.pump(SplashOverlay.introDuration);
       await tester.pump(SplashOverlay.outroDuration);
       await tester.pumpAndSettle();
@@ -128,7 +128,7 @@ void main() {
     testWidgets('off: the reveal still shows, silently', (tester) async {
       final strikes = _captureStrikes(tester);
       await tester.pumpWidget(_splash(playSound: false));
-      expect(find.text('RingaPop'), findsOneWidget);
+      expect(find.text('Mind Time'), findsOneWidget);
       expect(strikes, isEmpty);
       await tester.pump(SplashOverlay.introDuration);
       await tester.pump(SplashOverlay.outroDuration);

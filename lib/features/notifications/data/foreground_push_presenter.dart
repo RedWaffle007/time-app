@@ -134,7 +134,7 @@ class ForegroundPushPresenter {
   static const _nudgeName = 'Reminders to plan';
   static const _nudgeDescription =
       'An occasional nudge to plan something when you have not opened '
-      'RingaPop for a while.';
+      'Mind Time for a while.';
 
   static final _channels = [
     plannerActivityChannel,
