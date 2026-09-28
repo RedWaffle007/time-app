@@ -58,6 +58,7 @@ class GroupDetailScreen extends ConsumerWidget {
         actions: [
           if (group != null && myUid != null && !iAmOwner)
             PopupMenuButton<void>(
+              popUpAnimationStyle: Motion.menu,
               icon: const Icon(AppIcons.overflow),
               tooltip: 'More',
               itemBuilder: (_) => [
@@ -492,6 +493,7 @@ class GroupDetailScreen extends ConsumerWidget {
     ];
     if (items.isEmpty) return const SizedBox.shrink();
     return PopupMenuButton<void>(
+      popUpAnimationStyle: Motion.menu,
       icon: const Icon(AppIcons.overflow),
       tooltip: 'More',
       itemBuilder: (_) => items,

@@ -115,11 +115,20 @@ StatusStyle itemOutcomeStyle(BuildContext context, ScheduleItem item) {
     throw ArgumentError.value(item, 'item', 'must have an outcome');
   }
   final base = outcomeStyle(context, outcome.result);
-  if (outcome.result != OutcomeResult.done || !item.wasUnavailableAtAlarmTime) {
-    return base;
+  // A voice note has no task to do (2026-09-28): a Done is "Heard", and one
+  // nobody answered within 24 hours is "Missed".
+  final voice = item.isVoiceAlarm;
+  final late = item.wasUnavailableAtAlarmTime;
+  final String label;
+  if (outcome.result == OutcomeResult.done) {
+    if (!voice && !late) return base;
+    label = voice ? (late ? 'Heard (Late)' : 'Heard') : 'Done (Late)';
+  } else {
+    if (!voice) return base;
+    label = 'Missed';
   }
   return StatusStyle(
-    label: 'Done (Late)',
+    label: label,
     treatment: base.treatment,
     foreground: base.foreground,
     background: base.background,

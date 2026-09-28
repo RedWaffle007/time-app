@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_icons.dart';
 import '../../../core/widgets/async_view.dart';
+import '../../../core/widgets/tab_action_row.dart';
 import '../../../routing/app_router.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../notifications/application/friend_notifier.dart';
@@ -52,29 +53,63 @@ class GroupsScreen extends ConsumerWidget {
               icon: const Icon(AppIcons.add),
               label: const Text('New group'),
             ),
-      body: AsyncView<List<Group>>(
-        value: groupsAsync,
-        onRetry: () => ref.invalidate(myGroupsProvider),
-        isEmpty: (groups) => groups.isEmpty,
-        emptyMessage: 'No groups yet.\nCreate one or join by code.',
-        builder: (context, groups) => ListView(
-          children: [
-            for (final g in groups)
-              ListTile(
-                leading: GroupAvatarImage(group: g),
-                title: Text(g.name),
-                subtitle: Text(
-                  'Code: ${g.joinCode} · ${g.memberUids.length} member(s)',
-                ),
-                trailing: const Icon(AppIcons.openRow),
-                // Group detail is a Plan sub-route, so it stacks over the Plan
-                // shell and Back returns here. (Post-S5 this screen only ever
-                // renders embedded inside Plan; the old `/groups/:id` branch is
-                // gone.)
-                onTap: () => context.push('${Routes.plan}/groups/${g.id}'),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // The same top button row as every Plan sub-tab (2026-09-28):
+          // create and join are named buttons, Archive beside them.
+          TabActionRow(
+            actions: [
+              TabAction(
+                key: const ValueKey('groups-create'),
+                label: 'CREATE GROUP',
+                onPressed: () => showGroupCreateDialog(context, ref),
               ),
-          ],
-        ),
+              TabAction(
+                key: const ValueKey('groups-join'),
+                label: 'JOIN GROUP',
+                onPressed: () => showGroupJoinDialog(context, ref),
+              ),
+              TabAction(
+                key: const ValueKey('groups-archive'),
+                label: 'ARCHIVE',
+                onPressed: () => context.push(Routes.archived),
+              ),
+            ],
+          ),
+          Expanded(child: _groupList(context, ref, groupsAsync)),
+        ],
+      ),
+    );
+  }
+
+  Widget _groupList(
+    BuildContext context,
+    WidgetRef ref,
+    AsyncValue<List<Group>> groupsAsync,
+  ) {
+    return AsyncView<List<Group>>(
+      value: groupsAsync,
+      onRetry: () => ref.invalidate(myGroupsProvider),
+      isEmpty: (groups) => groups.isEmpty,
+      emptyMessage: 'No groups yet.\nCreate one or join by code.',
+      builder: (context, groups) => ListView(
+        children: [
+          for (final g in groups)
+            ListTile(
+              leading: GroupAvatarImage(group: g),
+              title: Text(g.name),
+              subtitle: Text(
+                'Code: ${g.joinCode} · ${g.memberUids.length} member(s)',
+              ),
+              trailing: const Icon(AppIcons.openRow),
+              // Group detail is a Plan sub-route, so it stacks over the Plan
+              // shell and Back returns here. (Post-S5 this screen only ever
+              // renders embedded inside Plan; the old `/groups/:id` branch is
+              // gone.)
+              onTap: () => context.push('${Routes.plan}/groups/${g.id}'),
+            ),
+        ],
       ),
     );
   }

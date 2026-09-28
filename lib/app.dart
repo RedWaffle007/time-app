@@ -23,6 +23,7 @@ import 'features/groups/application/group_stats_providers.dart';
 import 'features/reminders/application/alarm_timeline_providers.dart';
 import 'features/reminders/application/missed_alarm_providers.dart';
 import 'features/reminders/application/reminder_providers.dart';
+import 'features/reminders/application/voice_heard_reconciler.dart';
 import 'features/reminders/presentation/missed_alarm_review_host.dart';
 import 'features/scheduling/application/item_lapse_reconciler.dart';
 import 'features/scheduling/application/schedule_providers.dart';
@@ -447,6 +448,10 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     // ordinary Done writes; after an unanswered alarm they read Done (Late)
     // with their delay (ScheduleItem.completionDelay).
     ref.watch(itemLapseSyncProvider);
+
+    // VOICE NOTE HEARD (2026-09-28): a voice note dismissed while it rang is
+    // heard — close it (shown "Heard"). Off the item stream, not the dismiss.
+    ref.watch(voiceHeardSyncProvider);
 
     // VOICE-NOTE DELIVERY (item 32c): the same shape again — keep a verified
     // copy of every upcoming voice alarm on this phone, stamp the receipt the

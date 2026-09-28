@@ -23,6 +23,9 @@ import 'package:time_app/features/reminders/data/alarm_timeline_repository.dart'
 import 'package:time_app/features/reminders/presentation/missed_alarm_review_host.dart';
 import 'package:time_app/features/scheduling/application/item_lapse_policy.dart';
 import 'package:time_app/features/scheduling/domain/schedule_item.dart';
+import 'package:time_app/features/voice_notes/application/voice_note_cache.dart';
+import 'package:time_app/features/voice_notes/application/voice_note_providers.dart';
+import 'package:time_app/features/voice_notes/data/voice_player.dart';
 
 void main() {
   _voiceFallbackTests();
@@ -665,6 +668,90 @@ void main() {
     expect(container.read(committedCelebrationProvider)?.itemId, 'item-2');
   });
 
+  // 2026-09-28: a missed VOICE note has no Done/Skip. Play and Already heard
+  // both close it as heard late and tell the planner.
+  for (final play in [false, true]) {
+    testWidgets(
+      'a missed voice note: ${play ? 'Play' : 'Already heard'} closes it '
+      'as heard and tells the planner',
+      (tester) async {
+        final outcomes = _RecordingOutcomes();
+        final notifier = _RecordingNotifier();
+        final service = MissedAlarmService(
+          store: _MemoryLifecycleStore([_event()]),
+          outcomes: outcomes,
+          timeline: _RecordingTimeline(),
+          notifier: notifier,
+        );
+        final lock = AppLockController(
+          store: _NoopLockStore(),
+          auth: _NoopDeviceAuth(),
+          secureWindow: _NoopSecureWindow(),
+          initiallyEnabled: false,
+        );
+        final player = _Player();
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              missedAlarmServiceProvider.overrideWithValue(service),
+              appLockControllerProvider.overrideWithValue(lock),
+              voiceNoteCacheProvider.overrideWithValue(_Cache()),
+              voicePlayerProvider.overrideWithValue(player),
+              profileByUidProvider.overrideWith(
+                (ref, uid) => Stream.value(
+                  const UserProfile(
+                    uid: 'planner',
+                    name: '{planner}',
+                    homeTimezone: 'Etc/UTC',
+                  ),
+                ),
+              ),
+            ],
+            child: MaterialApp(
+              theme: AppTheme.light,
+              home: const MissedAlarmReviewHost(
+                enabled: true,
+                child: Scaffold(body: Text('Schedule')),
+              ),
+            ),
+          ),
+        );
+        await service.sync([_item(voiceNote: _voiceMeta)], 'target');
+        await tester.pumpAndSettle();
+
+        expect(find.text('Missed voice note'), findsOneWidget);
+        expect(
+          find.text('{planner} sent you a voice note. Listen now?'),
+          findsOneWidget,
+        );
+        expect(find.text('Play'), findsOneWidget);
+        expect(find.text('Already heard'), findsOneWidget);
+        expect(find.text('Mark as Done'), findsNothing);
+        expect(find.text('Mark as Skipped'), findsNothing);
+
+        await tester.tap(
+          find.byKey(
+            ValueKey(play ? 'missed-voice-play' : 'missed-voice-already-heard'),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(kPlannerUpdateDuration);
+        await tester.pumpAndSettle();
+
+        expect(outcomes.done, [('target', 'item', 'planner')]);
+        expect(outcomes.skipped, isEmpty);
+        expect(notifier.calls, contains(('target', 'item')));
+        expect(player.played, play ? ['/voice/item.m4a'] : isEmpty);
+        expect(find.text('Missed voice note'), findsNothing);
+        final container = ProviderScope.containerOf(
+          tester.element(find.text('Schedule')),
+        );
+        // No confetti: a voice note is not a task.
+        expect(container.read(committedCelebrationProvider), isNull);
+      },
+    );
+  }
+
   testWidgets('review remains hidden while app lock is active', (tester) async {
     final service = MissedAlarmService(
       store: _MemoryLifecycleStore([_event()]),
@@ -733,8 +820,10 @@ ScheduleItem _item({
   String createdByUid = 'planner',
   DateTime? unavailableAt,
   ScheduleOutcome? outcome,
+  VoiceNoteMeta? voiceNote,
 }) => ScheduleItem(
   id: id,
+  voiceNote: voiceNote,
   targetUid: 'target',
   createdByUid: createdByUid,
   alarm: unavailableAt == null
@@ -1056,4 +1145,31 @@ void _voiceFallbackTests() {
     });
     expect(event?.kind, AlarmLifecycleEventKind.voiceFallback);
   });
+}
+
+const _voiceMeta = VoiceNoteMeta(
+  durationMs: 8000,
+  sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  sizeBytes: 9000,
+);
+
+class _Cache implements VoiceNoteCache {
+  @override
+  Future<String> ensure(ScheduleItem item) async => '/voice/${item.id}.m4a';
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _Player implements VoicePlayer {
+  final played = <String>[];
+
+  @override
+  Future<void> play(String path) async => played.add(path);
+
+  @override
+  Future<void> stop() async {}
+
+  @override
+  Stream<void> get completed => const Stream.empty();
 }

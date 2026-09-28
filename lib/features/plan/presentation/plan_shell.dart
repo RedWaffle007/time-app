@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/theme/app_icons.dart';
 import '../../../routing/app_router.dart';
 import '../../groups/presentation/groups_screen.dart';
 import '../../outcomes/presentation/outcome_screen.dart';
@@ -56,7 +55,6 @@ class _PlanShellState extends ConsumerState<PlanShell>
   late final TabController _tabController;
 
   static const _mySchedule = 0;
-  static const _groups = 2;
 
   /// The item currently forwarded to the embedded My Schedule sub-tab for
   /// highlighting, and the intent seq that carried it — passed as the
@@ -96,12 +94,6 @@ class _PlanShellState extends ConsumerState<PlanShell>
       vsync: this,
       initialIndex: initialIndex,
     );
-    // App-bar actions depend on the active sub-tab, so rebuild when it settles.
-    // Guarded to the settle only (`!indexIsChanging`) so a drag does not storm
-    // setState every frame.
-    _tabController.addListener(() {
-      if (!_tabController.indexIsChanging) setState(() {});
-    });
   }
 
   /// Steer the inner TabBar and/or the highlight to match a [PlanIntent]. A
@@ -148,7 +140,6 @@ class _PlanShellState extends ConsumerState<PlanShell>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Plan'),
-        actions: _actionsFor(_tabController.index),
         bottom: TabBar(
           controller: _tabController,
           // §6.12: understated text tabs, soft sage underline (from the central
@@ -208,48 +199,6 @@ class _PlanShellState extends ConsumerState<PlanShell>
         ),
       ),
     );
-  }
-
-  /// The app-bar actions for the active sub-tab, followed by the overflow that
-  /// houses Archived. Calendar now lives beside Upcoming Plans in My Schedule.
-  /// Detail
-  /// pushes target the Plan stack (`/plan/...`) so Back returns to this shell.
-  List<Widget> _actionsFor(int index) {
-    final contextual = <Widget>[
-      switch (index) {
-        // Manual planning lives on the always-present bottom-right PLAN button,
-        // so it is not duplicated as an Activity app-bar action.
-        _groups => IconButton(
-          tooltip: 'New group',
-          icon: const Icon(AppIcons.add),
-          onPressed: () => showGroupCreateDialog(context, ref),
-        ),
-        _ => const SizedBox.shrink(),
-      },
-      // Groups carries a second action (Join by code), like the old screen.
-      if (index == _groups)
-        IconButton(
-          tooltip: 'Join by code',
-          icon: const Icon(AppIcons.joinGroup),
-          onPressed: () => showGroupJoinDialog(context, ref),
-        ),
-    ];
-
-    return [
-      ...contextual,
-      // Archived lives in the Plan overflow per the locked call — it is settled
-      // *plan* content, so it does not belong on the identity-only You hub.
-      PopupMenuButton<String>(
-        icon: const Icon(AppIcons.overflow),
-        tooltip: 'More',
-        onSelected: (v) {
-          if (v == 'archived') context.push(Routes.archived);
-        },
-        itemBuilder: (context) => const [
-          PopupMenuItem(value: 'archived', child: Text('Archived')),
-        ],
-      ),
-    ];
   }
 }
 

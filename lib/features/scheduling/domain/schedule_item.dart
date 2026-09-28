@@ -275,6 +275,12 @@ class ScheduleItem {
   /// would just put the clutter back.
   bool get isManuallyArchivable => outcome != null;
 
+  /// A voice alarm someone else sent (2026-09-28). It has no Done/Skip:
+  /// dismissing it while it rings means heard; if it rang out, the missed
+  /// popup's Play / Already heard mean heard late; 24 hours unanswered lapses
+  /// it. A self-plan never carries a voice note (F4).
+  bool get isVoiceAlarm => voiceNote != null && createdByUid != targetUid;
+
   /// Nothing further will happen to this item.
   bool get isSettled => isAutoArchived || isManuallyArchivable;
 

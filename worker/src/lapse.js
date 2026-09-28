@@ -8,7 +8,7 @@
 // lib/features/scheduling/application/item_lapse_policy.dart: the later of
 // midnight ending the item's own local day and scheduled time + 2 h.
 
-import { ACTIVITY_CHANNEL_ID, hasActiveItemGrant } from './notify.js';
+import { ACTIVITY_CHANNEL_ID, hasActiveItemGrant, isVoiceAlarm } from './notify.js';
 
 export const MIN_RESPONSE_WINDOW_MS = 2 * 60 * 60 * 1000;
 export const LAPSED_SKIP_REASON = 'Did not respond';
@@ -79,8 +79,19 @@ export function endOfLocalDayMs(scheduledMs, timeZone) {
   return guess;
 }
 
-/** Later of end-of-local-day and scheduled + 2 h (mirrors the client). */
-export function responseDeadlineMs(scheduledMs, timeZone) {
+/**
+ * A voice note is answered from the missed popup and lapses 24 h after its
+ * alarm, not at the end of its day (2026-09-28; mirrors the client's
+ * `kVoiceResponseWindow`).
+ */
+export const VOICE_RESPONSE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Later of end-of-local-day and scheduled + 2 h (mirrors the client); a voice
+ * note: scheduled + 24 h.
+ */
+export function responseDeadlineMs(scheduledMs, timeZone, { voice = false } = {}) {
+  if (voice) return scheduledMs + VOICE_RESPONSE_WINDOW_MS;
   return Math.max(
     endOfLocalDayMs(scheduledMs, timeZone),
     scheduledMs + MIN_RESPONSE_WINDOW_MS,
@@ -104,6 +115,11 @@ export function buildTargetLapseMessage(
 ) {
   const task = taskTitle(item);
   const where = groupName ? ` in ${groupName}` : '';
+  if (isVoiceAlarm(item)) {
+    return lapseMessage('Voice note missed',
+      `${plannerName || 'Someone'}'s voice note${where} was marked missed because you didn't answer it within 24 hours.`,
+      targetUid, itemId, 'target');
+  }
   const body = selfPlanned
     ? `${task} was marked Skipped because you didn't respond in time.`
     : `${task}, planned by ${plannerName || 'Someone'}${where}, was marked Skipped because you didn't respond in time.`;
@@ -115,6 +131,11 @@ export function buildPlannerLapseMessage(
   item, { targetName, groupName }, targetUid, itemId,
 ) {
   const where = groupName ? ` in ${groupName}` : '';
+  if (isVoiceAlarm(item)) {
+    return lapseMessage('Voice note missed',
+      `${targetName || 'Someone'} didn't answer your voice note${where} within 24 hours.`,
+      targetUid, itemId, 'planner');
+  }
   const body = `${targetName || 'Someone'} didn't respond to ${taskTitle(item)}${where}, so it was marked Skipped.`;
   return lapseMessage(label(item, groupName), body, targetUid, itemId, 'planner');
 }
@@ -195,7 +216,9 @@ export async function settleLapsedItems(ctx, now = new Date(), {
     const parsed = parseRow(row, 'approved');
     if (!parsed || parsed.item.outcome) continue;
     const { targetUid, itemId, item } = parsed;
-    if (responseDeadlineMs(parsed.scheduledMs, item.timezone) > nowMs) continue;
+    if (responseDeadlineMs(parsed.scheduledMs, item.timezone, {
+      voice: isVoiceAlarm(item),
+    }) > nowMs) continue;
 
     // Claim by writing the outcome only if nothing changed since the query —
     // a Done/Skip (or the client's own lapse) in between wins, silently.

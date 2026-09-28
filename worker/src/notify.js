@@ -264,6 +264,16 @@ function deriveEvent(event, item) {
 // (the app shows foreground ones itself on the same id — keep them in step with
 // `kPlannerActivityChannelId` in foreground_push_presenter.dart). Never the
 // reminder channel: silencing someone else's activity must not silence alarms.
+/**
+ * A voice alarm someone else sent (2026-09-28): no Done/Skip. Dismissing it
+ * while it rings means heard; the missed popup's Play / Already heard mean
+ * heard late; 24 hours unanswered lapses it. Self-plans never carry a note.
+ */
+export function isVoiceAlarm(item) {
+  return Boolean(item && item.voiceNote)
+    && Boolean(item.createdByUid) && item.createdByUid !== item.targetUid;
+}
+
 export const ACTIVITY_CHANNEL_ID = 'planner_activity';
 
 // Item 6 (2026-09-27): "{Y} was unavailable…" plays a cartoon "Uh-Oh!"
@@ -346,20 +356,43 @@ export function buildMessage(event, subtype, item, targetUid, itemId, names = {}
       break;
     case 'unavailable':
       // Plays the "Uh-Oh!" tone: its own channel (UNAVAILABLE_CHANNEL_ID).
-      notification = {
-        title: `${who} was unavailable`,
-        body: `${who} was unavailable to dismiss the task: ${title} you planned for them${inGroup}.`,
-      };
+      notification = isVoiceAlarm(item)
+        ? {
+            title: `${who} missed your voice note`,
+            body: `${who} missed your voice note${inGroup}.`,
+          }
+        : {
+            title: `${who} was unavailable`,
+            body: `${who} was unavailable to dismiss the task: ${title} you planned for them${inGroup}.`,
+          };
       break;
     case 'dismissed':
-      notification = {
-        title: `${noun('alarm')} dismissed`,
-        body: `${who} dismissed the alarm for ${title}${inGroup}`,
-      };
+      // A voice note has no Done/Skip (2026-09-28): dismissing it while it
+      // rang IS hearing it.
+      notification = isVoiceAlarm(item)
+        ? {
+            title: 'Voice note heard',
+            body: `${who} heard your voice note${inGroup}.`,
+          }
+        : {
+            title: `${noun('alarm')} dismissed`,
+            body: `${who} dismissed the alarm for ${title}${inGroup}`,
+          };
       break;
     case 'outcome': {
       const timing = outcomeTiming(subtype, item);
-      if (subtype === 'done') {
+      if (subtype === 'done' && isVoiceAlarm(item)) {
+        // Play / Already heard on the missed popup (or the card): heard late.
+        notification = timing === 'late'
+          ? {
+              title: 'Voice note heard late',
+              body: `${who} heard your voice note late${inGroup}.`,
+            }
+          : {
+              title: 'Voice note heard',
+              body: `${who} heard your voice note${inGroup}.`,
+            };
+      } else if (subtype === 'done') {
         notification = timing === 'late'
           ? {
               title: `${task} completed late`,

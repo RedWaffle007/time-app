@@ -12,6 +12,8 @@ import '../../celebrations/application/celebration_providers.dart';
 import '../../celebrations/domain/completion_celebration.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../outcomes/application/outcome_feedback.dart';
+import '../../voice_notes/application/voice_note_cache.dart';
+import '../../voice_notes/application/voice_note_providers.dart';
 import '../application/missed_alarm_providers.dart';
 import '../application/missed_alarm_service.dart';
 
@@ -85,6 +87,56 @@ class _MissedAlarmReviewHostState extends ConsumerState<MissedAlarmReviewHost> {
     }
   }
 
+  /// A missed VOICE note (2026-09-28): Play and Already heard both close it
+  /// as heard late (Done under the hood, "Heard (Late)" on screen) and tell
+  /// the planner "{Y} heard your voice note late." Play also plays it; if the
+  /// note cannot be loaded, nothing is recorded and the popup stays.
+  Future<void> _actVoice(
+    MissedAlarmService service,
+    MissedAlarmReview review, {
+    required bool play,
+  }) async {
+    if (_acting) return;
+    if (play) {
+      try {
+        final path = await ref.read(voiceNoteCacheProvider).ensure(review.item);
+        await ref.read(voicePlayerProvider).play(path);
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Couldn't load the voice note. Try again."),
+            ),
+          );
+        }
+        return;
+      }
+    }
+    setState(() {
+      _acting = true;
+      _answering = review;
+    });
+    try {
+      await atLeast(service.markDone(review));
+    } catch (_) {
+      unawaited(service.resync());
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not finish syncing. It will retry.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _acting = false;
+          _answering = null;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final service = ref.watch(missedAlarmServiceProvider);
@@ -95,15 +147,19 @@ class _MissedAlarmReviewHostState extends ConsumerState<MissedAlarmReviewHost> {
         final reviews = service.reviews;
         final review = _answering ?? reviews.firstOrNull;
         final visible = widget.enabled && !lock.isLocked && review != null;
+        final plannerName = review == null
+            ? null
+            : ref
+                  .watch(profileByUidProvider(review.item.createdByUid))
+                  .value
+                  ?.name;
         final updatingLabel = review == null
             ? ''
             : updatingPlannerLabel(
                 selfPlanned: review.item.createdByUid == review.item.targetUid,
-                plannerName: ref
-                    .watch(profileByUidProvider(review.item.createdByUid))
-                    .value
-                    ?.name,
+                plannerName: plannerName,
               );
+        final voice = review?.item.isVoiceAlarm ?? false;
         return Stack(
           fit: StackFit.expand,
           children: [
@@ -139,7 +195,9 @@ class _MissedAlarmReviewHostState extends ConsumerState<MissedAlarmReviewHost> {
                                   ),
                                   const SizedBox(height: Space.md),
                                   Text(
-                                    'Missed alarm',
+                                    voice
+                                        ? 'Missed voice note'
+                                        : 'Missed alarm',
                                     style: context.text.titleLarge,
                                     textAlign: TextAlign.center,
                                   ),
@@ -147,8 +205,12 @@ class _MissedAlarmReviewHostState extends ConsumerState<MissedAlarmReviewHost> {
                                   // The "permanently recorded" line was
                                   // removed on request (2026-09-25).
                                   Text(
-                                    'This alarm rang for one minute with no '
-                                    'response.',
+                                    voice
+                                        ? '${plannerName ?? 'Your friend'} '
+                                              'sent you a voice note. Listen '
+                                              'now?'
+                                        : 'This alarm rang for one minute '
+                                              'with no response.',
                                     style: context.text.bodyMedium,
                                     textAlign: TextAlign.center,
                                   ),
@@ -185,6 +247,45 @@ class _MissedAlarmReviewHostState extends ConsumerState<MissedAlarmReviewHost> {
                                       ),
                                       style: context.text.titleMedium,
                                       textAlign: TextAlign.center,
+                                    )
+                                  else if (voice)
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: OutlinedButton(
+                                            key: const ValueKey(
+                                              'missed-voice-already-heard',
+                                            ),
+                                            onPressed: () => unawaited(
+                                              _actVoice(
+                                                service,
+                                                review,
+                                                play: false,
+                                              ),
+                                            ),
+                                            child: const Text('Already heard'),
+                                          ),
+                                        ),
+                                        const SizedBox(width: Space.sm),
+                                        Expanded(
+                                          child: FilledButton.icon(
+                                            key: const ValueKey(
+                                              'missed-voice-play',
+                                            ),
+                                            onPressed: () => unawaited(
+                                              _actVoice(
+                                                service,
+                                                review,
+                                                play: true,
+                                              ),
+                                            ),
+                                            icon: const Icon(
+                                              AppIcons.voiceNotePlay,
+                                            ),
+                                            label: const Text('Play'),
+                                          ),
+                                        ),
+                                      ],
                                     )
                                   else
                                     Row(

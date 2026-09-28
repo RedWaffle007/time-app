@@ -435,6 +435,7 @@ class _ProfileOverflowMenu extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return PopupMenuButton<String>(
+      popUpAnimationStyle: Motion.menu,
       icon: const Icon(AppIcons.overflow),
       tooltip: 'More',
       onSelected: (value) async {

@@ -99,7 +99,7 @@
 The user had no time to deploy or commit; nothing below is live. Do not
 start new work on top of it without asking; do not redo it.
 
-### P1. Uh-Oh at the moment the alarm stops — BUILT, UNCOMMITTED, Worker NOT deployed
+### P1. Uh-Oh at the moment the alarm stops — BUILT, COMMITTED (`b10f2a5`); Worker deploy unconfirmed
 
 DECISIONS.md "Uh-Oh at the moment the alarm stops". The native one-minute
 auto-stop now reports straight to the Worker (`alarmTimeout`), which records
@@ -133,7 +133,7 @@ When the user is ready, in this order:
    after the alarm time, not when they open the app. `wrangler tail` shows
    `{"event":"alarmTimeout",…,"recorded":true,"sent":1}`.
 
-### P2. Plan requests expire + Request History — BUILT 2026-09-28, UNCOMMITTED, Worker NOT deployed
+### P2. Plan requests expire + Request History — BUILT, COMMITTED (`59272b5`); Worker deploy unconfirmed
 
 DECISIONS.md "Plan requests expire". Copy and "History = every finished
 request" approved by the user. No rules or index change. New files:
@@ -156,16 +156,27 @@ summary push (busy members keep their own notice) → (2) Home headings →
 (6) calendar icon: no change (it is "Jump to today"; offered to hide it on
 today) → device pass → item 33. Each: plan → sign-off → build → tests.
 
-**(1) DONE 2026-09-28, uncommitted:** DECISIONS.md "Group busy result shown
+**(1) DONE 2026-09-28, committed (`59272b5`):** DECISIONS.md "Group busy result shown
 at Send". Worker change → needs `wrangler deploy` (same deploy as P1+P2).
 
-**(2) Home headings DONE 2026-09-28, uncommitted** (DECISIONS.md "Home
+**(2) Home headings DONE 2026-09-28, committed (`59acab4`)** (DECISIONS.md "Home
 headings").
 
-**(3) Plan badges DONE 2026-09-28, uncommitted** (DECISIONS.md "Plan
+**(3) Plan badges DONE 2026-09-28, committed (`59acab4`)** (DECISIONS.md "Plan
 badges"; UI-RULES §6.18; `lib/core/theme/plan_badge_style.dart`). Sent/Self/
-Received + Group, layout A, per-card ⋮ replaced by an Archive button. Next:
-(4) the top ARCHIVE button. Pending user OK: new Activity explainer copy.
+Received + Group, layout A, per-card ⋮ replaced by an Archive button. 
+**(4) Archive at the top DONE 2026-09-28, uncommitted** (DECISIONS.md "Archive
+at the top of every Plan tab"). **(5) Voice notes without Done/Skip BUILT 2026-09-28, uncommitted**
+(DECISIONS.md "Voice notes without Done/Skip"; Worker change → deploy).
+Next: (6) nav bar colour. Signed-off spec, kept for the device pass: dismiss while ringing = outcome done shown
+"Heard", planner "{Y} heard your voice note."; ring-out = Uh-Oh "{Y} missed
+your voice note."; missed popup "Missed voice note" / "{Planner} sent you a
+voice note. Listen now?" / **Play** · **Already heard** — BOTH close it as
+"Heard (Late)", extend the streak, and push "{Y} heard your voice note
+late."; no answer for 24 h after the alarm → "Did not respond" (missed,
+breaks streak; voice notes exempt from the end-of-day lapse). No Done/Skip on
+voice cards (Waiting on You shows Play / Already heard). Groups: same per
+member; group Default Alarms keep Done/Skip.
 
 **REVISED ORDER (2026-09-28, after the user's archive/badge list):**
 (3) plan badges: ownership (for others / self / from others) + Group Plan,

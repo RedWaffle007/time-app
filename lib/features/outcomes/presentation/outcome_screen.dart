@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/format/datetime_format.dart';
+import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/theme/plan_badge_style.dart';
@@ -13,6 +14,7 @@ import '../../../core/theme/status_style.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../core/widgets/collapsible_day_groups.dart';
 import '../../../core/widgets/section_header.dart';
+import '../../../core/widgets/tab_action_row.dart';
 import '../../../routing/app_router.dart';
 import '../../archive/presentation/archive_menu_button.dart';
 import '../../auth/application/auth_providers.dart';
@@ -26,6 +28,8 @@ import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
 import '../../scheduling/presentation/planner_activity_screen.dart';
 import '../../scheduling/presentation/planner_item_detail_sheet.dart';
+import '../../voice_notes/application/voice_note_cache.dart';
+import '../../voice_notes/application/voice_note_providers.dart';
 import '../application/history_intent.dart';
 import '../application/outcome_feedback.dart';
 import '../application/schedule_partition.dart';
@@ -394,6 +398,7 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
             },
             forceExpandKey: forceKey,
             leading: [
+              const _HomeActions(),
               HeroBand(nextItem: nextItem),
               ReminderPrimerCard(hasUpcomingItems: hasUpcoming),
               // Few, and each needs an answer: listed flat above Upcoming
@@ -456,47 +461,48 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
 bool _isOnCurrentDay(ScheduleItem item, DateTime nowUtc) =>
     scheduleTimeSection(item, nowUtc) == ScheduleTimeSection.today;
 
-class _UpcomingPlansHeader extends ConsumerWidget {
+/// Home's top buttons (2026-09-28): CALENDAR · HISTORY · ARCHIVE, in the
+/// same place as every Plan sub-tab's (`TabActionRow`). ARCHIVE replaced the
+/// app bar's ⋮ → Archived.
+class _HomeActions extends ConsumerWidget {
+  const _HomeActions();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => TabActionRow(
+    actions: [
+      TabAction(
+        label: 'CALENDAR',
+        onPressed: () => context.push(Routes.calendar),
+      ),
+      TabAction(
+        label: 'HISTORY',
+        onPressed: () {
+          ref.read(historyIntentProvider.notifier).open();
+          context.push(Routes.history);
+        },
+      ),
+      TabAction(
+        key: const ValueKey('home-archive'),
+        label: 'ARCHIVE',
+        onPressed: () => context.push(Routes.archived),
+      ),
+    ],
+  );
+}
+
+class _UpcomingPlansHeader extends StatelessWidget {
   const _UpcomingPlansHeader();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final buttonStyle = OutlinedButton.styleFrom(
-      padding: const EdgeInsets.symmetric(horizontal: Space.sm),
-      textStyle: context.text.labelLarge?.copyWith(fontWeight: FontWeight.bold),
-      visualDensity: VisualDensity.compact,
-      shape: const RoundedRectangleBorder(borderRadius: Radii.md),
-    );
-    return Padding(
-      padding: const EdgeInsets.only(top: Space.lg, bottom: Space.sm),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              'Upcoming Plans',
-              style: context.text.titleLarge,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          OutlinedButton(
-            style: buttonStyle,
-            onPressed: () => context.push(Routes.calendar),
-            child: const Text('CALENDAR'),
-          ),
-          const SizedBox(width: Space.sm),
-          OutlinedButton(
-            style: buttonStyle,
-            onPressed: () {
-              ref.read(historyIntentProvider.notifier).open();
-              context.push(Routes.history);
-            },
-            child: const Text('HISTORY'),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: Space.lg, bottom: Space.sm),
+    child: Text(
+      'Upcoming Plans',
+      style: context.text.titleLarge,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    ),
+  );
 }
 
 class _NoUpcomingPlans extends StatelessWidget {
@@ -608,7 +614,33 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
                 const _UnavailableTag(),
                 const SizedBox(height: Space.sm),
               ],
-              if (outcome == null)
+              // A voice note has no Done/Skip (2026-09-28). Before it rings
+              // there is nothing to answer; once it has rung unanswered, the
+              // same two choices as the missed popup.
+              if (outcome == null && item.isVoiceAlarm) ...[
+                if (!item.scheduledInstantUtc.isAfter(DateTime.now().toUtc()))
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      OutlinedButton(
+                        key: ValueKey('voice-already-heard-${item.id}'),
+                        onPressed: _writingOutcome
+                            ? null
+                            : () => _markHeard(play: false),
+                        child: const Text('Already heard'),
+                      ),
+                      const SizedBox(width: Space.sm),
+                      FilledButton.icon(
+                        key: ValueKey('voice-play-${item.id}'),
+                        onPressed: _writingOutcome
+                            ? null
+                            : () => _markHeard(play: true),
+                        icon: const Icon(AppIcons.voiceNotePlay),
+                        label: Text(_writingOutcome ? 'Saving…' : 'Play'),
+                      ),
+                    ],
+                  ),
+              ] else if (outcome == null)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
@@ -742,6 +774,49 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
         plannerUid: item.createdByUid,
       ),
     );
+  }
+
+  /// Play / Already heard on a voice note that rang unanswered (2026-09-28):
+  /// both close it as heard (Done under the hood; "Heard (Late)" after a
+  /// missed ring) and tell the planner. No celebration: there was no task.
+  Future<void> _markHeard({required bool play}) async {
+    if (_writingOutcome) return;
+    final item = widget.item;
+    if (play) {
+      try {
+        final path = await ref.read(voiceNoteCacheProvider).ensure(item);
+        await ref.read(voicePlayerProvider).play(path);
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Couldn't load the voice note. Try again."),
+            ),
+          );
+        }
+        return;
+      }
+    }
+    if (!mounted) return;
+    setState(() => _writingOutcome = true);
+    final repository = ref.read(scheduleRepositoryProvider);
+    try {
+      await showUpdatingPlanner(
+        context,
+        label: _updatingLabel(),
+        work: () async {
+          final ok = await repository.markDone(
+            item.targetUid,
+            item.id,
+            plannerUid: item.createdByUid,
+          );
+          if (ok) _notifyPlanner(item);
+          return ok;
+        },
+      );
+    } finally {
+      if (mounted) setState(() => _writingOutcome = false);
+    }
   }
 
   Future<void> _skip(BuildContext context) async {

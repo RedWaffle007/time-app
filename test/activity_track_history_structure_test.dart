@@ -28,12 +28,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text('Plans you set for others, once answered.'),
+      find.text('Answered plans you made for others.'),
       findsOneWidget,
     );
     expect(
       find.ancestor(
-        of: find.text('Plans you set for others, once answered.'),
+        of: find.text('Answered plans you made for others.'),
         matching: find.byType(Card),
       ),
       findsOneWidget,

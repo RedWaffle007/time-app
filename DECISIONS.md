@@ -7500,3 +7500,51 @@ and a group plan also says it is a group plan — in its own colour.
   Same undo snackbar and account re-check. Archiving stays per account: a
   group member archiving a group plan hides it only from their own feed.
 - Shown on Home, History, Activity and Archived.
+
+## Archive at the top of every Plan tab; instant menus (2026-09-28)
+
+User-directed.
+- **One top button row per Plan sub-tab** (`TabActionRow`, compact bold
+  outlined buttons, same place on every tab, wraps on a narrow phone): Home =
+  CALENDAR · HISTORY · ARCHIVE (moved up from beside "Upcoming Plans", now
+  above the hero band); Activity = ARCHIVE; Groups = CREATE GROUP · JOIN
+  GROUP · ARCHIVE. ARCHIVE opens the shared Archived screen.
+- **Removed from the Plan app bar:** the ⋮ → Archived menu and the Groups
+  New-group / Join-by-code icon buttons (now named buttons in the row).
+- **Per-card archive** is the Archive button from "Plan badges"; no card has a
+  ⋮ any more.
+- **Every remaining ⋮ menu closes instantly** (`Motion.menu`: 150 ms open,
+  zero reverse). The default close fade read as lag. A test holds every
+  `PopupMenuButton` in `lib/` to it.
+- Group plans: already archivable per card once answered; archiving is per
+  account (the member's own feed only). No change needed.
+- Activity explainer copy: "Answered plans you made for others."
+
+## Voice notes without Done/Skip (2026-09-28)
+
+User-directed (final copy agreed in chat). A voice note has no task behind
+it, so it has no Done/Skip; the only question is whether it was heard.
+
+- **Dismissed while ringing = heard.** The dismiss already records
+  `alarm.dismissedAt` and sends the `dismissed` push, whose voice copy is now
+  "Voice note heard" / "{Y} heard your voice note." A new stream-driven
+  reconciler (`VoiceHeardReconciler`, `app.dart`) closes such an item as
+  Done, with NO second push. Shown "Heard".
+- **Rang out = missed.** `alarm.unavailableAt` as before; the `unavailable`
+  push (Uh-Oh) reads "{Y} missed your voice note."
+- **Missed popup** for a voice item: "Missed voice note" / "{Planner} sent
+  you a voice note. Listen now?" / **Already heard** · **Play**. Both close it
+  as Done (Play first plays it; a note that cannot load records nothing) and
+  send the outcome push, whose voice copy is "Voice note heard late" / "{Y}
+  heard your voice note late." Shown "Heard (Late)". No confetti.
+- **Home card**: no Done/Skip for a voice note, ever. Before it rings,
+  nothing to answer; after, the same Already heard · Play.
+- **24 hours.** A voice note is exempt from the end-of-day lapse: it lapses
+  24 h after its alarm (`kVoiceResponseWindow` / Worker
+  `VOICE_RESPONSE_WINDOW_MS`, kept equal) as "Did not respond", shown
+  "Missed", with voice-specific lapse notices. That is `isMissed` in stats, so
+  it breaks the streak; Heard / Heard (Late) are Done and extend it.
+- Group voice notes: the same, per member. Default alarms (group or not)
+  unchanged. `isVoiceAlarm` = has a voice note AND someone else set it.
+- **No rules change**: every write is an existing target outcome write.
+  Older builds still show Done/Skip on voice notes until updated.

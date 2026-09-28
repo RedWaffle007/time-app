@@ -92,6 +92,13 @@ abstract final class Motion {
   static const Duration fast = Duration(milliseconds: 150);
   static const Duration normal = Duration(milliseconds: 250);
 
+  /// Every ⋮ popup menu: opens quickly, closes INSTANTLY on an outside tap
+  /// (2026-09-28 — the default fade-out read as lag).
+  static const AnimationStyle menu = AnimationStyle(
+    duration: fast,
+    reverseDuration: Duration.zero,
+  );
+
   /// The one sheen sweep across a plan badge's border (UI-RULES.md §6.18).
   static const Duration sheen = Duration(milliseconds: 900);
   static const Curve curve = Curves.easeOutCubic;

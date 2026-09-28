@@ -15,6 +15,7 @@ import '../../../core/theme/status_style.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../core/widgets/collapsible_day_groups.dart';
 import '../../../core/widgets/explainer_card.dart';
+import '../../../core/widgets/tab_action_row.dart';
 import '../../../routing/app_router.dart';
 import '../../calendar/application/calendar_grouping.dart';
 import '../../archive/presentation/archive_menu_button.dart';
@@ -169,7 +170,17 @@ class _PlannerActivityScreenState extends ConsumerState<PlannerActivityScreen> {
             ),
       body: Column(
         children: [
-          const ExplainerCard('Plans you set for others, once answered.'),
+          // The same top button row as every Plan sub-tab (2026-09-28).
+          TabActionRow(
+            actions: [
+              TabAction(
+                key: const ValueKey('activity-archive'),
+                label: 'ARCHIVE',
+                onPressed: () => context.push(Routes.archived),
+              ),
+            ],
+          ),
+          const ExplainerCard('Answered plans you made for others.'),
           Expanded(
             child: AsyncView<List<ScheduleItem>>(
               value: itemsAsync,

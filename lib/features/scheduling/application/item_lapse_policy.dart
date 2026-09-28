@@ -38,10 +38,19 @@ const kLapsedRejectReason = 'Not approved in time';
 /// use the same rule.
 const kMinResponseWindow = Duration(hours: 2);
 
+/// A voice note is answered from the missed popup, so it gets a full day
+/// from its alarm rather than the end of that day (2026-09-28). The Worker's
+/// `VOICE_RESPONSE_WINDOW_MS` must match.
+const kVoiceResponseWindow = Duration(hours: 24);
+
 /// When [item] lapses if still unaddressed: the later of the end of its local
-/// day and [kMinResponseWindow] after its scheduled time. Applies to BOTH
-/// lapses (pending → rejected, approved → skipped) so there is one deadline.
+/// day and [kMinResponseWindow] after its scheduled time; for a voice note,
+/// [kVoiceResponseWindow] after it. Applies to BOTH lapses (pending →
+/// rejected, approved → skipped) so there is one deadline.
 DateTime responseDeadlineUtc(ScheduleItem item) {
+  if (item.isVoiceAlarm) {
+    return item.scheduledInstantUtc.toUtc().add(kVoiceResponseWindow);
+  }
   final endOfDay = endOfScheduledLocalDayUtc(item);
   final minimum = item.scheduledInstantUtc.toUtc().add(kMinResponseWindow);
   return minimum.isAfter(endOfDay) ? minimum : endOfDay;

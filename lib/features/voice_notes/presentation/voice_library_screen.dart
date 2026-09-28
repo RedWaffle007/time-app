@@ -235,6 +235,7 @@ class _VoiceLibraryTileState extends ConsumerState<VoiceLibraryTile> {
           'plays ${voicePlaysFor(note.length)} times',
         ),
         trailing: PopupMenuButton<String>(
+          popUpAnimationStyle: Motion.menu,
           key: ValueKey('voice-library-menu-${note.id}'),
           enabled: !_busy,
           onSelected: (action) => action == 'rename' ? _rename() : _delete(),
