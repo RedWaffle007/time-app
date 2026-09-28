@@ -523,7 +523,7 @@ class AlarmSoundService : Service() {
     private fun buildNotification() =
         NotificationCompat.Builder(this, CHANNEL_ID)
             // Android small icons are monochrome silhouettes. The launcher icon
-            // becomes a solid blob here; this resource is the Checkmate mark
+            // becomes a solid blob here; this resource is the RingaPop mark
             // specifically drawn for the notification tray.
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(AlarmSoundPolicy.ringingTitle(headlines[currentItemId()]))

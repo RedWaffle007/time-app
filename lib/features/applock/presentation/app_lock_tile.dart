@@ -79,7 +79,7 @@ class _AppLockTileState extends ConsumerState<AppLockTile> {
           children: [
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Require unlock to open Checkmate'),
+              title: const Text('Require unlock to open RingaPop'),
               // PLATFORM-HONEST, deliberately. The recents/screenshot half is
               // Android-only: it is `FLAG_SECURE`, applied by the
               // `time_app/secure_window` handler in MainActivity.kt. iOS has no

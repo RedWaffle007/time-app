@@ -308,6 +308,34 @@ void main() {
     expect(find.text('Unarchive'), findsNWidgets(2));
   });
 
+  testWidgets('tapping an archived plan opens its status card '
+      '(2026-09-28)', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          currentUidProvider.overrideWithValue('me'),
+          profileByUidProvider.overrideWith((ref, uid) => Stream.value(null)),
+          archivedItemsProvider.overrideWithValue(
+            AsyncData([
+              _plan('a1', outcome: _done, fromNow: const Duration(hours: -1)),
+            ]),
+          ),
+        ],
+        child: MaterialApp(theme: AppTheme.light, home: const ArchivedScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('archived-card-a1')));
+    await tester.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.text('Unarchive'), findsOneWidget); // still the card's action
+  });
+
   testWidgets('reduced motion: no sheen animation runs', (tester) async {
     await pump(tester, OutcomeCard(item: _plan('m')), reduceMotion: true);
     expect(tester.hasRunningAnimations, isFalse);

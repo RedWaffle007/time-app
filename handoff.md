@@ -1,4 +1,4 @@
-# Checkmate handoff — 2026-09-28 (after the 2026-09-28 build list; release APK installed)
+# RingaPop (formerly Checkmate) handoff — 2026-09-28 (after the 2026-09-28 build list; release APK installed)
 
 ## Operating rules
 
@@ -215,6 +215,23 @@
 Install a fresh build on every phone first (strict locks; the release APK is
 on the Redmi now). Needs a second account/phone for most of it. Run
 `scripts/check-deployed-rules.sh` first.
+- **Newest (2026-09-28 evening) — check these first:**
+  - **RingaPop rebrand** (DECISIONS.md "RingaPop rebrand"): launcher icon in
+    light + dark, with the launcher's round/squircle shapes, and with Android
+    13 themed icons on (one colour, face see-through); launcher label
+    "RingaPop"; the startup reveal shows the icon tile, "RingaPop" and "A voice
+    note that rings."; the notification small icon (tray + lock screen) reads as
+    the handset + clock. Icons are generated: edit
+    `assets/brand/ringapop_mark.svg`, run `python3 scripts/generate_brand_icons.py`.
+    The Worker's invite page / inactivity push say RingaPop only after a
+    Worker deploy.
+  - **Timezones** (DECISIONS.md "One name per timezone"): a phone reporting
+    Asia/Calcutta now shows Asia/Kolkata; the picker lists each zone once.
+    Regenerate with `python3 scripts/generate_timezones.py` on a tzdata bump.
+  - Archived plans open the status card on tap; calendar taps land the plan
+    fully in view (not a sliver at the edge); the planner's confetti plays
+    once, with the pop-up; History cards use one fixed layout; voice-note card
+    copy + 19.5 s auto-stop; Request tab names/pictures load at app start.
 - **Latest (2026-09-28, `b10f2a5`…`3e26ec1`) — start here:**
   - Sounds: a Default Alarm's notification no longer plays the alarm tone;
     Done/Skip make a sound with the app OPEN; Uh-Oh on: ring-out, missed-popup

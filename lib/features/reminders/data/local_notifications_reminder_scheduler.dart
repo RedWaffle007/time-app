@@ -62,7 +62,7 @@ AndroidNotificationDetails buildAlarmNotificationDetails(String channelId) =>
 /// The native audio receiver uses `setAlarmClock`; the system next-alarm
 /// affordance is an intentional trade for delivering user-approved alarm audio
 /// at the promised instant. A prior build did not register that native channel
-/// at all, so the receiver was never armed and opening Checkmate triggered only
+/// at all, so the receiver was never armed and opening RingaPop triggered only
 /// the UI fallback. The 110s figure is what an inexact-only implementation
 /// would have shipped.
 ///

@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../../core/format/zone_ids.dart';
+
 /// Strips clock/meridian residue that speech-to-text sometimes leaves in a
 /// title ("a.m. cycling", "cycling p.m.").
 ///
@@ -329,7 +331,7 @@ class ScheduleItem {
       title: sanitizeScheduleTitle((d['title'] ?? '') as String),
       note: d['note'] as String?,
       localWallTime: (d['localWallTime'] ?? '') as String,
-      timezone: (d['timezone'] ?? '') as String,
+      timezone: canonicalZone((d['timezone'] ?? '') as String),
       scheduledInstantUtc:
           (d['scheduledInstantUtc'] as Timestamp?)?.toDate() ??
           DateTime.now().toUtc(),

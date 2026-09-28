@@ -11,6 +11,7 @@ import '../../social/data/username_repository.dart';
 import '../../social/domain/username.dart';
 import '../application/auth_providers.dart';
 import 'timezone_picker.dart';
+import '../../../core/format/zone_ids.dart';
 
 /// Shown after first sign-in when the user has no profile yet. Captures name
 /// and the REQUIRED home timezone before the app can be used.
@@ -56,7 +57,9 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
     // e.g. if they're travelling and want their real home zone).
     try {
       final info = await FlutterTimezone.getLocalTimezone();
-      if (mounted) setState(() => _timezone = info.identifier);
+      // Some phones report the old name ("Asia/Calcutta"); save the current
+      // one (DECISIONS.md "One name per timezone").
+      if (mounted) setState(() => _timezone = canonicalZone(info.identifier));
     } catch (_) {
       // Leave null — the user must then pick one manually.
     }

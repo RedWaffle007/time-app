@@ -34,11 +34,19 @@ class SplashTokens {
   /// Thickness of each underline bar.
   static const double lineThickness = 4;
 
+  /// The RingaPop icon tile above the wordmark (DECISIONS.md "RingaPop
+  /// rebrand", 2026-09-28): the same mint tile as the launcher icon.
+  static const double logoSize = 88;
+
+  /// The tile's image, generated from `assets/brand/ringapop_mark.svg` by
+  /// `scripts/generate_brand_icons.py`.
+  static const String logoAsset = 'assets/brand/ringapop_icon.png';
+
   /// The wordmark's typeface: **Space Grotesk** (OFL, variable, bundled at
   /// `assets/fonts/SpaceGrotesk.ttf`) — the "crisp modern-SaaS character" heading
   /// face from DESIGN-NOTES §3. It replaces Anton, which read as a heavy blob at
-  /// wordmark size; Space Grotesk keeps every letter distinct so "CHECKMATE" is
-  /// legible at a glance.
+  /// wordmark size; Space Grotesk keeps every letter distinct so the name is
+  /// legible at a glance ("RingaPop" since 2026-09-28).
   ///
   /// The `fontSize` here is a nominal design size; the reveal wraps the text in
   /// a `FittedBox`, so it scales down to fit narrow screens without ever
@@ -69,7 +77,7 @@ class SplashTokens {
     ],
   );
 
-  /// The tagline beneath the two bars — "Mates Always Remember". Space Grotesk
+  /// The tagline beneath the two bars — "A voice note that rings." Space Grotesk
   /// at a readable weight and modest tracking (the old Anton + heavy spacing was
   /// the source of the "hard to read" complaint). Warm off-white so it sits
   /// quietly under the wordmark without competing with it.

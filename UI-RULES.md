@@ -847,8 +847,9 @@ Composes primitives that already exist — it invents nothing:
 
 ### 6.15 Splash
 
-The cold-start reveal uses the CHECKMATE wordmark `CHECKMATE` in Space Grotesk,
-with the tagline **“Mates Always Remember”**. It is a theme-independent pure
+The cold-start reveal shows the RingaPop icon tile (`SplashTokens.logoSize`)
+above the wordmark `RingaPop` in Space Grotesk, with the tagline **“A voice note
+that rings.”** (DECISIONS.md "RingaPop rebrand"). It is a theme-independent pure
 black reveal with white wordmark and glow. The two fixed brand bars are green
 `#2FA35A` over burnt orange `#EA6A2E`, from `SplashTokens`.
 The complete reveal remains exactly 1.5 seconds. Its clock ting begins at mount

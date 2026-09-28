@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../../core/format/zone_ids.dart';
+
 /// A request to create actual schedule items for the requester.
 ///
 /// A [PlanRequest] never grants authority: fulfilling one still requires the
@@ -121,7 +123,7 @@ class PlanRequest {
         (value) => value.name == data['status'],
         orElse: () => PlanRequestStatus.pending,
       ),
-      timezone: data['timezone'] as String? ?? '',
+      timezone: canonicalZone(data['timezone'] as String? ?? ''),
       windowStartUtc: (data['windowStartUtc'] as Timestamp).toDate().toUtc(),
       windowEndUtc: (data['windowEndUtc'] as Timestamp).toDate().toUtc(),
       durationMinutes: (data['durationMinutes'] as num?)?.toInt() ?? 0,

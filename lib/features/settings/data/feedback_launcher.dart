@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// real address (2026-09-28) — change it here and nowhere else.
 const kFeedbackAddress = 'developer@example.com';
 
-const kFeedbackSubject = 'CHECKMATE feedback';
+const kFeedbackSubject = 'RingaPop feedback';
 
 /// The prefilled message: room to write, then the app version so a report
 /// says which build it came from.

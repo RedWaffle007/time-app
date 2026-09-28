@@ -15,7 +15,7 @@ class StartupSoundTile extends ConsumerWidget {
       contentPadding: EdgeInsets.zero,
       title: const Text('Startup sound'),
       subtitle: const Text(
-        'Play the clock strike when Checkmate opens. Alarms always ring.',
+        'Play the clock strike when RingaPop opens. Alarms always ring.',
       ),
       secondary: const Icon(AppIcons.startupSound),
       value: ref.watch(startupSoundEnabledProvider),

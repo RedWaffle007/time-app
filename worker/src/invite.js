@@ -3,7 +3,7 @@
 //   /i/u/{username}  — add a friend by their username
 //   /i/g/{joinCode}  — ask to join a group by its code
 //
-// With Checkmate installed, Android App Links (verified via
+// With RingaPop installed, Android App Links (verified via
 // /.well-known/assetlinks.json below) open the app straight on the link; the
 // app does the lookup and the request. Without it, the browser shows the small
 // page below. The link carries only an existing username or join code — no new
@@ -75,21 +75,21 @@ export function invitePage(invite, url, env) {
     `intent://${host}${path}#Intent;scheme=https;package=${APP_PACKAGE};end`;
   const download = String(env.APP_DOWNLOAD_URL || '');
   const heading = invite.kind === 'user'
-    ? `@${escapeHtml(invite.value)} invited you to Checkmate`
-    : `You're invited to a group on Checkmate`;
+    ? `@${escapeHtml(invite.value)} invited you to RingaPop`
+    : `You're invited to a group on RingaPop`;
   const detail = invite.kind === 'user'
-    ? 'Open the link in Checkmate to add them as a friend.'
-    : `Open the link in Checkmate to ask to join. Group code: <strong>${escapeHtml(invite.value)}</strong>`;
+    ? 'Open the link in RingaPop to add them as a friend.'
+    : `Open the link in RingaPop to ask to join. Group code: <strong>${escapeHtml(invite.value)}</strong>`;
   const getIt = download
-    ? `<a class="secondary" href="${escapeHtml(download)}">Get Checkmate</a>`
-    : '<p class="muted">Don’t have Checkmate yet? Ask the person who sent this for the app, then tap the link again.</p>';
+    ? `<a class="secondary" href="${escapeHtml(download)}">Get RingaPop</a>`
+    : '<p class="muted">Don’t have RingaPop yet? Ask the person who sent this for the app, then tap the link again.</p>';
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Checkmate invite</title>
+<title>RingaPop invite</title>
 <style>
   :root { color-scheme: light dark; --bg:#f6f8f5; --fg:#1b1f1b; --muted:#5b645b; --accent:#2f6b3a; --on-accent:#fff; }
   @media (prefers-color-scheme: dark) { :root { --bg:#121512; --fg:#e6ebe5; --muted:#a7b1a6; --accent:#8fd19b; --on-accent:#0d1f11; } }
@@ -107,7 +107,7 @@ export function invitePage(invite, url, env) {
 <main>
   <h1>${heading}</h1>
   <p>${detail}</p>
-  <a class="primary" href="${escapeHtml(openIntent)}">Open in Checkmate</a>
+  <a class="primary" href="${escapeHtml(openIntent)}">Open in RingaPop</a>
   ${getIt}
 </main>
 </body>

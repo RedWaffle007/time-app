@@ -107,7 +107,7 @@ class _VoiceNoteRecorderState extends ConsumerState<VoiceNoteRecorder> {
       builder: (ctx) => AlertDialog(
         title: const Text('Use your microphone?'),
         content: Text(
-          'Checkmate records a short voice note that plays when '
+          'RingaPop records a short voice note that plays when '
           "${widget.recipientName}'s alarm rings. The microphone is only on "
           'while you record.',
         ),
@@ -129,7 +129,7 @@ class _VoiceNoteRecorderState extends ConsumerState<VoiceNoteRecorder> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Microphone is off for Checkmate. Turn it on in Settings to '
+            'Microphone is off for RingaPop. Turn it on in Settings to '
             'record a voice note.',
           ),
         ),

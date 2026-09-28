@@ -64,7 +64,7 @@ void main() {
   test('the message carries room to write, then the app version', () {
     expect(feedbackEmailBody('1.2.3'), '\n\n---\nApp version: 1.2.3');
     expect(feedbackEmailBody(null), contains('App version: unknown'));
-    expect(kFeedbackSubject, 'CHECKMATE feedback');
+    expect(kFeedbackSubject, 'RingaPop feedback');
   });
 
   testWidgets('Send feedback sits near the bottom of Settings', (tester) async {
@@ -93,7 +93,7 @@ void main() {
     expect(launcher.composed, [
       {
         'to': kFeedbackAddress,
-        'subject': 'CHECKMATE feedback',
+        'subject': 'RingaPop feedback',
         'body': '\n\n---\nApp version: 1.2.3',
       },
     ]);

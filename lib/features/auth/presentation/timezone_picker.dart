@@ -3,6 +3,7 @@ import 'package:timezone/timezone.dart' as tz;
 
 import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_tokens.dart';
+import '../../../core/format/zone_ids.dart';
 
 /// A full-screen searchable list of IANA timezone names. Returns the chosen
 /// identifier (e.g. "Asia/Karachi") via Navigator.pop, or null if dismissed.
@@ -14,9 +15,14 @@ class TimezonePicker extends StatefulWidget {
 }
 
 class _TimezonePickerState extends State<TimezonePicker> {
-  // All IANA zone names from the timezone database (loaded in main()).
-  late final List<String> _allZones = tz.timeZoneDatabase.locations.keys.toList()
-    ..sort();
+  // One entry per zone, current names only (DECISIONS.md "One name per
+  // timezone"): the database also holds ~140 old aliases such as
+  // "Asia/Calcutta", which listed every renamed zone twice. Only names the
+  // loaded tz data can resolve are offered.
+  late final List<String> _allZones = [
+    for (final zone in kPickerZones)
+      if (tz.timeZoneDatabase.locations.containsKey(zone)) zone,
+  ];
   String _query = '';
 
   @override

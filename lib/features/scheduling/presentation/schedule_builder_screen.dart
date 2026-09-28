@@ -1058,5 +1058,5 @@ String sendConfirmationText({
     return '$sent Their notification may take a moment.';
   }
   return 'Alarm saved, but their phone was not notified. Ask your friend to '
-      'open or update Checkmate.';
+      'open or update RingaPop.';
 }

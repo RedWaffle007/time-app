@@ -13,6 +13,7 @@ import '../../auth/application/auth_providers.dart';
 import '../../calendar/application/calendar_grouping.dart';
 import '../../scheduling/application/schedule_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
+import '../../scheduling/presentation/planner_item_detail_sheet.dart';
 import '../application/archive_providers.dart';
 
 /// Everything this user has hidden from their own views, and the one place to
@@ -111,65 +112,86 @@ class _ArchivedCard extends ConsumerWidget {
         'someone';
 
     return Card(
-      child: Padding(
-        padding: Space.cardPadding,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(item.title, style: context.text.titleMedium),
-                ),
-                const SizedBox(width: Space.sm),
-                // The same plan badges as on Home / Activity (UI-RULES §6.18).
-                PlanBadges(item: item, iAmTarget: isMine),
-              ],
-            ),
-            const SizedBox(height: Space.xs),
-            Text(
-              [
-                if (item.createdByUid == item.targetUid)
-                  'yours'
-                else if (isMine)
-                  'from $otherName'
-                else
-                  'for $otherName',
-                formatInstant(context, item.scheduledInstantUtc, item.timezone),
-              ].join(' · '),
-              style: context.text.bodySmall?.copyWith(
-                color: context.colors.onSurfaceVariant,
-              ),
-            ),
-            ..._reasonLine(context),
-            // Only a MANUAL archive is reversible. A rejected or withdrawn item
-            // is auto-hidden, and un-hiding it would put back exactly the
-            // clutter that rejecting was the act of clearing — so those rows are
-            // read-only here. This screen is where their record stays reachable,
-            // which is why they are listed at all.
-            // Bottom row (UI-RULES §6.18): the one status badge (an outcome
-            // replaces the approval status, because "Done" implies
-            // "Approved"), and Unarchive on the right.
-            const SizedBox(height: Space.sm),
-            // One line when it fits, else the action drops below, right.
-            OverflowBar(
-              alignment: MainAxisAlignment.spaceBetween,
-              overflowAlignment: OverflowBarAlignment.end,
-              overflowSpacing: Space.xs,
-              children: [
-                itemStatusBadge(item, context),
-                if (item.isManuallyArchivable)
-                  TextButton.icon(
-                    onPressed: () => _unarchive(ref, uid),
-                    icon: const Icon(
-                      AppIcons.unarchive,
-                      size: Sizes.inlineIcon,
-                    ),
-                    label: const Text('Unarchive'),
+      clipBehavior: Clip.antiAlias,
+      // Tapping opens the same status timeline as Home, History and Activity
+      // (2026-09-28): read-only, so it cannot change an archived plan; Unarchive
+      // stays the card's one action.
+      child: InkWell(
+        key: ValueKey('archived-card-${item.id}'),
+        onTap: () => showPlannerItemDetailSheet(
+          context,
+          item: item,
+          targetName: isMine ? 'you' : otherName,
+          contextLine: isMine
+              ? 'Planned by '
+                    '${item.createdByUid == item.targetUid ? 'you' : otherName}'
+                    ' · ${item.timezone}'
+              : null,
+        ),
+        child: Padding(
+          padding: Space.cardPadding,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(item.title, style: context.text.titleMedium),
                   ),
-              ],
-            ),
-          ],
+                  const SizedBox(width: Space.sm),
+                  // The same plan badges as on Home / Activity (UI-RULES §6.18).
+                  PlanBadges(item: item, iAmTarget: isMine),
+                ],
+              ),
+              const SizedBox(height: Space.xs),
+              Text(
+                [
+                  if (item.createdByUid == item.targetUid)
+                    'yours'
+                  else if (isMine)
+                    'from $otherName'
+                  else
+                    'for $otherName',
+                  formatInstant(
+                    context,
+                    item.scheduledInstantUtc,
+                    item.timezone,
+                  ),
+                ].join(' · '),
+                style: context.text.bodySmall?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
+              ),
+              ..._reasonLine(context),
+              // Only a MANUAL archive is reversible. A rejected or withdrawn item
+              // is auto-hidden, and un-hiding it would put back exactly the
+              // clutter that rejecting was the act of clearing — so those rows are
+              // read-only here. This screen is where their record stays reachable,
+              // which is why they are listed at all.
+              // Bottom row (UI-RULES §6.18): the one status badge (an outcome
+              // replaces the approval status, because "Done" implies
+              // "Approved"), and Unarchive on the right.
+              const SizedBox(height: Space.sm),
+              // One line when it fits, else the action drops below, right.
+              OverflowBar(
+                alignment: MainAxisAlignment.spaceBetween,
+                overflowAlignment: OverflowBarAlignment.end,
+                overflowSpacing: Space.xs,
+                children: [
+                  itemStatusBadge(item, context),
+                  if (item.isManuallyArchivable)
+                    TextButton.icon(
+                      onPressed: () => _unarchive(ref, uid),
+                      icon: const Icon(
+                        AppIcons.unarchive,
+                        size: Sizes.inlineIcon,
+                      ),
+                      label: const Text('Unarchive'),
+                    ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

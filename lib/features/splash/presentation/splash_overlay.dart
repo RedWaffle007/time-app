@@ -297,6 +297,17 @@ class _SplashLockup extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: const [
+              // The icon tile (DECISIONS.md "RingaPop rebrand"): centred, at
+              // its own size, above the wordmark the bars stretch to.
+              Center(
+                child: Image(
+                  image: AssetImage(SplashTokens.logoAsset),
+                  width: SplashTokens.logoSize,
+                  height: SplashTokens.logoSize,
+                  filterQuality: FilterQuality.medium,
+                ),
+              ),
+              SizedBox(height: Space.lg),
               _Wordmark(color: SplashTokens.wordmark),
               SizedBox(height: Space.sm),
               _Bar(color: SplashTokens.lineTop),
@@ -333,7 +344,7 @@ class _Wordmark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Text(
-      'CHECKMATE',
+      'RingaPop',
       maxLines: 1,
       textAlign: TextAlign.center,
       style: SplashTokens.wordmarkStyle.copyWith(color: color),
@@ -349,7 +360,7 @@ class _Tagline extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Text(
-      'Mates Always Remember',
+      'A voice note that rings.',
       maxLines: 1,
       textAlign: TextAlign.center,
       style: SplashTokens.taglineStyle,

@@ -493,7 +493,7 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     final themeMode = ref.watch(themeModeProvider);
     return MaterialApp.router(
       scaffoldMessengerKey: _scaffoldMessengerKey,
-      title: 'Checkmate',
+      title: 'RingaPop',
       // THE APP LOCK GOES HERE — `builder`, not HomeGate, not a route.
       //
       // `builder` wraps the Router and the root Navigator itself, so the gate

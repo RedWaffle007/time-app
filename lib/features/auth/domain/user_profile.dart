@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../social/domain/avatar.dart';
+import '../../../core/format/zone_ids.dart';
 
 /// A user's profile, stored at `users/{uid}` in Firestore.
 ///
@@ -131,7 +132,9 @@ class UserProfile {
     return UserProfile(
       uid: doc.id,
       name: (data['name'] ?? '') as String,
-      homeTimezone: (data['homeTimezone'] ?? '') as String,
+      // One name per zone: an old alias saved by an older build or reported
+      // by the phone ("Asia/Calcutta") reads as the current one.
+      homeTimezone: canonicalZone((data['homeTimezone'] ?? '') as String),
       avatarUrl: data['avatarUrl'] as String?,
       quietHoursStartMinutes: (data['quietHoursStartMinutes'] as num?)?.toInt(),
       quietHoursEndMinutes: (data['quietHoursEndMinutes'] as num?)?.toInt(),
