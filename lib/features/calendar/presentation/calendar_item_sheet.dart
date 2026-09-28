@@ -142,7 +142,7 @@ class _CalendarItemSheet extends ConsumerWidget {
                 // top of a `go()` would drop the user back onto a sheet
                 // belonging to a screen they have left.
                 Navigator.of(context).pop();
-                _open(context, ref, item, isMine: isMine);
+                openCalendarItem(context, ref, item, isMine: isMine);
               },
               icon: const Icon(AppIcons.openRow),
               label: Text(
@@ -159,42 +159,6 @@ class _CalendarItemSheet extends ConsumerWidget {
         ),
       ),
     );
-  }
-
-  /// Route to the screen that owns this item's controls.
-  ///
-  /// `go`, not `push`: both destinations are inside the tab shell, so go_router
-  /// selects the owning branch and the nav bar comes with it. That is the whole
-  /// point of the D2/D11 refactor and is easy to lose by pushing.
-  void _open(
-    BuildContext context,
-    WidgetRef ref,
-    ScheduleItem item, {
-    required bool isMine,
-  }) {
-    // Yours belongs on My Schedule, singled out (highlight → scroll +
-    // outline); a settled one in History. (There is no approval queue any
-    // more — F2, 2026-09-26.) Both are inside the Plan pillar. The
-    // sub-tab/highlight is set on `planIntentProvider` BEFORE `go` — the
-    // deterministic signal the shell listens to (query params were unreliable).
-    if (isMine) {
-      if (isHistoryPlan(item, DateTime.now().toUtc())) {
-        ref.read(historyIntentProvider.notifier).highlightItem(item.id);
-        context.go(Routes.history);
-      } else {
-        ref.read(planIntentProvider.notifier).highlightItem(item.id);
-        context.go(Routes.plan);
-      }
-    } else if (item.outcome == null) {
-      // A plan I set for someone else that they have not answered lives on
-      // Home until they do (item 7, 2026-09-27).
-      ref.read(planIntentProvider.notifier).highlightItem(item.id);
-      context.go(Routes.plan);
-    } else {
-      // Answered: Activity, on the exact plan (restored 2026-09-25).
-      ref.read(planIntentProvider.notifier).highlightActivityItem(item.id);
-      context.go(Routes.plan);
-    }
   }
 
   String? _reason(ScheduleItem item) => switch (item) {
@@ -234,5 +198,42 @@ class _DetailRow extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Route to the screen that owns this item's controls — used by the sheet
+/// AND straight from a calendar card (2026-09-28: a tap goes to the plan).
+///
+/// `go`, not `push`: both destinations are inside the tab shell, so go_router
+/// selects the owning branch and the nav bar comes with it. That is the whole
+/// point of the D2/D11 refactor and is easy to lose by pushing.
+void openCalendarItem(
+  BuildContext context,
+  WidgetRef ref,
+  ScheduleItem item, {
+  required bool isMine,
+}) {
+  // Yours belongs on My Schedule, singled out (highlight → scroll +
+  // outline); a settled one in History. (There is no approval queue any
+  // more — F2, 2026-09-26.) Both are inside the Plan pillar. The
+  // sub-tab/highlight is set on `planIntentProvider` BEFORE `go` — the
+  // deterministic signal the shell listens to (query params were unreliable).
+  if (isMine) {
+    if (isHistoryPlan(item, DateTime.now().toUtc())) {
+      ref.read(historyIntentProvider.notifier).highlightItem(item.id);
+      context.go(Routes.history);
+    } else {
+      ref.read(planIntentProvider.notifier).highlightItem(item.id);
+      context.go(Routes.plan);
+    }
+  } else if (item.outcome == null) {
+    // A plan I set for someone else that they have not answered lives on
+    // Home until they do (item 7, 2026-09-27).
+    ref.read(planIntentProvider.notifier).highlightItem(item.id);
+    context.go(Routes.plan);
+  } else {
+    // Answered: Activity, on the exact plan (restored 2026-09-25).
+    ref.read(planIntentProvider.notifier).highlightActivityItem(item.id);
+    context.go(Routes.plan);
   }
 }

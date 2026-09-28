@@ -7641,3 +7641,34 @@ User-directed (picks agreed in chat).
   the alarm tone. It is replaced by a channel-level silent one
   (`time_app_reminders_silent`; the old `time_app_reminders_alert` is deleted
   on start). `AlarmSoundService` stays the only thing that plays the alarm.
+
+## Device fixes after the 2026-09-28 release build
+
+- **Calendar:** "Jump to today" sits beside the "Calendar" heading, not in
+  the far corner.
+- **Calendar → plan:** the scroll-to-plan retry (Home, History, Activity)
+  now asks for a frame on every retry and survives a scroll attempt made
+  mid page-transition (it used to stop), and Home jumps to the top for a plan
+  in Waiting on You / Them. The exact failing case was not reproduced in
+  tests; recheck on the device.
+- **Badges shine repeatedly:** one sweep every 4 s (none under reduce
+  motion; nothing animates between sweeps, and nothing off-screen), with a
+  brighter white-ward highlight so blue (Sent) and gold (Group) read too.
+- **You tab loads at once:** the profile stream, profile stats and friend
+  count are listened from app start in the shell (like the avatar), so the
+  first visit no longer waits a server round trip.
+- **Top button row = three columns under the tabs:** Home CALENDAR | HISTORY
+  | ARCHIVE, Activity — | — | ARCHIVE, Groups CREATE GROUP | JOIN GROUP |
+  ARCHIVE. Outlined in the brand green (`primary`), labels scale down rather
+  than overflow.
+- **Calendar day list by relationship** (user-directed, replacing an
+  earlier month/year idea — a day list needs no month headings): Self plans ·
+  Planned for others · Planned for you · Group plans, only headings with
+  plans; an empty day is unchanged. A group plan is a Group plan whoever it
+  is for. **A tap goes straight to the plan** (Home / History / Activity,
+  outlined) — the view sheet is no longer in the way, and the first reveal is
+  instant (no visible scroll) on all three screens.
+- Checked, no change: Request History (month + year, newest first) and
+  Archived (newest first; month + year headings once there are two months).
+- Version in the feedback email is `pubspec.yaml`'s `version:` (versionName)
+  — PARKED by the user until they pick a name (e.g. 1.2).

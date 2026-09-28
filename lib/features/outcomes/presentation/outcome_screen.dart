@@ -110,6 +110,10 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
   int? _highlightIndex;
   int _approvedCount = 0;
 
+  /// The highlighted card is in Waiting on You / Them (the top), not in the
+  /// Upcoming day groups — set during [build], read by [_tryScroll].
+  bool _highlightInWaiting = false;
+
   /// Increments for every deep-link intent, including a repeat of the same id.
   /// Delayed scroll callbacks from an earlier intent become harmless no-ops.
   int _scrollRequest = 0;
@@ -191,15 +195,29 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
         // another frame immediately used to keep retrying after the target had
         // already arrived, especially at a list boundary where reveal clamps.
         if (attempt < 60) {
-          Scrollable.ensureVisible(
-            ctx,
-            duration: Motion.fast,
-            curve: Motion.curve,
-            alignment: 0.2,
-          ).whenComplete(() => _tryScroll(request, attempt + 1));
+          try {
+            Scrollable.ensureVisible(
+              ctx,
+              // The first reveal is instant: arriving from a link, the plan
+              // is simply there, no visible scroll (2026-09-28).
+              duration: attempt == 0 ? Duration.zero : Motion.fast,
+              curve: Motion.curve,
+              alignment: 0.2,
+            ).whenComplete(() => _tryScroll(request, attempt + 1));
+          } catch (_) {
+            // The target can be mid page-transition (e.g. arriving from the
+            // Calendar): try again next frame rather than give up.
+            WidgetsBinding.instance.scheduleFrame();
+            _tryScroll(request, attempt + 1);
+          }
         }
       } else {
-        if (_scrollController.hasClients &&
+        if (_scrollController.hasClients && _highlightInWaiting) {
+          // A Waiting on You / Them card sits at the TOP (2026-09-28): when
+          // the list is scrolled down it is not built, and it has no Upcoming
+          // index to jump to — go to the top, where it is.
+          _scrollController.jumpTo(0);
+        } else if (_scrollController.hasClients &&
             _highlightIndex != null &&
             _approvedCount > 0) {
           // The card is not built — jump roughly to its position so it does, then
@@ -210,7 +228,12 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
               : _highlightIndex! / (_approvedCount - 1);
           _scrollController.jumpTo((frac * max).clamp(0.0, max));
         }
-        if (attempt < 60) _tryScroll(request, attempt + 1);
+        if (attempt < 60) {
+          // Post-frame callbacks need a frame; ask for one so the retry
+          // never stalls on a quiet screen.
+          WidgetsBinding.instance.scheduleFrame();
+          _tryScroll(request, attempt + 1);
+        }
       }
     });
   }
@@ -340,6 +363,12 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
           final orderedKeys = byGroup.keys.toList()..sort();
 
           _approvedCount = approved.length;
+          _highlightInWaiting =
+              _highlighted != null &&
+              [
+                ...waitingOnYou,
+                ...waitingOnThem,
+              ].any((item) => item.id == _highlighted);
           // Keep the flattened position for the lazy-list fallback. Expanding a
           // target day makes its rows eligible to build, but it does not mount a
           // far-away child; this fraction jump brings that region into the
@@ -469,24 +498,22 @@ class _HomeActions extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) => TabActionRow(
-    actions: [
-      TabAction(
-        label: 'CALENDAR',
-        onPressed: () => context.push(Routes.calendar),
-      ),
-      TabAction(
-        label: 'HISTORY',
-        onPressed: () {
-          ref.read(historyIntentProvider.notifier).open();
-          context.push(Routes.history);
-        },
-      ),
-      TabAction(
-        key: const ValueKey('home-archive'),
-        label: 'ARCHIVE',
-        onPressed: () => context.push(Routes.archived),
-      ),
-    ],
+    home: TabAction(
+      label: 'CALENDAR',
+      onPressed: () => context.push(Routes.calendar),
+    ),
+    activity: TabAction(
+      label: 'HISTORY',
+      onPressed: () {
+        ref.read(historyIntentProvider.notifier).open();
+        context.push(Routes.history);
+      },
+    ),
+    groups: TabAction(
+      key: const ValueKey('home-archive'),
+      label: 'ARCHIVE',
+      onPressed: () => context.push(Routes.archived),
+    ),
   );
 }
 

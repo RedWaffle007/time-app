@@ -72,6 +72,8 @@ void main() {
   Widget host({
     List<ScheduleItem> mine = const [],
     List<ScheduleItem> planned = const [],
+    String? highlight,
+    int token = 0,
   }) => ProviderScope(
     overrides: [
       currentUidProvider.overrideWithValue('me'),
@@ -84,7 +86,10 @@ void main() {
         ),
       ),
     ],
-    child: MaterialApp(theme: AppTheme.light, home: const OutcomeScreen()),
+    child: MaterialApp(
+      theme: AppTheme.light,
+      home: OutcomeScreen(highlightItemId: highlight, highlightToken: token),
+    ),
   );
 
   void tall(WidgetTester tester) {
@@ -199,5 +204,34 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Waiting on You'), findsOneWidget);
     expect(find.text('Waiting on Them'), findsOneWidget);
+  });
+
+  testWidgets('a link to a far Waiting plan scrolls to it (calendar)', (
+    tester,
+  ) async {
+    // Regression (device report 2026-09-28): from the Calendar, a plan that
+    // had already rung opened Home but not the plan itself.
+    final now = DateTime.now().toUtc();
+    final mine = [
+      for (var i = 0; i < 40; i++)
+        plan('Rang $i', at: now.subtract(Duration(minutes: i + 1))),
+    ];
+    // Newest first: 'Rang 39' is the last card, far below the fold.
+    await tester.pumpWidget(host(mine: mine));
+    await tester.pumpAndSettle();
+    final screen = tester.getRect(find.byType(Scaffold).first);
+    bool onScreen() {
+      final hits = find.text('Rang 39');
+      if (hits.evaluate().isEmpty) return false;
+      final r = tester.getRect(hits.first);
+      return r.bottom > screen.top && r.top < screen.bottom;
+    }
+
+    expect(onScreen(), isFalse);
+    await tester.pumpWidget(host(mine: mine, highlight: 'Rang 39', token: 1));
+    for (var frame = 0; frame < 30; frame++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(onScreen(), isTrue);
   });
 }

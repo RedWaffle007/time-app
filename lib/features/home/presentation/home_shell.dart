@@ -9,6 +9,8 @@ import '../../../core/theme/app_tokens.dart';
 import '../../../core/theme/status_style.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../plan_requests/application/plan_request_providers.dart';
+import '../../social/application/social_providers.dart';
+import '../../social/application/stats_providers.dart';
 import '../../walkthrough/application/walkthrough_providers.dart';
 import '../../walkthrough/presentation/walkthrough_overlay.dart';
 import '../../invites/presentation/pending_invite_listener.dart';
@@ -166,6 +168,15 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         context,
         onError: (_, _) {}, // The avatar falls back to the initial itself.
       );
+    }
+    // Warm the rest of the You tab too (2026-09-28: it still took about a
+    // second): its profile stream, stats and friend count are listened from
+    // app start, so the tab renders at once on any visit, from any tab.
+    final me = ref.watch(currentUidProvider);
+    if (me != null) {
+      ref.listen(profileByUidProvider(me), (_, _) {});
+      ref.listen(profileStatsProvider(me), (_, _) {});
+      ref.listen(myFriendCountProvider, (_, _) {});
     }
     // Replay from the You hub — a nonce bump, orthogonal to the flag above.
     ref.listen<int>(walkthroughTriggerProvider, (prev, next) {

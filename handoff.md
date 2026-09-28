@@ -175,8 +175,12 @@ PLACEHOLDER). **(8) Stats audit + range dropdown BUILT 2026-09-28,
 uncommitted** (DECISIONS.md "Stats audit + range dropdown"). Committed.
 **(9) Uh-Oh for every negative event + live group lists + silent alarm
 channel + foreground sounds BUILT 2026-09-28, uncommitted** (DECISIONS.md
-"Uh-Oh for every negative event"). Worker deploy + fresh APK needed. Next:
-the device pass, then item 33.
+"Uh-Oh for every negative event"). Committed + deployed.
+**(10) Device fixes after the release build BUILT 2026-09-28, uncommitted**
+(DECISIONS.md "Device fixes after the 2026-09-28 release build"). PARKED:
+app version name (pubspec `version:` = 1.0.0+4 today), user to choose.
+Calendar: day list grouped by relationship, taps go straight to the plan.
+Next: the device pass, then item 33.
 Voice-note signed-off spec, kept for the device pass: dismiss while ringing = outcome done shown
 "Heard", planner "{Y} heard your voice note."; ring-out = Uh-Oh "{Y} missed
 your voice note."; missed popup "Missed voice note" / "{Planner} sent you a

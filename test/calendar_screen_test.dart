@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
@@ -12,7 +13,9 @@ import 'package:time_app/features/auth/application/auth_providers.dart';
 import 'package:time_app/features/calendar/application/calendar_grouping.dart';
 import 'package:time_app/features/calendar/application/calendar_providers.dart';
 import 'package:time_app/features/calendar/presentation/calendar_screen.dart';
+import 'package:time_app/features/plan/application/plan_intent.dart';
 import 'package:time_app/features/scheduling/domain/schedule_item.dart';
+import 'package:time_app/routing/app_router.dart';
 
 /// **What the pure tests cannot reach.**
 ///
@@ -255,39 +258,132 @@ void main() {
     expect(find.byType(TableCalendar<CalendarEntry>), findsNothing);
   });
 
-  testWidgets('tapping an item opens a VIEW sheet with no edit control', (
+  testWidgets('tapping a plan goes straight to it — no sheet (2026-09-28)', (
     tester,
   ) async {
     final today = viewerToday();
+    final container = ProviderContainer(
+      overrides: [
+        currentUidProvider.overrideWithValue('me'),
+        calendarEntriesProvider.overrideWithValue(
+          AsyncData(
+            entriesFor([
+              item(id: 'a', instantUtc: nineAmOn(today), title: 'Morning run'),
+            ]),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    final router = GoRouter(
+      initialLocation: Routes.calendar,
+      routes: [
+        GoRoute(
+          path: Routes.calendar,
+          builder: (_, _) => const CalendarScreen(),
+        ),
+        GoRoute(path: Routes.plan, builder: (_, _) => const Text('Plan home')),
+      ],
+    );
+    addTearDown(router.dispose);
     await tester.pumpWidget(
-      harness(
-        entriesFor([
-          item(id: 'a', instantUtc: nineAmOn(today), title: 'Morning run'),
-        ]),
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp.router(routerConfig: router),
       ),
     );
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Morning run'));
     await tester.pumpAndSettle();
+    expect(find.text('Plan home'), findsOneWidget);
+    expect(find.text('Open in Home'), findsNothing, reason: 'no sheet');
+    // Singled out on arrival.
+    expect(container.read(planIntentProvider)?.itemId, 'a');
+  });
 
-    // The sheet names the zone the item was built against, so a cross-timezone
-    // plan can never read as the viewer's own local time.
-    expect(find.text(kolkata), findsOneWidget);
-    // Its one action ROUTES to the screen that owns the real controls. An
-    // undecided item belongs to Home even once its time has passed —
-    // only a Done/Skip moves it to History (2026-09-25).
-    expect(find.text('Open in Home'), findsOneWidget);
-    expect(find.text('Open in History'), findsNothing);
+  testWidgets("a day's plans sit under who-set-it-for-whom headings", (
+    tester,
+  ) async {
+    final today = viewerToday();
+    ScheduleItem other(
+      String id, {
+      required String target,
+      required String creator,
+      String group = '',
+    }) => ScheduleItem(
+      id: id,
+      targetUid: target,
+      createdByUid: creator,
+      groupId: group,
+      title: 'Title $id',
+      localWallTime: '',
+      timezone: kolkata,
+      scheduledInstantUtc: nineAmOn(today),
+      status: ScheduleItemStatus.approved,
+    );
+    final entries = calendarEntries(
+      asTarget: [
+        item(id: 'self', instantUtc: nineAmOn(today), title: 'Title self'),
+        other('forYou', target: 'me', creator: 'friend'),
+        other('groupIn', target: 'me', creator: 'friend', group: 'g'),
+      ],
+      asPlanner: [other('forThem', target: 'friend', creator: 'me')],
+      viewerUid: 'me',
+    );
+    tester.view.physicalSize = const Size(1080, 4800);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(harness(entries));
+    await tester.pumpAndSettle();
 
-    // No edit affordance, disabled or otherwise. The deployed rules make
-    // `title` and `scheduledInstantUtc` immutable after create, and a greyed
-    // "Edit" would imply the feature is a tap away when it is a rules deploy
-    // away. This assertion is the guard on that decision.
-    expect(find.text('Edit'), findsNothing);
-    // Nor a second rendering of Done / Skip — those live on My Schedule.
-    expect(find.text('Done'), findsNothing);
-    expect(find.text('Skip'), findsNothing);
+    double y(Finder f) => tester.getTopLeft(f).dy;
+    final heads = [
+      for (final c in CalendarCategory.values)
+        find.byKey(ValueKey('calendar-category-${c.name}')),
+    ];
+    for (final h in heads) {
+      expect(h, findsOneWidget);
+    }
+    expect(find.text('Self plans'), findsOneWidget);
+    expect(find.text('Planned for others'), findsOneWidget);
+    expect(find.text('Planned for you'), findsOneWidget);
+    expect(find.text('Group plans'), findsOneWidget);
+    // In that order, each plan under its own heading.
+    for (var k = 0; k < heads.length - 1; k++) {
+      expect(y(heads[k]), lessThan(y(heads[k + 1])));
+    }
+    final titles = [
+      'Title self',
+      'Title forThem',
+      'Title forYou',
+      'Title groupIn',
+    ];
+    for (var k = 0; k < titles.length; k++) {
+      final t = y(find.text(titles[k]));
+      expect(t, greaterThan(y(heads[k])), reason: titles[k]);
+      if (k + 1 < heads.length) {
+        expect(t, lessThan(y(heads[k + 1])), reason: titles[k]);
+      }
+    }
+  });
+
+  testWidgets('only headings with plans show; an empty day is unchanged', (
+    tester,
+  ) async {
+    final today = viewerToday();
+    await tester.pumpWidget(
+      harness(entriesFor([item(id: 'a', instantUtc: nineAmOn(today))])),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Self plans'), findsOneWidget);
+    expect(find.text('Planned for others'), findsNothing);
+    expect(find.text('Group plans'), findsNothing);
+
+    await tester.pumpWidget(harness(const []));
+    await tester.pumpAndSettle();
+    expect(find.text('Nothing planned for this day.'), findsOneWidget);
+    expect(find.text('Self plans'), findsNothing);
   });
 
   testWidgets('day numbers are LOCALIZED, not raw integers', (tester) async {

@@ -314,10 +314,41 @@ void main() {
     expect(find.text('Received'), findsOneWidget);
   });
 
-  testWidgets('the sheen plays once and the screen settles', (tester) async {
+  testWidgets('the sheen sweeps again every few seconds, and settles between', (
+    tester,
+  ) async {
     await pump(tester, OutcomeCard(item: _plan('m2')));
-    // pumpAndSettle returned: nothing loops.
+    // pumpAndSettle returned: nothing animates between sweeps.
     expect(tester.hasRunningAnimations, isFalse);
+    // Device report 2026-09-28: one sweep was easy to miss. It repeats.
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(tester.hasRunningAnimations, isTrue);
+    await tester.pumpAndSettle();
+    expect(tester.hasRunningAnimations, isFalse);
+    // Leaving the screen cancels the next sweep (no timer left behind).
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('every badge shines: Sent and Group too', (tester) async {
+    await pump(
+      tester,
+      PlannerItemCard(
+        item: _plan('sg', target: 'friend', creator: 'me', group: 'grp'),
+      ),
+    );
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pump(const Duration(milliseconds: 100));
+    for (final key in ['plan-badge-sent', 'plan-badge-group']) {
+      final painter = find.descendant(
+        of: find.byKey(ValueKey(key)),
+        matching: find.byType(CustomPaint),
+      );
+      expect(painter, findsWidgets, reason: key);
+    }
+    expect(tester.hasRunningAnimations, isTrue);
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox());
   });
 
   testWidgets('dark mode and a 320 px phone: no overflow', (tester) async {

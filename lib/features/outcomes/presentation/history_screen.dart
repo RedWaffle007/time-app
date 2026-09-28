@@ -110,12 +110,21 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen>
       if (ctx != null) {
         if (_isVisible(ctx)) return;
         if (attempt < 60) {
-          Scrollable.ensureVisible(
-            ctx,
-            duration: Motion.fast,
-            curve: Motion.curve,
-            alignment: 0.2,
-          ).whenComplete(() => _tryScroll(request, attempt + 1));
+          try {
+            Scrollable.ensureVisible(
+              ctx,
+              // The first reveal is instant: arriving from a link, the plan
+              // is simply there, no visible scroll (2026-09-28).
+              duration: attempt == 0 ? Duration.zero : Motion.fast,
+              curve: Motion.curve,
+              alignment: 0.2,
+            ).whenComplete(() => _tryScroll(request, attempt + 1));
+          } catch (_) {
+            // The target can be mid page-transition (e.g. arriving from the
+            // Calendar): try again next frame rather than give up.
+            WidgetsBinding.instance.scheduleFrame();
+            _tryScroll(request, attempt + 1);
+          }
         }
       } else {
         if (_scrollController.hasClients &&
@@ -127,7 +136,12 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen>
               : _highlightIndex! / (_historyCount - 1);
           _scrollController.jumpTo((fraction * max).clamp(0.0, max));
         }
-        if (attempt < 60) _tryScroll(request, attempt + 1);
+        if (attempt < 60) {
+          // Post-frame callbacks need a frame; ask for one so the retry
+          // never stalls on a quiet screen.
+          WidgetsBinding.instance.scheduleFrame();
+          _tryScroll(request, attempt + 1);
+        }
       }
     });
   }

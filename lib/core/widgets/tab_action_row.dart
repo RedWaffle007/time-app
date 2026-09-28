@@ -12,15 +12,28 @@ class TabAction {
   final Key? key;
 }
 
-/// The row of compact, bold outlined buttons at the TOP of each Plan sub-tab
-/// (2026-09-28): Home = CALENDAR · HISTORY · ARCHIVE, Activity = ARCHIVE,
-/// Groups = CREATE GROUP · JOIN GROUP · ARCHIVE. Same place and style on every
-/// tab, so a swipe between tabs never moves them. Wraps (end-aligned) rather
-/// than overflowing on a narrow phone.
+/// The button row at the TOP of each Plan sub-tab, in three columns that line
+/// up under the three tab labels (Home · Activity · Groups), device report
+/// 2026-09-28:
+///
+///   Home tab      CALENDAR      HISTORY       ARCHIVE
+///   Activity tab  —             —             ARCHIVE
+///   Groups tab    CREATE GROUP  JOIN GROUP    ARCHIVE
+///
+/// ARCHIVE is always under "Groups", so it never moves on a swipe. Buttons are
+/// compact, bold and outlined in the brand green; a long label scales down
+/// rather than overflowing its column.
 class TabActionRow extends StatelessWidget {
-  const TabActionRow({super.key, required this.actions});
+  const TabActionRow({
+    super.key,
+    this.home,
+    this.activity,
+    required this.groups,
+  });
 
-  final List<TabAction> actions;
+  final TabAction? home;
+  final TabAction? activity;
+  final TabAction groups;
 
   @override
   Widget build(BuildContext context) {
@@ -29,23 +42,23 @@ class TabActionRow extends StatelessWidget {
       textStyle: context.text.labelLarge?.copyWith(fontWeight: FontWeight.bold),
       visualDensity: VisualDensity.compact,
       shape: const RoundedRectangleBorder(borderRadius: Radii.md),
+      side: BorderSide(color: context.colors.primary, width: Sizes.hairline),
+    );
+    Widget slot(TabAction? a) => Expanded(
+      child: a == null
+          ? const SizedBox.shrink()
+          : Center(
+              child: OutlinedButton(
+                key: a.key,
+                style: style,
+                onPressed: a.onPressed,
+                child: FittedBox(fit: BoxFit.scaleDown, child: Text(a.label)),
+              ),
+            ),
     );
     return Padding(
       padding: const EdgeInsets.only(top: Space.sm, bottom: Space.xs),
-      child: Wrap(
-        alignment: WrapAlignment.end,
-        spacing: Space.sm,
-        runSpacing: Space.xs,
-        children: [
-          for (final a in actions)
-            OutlinedButton(
-              key: a.key,
-              style: style,
-              onPressed: a.onPressed,
-              child: Text(a.label),
-            ),
-        ],
-      ),
+      child: Row(children: [slot(home), slot(activity), slot(groups)]),
     );
   }
 }

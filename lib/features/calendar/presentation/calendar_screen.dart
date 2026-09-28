@@ -122,15 +122,21 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     final indexAsync = ref.watch(calendarDayIndexProvider);
 
     return Scaffold(
+      // "Jump to today" sits beside the heading, not in the far corner
+      // (device report 2026-09-28).
       appBar: AppBar(
-        title: const Text('Calendar'),
-        actions: [
-          IconButton(
-            tooltip: 'Jump to today',
-            icon: const Icon(AppIcons.today),
-            onPressed: _goToToday,
-          ),
-        ],
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Calendar'),
+            IconButton(
+              key: const ValueKey('calendar-today'),
+              tooltip: 'Jump to today',
+              icon: const Icon(AppIcons.today),
+              onPressed: _goToToday,
+            ),
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         // The real schedule builder, seeded with the day in view — not a
@@ -178,17 +184,25 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               ? CalendarDayView(
                   day: _selectedDay,
                   entries: selectedEntries,
-                  onEntryTap: (entry) => showCalendarItemSheet(context, entry),
+                  onEntryTap: _openEntry,
                 )
               : _Agenda(
                   day: _selectedDay,
                   entries: selectedEntries,
-                  onEntryTap: (entry) => showCalendarItemSheet(context, entry),
+                  onEntryTap: _openEntry,
                 ),
         ),
       ],
     );
   }
+
+  /// A tap goes straight to the plan (2026-09-28) — no sheet in between.
+  void _openEntry(CalendarEntry entry) => openCalendarItem(
+    context,
+    ref,
+    entry.item,
+    isMine: entry.side == CalendarSide.mine,
+  );
 
   Widget _grid(Map<DateTime, List<CalendarEntry>> byDay) {
     return TableCalendar<CalendarEntry>(
@@ -438,8 +452,24 @@ class _Agenda extends StatelessWidget {
         if (entries.isEmpty)
           const _FreeDay()
         else
-          for (final entry in entries)
-            CalendarEntryCard(entry: entry, onTap: () => onEntryTap(entry)),
+          // Under who-set-it-for-whom headings, only those with plans
+          // (2026-09-28).
+          for (final category in CalendarCategory.values)
+            if (entries.any((e) => calendarCategoryFor(e) == category)) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: Space.lg),
+                child: SectionHeader(
+                  calendarCategoryLabel(category),
+                  key: ValueKey('calendar-category-${category.name}'),
+                ),
+              ),
+              for (final entry in entries)
+                if (calendarCategoryFor(entry) == category)
+                  CalendarEntryCard(
+                    entry: entry,
+                    onTap: () => onEntryTap(entry),
+                  ),
+            ],
       ],
     );
   }

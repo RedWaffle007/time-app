@@ -181,3 +181,25 @@ int _byInstantThenTitle(CalendarEntry a, CalendarEntry b) {
   final byTitle = a.item.title.compareTo(b.item.title);
   return byTitle != 0 ? byTitle : a.item.id.compareTo(b.item.id);
 }
+
+/// The headings a selected day's plans sit under (2026-09-28), in this order.
+/// A group plan is a Group plan whoever it is for; otherwise who set it for
+/// whom. (A planner's own copy of a group plan carries no group, so it reads
+/// as a Self plan.)
+enum CalendarCategory { self, forOthers, forYou, group }
+
+CalendarCategory calendarCategoryFor(CalendarEntry entry) {
+  final item = entry.item;
+  if (item.groupId.isNotEmpty) return CalendarCategory.group;
+  if (item.createdByUid == item.targetUid) return CalendarCategory.self;
+  return entry.side == CalendarSide.planned
+      ? CalendarCategory.forOthers
+      : CalendarCategory.forYou;
+}
+
+String calendarCategoryLabel(CalendarCategory category) => switch (category) {
+  CalendarCategory.self => 'Self plans',
+  CalendarCategory.forOthers => 'Planned for others',
+  CalendarCategory.forYou => 'Planned for you',
+  CalendarCategory.group => 'Group plans',
+};

@@ -100,6 +100,41 @@ void main() {
     expect(find.text('Archived screen'), findsOneWidget);
   });
 
+  testWidgets('three columns under the tabs; ARCHIVE always on the right', (
+    tester,
+  ) async {
+    // Device report 2026-09-28: Home → CALENDAR | HISTORY | ARCHIVE,
+    // Groups → CREATE GROUP | JOIN GROUP | ARCHIVE, Activity → ARCHIVE only,
+    // each under the tab label of its column.
+    double third(String label) {
+      final x = tester.getCenter(find.text(label)).dx;
+      final w = tester.getSize(find.byType(Scaffold).first).width;
+      return x / w;
+    }
+
+    await pump(tester, const OutcomeScreen(embedded: true));
+    await tester.pumpAndSettle();
+    expect(third('CALENDAR'), lessThan(1 / 3));
+    expect(third('HISTORY'), inInclusiveRange(1 / 3, 2 / 3));
+    expect(third('ARCHIVE'), greaterThan(2 / 3));
+    final button = tester.widget<OutlinedButton>(
+      find.widgetWithText(OutlinedButton, 'ARCHIVE'),
+    );
+    final side = button.style!.side!.resolve({})!;
+    expect(side.color, AppTheme.light.colorScheme.primary);
+
+    await pump(tester, const GroupsScreen(embedded: true));
+    await tester.pumpAndSettle();
+    expect(third('CREATE GROUP'), lessThan(1 / 3));
+    expect(third('JOIN GROUP'), inInclusiveRange(1 / 3, 2 / 3));
+    expect(third('ARCHIVE'), greaterThan(2 / 3));
+
+    await pump(tester, const PlannerActivityScreen(embedded: true));
+    await tester.pumpAndSettle();
+    expect(third('ARCHIVE'), greaterThan(2 / 3));
+    expect(find.text('HISTORY'), findsNothing);
+  });
+
   testWidgets('the Groups row wraps on a 320 px phone, never overflows', (
     tester,
   ) async {

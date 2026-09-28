@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../features/scheduling/domain/schedule_item.dart';
@@ -91,24 +93,51 @@ class _PlanBadgeState extends State<PlanBadge>
     value: 1,
   );
   bool _started = false;
+  Timer? _next;
+
+  /// The pause between sweeps. The shine REPEATS (device report 2026-09-28:
+  /// a single sweep on first appearance was easy to miss, so "Sent" looked
+  /// flat). Between sweeps nothing animates, so screens still settle.
+  static const _pause = Duration(seconds: 4);
+
+  @override
+  void initState() {
+    super.initState();
+    _sheen.addStatusListener((status) {
+      if (status == AnimationStatus.completed) _scheduleNext();
+    });
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_started) return;
     _started = true;
-    if (!MediaQuery.disableAnimationsOf(context)) _sheen.forward(from: 0);
+    _sweep();
+  }
+
+  void _sweep() {
+    if (!mounted || MediaQuery.disableAnimationsOf(context)) return;
+    _sheen.forward(from: 0);
+  }
+
+  void _scheduleNext() {
+    _next?.cancel();
+    _next = Timer(_pause, _sweep);
   }
 
   @override
   void dispose() {
+    _next?.cancel();
     _sheen.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final sheen = Color.lerp(widget.color, context.colors.surface, 0.7)!;
+    // A bright highlight in both modes (toward white), so the sweep reads on
+    // every accent — blue and gold included.
+    final sheen = Color.lerp(widget.color, context.immersiveForeground, 0.8)!;
     return AnimatedBuilder(
       animation: _sheen,
       builder: (context, child) => CustomPaint(

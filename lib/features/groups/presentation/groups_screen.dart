@@ -59,23 +59,21 @@ class GroupsScreen extends ConsumerWidget {
           // The same top button row as every Plan sub-tab (2026-09-28):
           // create and join are named buttons, Archive beside them.
           TabActionRow(
-            actions: [
-              TabAction(
-                key: const ValueKey('groups-create'),
-                label: 'CREATE GROUP',
-                onPressed: () => showGroupCreateDialog(context, ref),
-              ),
-              TabAction(
-                key: const ValueKey('groups-join'),
-                label: 'JOIN GROUP',
-                onPressed: () => showGroupJoinDialog(context, ref),
-              ),
-              TabAction(
-                key: const ValueKey('groups-archive'),
-                label: 'ARCHIVE',
-                onPressed: () => context.push(Routes.archived),
-              ),
-            ],
+            home: TabAction(
+              key: const ValueKey('groups-create'),
+              label: 'CREATE GROUP',
+              onPressed: () => showGroupCreateDialog(context, ref),
+            ),
+            activity: TabAction(
+              key: const ValueKey('groups-join'),
+              label: 'JOIN GROUP',
+              onPressed: () => showGroupJoinDialog(context, ref),
+            ),
+            groups: TabAction(
+              key: const ValueKey('groups-archive'),
+              label: 'ARCHIVE',
+              onPressed: () => context.push(Routes.archived),
+            ),
           ),
           Expanded(child: _groupList(context, ref, groupsAsync)),
         ],
