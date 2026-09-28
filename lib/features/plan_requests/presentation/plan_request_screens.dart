@@ -352,41 +352,170 @@ class PlanRequestsScreen extends ConsumerWidget {
       ),
       // A main-tab body since item 8: the shared tab gutter (UI-RULES §4).
       body: TabBodyInset(
-        child: AsyncView<List<PlanRequest>>(
-          value: incoming,
-          onRetry: () => ref.invalidate(incomingPlanRequestsProvider),
-          builder: (context, received) {
-            final sent = outgoing.value ?? const <PlanRequest>[];
-            if (received.isEmpty && sent.isEmpty) {
-              return const Center(child: Text('No plan requests yet.'));
-            }
-            return ListView(
-              padding: Space.screenList,
-              children: [
-                if (received.isNotEmpty) ...[
-                  const SectionHeader('Waiting on you', attention: true),
-                  for (final request in received)
-                    _PlanRequestCard(request: request, incoming: true),
-                ],
-                if (sent.isNotEmpty) ...[
-                  const SectionHeader('Sent'),
-                  for (final request in sent)
-                    _PlanRequestCard(request: request, incoming: false),
-                ],
-              ],
-            );
-          },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const _RequestsHeader(),
+            Expanded(
+              child: AsyncView<List<PlanRequest>>(
+                value: incoming,
+                onRetry: () => ref.invalidate(incomingPlanRequestsProvider),
+                builder: (context, allReceived) {
+                  // Only what can still be planned. A request whose time
+                  // passed moves to History, even before the Worker marks it
+                  // expired (2026-09-28).
+                  final now = DateTime.now().toUtc();
+                  final received = [
+                    for (final request in allReceived)
+                      if (request.isLiveAt(now)) request,
+                  ];
+                  final sent = [
+                    for (final request in outgoing.value ?? const [])
+                      if (request.isLiveAt(now)) request,
+                  ];
+                  if (received.isEmpty && sent.isEmpty) {
+                    return const Center(child: Text('No open plan requests.'));
+                  }
+                  return ListView(
+                    padding: Space.screenList,
+                    children: [
+                      if (received.isNotEmpty) ...[
+                        const SectionHeader('Waiting on you', attention: true),
+                        for (final request in received)
+                          _PlanRequestCard(request: request, incoming: true),
+                      ],
+                      if (sent.isNotEmpty) ...[
+                        const SectionHeader('Sent'),
+                        for (final request in sent)
+                          _PlanRequestCard(request: request, incoming: false),
+                      ],
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
+/// The top of the Request tab: its HISTORY button, styled like the Plan
+/// tab's (UI-RULES §6.12).
+class _RequestsHeader extends StatelessWidget {
+  const _RequestsHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: Space.lg, bottom: Space.sm),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Open Requests',
+              style: context.text.titleLarge,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          OutlinedButton(
+            key: const ValueKey('request-history'),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: Space.sm),
+              textStyle: context.text.labelLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+              visualDensity: VisualDensity.compact,
+              shape: const RoundedRectangleBorder(borderRadius: Radii.md),
+            ),
+            onPressed: () => context.push(Routes.planRequestHistory),
+            child: const Text('HISTORY'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// What a finished request reads as, from the viewer's side.
+String planRequestStatusLabel(
+  PlanRequestStatus status, {
+  required bool incoming,
+}) => switch (status) {
+  PlanRequestStatus.fulfilled => incoming ? 'You set the alarm' : 'Alarm set',
+  PlanRequestStatus.declined => incoming ? 'You declined' : 'Declined',
+  PlanRequestStatus.cancelled => incoming ? 'They cancelled' : 'You cancelled',
+  PlanRequestStatus.expired =>
+    incoming ? 'Missed: the time passed' : 'Not set: the time passed',
+  PlanRequestStatus.pending || PlanRequestStatus.inProgress => 'Open',
+};
+
+/// **Request History** (2026-09-28): every finished request, sent and
+/// received (set, declined, cancelled or expired), newest requested time
+/// first under month + year headers, like the plan History.
+class PlanRequestHistoryScreen extends ConsumerWidget {
+  const PlanRequestHistoryScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final uid = ref.watch(currentUidProvider);
+    final received = ref.watch(receivedPlanRequestsProvider);
+    final sent = ref.watch(outgoingPlanRequestsProvider);
+    return Scaffold(
+      appBar: AppBar(title: const Text('Request History')),
+      body: AsyncView<List<PlanRequest>>(
+        value: received,
+        onRetry: () => ref.invalidate(receivedPlanRequestsProvider),
+        builder: (context, receivedList) {
+          final now = DateTime.now().toUtc();
+          final finished = finishedPlanRequests([
+            ...receivedList,
+            ...sent.value ?? const <PlanRequest>[],
+          ], now);
+          if (finished.isEmpty) {
+            return const Center(child: Text('No finished requests yet.'));
+          }
+          final children = <Widget>[];
+          DateTime? month;
+          for (final request in finished) {
+            final local = request.windowStartUtc.toLocal();
+            final start = DateTime(local.year, local.month);
+            if (start != month) {
+              month = start;
+              children.add(SectionHeader(formatMonthYear(context, start)));
+            }
+            children.add(
+              _PlanRequestCard(
+                request: request,
+                incoming: request.plannerUid == uid,
+                history: true,
+              ),
+            );
+          }
+          return ListView(
+            padding: Space.screenListSafe(context),
+            children: children,
+          );
+        },
+      ),
+    );
+  }
+}
+
 class _PlanRequestCard extends ConsumerWidget {
-  const _PlanRequestCard({required this.request, required this.incoming});
+  const _PlanRequestCard({
+    required this.request,
+    required this.incoming,
+    this.history = false,
+  });
 
   final PlanRequest request;
   final bool incoming;
+
+  /// In Request History: no actions, only how it ended.
+  final bool history;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -417,7 +546,16 @@ class _PlanRequestCard extends ConsumerWidget {
               Text(request.message!),
             ],
             const SizedBox(height: Space.md),
-            if (incoming)
+            if (history)
+              Text(
+                planRequestStatusLabel(
+                  request.statusAt(DateTime.now().toUtc()),
+                  incoming: incoming,
+                ),
+                key: ValueKey('request-status-${request.id}'),
+                style: context.text.labelMedium,
+              )
+            else if (incoming)
               Row(
                 children: [
                   Expanded(
@@ -439,14 +577,12 @@ class _PlanRequestCard extends ConsumerWidget {
                   ),
                 ],
               )
-            else if (request.isOpen)
+            else
               OutlinedButton(
                 onPressed: () =>
                     ref.read(planRequestRepositoryProvider).cancel(request),
                 child: const Text('Cancel request'),
-              )
-            else
-              Text(request.status.name, style: context.text.labelMedium),
+              ),
           ],
         ),
       ),
@@ -516,7 +652,7 @@ class _FulfillPlanRequestScreenState
               ),
               if (note.isNotEmpty) _Detail(label: 'Note', value: note),
               const SizedBox(height: Space.xl),
-              if (live.isOpen) ...[
+              if (live.isLiveAt(DateTime.now().toUtc())) ...[
                 FilledButton.icon(
                   key: const ValueKey('request-set-alarm'),
                   onPressed: () => _openPlan(live),
@@ -533,10 +669,12 @@ class _FulfillPlanRequestScreenState
                   child: const Text('Decline'),
                 ),
               ] else
-                Text(switch (live.status) {
+                Text(switch (live.statusAt(DateTime.now().toUtc())) {
                   PlanRequestStatus.fulfilled => 'The alarm is set.',
                   PlanRequestStatus.declined => 'You declined this request.',
                   PlanRequestStatus.cancelled => 'They cancelled this request.',
+                  PlanRequestStatus.expired =>
+                    'The requested time has passed. This request is closed.',
                   _ => '',
                 }, style: context.text.bodyMedium),
             ],

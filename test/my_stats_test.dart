@@ -370,12 +370,14 @@ void main() {
         bool declined = false,
         bool cancelled = false,
         bool open = false,
+        bool expired = false,
         int windowEndDaysAgo = 1,
       }) => RequestSummary(
         fulfilled: fulfilled,
         declined: declined,
         cancelled: cancelled,
         open: open,
+        expired: expired,
         windowEndUtc: now.subtract(Duration(days: windowEndDaysAgo)),
       );
       final s = build(
@@ -386,10 +388,11 @@ void main() {
           r(open: true), // window passed: closed, unanswered
           r(open: true, windowEndDaysAgo: -1), // still open: not counted
           r(cancelled: true),
+          r(expired: true), // closed by the Worker, unanswered (2026-09-28)
         ],
       );
       expect(s.requestsAnswered, 2);
-      expect(s.requestsClosed, 4);
+      expect(s.requestsClosed, 5);
     });
   });
 

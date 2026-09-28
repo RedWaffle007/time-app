@@ -13,9 +13,9 @@
 //   "Group task "{task}" from {planner} wasn't set for you at {time} — you
 //    already have a plan then."
 // with {time} in THEIR home zone (12-hour: the Worker cannot see a phone's
-// 12/24-hour setting). If anyone was busy, the planner gets the summary
-//   "Your group task "{task}" is set for {X} members. {Y} ({names}) were busy
-//    at that time and won't be alerted."
+// 12/24-hour setting). The planner gets NO push (2026-09-28, user-directed):
+// they already saw who is busy before Send (`groupAvailability`) and the
+// result the moment they sent; a later summary push read as a delayed notice.
 // Each member is told at most once per plan minute (`groupBusyNotices`).
 
 import { ACTIVITY_CHANNEL_ID, bothInGroup } from './notify.js';
@@ -57,15 +57,6 @@ export function busyMemberMessage({ title, plannerName, time }) {
   return {
     title: 'Group task not set',
     body: `Group task "${title}" from ${plannerName} wasn't set for you at ${time}. You already have a plan then.`,
-  };
-}
-
-export function plannerSummaryMessage({ title, setCount, busyNames }) {
-  const y = busyNames.length;
-  return {
-    title: 'Group task set',
-    body: `Your group task "${title}" is set for ${setCount} ${setCount === 1 ? 'member' : 'members'}. `
-      + `${y} (${busyNames.join(', ')}) ${y === 1 ? 'was' : 'were'} busy at that time and won't be alerted.`,
   };
 }
 
@@ -124,12 +115,6 @@ export async function handleGroupPlanned(ctx, callerUid, body) {
       await ctx.db.patchDoc(noticePath, { sentAt: now.toISOString() });
       sent += n;
     }
-  }
-
-  if (verified.length > 0) {
-    sent += await pushTo(ctx, callerUid, plannerSummaryMessage({
-      title: task, setCount, busyNames: verified.map((m) => m.name),
-    }), { type: 'groupPlanSummary', event: 'groupPlanSummary', groupId });
   }
 
   return {

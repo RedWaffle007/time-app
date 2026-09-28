@@ -96,6 +96,6 @@ void main() {
       scaffold.floatingActionButtonLocation,
       FloatingActionButtonLocation.startFloat,
     );
-    expect(find.text('No plan requests yet.'), findsOneWidget);
+    expect(find.text('No open plan requests.'), findsOneWidget);
   });
 }

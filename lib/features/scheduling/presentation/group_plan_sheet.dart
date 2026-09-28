@@ -311,43 +311,36 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
       }
 
       // Members whose minute was already taken got no alarm (item 4). The
-      // Worker verifies who was really busy, tells each of them and sends the
-      // summary; its answer is what names them here.
-      Set<String>? verifiedBusy;
+      // Worker verifies who was really busy and tells each of them. NOT
+      // awaited (2026-09-28): the planner's answer is shown NOW, from what
+      // the preview already verified, never after a network round trip.
       if (result.failed.isNotEmpty) {
-        verifiedBusy = await ref
-            .read(groupPlanReporterProvider)
-            .reportBusy(
-              groupId: widget.groupId,
-              title: title.trim(),
-              setCount: result.sent.length,
-              failed: result.failed,
-            );
+        unawaited(
+          ref
+              .read(groupPlanReporterProvider)
+              .reportBusy(
+                groupId: widget.groupId,
+                title: title.trim(),
+                setCount: result.sent.length,
+                failed: result.failed,
+              ),
+        );
       }
 
       if (!mounted) return;
-      final n = result.sent.length;
-      final skipped = result.skippedPast + result.skippedOther;
-      final busyNames = [
-        for (final f in result.failed)
-          if (verifiedBusy?.contains(f.uid) ?? false)
-            names[f.uid] ?? 'A member',
-      ];
-      final String message;
-      if (n == 0 && result.skippedPast > 0 && result.skippedOther == 0) {
-        message = 'That time has already passed. Pick a later time.';
-      } else if (busyNames.isNotEmpty) {
-        message =
-            'Alarm set for $n ${n == 1 ? 'member' : 'members'}. '
-            'Busy at that time: ${busyNames.join(', ')}.';
-      } else if (n == 0) {
-        message = 'No one could be planned for right now.';
-      } else {
-        message =
-            'Alarm set for $n '
-            '${n == 1 ? 'member' : 'members'}'
-            '${skipped > 0 ? ' · $skipped skipped' : ''}.';
-      }
+      final message = groupPlanSentMessage(
+        setCount: result.sent.length,
+        skippedPast: result.skippedPast,
+        skippedOther: result.skippedOther,
+        busyNames: [
+          for (final f in result.failed)
+            if (_busy?.contains(f.uid) ?? false) names[f.uid] ?? 'A member',
+        ],
+        notSetNames: [
+          for (final f in result.failed)
+            if (!(_busy?.contains(f.uid) ?? false)) names[f.uid] ?? 'A member',
+        ],
+      );
       messenger.showSnackBar(SnackBar(content: Text(message)));
       Navigator.pop(context);
     } on VoiceNoteFailure catch (e) {
@@ -773,4 +766,37 @@ class _ZoneSectionState extends State<_ZoneSection> {
       ),
     );
   }
+}
+
+/// What the planner reads the moment a group plan is sent (2026-09-28): who
+/// got it, who was busy (as the before-Send preview verified) and who could
+/// not be set for another reason. Pure, so every branch is tested.
+String groupPlanSentMessage({
+  required int setCount,
+  required int skippedPast,
+  required int skippedOther,
+  required List<String> busyNames,
+  required List<String> notSetNames,
+}) {
+  final n = setCount;
+  if (n == 0 && skippedPast > 0 && skippedOther == 0) {
+    return 'That time has already passed. Pick a later time.';
+  }
+  if (n == 0 && busyNames.isEmpty && notSetNames.isEmpty) {
+    return 'No one could be planned for right now.';
+  }
+  final parts = <String>[
+    n == 0
+        ? 'No alarm was set.'
+        : 'Alarm set for $n ${n == 1 ? 'member' : 'members'}.',
+    if (busyNames.isNotEmpty) 'Busy at that time: ${busyNames.join(', ')}.',
+    if (notSetNames.isNotEmpty) "Couldn't set for: ${notSetNames.join(', ')}.",
+  ];
+  final unnamed =
+      skippedPast + skippedOther - busyNames.length - notSetNames.length;
+  if (parts.length == 1 && unnamed > 0) {
+    return '${parts.single.substring(0, parts.single.length - 1)}'
+        ' · $unnamed skipped.';
+  }
+  return parts.join(' ');
 }

@@ -31,6 +31,7 @@ import {
 import { sendDueInactivityNotifications } from './inactivity.js';
 import { handleGroupAvailability, handleGroupPlanned } from './group-plan.js';
 import { sendPlanRequestReminders } from './plan-request-reminders.js';
+import { expirePlanRequests } from './plan-request-expiry.js';
 import { settleLapsedItems } from './lapse.js';
 import { rescueUndeliveredVoiceNotes } from './voice-rescue.js';
 import { handleInviteRequest } from './invite.js';
@@ -457,6 +458,9 @@ async function runLapseCron(env, now) {
   // …and remind friends of plan requests they have not planned yet (item 5).
   const reminders = await sendPlanRequestReminders(context, now);
   console.log(JSON.stringify({ event: 'plan-request-reminders', ...reminders }));
+  // …and close requests whose minute passed unplanned, telling both people.
+  const expiry = await expirePlanRequests(context, now);
+  console.log(JSON.stringify({ event: 'plan-request-expiry', ...expiry }));
 }
 
 async function runInactivityCron(env, now) {

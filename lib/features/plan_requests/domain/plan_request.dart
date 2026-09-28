@@ -6,7 +6,16 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 /// two to be friends (friendship is the planning permission, 2026-09-27).
 enum PlanRequestMode { onePlan, flexibleWindow }
 
-enum PlanRequestStatus { pending, inProgress, fulfilled, declined, cancelled }
+/// `expired` (2026-09-28) is written only by the Worker, once the requested
+/// time passes with no plan set. Older builds read it as `pending`.
+enum PlanRequestStatus {
+  pending,
+  inProgress,
+  fulfilled,
+  declined,
+  cancelled,
+  expired,
+}
 
 class RequestedPlanSpan {
   const RequestedPlanSpan({
@@ -77,6 +86,23 @@ class PlanRequest {
 
   bool get isOnePlan => mode == PlanRequestMode.onePlan;
 
+  /// The last minute a plan could still start: the requested minute for a
+  /// one-plan request (a one-minute window), the latest fitting start for a
+  /// legacy flexible one.
+  DateTime get lastStartUtc =>
+      windowEndUtc.subtract(Duration(minutes: durationMinutes));
+
+  /// Open AND its time has not passed. The Worker marks a past request
+  /// `expired` within about two minutes; until then (or if it never runs) the
+  /// app already treats it as finished.
+  bool isLiveAt(DateTime nowUtc) =>
+      isOpen && nowUtc.toUtc().isBefore(lastStartUtc);
+
+  /// The status to show at [nowUtc]: an open request whose time passed reads
+  /// as `expired` before the Worker has written it.
+  PlanRequestStatus statusAt(DateTime nowUtc) =>
+      isOpen && !isLiveAt(nowUtc) ? PlanRequestStatus.expired : status;
+
   /// Deterministic per-recipient id makes retrying a multi-friend batch safe.
   static String requestId(String batchId, String plannerUid) =>
       '${batchId}_$plannerUid';
@@ -136,6 +162,19 @@ bool planSpansOverlap({
   final aEnd = a.add(Duration(minutes: aMinutes));
   final bEnd = b.add(Duration(minutes: bMinutes));
   return a.isBefore(bEnd) && b.isBefore(aEnd);
+}
+
+/// Request History (2026-09-28): every finished request — set, declined,
+/// cancelled or expired — sent or received, newest requested time first.
+List<PlanRequest> finishedPlanRequests(
+  Iterable<PlanRequest> requests,
+  DateTime nowUtc,
+) {
+  final seen = <String>{};
+  return [
+    for (final request in requests)
+      if (!request.isLiveAt(nowUtc) && seen.add(request.id)) request,
+  ]..sort((a, b) => b.windowStartUtc.compareTo(a.windowStartUtc));
 }
 
 bool spanFitsPlanRequest(

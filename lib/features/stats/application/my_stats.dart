@@ -45,12 +45,16 @@ class RequestSummary {
     required this.cancelled,
     required this.open,
     required this.windowEndUtc,
+    this.expired = false,
   });
 
   final bool fulfilled;
   final bool declined;
   final bool cancelled;
   final bool open;
+
+  /// Closed by the Worker because its time passed unplanned (2026-09-28).
+  final bool expired;
   final DateTime windowEndUtc;
 }
 
@@ -182,6 +186,7 @@ MyStats buildMyStats({
         !r.cancelled &&
         (r.fulfilled ||
             r.declined ||
+            r.expired ||
             (r.open && !r.windowEndUtc.isAfter(nowUtc))),
   );
 

@@ -133,37 +133,57 @@ When the user is ready, in this order:
    after the alarm time, not when they open the app. `wrangler tail` shows
    `{"event":"alarmTimeout",…,"recorded":true,"sent":1}`.
 
-### P2. Plan requests expire + Request History + expiry notice — PROPOSED, awaiting the user's OK (nothing built)
+### P2. Plan requests expire + Request History — BUILT 2026-09-28, UNCOMMITTED, Worker NOT deployed
 
-The user's idea (2026-09-27), agreed in principle: today a plan request
-never closes on its own (statuses are pending / inProgress / fulfilled /
-declined / cancelled; nothing expires), so a request whose time has passed
-stays "open".
+DECISIONS.md "Plan requests expire". Copy and "History = every finished
+request" approved by the user. No rules or index change. New files:
+`worker/src/plan-request-expiry.js`, `worker/test/plan-request-expiry.test.mjs`,
+`test/plan_request_expiry_test.dart`. Also touched: `worker/src/index.js`
+(cron wiring), `worker/src/firestore-rest.js` (`listDuePlanRequests`),
+`lib/features/plan_requests/**`, `lib/routing/app_router.dart`,
+`lib/routing/notification_routing.dart`, `lib/features/stats/application/my_stats*.dart`,
+`test/my_stats_test.dart`, `test/track_time_removed_test.dart`.
+Deploy together with P1 (one `wrangler deploy` carries both). Device test: ask
+a friend for a minute a few minutes out, let it pass unplanned → both get the
+notice within ~2 min; the request leaves the Request tab and shows in HISTORY.
 
-Proposed build:
-- The Worker's existing 2-minute plan-request cron
-  (`plan-request-reminders.js`) marks an open request `expired` once its
-  requested time passes with no plan set, claimed once, and notifies BOTH
-  people.
-- The Request tab stops listing expired requests as open.
-- A **History** button at the top of the Request tab: the same pattern as
-  the plan History (newest first, month + year headers).
-- Each person sees the time in their own zone, via the Worker's existing
-  `formatTimeIn`.
-- Caveat to tell the user: old builds parse an unknown status as `pending`,
-  so they show an expired request as open until updated.
+## QUEUED 2026-09-28 — user's task list, order and decisions agreed
 
-Proposed notification text (user to confirm):
+Order: (0) user deploys + commits P1+P2 → (1) group clash notice: verify the
+before-Send busy preview, REMOVE the later planner "Group task set… were busy"
+summary push (busy members keep their own notice) → (2) Home headings →
+(3) voice notes without Done/Skip → (4) nav bar colour → (5) feedback button →
+(6) calendar icon: no change (it is "Jump to today"; offered to hide it on
+today) → device pass → item 33. Each: plan → sign-off → build → tests.
 
-| To | Title | Body |
-|---|---|---|
-| Requester (X) | Plan request not set | {Y} didn't set your alarm for "{task}" at {time}. The requested time has passed. |
-| Friend who didn't plan (Y) | Plan request missed | You didn't set {X}'s alarm for "{task}" at {time}. The requested time has passed. |
+**(1) DONE 2026-09-28, uncommitted:** DECISIONS.md "Group busy result shown
+at Send". Worker change → needs `wrangler deploy` (same deploy as P1+P2).
 
-Open questions for the user before building:
-1. Approve the text above (or edit it).
-2. Does History hold ONLY expired requests, or every finished one
-   (set / declined / cancelled / expired)? Recommended: every finished one.
+**Added 2026-09-28 (queue after (5)):** Stats page: a range dropdown ("Last 8
+weeks" / Monthly / Yearly; empty periods show 0-height bars, never a broken
+state) + a full stats AUDIT reported to the user (removed / kept / added)
+BEFORE anything is changed.
+
+Decided by the user (2026-09-28):
+- **Home headings:** "Upcoming Plans" = not yet rung (mine, self or from
+  others). Once an alarm rings awaiting Done/Skip it moves to **"Waiting on
+  You"**; plans I set for others awaiting their answer sit under **"Waiting on
+  Them"**. Each heading only when non-empty.
+- **Voice notes:** no Done/Skip. Dismiss on the alarm = heard. Undismissed →
+  planner gets the Uh-Oh ("{Y} missed your voice note."), and the receiver
+  sees a popup on next open: heading "Missed voice note", body "{Planner}
+  sent you a voice note. Listen now?", buttons **Play** / **Dismiss**. Groups:
+  every member who got it (no clash) gets the same popup; group Default Alarms
+  keep Done/Skip.
+- **Voice notes COUNT in streaks:** the streak breaks only if the missed popup
+  is not answered (Play or Dismiss) within 24 hours; answered within 24 h it
+  does not break.
+- **Nav bar:** match the screen background per mode (white in light, black in
+  dark, like Instagram), including the phone's system navigation bar. Token
+  change → DECISIONS.md → UI-RULES.md → code.
+- **Feedback:** Settings, near the bottom. "Send feedback" / "Ideas, bugs or
+  anything else. It goes straight to the developer." Opens an email (subject +
+  app version prefilled) to a PLACEHOLDER address until the user supplies one.
 
 ## Product model now (2026-09-27 — read before touching planning or alarms)
 

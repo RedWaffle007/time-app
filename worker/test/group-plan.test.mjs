@@ -7,7 +7,6 @@ import {
   epochMinute,
   formatTimeIn,
   handleGroupPlanned,
-  plannerSummaryMessage,
 } from '../src/group-plan.js';
 
 // Batch G item 4 (2026-09-27): a group plan that met double-booked members.
@@ -50,7 +49,7 @@ const body = (busy, o = {}) => ({
   groupId: 'g1', title: 'Evacuate', setCount: 2, busy, ...o,
 });
 
-test('a verified busy member is told, in THEIR zone; the planner gets the summary', async () => {
+test('a verified busy member is told, in THEIR zone; the planner gets no push', async () => {
   const h = harness();
   const res = await handleGroupPlanned(h.ctx, 'planner',
     body([{ uid: 'busy', instantUtc: SIX_PM.toISOString() }]));
@@ -61,11 +60,9 @@ test('a verified busy member is told, in THEIR zone; the planner gets the summar
     toBusy.notification.body,
     'Group task "Evacuate" from Test Planner wasn\'t set for you at 6:00 PM. You already have a plan then.',
   );
-  const toPlanner = h.sent.find((s) => s.token === 'planner-token').message;
-  assert.equal(
-    toPlanner.notification.body,
-    'Your group task "Evacuate" is set for 2 members. 1 (Test Busy) was busy at that time and won\'t be alerted.',
-  );
+  // 2026-09-28: the planner saw it before and at Send; no delayed summary.
+  assert.equal(h.sent.filter((s) => s.token === 'planner-token').length, 0);
+  assert.equal(h.sent.length, 1);
 });
 
 test('a false busy claim — a free minute — sends nothing to anyone', async () => {
@@ -140,10 +137,6 @@ test('copy helpers and zone formatting', () => {
   assert.equal(
     busyMemberMessage({ title: 'T', plannerName: 'P', time: '9:00 AM' }).title,
     'Group task not set',
-  );
-  assert.match(
-    plannerSummaryMessage({ title: 'T', setCount: 1, busyNames: ['A', 'B'] }).body,
-    /set for 1 member\. 2 \(A, B\) were busy/,
   );
 });
 

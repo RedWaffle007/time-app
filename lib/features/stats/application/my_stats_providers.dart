@@ -12,6 +12,7 @@ RequestSummary _toRequestSummary(PlanRequest r) => RequestSummary(
   declined: r.status == PlanRequestStatus.declined,
   cancelled: r.status == PlanRequestStatus.cancelled,
   open: r.isOpen,
+  expired: r.status == PlanRequestStatus.expired,
   windowEndUtc: r.windowEndUtc,
 );
 

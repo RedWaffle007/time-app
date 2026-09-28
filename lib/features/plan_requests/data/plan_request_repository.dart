@@ -43,6 +43,22 @@ class PlanRequestRepository {
         );
   }
 
+  /// Every request sent TO [plannerUid], whatever its status (Request
+  /// History, 2026-09-28), newest first.
+  Stream<List<PlanRequest>> watchReceived(String plannerUid) {
+    return _requests
+        .where('plannerUid', isEqualTo: plannerUid)
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs.map(PlanRequest.fromDoc).toList()
+            ..sort(
+              (a, b) => (b.createdAt ?? DateTime(0)).compareTo(
+                a.createdAt ?? DateTime(0),
+              ),
+            ),
+        );
+  }
+
   Stream<List<PlanRequest>> watchOutgoing(String requesterUid) {
     return _requests
         .where('requesterUid', isEqualTo: requesterUid)

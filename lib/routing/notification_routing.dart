@@ -77,6 +77,10 @@ class NotificationRouter {
               ? Routes.fulfillPlanRequestFor(requestId)
               : Routes.planRequests,
         );
+      // A request whose time passed unplanned (2026-09-28): both people
+      // find it in Request History.
+      case 'planRequestExpired':
+        router.go(Routes.planRequestHistory);
       case 'inactivity':
         router.go(Routes.plan);
       // An item settled automatically (Worker lapse): the planner reviews it

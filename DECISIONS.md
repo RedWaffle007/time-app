@@ -7398,3 +7398,54 @@ shows the push arriving and the channel sounding.)
 **Deploy:** Worker first (`(cd worker && npx wrangler deploy)`), then the new
 APK on the TARGETS' phones (the report comes from the phone that rang). No
 rules change.
+
+## Plan requests expire (2026-09-28)
+
+User-directed (P2 in handoff.md; the two notices and "History holds every
+finished request" approved as proposed).
+
+- **The Worker closes them.** The 2-minute cron (`plan-request-expiry.js`,
+  after the reminders) marks an open request `expired` once its last possible
+  start passes (the requested minute for a one-plan request; the latest fitting
+  start for a legacy flexible one). Claimed with a conditional write on the
+  request's `updateTime`, so a plan saved at the last second wins and two runs
+  cannot both expire or notify. The query is one field with two bounds (the
+  last 24 h), so **no index and no rules change** (the Worker writes with the
+  service account; clients still cannot write `expired`).
+- **Both people are told**, on `planner_activity`, each with the time in their
+  own home zone (`formatTimeIn`): requester "Plan request not set" / "{Y}
+  didn't set your alarm for "{task}" at {time}. The requested time has
+  passed."; friend "Plan request missed" / "You didn't set {X}'s alarm for
+  "{task}" at {time}. The requested time has passed." A request more than 30
+  minutes past (the first-deploy backlog) expires silently. Tap → Request
+  History.
+- **The app does not wait for the Worker.** `PlanRequest.isLiveAt(now)` hides a
+  past request from the Request tab and the badge, and `statusAt(now)` shows it
+  as expired in History before (or without) the Worker's write.
+- **Request History** (HISTORY at the top of the Request tab): every finished
+  request, sent and received (set, declined, cancelled, expired), newest
+  requested time first, under month + year headers, read-only, labelled from
+  the viewer's side. The Request tab's Sent list now holds only open requests.
+- Stats count an expired request as closed and unanswered, exactly as an open
+  one whose window had passed was counted before.
+- Old builds read `expired` as `pending` (the `orElse`) and show it as open
+  until updated.
+
+## Group busy result shown at Send, no delayed planner push (2026-09-28)
+
+User-directed: the planner must see who gets a group plan and who does not
+at the time of sending, never as a later notification.
+
+- The before-Send preview (`groupAvailability`, "Rings for… / Busy then,
+  won't get it…") was already in place and is unchanged.
+- **Removed:** the Worker's planner summary push ("Group task set… were busy
+  at that time"). `handleGroupPlanned` now only tells verified-busy MEMBERS
+  (unchanged copy, once per minute).
+- **The sheet no longer waits on the Worker.** Send used to await
+  `reportBusy` (up to ~18 s) before closing; it now fires it unawaited and
+  shows `groupPlanSentMessage` at once: "Alarm set for N members. Busy at that
+  time: {preview-verified}. Couldn't set for: {other refusals}." A member is
+  called busy only if the preview verified it; any other refused write is
+  "couldn't set", never a guess.
+- The app still routes an old `groupPlanSummary` push (sent by the
+  pre-change Worker) to the group, harmlessly.

@@ -157,6 +157,9 @@ class Routes {
   static const newPlanRequest = '$planRequests/new';
   static const fulfillPlanRequest = '$planRequests/fulfill';
 
+  /// Request History (2026-09-28): every finished request, sent or received.
+  static const planRequestHistory = '$planRequests/history';
+
   static String fulfillPlanRequestFor(String requestId) =>
       '$fulfillPlanRequest/$requestId';
 
@@ -351,6 +354,11 @@ final routerProvider = Provider<GoRouter>((ref) {
                     path: 'new',
                     builder: (context, state) =>
                         const CreatePlanRequestScreen(),
+                  ),
+                  GoRoute(
+                    path: 'history',
+                    builder: (context, state) =>
+                        const PlanRequestHistoryScreen(),
                   ),
                   GoRoute(
                     path: 'fulfill/:requestId',

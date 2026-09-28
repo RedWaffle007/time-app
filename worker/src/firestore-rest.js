@@ -229,6 +229,42 @@ export function makeFirestoreDb(projectId, accessToken) {
         }));
     },
 
+    // Plan requests whose requested minute fell in (since, now], newest first
+    // (plan-request expiry). One field, two bounds: no composite index.
+    async listDuePlanRequests(since, now, limit = 200) {
+      const resp = await fetch(`${base}:runQuery`, {
+        method: 'POST',
+        headers: { ...authHeader, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          structuredQuery: {
+            from: [{ collectionId: 'planRequests' }],
+            where: {
+              compositeFilter: {
+                op: 'AND',
+                filters: [
+                  itemFilter('windowStartUtc', 'GREATER_THAN',
+                    { timestampValue: since.toISOString() }),
+                  itemFilter('windowStartUtc', 'LESS_THAN_OR_EQUAL',
+                    { timestampValue: now.toISOString() }),
+                ],
+              },
+            },
+            orderBy: [{ field: { fieldPath: 'windowStartUtc' }, direction: 'DESCENDING' }],
+            limit,
+          },
+        }),
+      });
+      if (!resp.ok) throw new Error(`Firestore planRequests due query → ${resp.status}`);
+      const rows = await resp.json();
+      return rows
+        .filter((row) => row.document)
+        .map((row) => ({
+          id: decodeURIComponent(row.document.name.split('/').pop()),
+          data: decodeFields(row.document.fields),
+          updateTime: row.document.updateTime,
+        }));
+    },
+
     async listDueInactivityStates(now, limit = 100) {
       const resp = await fetch(`${base}:runQuery`, {
         method: 'POST',

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -121,6 +122,9 @@ class _Reporter implements GroupPlanReporter {
   _Reporter(this.verdict);
 
   final Set<String>? verdict;
+
+  /// The Worker never answers: Send must not wait on it (2026-09-28).
+  bool hang = false;
   final reports = <({int setCount, List<String> uids})>[];
 
   @override
@@ -131,6 +135,7 @@ class _Reporter implements GroupPlanReporter {
     required List<({String uid, DateTime instantUtc})> failed,
   }) async {
     reports.add((setCount: setCount, uids: [for (final f in failed) f.uid]));
+    if (hang) return Completer<Set<String>?>().future;
     return verdict;
   }
 
@@ -347,10 +352,10 @@ void main() {
       expect(find.text("Everyone's time now"), findsOneWidget);
     });
 
-    testWidgets('busy members are skipped, verified, and named', (
+    testWidgets('busy members are skipped, reported, and named at once', (
       tester,
     ) async {
-      final reporter = _Reporter({'MEMBER_B'});
+      final reporter = _Reporter({'MEMBER_B'})..preview = {'MEMBER_B'};
       final (repo, notifier) = await _open(
         tester,
         busy: {'MEMBER_B'},
@@ -366,13 +371,32 @@ void main() {
       );
     });
 
-    testWidgets('a member the Worker does NOT confirm busy is not named', (
+    testWidgets('a refused member the preview did not flag is "not set"', (
       tester,
     ) async {
       await _open(tester, busy: {'MEMBER_B'}, reporter: _Reporter({}));
       await _fillAndSend(tester);
       expect(find.textContaining('Busy at that time'), findsNothing);
-      expect(find.text('Alarm set for 2 members · 1 skipped.'), findsOneWidget);
+      expect(
+        find.text("Alarm set for 2 members. Couldn't set for: Name MEMBER_B."),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('Send never waits on the Worker (no delayed answer)', (
+      tester,
+    ) async {
+      final reporter = _Reporter({'MEMBER_B'})
+        ..preview = {'MEMBER_B'}
+        ..hang = true;
+      await _open(tester, busy: {'MEMBER_B'}, reporter: reporter);
+      await _fillAndSend(tester);
+      expect(reporter.reports, hasLength(1));
+      expect(
+        find.text('Alarm set for 2 members. Busy at that time: Name MEMBER_B.'),
+        findsOneWidget,
+      );
+      expect(find.text('Send to the group'), findsNothing);
     });
 
     testWidgets('no report is made when everyone was set', (tester) async {
@@ -566,5 +590,46 @@ void main() {
         expect(tester.takeException(), isNull);
       },
     );
+  });
+
+  group('groupPlanSentMessage', () {
+    String m({
+      int set = 2,
+      int past = 0,
+      int other = 0,
+      List<String> busy = const [],
+      List<String> notSet = const [],
+    }) => groupPlanSentMessage(
+      setCount: set,
+      skippedPast: past,
+      skippedOther: other,
+      busyNames: busy,
+      notSetNames: notSet,
+    );
+
+    test('everyone set', () {
+      expect(m(), 'Alarm set for 2 members.');
+      expect(m(set: 1), 'Alarm set for 1 member.');
+    });
+    test('busy and not-set are named separately', () {
+      expect(
+        m(other: 2, busy: ['A'], notSet: ['B']),
+        "Alarm set for 2 members. Busy at that time: A. Couldn't set for: B.",
+      );
+    });
+    test('unnamed skips are counted', () {
+      expect(m(past: 1), 'Alarm set for 2 members · 1 skipped.');
+    });
+    test('nobody set', () {
+      expect(
+        m(set: 0, past: 2),
+        'That time has already passed. Pick a later time.',
+      );
+      expect(m(set: 0, other: 1), 'No one could be planned for right now.');
+      expect(
+        m(set: 0, other: 1, busy: ['A']),
+        'No alarm was set. Busy at that time: A.',
+      );
+    });
   });
 }
