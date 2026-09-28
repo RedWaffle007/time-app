@@ -1,4 +1,4 @@
-# Checkmate handoff — 2026-09-27 (after device fixes, group voice notes, faster Send)
+# Checkmate handoff — 2026-09-28 (after the 2026-09-28 build list; release APK installed)
 
 ## Operating rules
 
@@ -48,188 +48,45 @@
 
 ## Current state
 
-- Branch `main`, clean after `caecaf7` (ignore the untracked build cache
-  `android/.kotlin/`). Since `9de506a`: `7b4c9a8` device fixes (slow Send,
-  missing Uh-Oh push, triple dismissed) · `da70877` group plans (Plan-screen
-  layout, voice notes, who gets it, grouped timezones) · `caecaf7` faster
-  Send, no Approved badge, ended alarms skip Dismiss, group reset script.
-- **Item 24 (stats) and Batch H (profile/settings) are DONE**, one commit
-  each: `49871cd` 24a · `3b4941b` 24b · `7b08026` inactivity copy ·
-  `1b7027a` 24c · `bbee1ba` 24d · `f60a949` H1–H3 · `4bae4d1` H4 · `9de506a`
-  H5 (plus doc commits `203e9c1`, `fdf14d3`). Batch G before that:
-  `6fe18b0` G1 · `4f4b047` G2 · `508dcca` friends = permission · `3d0e1fc`
-  groups · `d8f5e4e` minute locks · `8a2cb6e` Request Plan · `af4ca73` Uh-Oh
-  · `d688fb0` 5b · `c751f43` Home · `8e8b8e2` Track Time removed ·
-  `1df7447` bigger Play/X.
-- Test counts at `caecaf7`: Flutter 895, rules 287, Worker 191, Kotlin green.
-- **Deploys — all confirmed by the user and verified 2026-09-27:** live rules
-  `ddd77d4d…` match `firestore.rules` byte-for-byte (24d `memberStats`
-  change; `scripts/check-deployed-rules.sh`). Worker redeployed after the
-  inactivity copy (`94cbabca`), after H4, after `7b4c9a8` and after
-  `da70877` (all confirmed). **`caecaf7` changed the Worker (parallel notify
-  reads): confirm it was deployed** (`npx wrangler deployments status`).
-  No rules change since `ddd77d4d`. Re-run `scripts/check-deployed-rules.sh`
-  before any device pass anyway.
-- **Every phone needs a fresh APK:** strict minute locks (`d8f5e4e`) reject
-  plans from older builds, and 24d's rules reject pre-24d group-stat writes.
-- Completed: Items **1–32, 34, 35**, Batches **A–H**.
-- Next: the user is building a **release APK** (`flutter build apk
-  --release --target-platform android-arm64`), then **the deferred device
-  pass**, then **Item 33** (competitor review, research only; can run any
-  time). **Group reset DONE 2026-09-27** (7 groups / 60 docs deleted; the 7
-  `group-avatars/…` folders in Supabase are the user's to remove). **Centre ⊕
-  voice button REMOVED 2026-09-27** (DECISIONS.md "Centre voice button
-  removed"); Voice Note alarms stay.
-  **Then (2026-09-27):** silent Uh-Oh fixed (release shrinker had deleted
-  `uh_oh.mp3`; keep rule added), Send now closes the Plan screen onto My
-  Schedule, 🔊/⏰ beside the alarm kinds, Voice notes pre-loaded from You
-  (DECISIONS.md "Silent Uh-Oh!…").
-  Picture upload now always stops (timeouts; offline save queued with a
-  message) and my avatar is pre-loaded for the You tab (DECISIONS.md
-  "Picture upload never spins forever").
-  **Committed since:** `9ded7d4` voice confirm removed · `2f16d57` ⊕ removed
-  + group reset · `7654413` Uh-Oh keep rule, Send → My Schedule, emoji ·
-  `945b251` picture timeouts + avatar pre-load. **Everything after
-  `945b251` is PARKED and UNCOMMITTED — see "PENDING — parked by the user"
-  right below.**
+- Branch `main`, clean and PUSHED at `3e26ec1` (ignore the untracked build
+  cache `android/.kotlin/`). **Everything below is committed; the Worker is
+  deployed (user-confirmed after `6d4b96e`); no rules change since
+  `ddd77d4d`.** The user built and installed a fresh **release** APK
+  (`flutter build apk --release --target-platform android-arm64`).
+- Test counts at `3e26ec1`: Flutter 971, rules 287, Worker 233, Kotlin green,
+  analyzer clean.
+- Completed: Items **1–32, 34, 35**, Batches **A–H**, and the whole
+  2026-09-28 list (commits, oldest first):
+  - `b10f2a5` **P1** Uh-Oh the moment the alarm auto-stops (native report →
+    Worker `alarmTimeout`).
+  - `59272b5` **P2** plan requests expire (Worker cron) + **Request History**;
+    group busy result shown at Send, no delayed planner summary push.
+  - `59acab4` **Home headings** (Waiting on You / Waiting on Them / Upcoming
+    Plans) + **plan badges** (Sent / Self / Received + Group, shiny, layout A,
+    per-card Archive button).
+  - `a68832c`, `593a4fa` **ARCHIVE at the top** of every Plan tab, instant ⋮
+    menus, **voice notes without Done/Skip** (Heard / Heard (Late) / 24 h
+    close), **nav bar = screen colour** (+ the phone's own bar).
+  - `5ca7ab4` **Settings → Send feedback** (address is a PLACEHOLDER).
+  - `561d848` **Stats audit** (renames / removals / 4 new stats) + **range
+    dropdown** (Last 8 weeks / Monthly / Yearly).
+  - `6d4b96e` **Uh-Oh for every negative event** + **live group lists** +
+    **silent alarm notification channel** (the alarm tone no longer plays as
+    a notification tone) + every push heard in the open app too.
+  - `3e26ec1` device fixes: calendar day list by relationship + taps go
+    straight to the plan, badges shine every 4 s, You tab pre-loaded,
+    three-column top buttons with green outlines, calendar "today" beside the
+    heading.
+  Full reasoning for each is a dated DECISIONS.md entry (2026-09-28).
+- **Parked by the user:** the app version name (`pubspec.yaml` `version:` is
+  `1.0.0+4`; shown in the feedback email) until they pick one (e.g. 1.2.0);
+  the real feedback address (`kFeedbackAddress` in
+  `lib/features/settings/data/feedback_launcher.dart`).
+- Supabase: the 7 `group-avatars/…` folders from the 2026-09-27 group reset
+  are the user's to remove.
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
 
-## PENDING — parked by the user (2026-09-27): commit, deploy, decide later
-
-The user had no time to deploy or commit; nothing below is live. Do not
-start new work on top of it without asking; do not redo it.
-
-### P1. Uh-Oh at the moment the alarm stops — BUILT, COMMITTED (`b10f2a5`); Worker deploy unconfirmed
-
-DECISIONS.md "Uh-Oh at the moment the alarm stops". The native one-minute
-auto-stop now reports straight to the Worker (`alarmTimeout`), which records
-`alarm.unavailableAt` and sends the `unavailable` push; the old
-next-app-run path stays as the fallback. Verified: `flutter analyze` clean,
-Flutter 882/882, Worker 201/201, Kotlin green (incl.
-`MissedAlarmReporterTest`), release APK builds with native `firebase-auth`.
-NOT verified on any phone.
-
-Worktree changes (the whole of the uncommitted diff):
-`worker/src/alarm-timeout.js` (new), `worker/src/index.js`,
-`worker/src/firestore-rest.js` (nested-mask option on
-`patchDocIfUnchanged`), `worker/test/alarm-timeout.test.mjs` (new),
-`android/app/build.gradle.kts` (firebase-bom 34.15.0 + firebase-auth),
-`.../reminders/MissedAlarmReporter.kt` (new), `.../reminders/AlarmSoundService.kt`,
-`android/app/src/test/.../MissedAlarmReporterTest.kt` (new),
-`test/missed_alarm_native_report_test.dart` (new), `DECISIONS.md`, this file.
-
-When the user is ready, in this order:
-1. Re-run the full verification (Operating rules) — the worktree may have
-   moved on.
-2. `(cd worker && npx wrangler deploy)`, then `npx wrangler deployments status`.
-3. Commit:
-   ```bash
-   git add worker/src/alarm-timeout.js worker/src/index.js worker/src/firestore-rest.js worker/test/alarm-timeout.test.mjs android/app/build.gradle.kts android/app/src/main/kotlin/com/timeapp/time_app/reminders/MissedAlarmReporter.kt android/app/src/main/kotlin/com/timeapp/time_app/reminders/AlarmSoundService.kt android/app/src/test/kotlin/com/timeapp/time_app/reminders/MissedAlarmReporterTest.kt test/missed_alarm_native_report_test.dart DECISIONS.md handoff.md && git commit -m "Send Uh-Oh when the alarm stops, reported natively"
-   ```
-4. Fresh release APK on every phone (the report comes from the phone that
-   RANG, so targets need it most).
-5. Device test: plan an alarm for a friend, let it ring out untouched with
-   their app closed → the planner's Uh-Oh should arrive about a minute
-   after the alarm time, not when they open the app. `wrangler tail` shows
-   `{"event":"alarmTimeout",…,"recorded":true,"sent":1}`.
-
-### P2. Plan requests expire + Request History — BUILT, COMMITTED (`59272b5`); Worker deploy unconfirmed
-
-DECISIONS.md "Plan requests expire". Copy and "History = every finished
-request" approved by the user. No rules or index change. New files:
-`worker/src/plan-request-expiry.js`, `worker/test/plan-request-expiry.test.mjs`,
-`test/plan_request_expiry_test.dart`. Also touched: `worker/src/index.js`
-(cron wiring), `worker/src/firestore-rest.js` (`listDuePlanRequests`),
-`lib/features/plan_requests/**`, `lib/routing/app_router.dart`,
-`lib/routing/notification_routing.dart`, `lib/features/stats/application/my_stats*.dart`,
-`test/my_stats_test.dart`, `test/track_time_removed_test.dart`.
-Deploy together with P1 (one `wrangler deploy` carries both). Device test: ask
-a friend for a minute a few minutes out, let it pass unplanned → both get the
-notice within ~2 min; the request leaves the Request tab and shows in HISTORY.
-
-## QUEUED 2026-09-28 — user's task list, order and decisions agreed
-
-Order: (0) user deploys + commits P1+P2 → (1) group clash notice: verify the
-before-Send busy preview, REMOVE the later planner "Group task set… were busy"
-summary push (busy members keep their own notice) → (2) Home headings →
-(3) voice notes without Done/Skip → (4) nav bar colour → (5) feedback button →
-(6) calendar icon: no change (it is "Jump to today"; offered to hide it on
-today) → device pass → item 33. Each: plan → sign-off → build → tests.
-
-**(1) DONE 2026-09-28, committed (`59272b5`):** DECISIONS.md "Group busy result shown
-at Send". Worker change → needs `wrangler deploy` (same deploy as P1+P2).
-
-**(2) Home headings DONE 2026-09-28, committed (`59acab4`)** (DECISIONS.md "Home
-headings").
-
-**(3) Plan badges DONE 2026-09-28, committed (`59acab4`)** (DECISIONS.md "Plan
-badges"; UI-RULES §6.18; `lib/core/theme/plan_badge_style.dart`). Sent/Self/
-Received + Group, layout A, per-card ⋮ replaced by an Archive button. 
-**(4) Archive at the top DONE 2026-09-28, uncommitted** (DECISIONS.md "Archive
-at the top of every Plan tab"). **(5) Voice notes without Done/Skip BUILT 2026-09-28, uncommitted**
-(DECISIONS.md "Voice notes without Done/Skip"; Worker change → deploy).
-**(6) Nav bar colour BUILT 2026-09-28, uncommitted** (DECISIONS.md "Bottom
-bar + phone nav bar match the screen"), committed. **(7) Feedback button
-BUILT 2026-09-28, uncommitted** (DECISIONS.md "Send feedback"; address is a
-PLACEHOLDER). **(8) Stats audit + range dropdown BUILT 2026-09-28,
-uncommitted** (DECISIONS.md "Stats audit + range dropdown"). Committed.
-**(9) Uh-Oh for every negative event + live group lists + silent alarm
-channel + foreground sounds BUILT 2026-09-28, uncommitted** (DECISIONS.md
-"Uh-Oh for every negative event"). Committed + deployed.
-**(10) Device fixes after the release build BUILT 2026-09-28, uncommitted**
-(DECISIONS.md "Device fixes after the 2026-09-28 release build"). PARKED:
-app version name (pubspec `version:` = 1.0.0+4 today), user to choose.
-Calendar: day list grouped by relationship, taps go straight to the plan.
-Next: the device pass, then item 33.
-Voice-note signed-off spec, kept for the device pass: dismiss while ringing = outcome done shown
-"Heard", planner "{Y} heard your voice note."; ring-out = Uh-Oh "{Y} missed
-your voice note."; missed popup "Missed voice note" / "{Planner} sent you a
-voice note. Listen now?" / **Play** · **Already heard** — BOTH close it as
-"Heard (Late)", extend the streak, and push "{Y} heard your voice note
-late."; no answer for 24 h after the alarm → "Did not respond" (missed,
-breaks streak; voice notes exempt from the end-of-day lapse). No Done/Skip on
-voice cards (Waiting on You shows Play / Already heard). Groups: same per
-member; group Default Alarms keep Done/Skip.
-
-**REVISED ORDER (2026-09-28, after the user's archive/badge list):**
-(3) plan badges: ownership (for others / self / from others) + Group Plan,
-shiny outlined, distinct colours, top-right, on Home/History/Activity/Archived;
-must not clash with status badges (layout option to be picked) — needs a
-DECISIONS.md colour entry first (UI-RULES §2.1 allows only green + orange) →
-(4) archive: ARCHIVE button at the top of Home / Activity / Groups (Groups:
-Create · Join · Archive), replacing the ⋮ → Archived; instant menu dismiss;
-group plans archivable (per-card already works once answered; planner side is
-one card per member) → (5) voice notes without Done/Skip → (6) nav bar colour →
-(7) feedback → (8) stats audit report, then range dropdown → device pass →
-item 33. Words/colours/layout awaiting the user's pick.
-
-**Added 2026-09-28 (queue after (5)):** Stats page: a range dropdown ("Last 8
-weeks" / Monthly / Yearly; empty periods show 0-height bars, never a broken
-state) + a full stats AUDIT reported to the user (removed / kept / added)
-BEFORE anything is changed.
-
-Decided by the user (2026-09-28):
-- **Home headings:** "Upcoming Plans" = not yet rung (mine, self or from
-  others). Once an alarm rings awaiting Done/Skip it moves to **"Waiting on
-  You"**; plans I set for others awaiting their answer sit under **"Waiting on
-  Them"**. Each heading only when non-empty.
-- **Voice notes:** no Done/Skip. Dismiss on the alarm = heard. Undismissed →
-  planner gets the Uh-Oh ("{Y} missed your voice note."), and the receiver
-  sees a popup on next open: heading "Missed voice note", body "{Planner}
-  sent you a voice note. Listen now?", buttons **Play** / **Dismiss**. Groups:
-  every member who got it (no clash) gets the same popup; group Default Alarms
-  keep Done/Skip.
-- **Voice notes COUNT in streaks:** the streak breaks only if the missed popup
-  is not answered (Play or Dismiss) within 24 hours; answered within 24 h it
-  does not break.
-- **Nav bar:** match the screen background per mode (white in light, black in
-  dark, like Instagram), including the phone's system navigation bar. Token
-  change → DECISIONS.md → UI-RULES.md → code.
-- **Feedback:** Settings, near the bottom. "Send feedback" / "Ideas, bugs or
-  anything else. It goes straight to the developer." Opens an email (subject +
-  app version prefilled) to a PLACEHOLDER address until the user supplies one.
-
-## Product model now (2026-09-27 — read before touching planning or alarms)
+## Product model now (2026-09-28 — read before touching planning or alarms)
 
 - **No approval step (F2).** Every alarm is saved `approved` and rings
   directly; the planner can **Cancel alarm** until it is answered. CLAUDE.md's
@@ -257,20 +114,46 @@ Decided by the user (2026-09-28):
   screen (locked to that minute; Default Alarm or Voice Note).
 - **Home (item 7)** = my open plans + the open plans I set for others (planner
   card, Cancel alarm, no Done/Skip); **Activity** = plans for others once
-  answered.
+  answered. Since 2026-09-28 Home has three headings: **Waiting on You**
+  (mine, rung, awaiting an answer), **Waiting on Them** (set for others, rung),
+  **Upcoming Plans** (not rung yet, anyone's). Top button row per Plan tab,
+  three columns under the tab labels: Home CALENDAR · HISTORY · ARCHIVE;
+  Activity ARCHIVE; Groups CREATE GROUP · JOIN GROUP · ARCHIVE.
 - **Track Time is removed (item 8)**; the ⊕ voice button is removed too
   (2026-09-27).
 - **Two alarm kinds (F4):** Default Alarm (mandatory name) and Voice Note
   ("{planner} sent you a voice alarm"). Self-plans are Default Alarm only.
-- **Tones (F3 + item 6):** only alarms ring; pushes use the phone's normal tone
-  on `planner_activity` / `app_nudges` — except "{Y} was unavailable to dismiss
-  the task…", which plays the bundled CC0 "Uh-Oh!" on `planner_unavailable`.
+- **Tones (F3, item 6, 2026-09-28):** only alarms ring (AlarmSoundService;
+  the alarm notification's channel `time_app_reminders_silent` is silent at
+  channel level). Pushes use the phone's normal tone on `planner_activity` /
+  `app_nudges`, EXCEPT every negative event, which plays the bundled CC0
+  "Uh-Oh!" on `planner_unavailable` (Worker sets `uhOh: 'true'`): rang out,
+  missed-popup Skip, "Did not respond", request expired / declined, and a
+  group's Didn't dismiss / Skipped / Didn't respond lists. Every push is
+  posted with its sound in the open app too (the Done/Skip pop-up as well).
+- **Group plans → live lists to the planner** (`worker/src/group-summary.js`):
+  one notification per list (Didn't dismiss, Dismissed, Skipped, Done, Heard
+  late, Didn't respond), names in the body, replaced in place as each member's
+  phone reports; a phone that never reports is added by the 2-minute cron.
+- **Voice notes (2026-09-28):** no Done/Skip. Dismissed while ringing =
+  **Heard**; rang out → missed popup "Missed voice note" with **Play** /
+  **Already heard** (both = **Heard (Late)**); unanswered 24 h after the alarm
+  → "Did not respond" (missed, breaks the streak). Default Alarms keep
+  Done/Skip; the end-of-day deadline is the later of local midnight and
+  alarm + 2 h.
+- **Badges (2026-09-28):** every plan card shows Sent / Self / Received (+
+  Group) top-right, outline-only accents (the one recorded exception to the
+  two-hue rule, UI-RULES §6.18), shine every 4 s; status + the card's action
+  sit on the bottom row. Calendar day list is grouped Self plans · Planned
+  for others · Planned for you · Group plans; a tap goes straight to the plan.
 - **Stats (item 24):** Stats pillar = a PRIVATE dashboard (`buildMyStats`);
   profiles publish only tasks completed, current + best streak and
   follow-through (≥5 answered plans). Humane streak: plan-less and skip-only
   days are neutral, only a missed (unanswered) alarm breaks it. Group
   progress counts only that group's plans, current members only, ranked
   after 5 answered. Absent numbers show a word (Soon / Private / Not yet).
+  2026-09-28 audit: + Voice notes heard, Usually answers within, Group plans
+  done, done-late per period; chart range dropdown (weeks / months / years).
 - **You = your own profile (H1–H3):** the You pillar renders the profile as
   others see it (`ProfileBody`) with Edit profile + a Settings gear.
   Settings (`/settings`) holds permissions, quiet hours (instant save), app
@@ -321,21 +204,43 @@ Decided by the user (2026-09-28):
 - **Formatting:** never `dart format` a file that was not formatter-clean at
   HEAD (check first); `outcome_screen.dart`, `group_detail_screen.dart`,
   `block_repository.dart`, `friend_requests_screen.dart`,
-  `user_profile_screen.dart`, `app_router.dart` and `dev_menu_screen.dart`
-  are known-unclean.
+  `user_profile_screen.dart`, `app_router.dart`, `dev_menu_screen.dart`,
+  `home_shell.dart`, `archive_menu_button.dart`, `app_icons.dart`,
+  `calendar_grouping.dart`, `calendar_providers.dart` and
+  `calendar_markers.dart` are known-unclean. Formatting a directory reflowed
+  unrelated files twice on 2026-09-28 (restored from HEAD each time).
 
 ## Deferred device checks (everything since Batch A — run in one pass)
 
-Install a fresh **debug** build on every phone first (strict locks). Needs a
-second account/phone for most of it.
-- **Latest (2026-09-27, `7b4c9a8`…`caecaf7`):** Send feels instant (default
-  alarm); a voice plan: record → pick date/time → Send is tappable and sends
-  (no confirm step; Send spins while the note uploads); no "Approved" badge on set alarms; let an alarm ring out,
-  open the app → only the missed popup (no Dismiss screen, no second tone);
-  Uh-Oh push on a missed alarm; one "dismissed" push, not three; a voice
-  group plan to 2+ members rings each with the note (planner excluded); busy
-  preview names a busy member; "Everyone's time" with members in several
-  zones, light + dark.
+Install a fresh build on every phone first (strict locks; the release APK is
+on the Redmi now). Needs a second account/phone for most of it. Run
+`scripts/check-deployed-rules.sh` first.
+- **Latest (2026-09-28, `b10f2a5`…`3e26ec1`) — start here:**
+  - Sounds: a Default Alarm's notification no longer plays the alarm tone;
+    Done/Skip make a sound with the app OPEN; Uh-Oh on: ring-out, missed-popup
+    Skip, "Did not respond" (an 11 pm alarm closes at 1 am), request expired
+    (requester), request declined (requester); normal tone everywhere else.
+  - Ring-out → the planner's Uh-Oh about a minute after the alarm, with the
+    target's app closed (`wrangler tail`: `alarmTimeout … recorded:true`).
+  - Groups: a group plan to 2+ members → the planner's Didn't dismiss /
+    Dismissed lists update in place as each phone reports; missed-popup
+    Skip / Done lists; no per-member pushes for those.
+  - Voice notes: dismiss while ringing → "Heard" + planner push; let it ring
+    out → missed popup Play / Already heard → "Heard (Late)" + "heard late"
+    push; no Done/Skip anywhere on a voice card.
+  - Plan requests: let one expire → both notified, it leaves the Request tab
+    and appears in HISTORY (month headings, newest first); Decline → requester
+    Uh-Oh.
+  - Home headings move a plan to Waiting the moment it rings; badges (Sent /
+    Self / Received / Group) shine every ~4 s in light + dark; status sits
+    bottom-left with Archive bottom-right; top button row aligned under the
+    tabs with green outlines.
+  - Calendar: "today" icon beside the heading; a day's plans under the four
+    headings; tapping one lands on it, outlined, with no scroll (recheck the
+    "opens the page but not the plan" report — not reproduced in tests).
+  - You tab opens with no delay; Stats: renamed/new tiles and the range
+    dropdown (remembered); nav bars match the screen in light and dark;
+    Settings → Send feedback opens email.
 - **Item 24 + Batch H (2026-09-27):** Stats page with real history (week
   hero, Not yet below 5, streak survives a plan-less day, breaks on a missed
   alarm, 8-week bars, "Most plans from") in light + dark; a friend's profile
@@ -807,20 +712,12 @@ builds can still create groups.
 
 ## Immediate next action
 
-0. **First, the PENDING section above:** ask the user whether to commit +
-   deploy P1 now, and get answers on P2's two questions before building it.
-1. Confirm the `caecaf7` Worker deploy, then build the release APK
-   (`flutter build apk --release --target-platform android-arm64`). On the
-   Redmi a release build needs an uninstall of the debug build first (wipes
-   data and sign-in); use debug/profile there unless checking the shared APK.
-2. Device pass on every phone with the fresh build: "Deferred device checks",
-   starting with the "Latest" block, then item 24 + Batch H. Fix anything
-   reported before new work; record verified items in CLAUDE.md "Parked &
+1. **Device pass** on the installed release APK (and a second phone for the
+   cross-account parts): "Deferred device checks", the **Latest (2026-09-28)**
+   block first. The user is reporting bugs from it; fix what they report
+   before new work, and record verified items in CLAUDE.md "Parked &
    unverified" / DECISIONS.md.
-3. (Done 2026-09-27: group reset.) The user removes the 7
-   `group-avatars/…` folders in Supabase.
-4. Item 33 (competitor review, PingPal + SnoozeSquad): research only;
+2. When the user decides: set the version name in `pubspec.yaml` and the
+   real feedback address.
+3. Item 33 (competitor review, PingPal + SnoozeSquad): research only;
    propose findings, change nothing without sign-off.
-5. (Done 2026-09-27 for missed alarms: the native stop reports to the
-   Worker, DECISIONS.md "Uh-Oh at the moment the alarm stops". A dismissal
-   with the app dead still reports on next launch.)
