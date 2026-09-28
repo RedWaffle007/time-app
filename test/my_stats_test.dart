@@ -25,9 +25,14 @@ void main() {
     bool cancelled = false,
     String? creator,
     bool fromRequest = false,
+    bool voice = false,
+    String group = '',
+    DateTime? doneAt,
   }) => StatItem(
+    isVoice: voice,
+    groupId: group,
+    doneAtUtc: doneAt,
     instantUtc: at,
-    isApproved: true,
     isDone: done,
     isSkipped: skipped || missed,
     isMissed: missed,
@@ -399,5 +404,133 @@ void main() {
   test('empty only when there is nothing in either role', () {
     expect(build().isEmpty, isTrue);
     expect(build(planner: [item(at: daysAgo(1), self: false)]).isEmpty, false);
+  });
+
+  // 2026-09-28 audit + range dropdown.
+  group('chart ranges', () {
+    test('a new user: every range is all zeros, never missing', () {
+      final s = build();
+      expect(s.series[StatsRange.weeks]!.done, List.filled(8, 0));
+      expect(s.series[StatsRange.months]!.done, List.filled(12, 0));
+      expect(s.series[StatsRange.years]!.done, List.filled(3, 0));
+      expect(s.series[StatsRange.years]!.starts.map((d) => d.year), [
+        2024,
+        2025,
+        2026,
+      ]);
+    });
+
+    test('months: the last 12, oldest first, by HOME-zone month', () {
+      final s = build(
+        target: [
+          item(at: now, done: true),
+          // 20:00 UTC on 31 Aug is 01:00 on 1 Sep in Karachi.
+          item(at: DateTime.utc(2026, 8, 31, 20), done: true),
+          item(at: DateTime.utc(2026, 7, 10), done: true),
+          item(at: DateTime.utc(2025, 10, 5), done: true),
+          // Older than 12 months: not on the monthly chart.
+          item(at: DateTime.utc(2025, 9, 5), done: true),
+        ],
+      );
+      final months = s.series[StatsRange.months]!;
+      expect(months.starts.first, DateTime.utc(2025, 10));
+      expect(months.starts.last, DateTime.utc(2026, 9));
+      expect(months.done.last, 2); // both September plans
+      expect(months.done[9], 1); // July
+      expect(months.done.first, 1); // October 2025
+      expect(months.done.reduce((a, b) => a + b), 4);
+    });
+
+    test('years: since the first plan, at least three', () {
+      final s = build(
+        target: [
+          item(at: DateTime.utc(2021, 5, 1), done: true),
+          item(at: now, done: true),
+        ],
+      );
+      final years = s.series[StatsRange.years]!;
+      expect(years.starts.map((d) => d.year), [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025,
+        2026,
+      ]);
+      expect(years.done, [1, 0, 0, 0, 0, 1]);
+    });
+
+    test('done late is counted per range', () {
+      final s = build(
+        target: [
+          item(at: now, done: true, unavailable: true),
+          item(at: DateTime.utc(2026, 3, 1), done: true, unavailable: true),
+          item(at: now, done: true),
+        ],
+      );
+      expect(s.series[StatsRange.weeks]!.lateCount, 1);
+      expect(s.series[StatsRange.months]!.lateCount, 2);
+      expect(s.series[StatsRange.years]!.lateCount, 2);
+    });
+  });
+
+  group('new stats', () {
+    test('voice notes heard, of answered, with late', () {
+      final s = build(
+        target: [
+          item(at: now, voice: true, self: false, done: true),
+          item(
+            at: now,
+            voice: true,
+            self: false,
+            done: true,
+            unavailable: true,
+          ),
+          item(at: now, voice: true, self: false, missed: true),
+          item(at: now, voice: true, self: false), // not answered yet
+          item(at: now, done: true), // not a voice note
+        ],
+      );
+      expect(s.voiceHeard, 2);
+      expect(s.voiceHeardLate, 1);
+      expect(s.voiceAnswered, 3);
+    });
+
+    test('group follow-through counts group plans only, after 5', () {
+      final four = [
+        for (var i = 0; i < 4; i++) item(at: now, group: 'g', done: true),
+      ];
+      expect(build(target: four).groupFollowThrough, isNull);
+      final s = build(
+        target: [
+          ...four,
+          item(at: now, group: 'g', skipped: true),
+          item(at: now, skipped: true), // not a group plan
+        ],
+      );
+      expect(s.groupFollowThrough, 80);
+    });
+
+    test('usually answers within: the median, after 5, ignoring early', () {
+      Duration m(int n) => Duration(minutes: n);
+      StatItem doneAfter(int minutes) =>
+          item(at: now, done: true, doneAt: now.add(m(minutes)));
+      expect(
+        build(
+          target: [
+            for (final n in [1, 2, 3, 4]) doneAfter(n),
+          ],
+        ).medianAnswerMinutes,
+        isNull,
+      );
+      final s = build(
+        target: [
+          for (final n in [1, 2, 3, 30, 90]) doneAfter(n),
+          // Done before its alarm: not a response time.
+          item(at: now, done: true, doneAt: now.subtract(m(10))),
+        ],
+      );
+      expect(s.medianAnswerMinutes, 3);
+    });
   });
 }

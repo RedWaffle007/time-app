@@ -20,7 +20,6 @@ import 'stats_registry.dart';
 /// through without becoming a schedule item.
 StatItem toStatItem(ScheduleItem item) => StatItem(
   instantUtc: item.scheduledInstantUtc,
-  isApproved: item.status == ScheduleItemStatus.approved,
   isDone: item.outcome?.result == OutcomeResult.done,
   isSkipped: item.outcome?.result == OutcomeResult.skipped,
   isSelfPlan: item.createdByUid == item.targetUid,
@@ -30,6 +29,8 @@ StatItem toStatItem(ScheduleItem item) => StatItem(
   creatorUid: item.createdByUid,
   fromPlanRequest: item.planRequestId != null,
   groupId: item.groupId,
+  isVoice: item.isVoiceAlarm,
+  doneAtUtc: item.outcome?.completedAt?.toUtc(),
 );
 
 /// An automatic skip — nobody answered. Both automatic reasons are fixed

@@ -28,7 +28,6 @@ void main() {
     bool cancelled = false,
   }) => StatItem(
     instantUtc: DateTime.utc(2026, 9, day, 7),
-    isApproved: true,
     isDone: done,
     isSkipped: skipped || missed,
     isMissed: missed,

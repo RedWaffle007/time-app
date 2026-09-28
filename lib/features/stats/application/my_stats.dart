@@ -1,3 +1,5 @@
+import 'package:timezone/timezone.dart' as tz;
+
 import '../../social/application/streak_policy.dart';
 import '../../social/domain/profile_stat.dart';
 
@@ -58,6 +60,27 @@ class RequestSummary {
   final DateTime windowEndUtc;
 }
 
+/// The chart's time range (2026-09-28): the dropdown over the bars.
+enum StatsRange { weeks, months, years }
+
+/// Plans done per period over one [StatsRange], OLDEST first. Empty periods
+/// are zeros, never missing, so a new user's chart is empty, not broken.
+class DoneSeries {
+  const DoneSeries({
+    required this.starts,
+    required this.done,
+    required this.lateCount,
+  });
+
+  /// Each period's first day as a wall date in the home zone (a UTC-kind
+  /// carrier, like `calendarDayFor`) — for labels.
+  final List<DateTime> starts;
+  final List<int> done;
+
+  /// Done (Late) / Heard (Late) within the whole range.
+  final int lateCount;
+}
+
 /// Everything the Stats page renders.
 class MyStats {
   const MyStats({
@@ -76,7 +99,12 @@ class MyStats {
     required this.requestsFulfilled,
     required this.requestsAnswered,
     required this.requestsClosed,
-    required this.weeklyDone,
+    required this.series,
+    required this.voiceHeard,
+    required this.voiceHeardLate,
+    required this.voiceAnswered,
+    required this.groupFollowThrough,
+    required this.medianAnswerMinutes,
     required this.isEmpty,
   });
 
@@ -114,9 +142,25 @@ class MyStats {
   final int requestsAnswered;
   final int requestsClosed;
 
-  /// Done per rolling week, OLDEST first, eight entries; the last entry is the
-  /// same window as [last7].
-  final List<int> weeklyDone;
+  /// The chart, per range. Weeks: eight rolling weeks, the last being the
+  /// same window as [last7]. Months: the last 12 calendar months. Years:
+  /// every year since the first plan, at least three.
+  final Map<StatsRange, DoneSeries> series;
+
+  List<int> get weeklyDone => series[StatsRange.weeks]!.done;
+
+  /// Voice notes others sent the user: heard (on time or late), of those
+  /// answered or missed.
+  final int voiceHeard;
+  final int voiceHeardLate;
+  final int voiceAnswered;
+
+  /// Follow-through on group plans only, once enough were answered.
+  final int? groupFollowThrough;
+
+  /// The usual time from the alarm to Done / Heard, in whole minutes — the
+  /// median, once enough plans stand behind it.
+  final int? medianAnswerMinutes;
 
   /// No plans at all, in either role — the page shows its empty state.
   final bool isEmpty;
@@ -158,10 +202,20 @@ MyStats buildMyStats({
   }
 
   const week = Duration(days: 7);
-  final weeklyDone = [
-    for (var k = 7; k >= 0; k--)
-      window(nowUtc.subtract(week * (k + 1)), nowUtc.subtract(week * k)).done,
-  ];
+  final series = {
+    StatsRange.weeks: _weekSeries(target, nowUtc),
+    StatsRange.months: _calendarSeries(target, nowUtc, timezone, years: false),
+    StatsRange.years: _calendarSeries(target, nowUtc, timezone, years: true),
+  };
+
+  final voice = target.where((i) => i.isVoice && i.hasOutcome).toList();
+  final answerMinutes = [
+    for (final i in target)
+      if (i.isDone &&
+          i.doneAtUtc != null &&
+          !i.doneAtUtc!.isBefore(i.instantUtc))
+        i.doneAtUtc!.difference(i.instantUtc).inMinutes,
+  ]..sort();
 
   final settled = target.where((i) => i.hasOutcome).toList();
   final answered = settled.where((i) => !i.isMissed && !i.wasUnavailable);
@@ -206,7 +260,16 @@ MyStats buildMyStats({
     requestsFulfilled: forOthers.where((i) => i.fromPlanRequest).length,
     requestsAnswered: closed.where((r) => r.fulfilled).length,
     requestsClosed: closed.length,
-    weeklyDone: weeklyDone,
+    series: series,
+    voiceHeard: voice.where((i) => i.isDone).length,
+    voiceHeardLate: voice.where((i) => i.isLate).length,
+    voiceAnswered: voice.length,
+    groupFollowThrough: completionRate(
+      target.where((i) => i.groupId.isNotEmpty).toList(),
+    ),
+    medianAnswerMinutes: answerMinutes.length < kMinStatSample
+        ? null
+        : answerMinutes[answerMinutes.length ~/ 2],
     isEmpty: itemsAsTarget.isEmpty && itemsAsPlanner.isEmpty,
   );
 }
@@ -222,4 +285,71 @@ int? completionRate(List<StatItem> items) {
 int? _rate(int part, int whole) {
   if (whole < kMinStatSample) return null;
   return ((part / whole) * 100).round();
+}
+
+/// Eight rolling 7-day windows ending now, oldest first.
+DoneSeries _weekSeries(List<StatItem> target, DateTime nowUtc) {
+  const week = Duration(days: 7);
+  final starts = <DateTime>[];
+  final done = <int>[];
+  var late = 0;
+  for (var k = 7; k >= 0; k--) {
+    final from = nowUtc.subtract(week * (k + 1));
+    final to = nowUtc.subtract(week * k);
+    starts.add(to.subtract(week));
+    var n = 0;
+    for (final i in target) {
+      if (!i.instantUtc.isAfter(from) || i.instantUtc.isAfter(to)) continue;
+      if (i.isDone) n++;
+      if (i.isLate) late++;
+    }
+    done.add(n);
+  }
+  return DoneSeries(starts: starts, done: done, lateCount: late);
+}
+
+/// Calendar months (the last 12) or years (since the first plan, at least
+/// three) in the HOME zone, oldest first. An unknown zone falls back to UTC.
+DoneSeries _calendarSeries(
+  List<StatItem> target,
+  DateTime nowUtc,
+  String timezone, {
+  required bool years,
+}) {
+  tz.Location location;
+  try {
+    location = tz.getLocation(timezone);
+  } catch (_) {
+    location = tz.UTC;
+  }
+  DateTime periodOf(DateTime utc) {
+    final local = tz.TZDateTime.from(utc, location);
+    return DateTime.utc(local.year, years ? 1 : local.month);
+  }
+
+  final current = periodOf(nowUtc);
+  final List<DateTime> starts;
+  if (years) {
+    var first = current.year - 2;
+    for (final i in target) {
+      final y = periodOf(i.instantUtc).year;
+      if (y < first) first = y;
+    }
+    starts = [for (var y = first; y <= current.year; y++) DateTime.utc(y)];
+  } else {
+    starts = [
+      for (var k = 11; k >= 0; k--)
+        DateTime.utc(current.year, current.month - k),
+    ];
+  }
+  final index = {for (var k = 0; k < starts.length; k++) starts[k]: k};
+  final done = List<int>.filled(starts.length, 0);
+  var late = 0;
+  for (final i in target) {
+    final k = index[periodOf(i.instantUtc)];
+    if (k == null) continue;
+    if (i.isDone) done[k]++;
+    if (i.isLate) late++;
+  }
+  return DoneSeries(starts: starts, done: done, lateCount: late);
 }

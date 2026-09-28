@@ -32,7 +32,6 @@ void main() {
     final utc = DateTime.utc(year, month, day, hour - 5);
     return StatItem(
       instantUtc: utc,
-      isApproved: approved,
       isDone: done,
       isSkipped: skipped,
       isSelfPlan: self,
@@ -42,7 +41,6 @@ void main() {
 
   StatItem missedAt(int year, int month, int day) => StatItem(
     instantUtc: DateTime.utc(year, month, day, 7),
-    isApproved: true,
     isDone: false,
     isSkipped: true,
     isMissed: true,
@@ -270,7 +268,6 @@ void main() {
       // 02:00 on the 21st in Karachi is 21:00 on the 20th in UTC.
       final lateNight = StatItem(
         instantUtc: DateTime.utc(2026, 8, 20, 21),
-        isApproved: true,
         isDone: true,
         isSkipped: false,
       );

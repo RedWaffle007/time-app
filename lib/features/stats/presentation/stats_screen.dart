@@ -16,6 +16,7 @@ import '../../social/domain/profile_stat.dart';
 import '../../social/presentation/stats_section.dart';
 import '../application/my_stats.dart';
 import '../application/my_stats_providers.dart';
+import '../application/stats_range.dart';
 
 /// **The Stats pillar — the signed-in user's private dashboard** (item 24b,
 /// UI-RULES §6.14). Everything is computed by [buildMyStats] from the user's
@@ -49,7 +50,7 @@ class StatsScreen extends ConsumerWidget {
               StatsGrid(stats: _showingUp(context, s)),
               const SizedBox(height: Space.lg),
               const SectionHeader('From your people'),
-              StatsGrid(stats: _fromYourPeople(s)),
+              StatsGrid(stats: _fromYourPeople(context, s)),
               if (s.topPlanners.isNotEmpty) ...[
                 const SizedBox(height: Space.sm),
                 _TopPlanners(planners: s.topPlanners),
@@ -58,15 +59,7 @@ class StatsScreen extends ConsumerWidget {
               const SectionHeader('Planning for others'),
               StatsGrid(stats: _planningForOthers(context, s)),
               const SizedBox(height: Space.lg),
-              const SectionHeader('Last 8 weeks'),
-              Text(
-                'Plans done each week.',
-                style: context.text.bodySmall?.copyWith(
-                  color: context.colors.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: Space.md),
-              WeekBars(counts: s.weeklyDone),
+              _ProgressChart(stats: s),
             ],
           ),
         ),
@@ -121,7 +114,20 @@ List<ProfileStat> _showingUp(BuildContext context, MyStats s) {
       s.followThrough,
       caption: split(),
     ),
-    _percent('answeredWhenRang', 'Answered when it rang', s.answeredWhenRang),
+    _percent(
+      'answeredWhenRang',
+      'Answered before it stopped',
+      s.answeredWhenRang,
+    ),
+    ProfileStat(
+      key: 'medianAnswer',
+      label: 'Usually answers within',
+      unit: ProfileStatUnit.minutes,
+      state: s.medianAnswerMinutes == null
+          ? ProfileStatState.insufficient
+          : ProfileStatState.ready,
+      value: s.medianAnswerMinutes,
+    ),
     _count(
       'currentStreak',
       'Current streak',
@@ -132,14 +138,32 @@ List<ProfileStat> _showingUp(BuildContext context, MyStats s) {
   ];
 }
 
-List<ProfileStat> _fromYourPeople(MyStats s) => [
+List<ProfileStat> _fromYourPeople(BuildContext context, MyStats s) => [
   _count(
     'setForYou',
     'Alarms set for you',
     s.setForYouCount,
     ProfileStatUnit.count,
   ),
-  _percent('setForYouDone', 'You completed', s.followThroughSetForYou),
+  // "You completed" was removed (2026-09-28 audit): it repeated the "Set for
+  // you" split already under Follow-through.
+  ProfileStat(
+    key: 'voiceHeard',
+    label: 'Voice notes heard',
+    unit: ProfileStatUnit.count,
+    state: s.voiceAnswered == 0
+        ? ProfileStatState.insufficient
+        : ProfileStatState.ready,
+    value: s.voiceAnswered == 0 ? null : s.voiceHeard,
+    caption: s.voiceAnswered == 0
+        ? null
+        : [
+            'of ${formatCount(context, s.voiceAnswered)}',
+            if (s.voiceHeardLate > 0)
+              '${formatCount(context, s.voiceHeardLate)} late',
+          ].join(' · '),
+  ),
+  _percent('groupFollowThrough', 'Group plans done', s.groupFollowThrough),
 ];
 
 List<ProfileStat> _planningForOthers(BuildContext context, MyStats s) => [
@@ -158,7 +182,7 @@ List<ProfileStat> _planningForOthers(BuildContext context, MyStats s) => [
   ),
   _count(
     'requestsAnswered',
-    'Your requests answered',
+    'Your requests set',
     s.requestsAnswered,
     ProfileStatUnit.count,
     caption: s.requestsClosed == 0
@@ -166,6 +190,81 @@ List<ProfileStat> _planningForOthers(BuildContext context, MyStats s) => [
         : 'out of ${formatCount(context, s.requestsClosed)}',
   ),
 ];
+
+/// The progress chart with its range dropdown (2026-09-28): Last 8 weeks,
+/// Monthly (12 months) or Yearly. Empty periods are zero bars. The choice is
+/// remembered on this phone.
+class _ProgressChart extends ConsumerWidget {
+  const _ProgressChart({required this.stats});
+
+  final MyStats stats;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final range = ref.watch(statsRangeProvider);
+    final series = stats.series[range]!;
+    final muted = context.text.bodySmall?.copyWith(
+      color: context.colors.onSurfaceVariant,
+    );
+    final (caption, unit, labels) = switch (range) {
+      StatsRange.weeks => ('Plans done each week.', null, null),
+      StatsRange.months => (
+        'Plans done each month.',
+        'month',
+        [for (final d in series.starts) formatMonthShort(context, d)],
+      ),
+      StatsRange.years => (
+        'Plans done each year.',
+        'year',
+        [for (final d in series.starts) formatYear(context, d)],
+      ),
+    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Expanded(child: SectionHeader('Your progress')),
+            DropdownButton<StatsRange>(
+              key: const ValueKey('stats-range'),
+              value: range,
+              underline: const SizedBox.shrink(),
+              onChanged: (value) {
+                if (value != null) {
+                  ref.read(statsRangeProvider.notifier).choose(value);
+                }
+              },
+              items: const [
+                DropdownMenuItem(
+                  value: StatsRange.weeks,
+                  child: Text('Last 8 weeks'),
+                ),
+                DropdownMenuItem(
+                  value: StatsRange.months,
+                  child: Text('Monthly'),
+                ),
+                DropdownMenuItem(
+                  value: StatsRange.years,
+                  child: Text('Yearly'),
+                ),
+              ],
+            ),
+          ],
+        ),
+        Text(caption, style: muted),
+        if (series.lateCount > 0)
+          Text(
+            '${formatCount(context, series.lateCount)} done late in this '
+            'period.',
+            key: const ValueKey('stats-done-late'),
+            style: muted,
+          ),
+        const SizedBox(height: Space.md),
+        WeekBars(counts: series.done, labels: labels, unit: unit),
+      ],
+    );
+  }
+}
 
 /// The number-hero (UI-RULES §6.14): the last 7 days, and how that compares.
 class _WeekHero extends StatelessWidget {
@@ -206,7 +305,8 @@ class _WeekHero extends StatelessWidget {
                 color: context.colors.primary,
               ),
             ),
-            Text('done', style: context.text.titleMedium),
+            // Voice notes count here once heard (2026-09-28).
+            Text('done or heard', style: context.text.titleMedium),
             const SizedBox(height: Space.sm),
             Text(
               '${formatCount(context, last.skipped)} skipped · '
@@ -283,25 +383,38 @@ class _TopPlanners extends ConsumerWidget {
 /// carries one Semantics label with every number, so the chart is never the
 /// only carrier of the data.
 class WeekBars extends StatelessWidget {
-  const WeekBars({super.key, required this.counts});
+  const WeekBars({super.key, required this.counts, this.labels, this.unit});
 
-  /// Oldest first; the last entry is the current week.
+  /// Oldest first; the last entry is the current period.
   final List<int> counts;
+
+  /// A label under each bar (months / years). Null for weeks, which are
+  /// spoken relative to now instead.
+  final List<String>? labels;
+
+  /// For the screen-reader label, e.g. "month". Null means weeks.
+  final String? unit;
 
   @override
   Widget build(BuildContext context) {
     final cs = context.colors;
     final peak = counts.fold<int>(0, math.max);
+    final names = labels;
     final spoken = [
       for (var i = 0; i < counts.length; i++)
-        i == counts.length - 1
+        names != null
+            ? '${names[i]} ${formatCount(context, counts[i])}'
+            : i == counts.length - 1
             ? 'this week ${formatCount(context, counts[i])}'
             : '${formatCount(context, counts.length - 1 - i)} weeks ago '
                   '${formatCount(context, counts[i])}',
     ].join(', ');
 
     return Semantics(
-      label: 'Plans done per week: $spoken',
+      // Its own node, so the numbers are read as one statement even beside
+      // the range dropdown.
+      container: true,
+      label: 'Plans done per ${unit ?? 'week'}: $spoken',
       excludeSemantics: true,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -340,6 +453,17 @@ class WeekBars extends StatelessWidget {
                       color: cs.chartAxisLabel,
                     ),
                   ),
+                  if (names != null)
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        names[i],
+                        maxLines: 1,
+                        style: context.text.labelSmall?.copyWith(
+                          color: cs.chartAxisLabel,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),

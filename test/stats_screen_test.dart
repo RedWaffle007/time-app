@@ -8,6 +8,7 @@ import 'package:time_app/features/auth/application/auth_providers.dart';
 import 'package:time_app/features/auth/domain/user_profile.dart';
 import 'package:time_app/features/stats/application/my_stats.dart';
 import 'package:time_app/features/stats/application/my_stats_providers.dart';
+import 'package:time_app/features/stats/application/stats_range.dart';
 import 'package:time_app/features/stats/presentation/stats_screen.dart';
 
 import 'fixtures/my_stats_fixture.dart';
@@ -18,9 +19,11 @@ void main() {
     MyStats stats, {
     ThemeData? theme,
     Locale locale = const Locale('en'),
+    StatsRangeStore? rangeStore,
   }) => ProviderScope(
     overrides: [
       myStatsProvider.overrideWithValue(AsyncData(stats)),
+      statsRangeStoreProvider.overrideWithValue(rangeStore ?? _RangeStore()),
       profileByUidProvider.overrideWith(
         (ref, uid) => Stream.value(
           UserProfile(
@@ -68,7 +71,8 @@ void main() {
       'Showing up',
       'From your people',
       'Planning for others',
-      'Last 8 weeks',
+      'Your progress',
+      'Last 8 weeks', // the range dropdown's current choice
     ]) {
       expect(find.text(h), findsOneWidget, reason: h);
     }
@@ -136,4 +140,93 @@ void main() {
     expect(find.text(twelve), findsWidgets);
     expect(find.text('86%'), findsNothing);
   });
+
+  // 2026-09-28 audit.
+  testWidgets('audit: renamed, removed and added stats', (tester) async {
+    await pumpTall(tester, harness(sampleMyStats()));
+    expect(find.text('done or heard'), findsOneWidget);
+    expect(find.text('Answered before it stopped'), findsOneWidget);
+    expect(find.text('Answered when it rang'), findsNothing);
+    expect(find.text('Your requests set'), findsOneWidget);
+    expect(find.text('Your requests answered'), findsNothing);
+    expect(find.text('You completed'), findsNothing);
+    expect(find.text('Usually answers within'), findsOneWidget);
+    expect(find.text('3 min'), findsOneWidget);
+    expect(find.text('Voice notes heard'), findsOneWidget);
+    expect(find.text('8'), findsOneWidget);
+    expect(find.text('of 10 · 2 late'), findsOneWidget);
+    expect(find.text('Group plans done'), findsOneWidget);
+    expect(find.text('77%'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('the range dropdown switches the chart and is remembered', (
+    tester,
+  ) async {
+    final store = _RangeStore();
+    await pumpTall(tester, harness(sampleMyStats(), rangeStore: store));
+    expect(find.byKey(const ValueKey('stats-done-late')), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('stats-range')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Monthly').last);
+    await tester.pumpAndSettle();
+    expect(store.saved, StatsRange.months);
+    expect(find.text('Plans done each month.'), findsOneWidget);
+    expect(find.text('3 done late in this period.'), findsOneWidget);
+    expect(find.text('Feb'), findsOneWidget); // 2030-02, the last bar
+    expect(find.text('31'), findsOneWidget);
+    final handle = tester.ensureSemantics();
+    expect(
+      find.bySemanticsLabel(RegExp(r'^Plans done per month: .*Feb 31$')),
+      findsOneWidget,
+    );
+    handle.dispose();
+
+    await tester.tap(find.byKey(const ValueKey('stats-range')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Yearly').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Plans done each year.'), findsOneWidget);
+    expect(find.text('2028'), findsOneWidget);
+    expect(find.text('2030'), findsOneWidget);
+    expect(find.text('45'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a saved range is restored on open', (tester) async {
+    await pumpTall(
+      tester,
+      harness(sampleMyStats(), rangeStore: _RangeStore(StatsRange.years)),
+    );
+    expect(find.text('Plans done each year.'), findsOneWidget);
+  });
+
+  testWidgets('monthly bars fit a 320 px phone in dark mode', (tester) async {
+    tester.view.physicalSize = const Size(320 * 3, 2400 * 3);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      harness(
+        sampleMyStats(),
+        theme: AppTheme.dark,
+        rangeStore: _RangeStore(StatsRange.months),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Plans done each month.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+}
+
+class _RangeStore implements StatsRangeStore {
+  _RangeStore([this.saved]);
+
+  StatsRange? saved;
+
+  @override
+  Future<StatsRange?> read() async => saved;
+
+  @override
+  Future<void> write(StatsRange range) async => saved = range;
 }

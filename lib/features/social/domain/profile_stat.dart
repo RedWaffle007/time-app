@@ -196,7 +196,6 @@ class StatInputs {
 class StatItem {
   const StatItem({
     required this.instantUtc,
-    required this.isApproved,
     required this.isDone,
     required this.isSkipped,
     this.isSelfPlan = false,
@@ -206,10 +205,11 @@ class StatItem {
     this.creatorUid,
     this.fromPlanRequest = false,
     this.groupId = '',
+    this.isVoice = false,
+    this.doneAtUtc,
   });
 
   final DateTime instantUtc;
-  final bool isApproved;
   final bool isDone;
   final bool isSkipped;
 
@@ -239,7 +239,17 @@ class StatItem {
   /// Group progress (item 24d) counts only its own group's plans.
   final String groupId;
 
+  /// A voice note someone else sent (2026-09-28): a Done here is "Heard".
+  final bool isVoice;
+
+  /// When it was marked Done (or heard), if it was.
+  final DateTime? doneAtUtc;
+
   bool get hasOutcome => isDone || isSkipped;
+
+  /// Done after its alarm rang out unanswered — "Done (Late)" / "Heard
+  /// (Late)".
+  bool get isLate => isDone && wasUnavailable;
 
   /// Skipped on purpose — a skip that is not [isMissed].
   bool get isDeliberateSkip => isSkipped && !isMissed;

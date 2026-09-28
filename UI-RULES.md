@@ -828,7 +828,15 @@ Composes primitives that already exist — it invents nothing:
   `progressTrack` column; the tallest week fills the strip and a zero week
   shows only its track (never a fake stub). The count sits under each bar in
   `labelSmall` / `chartAxisLabel` through `formatCount`, and the whole strip
-  carries one `Semantics` label stating every number in words.
+  carries one `Semantics` label stating every number in words (its own
+  semantics node).
+- **The range dropdown** (2026-09-28) sits on the chart's "Your progress"
+  header: **Last 8 weeks** (no bar labels; spoken relative to now), **Monthly**
+  (the last 12 calendar months, `formatMonthShort` under each bar) or
+  **Yearly** (every year since the first plan, at least three, `formatYear`).
+  Periods with nothing are zero bars, never missing ones. A "N done late in
+  this period." line appears only when N > 0. The choice is remembered per
+  device.
 - **Percentages need a sample.** A percentage tile with fewer than five plans
   behind it renders `Not yet` with the caption "After 5 answered plans", never a
   confident 100% from one plan.

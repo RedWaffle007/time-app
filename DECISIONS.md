@@ -7583,3 +7583,25 @@ above Sign out — off the main tabs.
 - **`kFeedbackAddress` is a PLACEHOLDER** (`developer@example.com`) in
   `lib/features/settings/data/feedback_launcher.dart` until the developer
   supplies the real Gmail address.
+
+## Stats audit + range dropdown (2026-09-28)
+
+User-approved audit of the private Stats page, then built.
+
+- **Removed:** "You completed" (it repeated Follow-through's "Set for you"
+  split); `StatItem.isApproved`, left over from the removed approval step.
+  (The audit also named `ProfileStatUnit.minutes` as a Track Time leftover;
+  it is KEPT because the new "Usually answers within" uses it.)
+- **Renamed:** hero "done" → "done or heard" (voice notes count once heard);
+  "Answered when it rang" → "Answered before it stopped" (answered before the
+  one-minute ring ran out); "Your requests answered" → "Your requests set"
+  ("X … out of Y"; requests now expire).
+- **Added:** "Voice notes heard" (heard of answered, "· N late");
+  "Usually answers within" (median minutes from alarm to Done/Heard, early
+  completions excluded, after 5); "Group plans done" (follow-through on group
+  plans only, after 5); "N done late in this period." on the chart.
+- **Range dropdown** on the chart ("Your progress"): Last 8 weeks / Monthly
+  (last 12 calendar months in the HOME zone) / Yearly (since the first plan, at
+  least 3). Zero bars for empty periods, so a new user's chart is empty, not
+  broken. Remembered per device (`stats_range_v1`).
+- Nothing published changes: these are private-dashboard numbers only.

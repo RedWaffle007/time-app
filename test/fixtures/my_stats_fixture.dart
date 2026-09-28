@@ -22,6 +22,27 @@ MyStats sampleMyStats({
   requestsFulfilled: 5,
   requestsAnswered: 3,
   requestsClosed: 7,
-  weeklyDone: const [0, 1, 2, 3, 4, 6, 9, 12],
+  series: {
+    StatsRange.weeks: DoneSeries(
+      starts: [for (var k = 0; k < 8; k++) DateTime.utc(2030, 1, 1 + 7 * k)],
+      done: const [0, 1, 2, 3, 4, 6, 9, 12],
+      lateCount: 0,
+    ),
+    StatsRange.months: DoneSeries(
+      starts: [for (var k = 0; k < 12; k++) DateTime.utc(2029, 3 + k)],
+      done: const [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 14, 31],
+      lateCount: 3,
+    ),
+    StatsRange.years: DoneSeries(
+      starts: [for (var y = 2028; y <= 2030; y++) DateTime.utc(y)],
+      done: const [0, 0, 45],
+      lateCount: 4,
+    ),
+  },
+  voiceHeard: 8,
+  voiceHeardLate: 2,
+  voiceAnswered: 10,
+  groupFollowThrough: 77,
+  medianAnswerMinutes: 3,
   isEmpty: empty,
 );

@@ -125,6 +125,14 @@ String formatPercent(BuildContext context, num percent) =>
 String formatMonthYear(BuildContext context, DateTime date) =>
     DateFormat.yMMMM(_locale(context)).format(date);
 
+/// A short month name for a chart axis, e.g. "Aug" (Stats, 2026-09-28).
+String formatMonthShort(BuildContext context, DateTime date) =>
+    DateFormat.MMM(_locale(context)).format(date);
+
+/// A year for a chart axis, e.g. "2026", in the locale's digits.
+String formatYear(BuildContext context, DateTime date) =>
+    DateFormat.y(_locale(context)).format(date);
+
 /// One day number inside a grid cell. Localized digits — NOT `'${date.day}'`.
 String formatDayOfMonth(BuildContext context, DateTime date) =>
     DateFormat.d(_locale(context)).format(date);
