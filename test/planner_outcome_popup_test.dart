@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -271,6 +273,58 @@ void main() {
       expect(_confetti, findsNothing);
       expect(_card, findsNothing);
       expect(store.acknowledged, [_event('a').id]);
+    });
+
+    testWidgets('a rebuilt host plays what is already waiting, not only the '
+        'next record (device report 2026-09-28)', (tester) async {
+      // The startup reveal rebuilds the host: events delivered to the first
+      // instance must not wait for the next record and then play back to
+      // back with it.
+      final events = StreamController<List<CompletionCelebration>>();
+      addTearDown(events.close);
+      final store = _Store(events.stream);
+      final hostKey = ValueNotifier(0);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            currentUidProvider.overrideWithValue('PLANNER'),
+            completionCelebrationRepositoryProvider.overrideWithValue(store),
+            playedCelebrationStoreProvider.overrideWithValue(_PlayedStore()),
+            profileByUidProvider.overrideWith((ref, id) => Stream.value(null)),
+            allItemsAsPlannerProvider.overrideWith(
+              (ref) => Stream.value([_item('a', 'Gym')]),
+            ),
+            appLockControllerProvider.overrideWithValue(
+              AppLockController(
+                store: _NoopLockStore(),
+                auth: _NoopDeviceAuth(),
+                secureWindow: _NoopSecureWindow(),
+                initiallyEnabled: false,
+              ),
+            ),
+          ],
+          child: MaterialApp(
+            home: ValueListenableBuilder<int>(
+              valueListenable: hostKey,
+              builder: (_, key, _) => CompletionCelebrationHost(
+                key: ValueKey(key),
+                enabled: key > 0, // the first instance sits under the reveal
+                child: const Scaffold(body: Text('APP')),
+              ),
+            ),
+          ),
+        ),
+      );
+      events.add([_event('a')]);
+      await tester.pump(const Duration(milliseconds: 10));
+      expect(_confetti, findsNothing);
+
+      hostKey.value = 1; // the reveal ends: a new host instance
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 10));
+      }
+      expect(_confetti, findsOneWidget);
+      expect(_card, findsOneWidget);
     });
 
     testWidgets('planner + Skipped: pop-up without confetti', (tester) async {

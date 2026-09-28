@@ -227,6 +227,16 @@ class _CompletionCelebrationHostState
       _confettiDone = true;
       _animation.reset();
       _loadPlayed(uid);
+      // Take what is ALREADY unseen, not only later changes: `ref.listen`
+      // below reports changes only, and this host is rebuilt as the startup
+      // reveal ends. Events delivered to the previous instance were otherwise
+      // held back until the next record arrived, then played first, back to
+      // back with it: the planner's "confetti, then confetti with the pop-up"
+      // (device report 2026-09-28). The queue de-duplicates by id.
+      if (uid != null) {
+        final unseen = ref.read(unseenCompletionCelebrationsProvider).value;
+        if (unseen != null) _eventsChanged(unseen);
+      }
     }
     ref.listen(unseenCompletionCelebrationsProvider, (_, next) {
       final events = next.value;
