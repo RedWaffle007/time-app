@@ -69,6 +69,54 @@ void main() {
     expect(skip, findsNothing);
   });
 
+  testWidgets('History: a missed-alarm skip says "unavailable" once '
+      '(device report 2026-09-28)', (tester) async {
+    await tester.pumpWidget(
+      _host(const HistoryScreen(), [
+        _missed(
+          outcome: const ScheduleOutcome(
+            result: OutcomeResult.skipped,
+            skipReason: kUserUnavailableSkipReason,
+          ),
+        ),
+      ], _FakeScheduleRepository()),
+    );
+    await tester.pumpAndSettle();
+    await _expandIfCollapsed(tester, 'Missed plan');
+
+    expect(tag, findsOneWidget);
+    expect(find.text(kUserUnavailableSkipReason), findsNothing);
+  });
+
+  testWidgets('History: every fact sits left under the title, status '
+      'bottom-left (device report 2026-09-28)', (tester) async {
+    final late = _missed(
+      outcome: ScheduleOutcome(
+        result: OutcomeResult.done,
+        completedAt: DateTime.now().toUtc(),
+      ),
+    );
+    await tester.pumpWidget(
+      _host(const HistoryScreen(), [late], _FakeScheduleRepository()),
+    );
+    await tester.pumpAndSettle();
+    await _expandIfCollapsed(tester, 'Missed plan');
+
+    final left = tester.getTopLeft(find.text('Missed plan')).dx;
+    final lateText = find.textContaining(' late');
+    final badge = find.text('Done (Late)');
+    expect(lateText, findsOneWidget);
+    expect(tester.getTopLeft(tag).dx, left);
+    expect(tester.getTopLeft(lateText).dx, left);
+    expect(tester.getTopLeft(tag).dy, lessThan(tester.getTopLeft(lateText).dy));
+    // The badge is the bottom row's first child, under every fact.
+    expect(tester.getTopLeft(badge).dx, lessThan(left + 40));
+    expect(
+      tester.getTopLeft(badge).dy,
+      greaterThan(tester.getBottomLeft(lateText).dy),
+    );
+  });
+
   testWidgets('Done shows no Log Time pop-up', (tester) async {
     final repository = _FakeScheduleRepository();
     await _pumpSchedule(tester, [_missed()], repository: repository);

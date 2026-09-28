@@ -11,6 +11,7 @@ import 'package:time_app/features/auth/application/auth_providers.dart';
 import 'package:time_app/features/auth/domain/user_profile.dart';
 import 'package:time_app/features/celebrations/application/celebration_providers.dart';
 import 'package:time_app/features/celebrations/data/completion_celebration_repository.dart';
+import 'package:time_app/features/celebrations/data/played_celebration_store.dart';
 import 'package:time_app/features/celebrations/domain/completion_celebration.dart';
 import 'package:time_app/features/celebrations/presentation/completion_celebration_host.dart';
 import 'package:time_app/features/celebrations/presentation/completion_confetti.dart';
@@ -64,6 +65,17 @@ class _Store implements CompletionCelebrationStore {
   }
 }
 
+class _PlayedStore implements PlayedCelebrationStore {
+  _PlayedStore([Set<String>? initial]) : ids = {...?initial};
+  final Set<String> ids;
+
+  @override
+  Future<Set<String>> load(String uid) async => {...ids};
+
+  @override
+  Future<void> markPlayed(String uid, String eventId) async => ids.add(eventId);
+}
+
 class _NoopLockStore implements AppLockStore {
   @override
   Future<bool> isEnabled() async => false;
@@ -89,6 +101,7 @@ Future<_Store> _pump(
   String? targetName = 'Test Target',
   List<ScheduleItem>? items,
   ThemeData? theme,
+  PlayedCelebrationStore? played,
 }) async {
   final store = _Store(Stream.value(events));
   await tester.pumpWidget(
@@ -96,6 +109,9 @@ Future<_Store> _pump(
       overrides: [
         currentUidProvider.overrideWithValue(uid),
         completionCelebrationRepositoryProvider.overrideWithValue(store),
+        playedCelebrationStoreProvider.overrideWithValue(
+          played ?? _PlayedStore(),
+        ),
         profileByUidProvider.overrideWith(
           (ref, id) => Stream.value(
             targetName == null
@@ -216,6 +232,43 @@ void main() {
 
       await tester.tap(find.text('Nice'));
       await tester.pumpAndSettle();
+      expect(_card, findsNothing);
+      expect(store.acknowledged, [_event('a').id]);
+    });
+
+    testWidgets('the burst is remembered on this device', (tester) async {
+      final played = _PlayedStore();
+      await _pump(tester, [_event('a')], played: played);
+      expect(_confetti, findsOneWidget);
+      expect(played.ids, {_event('a').id});
+    });
+
+    testWidgets('a replayed Done: pop-up again, never a second confetti '
+        '(device report 2026-09-28)', (tester) async {
+      final store = await _pump(tester, [
+        _event('a'),
+      ], played: _PlayedStore({_event('a').id}));
+      expect(_confetti, findsNothing);
+      expect(find.text('Your planning skills are amazing!'), findsOneWidget);
+
+      await tester.tap(find.text('Nice'));
+      await tester.pumpAndSettle();
+      expect(_card, findsNothing);
+      expect(_confetti, findsNothing);
+      expect(store.acknowledged, [_event('a').id]);
+    });
+
+    testWidgets('a replayed Done on the target is acknowledged silently', (
+      tester,
+    ) async {
+      final store = await _pump(
+        tester,
+        [_event('a')],
+        uid: 'TARGET',
+        played: _PlayedStore({_event('a').id}),
+      );
+      await tester.pumpAndSettle();
+      expect(_confetti, findsNothing);
       expect(_card, findsNothing);
       expect(store.acknowledged, [_event('a').id]);
     });

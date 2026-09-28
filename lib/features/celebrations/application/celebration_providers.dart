@@ -3,12 +3,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/application/auth_providers.dart';
 import '../data/completion_celebration_repository.dart';
+import '../data/played_celebration_store.dart';
 import '../domain/completion_celebration.dart';
 
 final completionCelebrationRepositoryProvider =
     Provider<CompletionCelebrationStore>((ref) {
       return CompletionCelebrationRepository(FirebaseFirestore.instance);
     });
+
+final playedCelebrationStoreProvider = Provider<PlayedCelebrationStore>(
+  (ref) => const SharedPrefsPlayedCelebrationStore(),
+);
+
+final playedCelebrationsProvider = Provider<PlayedCelebrations>(
+  (ref) => PlayedCelebrations(ref.watch(playedCelebrationStoreProvider)),
+);
 
 final unseenCompletionCelebrationsProvider =
     StreamProvider<List<CompletionCelebration>>((ref) {

@@ -62,6 +62,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   /// The avatar URL already warmed into the image cache (see build).
   String? _warmedAvatarUrl;
+  final _warmedPartyAvatars = <String>{};
 
   /// The first-run auto-show fires at most once per shell lifetime; replay comes
   /// through [walkthroughTriggerProvider], not this latch.
@@ -177,6 +178,24 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       ref.listen(profileByUidProvider(me), (_, _) {});
       ref.listen(profileStatsProvider(me), (_, _) {});
       ref.listen(myFriendCountProvider, (_, _) {});
+    }
+    // Warm the Request tab the same way (device report 2026-09-28: its
+    // names and pictures appeared about a second after opening it): the sent
+    // requests, the profile of everyone on a request card or in the friend
+    // picker, and those friends' pictures.
+    ref.listen(outgoingPlanRequestsProvider, (_, _) {});
+    final requestParties = <String>{
+      for (final r in ref.watch(incomingPlanRequestsProvider).value ?? const [])
+        r.requesterUid,
+      for (final r in ref.watch(outgoingPlanRequestsProvider).value ?? const [])
+        r.plannerUid,
+      ...?ref.watch(myFriendUidsProvider).value,
+    };
+    for (final uid in requestParties) {
+      final url = ref.watch(profileByUidProvider(uid)).value?.displayAvatarUrl;
+      if (url != null && _warmedPartyAvatars.add(url)) {
+        precacheImage(NetworkImage(url), context, onError: (_, _) {});
+      }
     }
     // Replay from the You hub — a nonce bump, orthogonal to the flag above.
     ref.listen<int>(walkthroughTriggerProvider, (prev, next) {

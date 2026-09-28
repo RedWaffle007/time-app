@@ -537,6 +537,47 @@ void main() {
       await settleIo(tester);
       expect(changes, isNotEmpty);
       expect(find.text('Re-record'), findsOneWidget);
+      // Told inline, and shown as the full 20 s.
+      expect(
+        find.text('Stopped at 20 seconds, the longest a voice note can be.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('0:20 · plays 3 times'), findsOneWidget);
+    });
+
+    testWidgets('it stops itself half a second early, so a full-length file '
+        'stays under the Worker\'s 20.5 s (device report 2026-09-28)', (
+      tester,
+    ) async {
+      final (changes, _, _) = await pump(tester, permission: true);
+      await tester.tap(find.text('Record'));
+      await settleIo(tester);
+      await tester.pump();
+      await tester.pump(kVoiceAutoStopAt - const Duration(milliseconds: 50));
+      expect(find.text('Stop'), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 100));
+      await settleIo(tester);
+      expect(changes, isNotEmpty);
+      expect(kVoiceAutoStopAt, lessThan(kMaxVoiceNote));
+    });
+
+    testWidgets('the card says it rings as their alarm, with the plays '
+        'table (device report 2026-09-28)', (tester) async {
+      await pump(tester, permission: true);
+      expect(find.textContaining('Rings as the alarm on'), findsOneWidget);
+      expect(
+        find.text('Up to 20 seconds. Shorter notes repeat more.'),
+        findsOneWidget,
+      );
+      for (final (length, plays) in [
+        ('Under 5 s', '6 times'),
+        ('5 to 10 s', '5 times'),
+        ('10 to 15 s', '4 times'),
+        ('15 to 20 s', '3 times'),
+      ]) {
+        expect(find.text(length), findsOneWidget);
+        expect(find.text(plays), findsOneWidget);
+      }
     });
 
     testWidgets('a note under a second is thrown away and explained (F5)', (

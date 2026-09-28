@@ -120,18 +120,33 @@ class _CompletionCelebrationHostState
     _playing = true;
     _paused = false;
     _cardVisible = showsPlannerAnnouncement(event, _sessionUid);
-    _confettiDone = !event.isDone;
-    if (event.isDone) {
+    // One burst per event per phone: a replayed event (a restart before its
+    // acknowledgement landed, a rebuilt host) still shows the planner's
+    // pop-up, never a second confetti (device report 2026-09-28).
+    final played = ref.read(playedCelebrationsProvider);
+    final burst = event.isDone && !played.hasPlayed(_sessionUid!, event.id);
+    _confettiDone = !burst;
+    if (burst) {
+      played.markPlayed(_sessionUid!, event.id);
       _burst = CompletionConfettiBurst.seeded(
         CompletionConfettiBurst.seedForEvent(event.id),
       );
       _animation.forward(from: 0);
     } else if (!_cardVisible) {
-      // Nothing to show on this device (not the planner of a Skip).
+      // Nothing to show on this device (not the planner of a Skip, or a
+      // burst that already played here).
       _finish(event);
       return;
     }
     setState(() {});
+  }
+
+  /// Reads back what already played here. Not awaited: a local read beats
+  /// the Firestore delivery it guards against, and the start never waits on
+  /// storage.
+  void _loadPlayed(String? uid) {
+    if (uid == null) return;
+    unawaited(ref.read(playedCelebrationsProvider).load(uid));
   }
 
   void _dismissCard() {
@@ -211,6 +226,7 @@ class _CompletionCelebrationHostState
       _cardVisible = false;
       _confettiDone = true;
       _animation.reset();
+      _loadPlayed(uid);
     }
     ref.listen(unseenCompletionCelebrationsProvider, (_, next) {
       final events = next.value;

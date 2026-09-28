@@ -501,7 +501,10 @@ class PlannerItemCard extends ConsumerWidget {
         :final rejectionReason?,
       ) =>
         'Reason: $rejectionReason',
-      ScheduleItem(outcome: ScheduleOutcome(:final skipReason?)) =>
+      // A missed-alarm skip's reason repeats the "User unavailable at alarm
+      // time" line below; show that fact once (device report 2026-09-28).
+      ScheduleItem(outcome: ScheduleOutcome(:final skipReason?))
+          when skipReason != kUserUnavailableSkipReason =>
         'Reason: $skipReason',
       _ => null,
     };

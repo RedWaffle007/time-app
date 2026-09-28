@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/format/datetime_format.dart';
 import '../../../core/theme/app_icons.dart';
+import '../../../core/theme/app_text.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/theme/plan_badge_style.dart';
@@ -628,19 +629,24 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
                 formatInstant(context, item.scheduledInstantUtc, item.timezone),
               ),
               const SizedBox(height: Space.xs),
-              Text(
-                'Planned by $plannerName',
+              Text.rich(
+                TextSpan(
+                  children: [
+                    const TextSpan(text: 'Planned by '),
+                    TextSpan(text: plannerName, style: AppText.bodySmallStrong),
+                  ],
+                ),
                 style: context.text.bodySmall?.copyWith(
                   color: context.colors.onSurfaceVariant,
                 ),
               ),
+              // Fixed layout for every card (device report 2026-09-28): the
+              // facts sit here, left-aligned, each once and in one order, and
+              // the bottom row is always status left / action right. The
+              // permanent unavailable fact therefore stays ABOVE any
+              // still-open decision.
+              ..._factLines(context),
               const SizedBox(height: Space.md),
-              // Undecided after an unanswered alarm: the permanent fact is shown
-              // ABOVE the still-open decision, for transparency.
-              if (outcome == null && item.wasUnavailableAtAlarmTime) ...[
-                const _UnavailableTag(),
-                const SizedBox(height: Space.sm),
-              ],
               // A voice note has no Done/Skip (2026-09-28). Before it rings
               // there is nothing to answer; once it has rung unanswered, the
               // same two choices as the missed popup.
@@ -684,13 +690,8 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
                     ),
                   ],
                 )
-              else ...[
-                _outcomeLine(context, outcome),
-                if (item.wasUnavailableAtAlarmTime) ...[
-                  const SizedBox(height: Space.xs),
-                  const _UnavailableTag(),
-                ],
-              ],
+              else
+                _outcomeRow(),
             ],
           ),
         ),
@@ -698,43 +699,57 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
     );
   }
 
-  /// The recorded outcome. This used to be a second, private status→colour
-  /// mapping that disagreed with the planner's view; both now read the one
-  /// mapping in `status_style.dart` (UI-RULES.md §2.3).
-  Widget _outcomeLine(BuildContext context, ScheduleOutcome outcome) {
+  /// The muted facts under "Planned by", in a fixed order: unavailable at
+  /// alarm time, how late, the skip reason. A missed-alarm skip's reason says
+  /// the same thing as the unavailable tag, so it is not repeated.
+  List<Widget> _factLines(BuildContext context) {
+    final item = widget.item;
     final muted = context.text.bodySmall?.copyWith(
       color: context.colors.onSurfaceVariant,
     );
-    // One line when it fits, else Archive drops below, right-aligned.
-    return OverflowBar(
-      alignment: MainAxisAlignment.spaceBetween,
-      overflowAlignment: OverflowBarAlignment.end,
-      overflowSpacing: Space.xs,
-      children: [
-        Wrap(
-          spacing: Space.sm,
-          runSpacing: Space.xs,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            StatusBadge.itemOutcome(widget.item, context),
-            // Completed, but after its scheduled time — surfaced, never
-            // hidden. Line work / muted text, not a doctrine fill: a late
-            // Done is still a Done.
-            if (widget.item.completionDelay case final delay?)
-              Text(
-                '${formatDurationMinutes(context, delay.inMinutes)} late',
-                style: muted,
-              ),
-            if (outcome.skipReason case final reason?)
-              Text(reason, style: muted),
-          ],
+    final skipReason = item.outcome?.skipReason;
+    return [
+      if (item.wasUnavailableAtAlarmTime) ...[
+        const SizedBox(height: Space.xs),
+        const _UnavailableTag(),
+      ],
+      // Completed, but after its scheduled time — surfaced, never hidden.
+      // Muted text, not a doctrine fill: a late Done is still a Done.
+      if (item.completionDelay case final delay?) ...[
+        const SizedBox(height: Space.xs),
+        Text(
+          '${formatDurationMinutes(context, delay.inMinutes)} late',
+          style: muted,
         ),
-        // The card's one action, bottom-right (UI-RULES §6.18). Only once an
-        // outcome is recorded — a live item is hideable by no route at all.
+      ],
+      if (skipReason != null &&
+          skipReason.isNotEmpty &&
+          skipReason != kUserUnavailableSkipReason) ...[
+        const SizedBox(height: Space.xs),
+        Text(skipReason, style: muted),
+      ],
+    ];
+  }
+
+  /// The recorded outcome: the ONE status badge bottom-left and the card's
+  /// one action bottom-right (UI-RULES §6.18), on every card. Status reads
+  /// the one mapping in `status_style.dart` (UI-RULES.md §2.3).
+  /// On a phone too narrow for both, Archive wraps below; the badge never
+  /// leaves the left edge.
+  Widget _outcomeRow() => SizedBox(
+    width: double.infinity,
+    child: Wrap(
+      alignment: WrapAlignment.spaceBetween,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      runSpacing: Space.xs,
+      children: [
+        StatusBadge.itemOutcome(widget.item, context),
+        // Only once an outcome is recorded — a live item is hideable by no
+        // route at all.
         if (widget.item.isManuallyArchivable) ArchiveButton(item: widget.item),
       ],
-    );
-  }
+    ),
+  );
 
   // Record completion, then fire the (best-effort) planner push. The write is
   // the source of truth; the push is additive (see DECISIONS.md). No reminder

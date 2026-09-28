@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../../core/theme/app_icons.dart';
+import '../../../core/theme/app_text.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../application/voice_note_providers.dart';
@@ -69,6 +70,9 @@ class _VoiceNoteRecorderState extends ConsumerState<VoiceNoteRecorder> {
 
   /// The last recording was under [kMinVoiceNote] and was thrown away.
   bool _tooShort = false;
+
+  /// The last recording reached the limit and stopped itself.
+  bool _autoStopped = false;
   Timer? _ticker;
   Timer? _hardStop;
   Duration _elapsed = Duration.zero;
@@ -138,9 +142,15 @@ class _VoiceNoteRecorderState extends ConsumerState<VoiceNoteRecorder> {
     if (!await _ensurePermission() || !mounted) return;
     await _discardFile();
     final path = await ref.read(voiceDraftPathProvider)();
+    // Timed from before the microphone opens, so the file is never longer
+    // than the clock says.
+    _clock
+      ..reset()
+      ..start();
     try {
       await _recorder.start(path);
     } catch (_) {
+      _clock.stop();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Couldn't start recording. Try again.")),
@@ -148,26 +158,28 @@ class _VoiceNoteRecorderState extends ConsumerState<VoiceNoteRecorder> {
       }
       return;
     }
-    _clock
-      ..reset()
-      ..start();
     _tooShort = false;
+    _autoStopped = false;
     _ticker = Timer.periodic(const Duration(milliseconds: 200), (_) {
       if (mounted) setState(() => _elapsed = _clock.elapsed);
     });
-    _hardStop = Timer(kMaxVoiceNote, _stop);
+    _hardStop = Timer(
+      kVoiceAutoStopAt - _clock.elapsed,
+      () => _stop(auto: true),
+    );
     setState(() {
       _phase = _Phase.recording;
       _elapsed = Duration.zero;
     });
   }
 
-  Future<void> _stop() async {
+  Future<void> _stop({bool auto = false}) async {
     if (_phase != _Phase.recording) return;
     _ticker?.cancel();
     _hardStop?.cancel();
     _clock.stop();
-    final length = _clock.elapsed > kMaxVoiceNote
+    // An automatic stop is the full-length note: shown as 0:20.
+    final length = auto || _clock.elapsed > kMaxVoiceNote
         ? kMaxVoiceNote
         : _clock.elapsed;
     final path = await _recorder.stop();
@@ -188,6 +200,7 @@ class _VoiceNoteRecorderState extends ConsumerState<VoiceNoteRecorder> {
     }
     final draft = RecordedVoiceNote(path, length);
     setState(() {
+      _autoStopped = auto;
       _phase = _Phase.recorded;
       _draft = draft;
       _elapsed = length;
@@ -228,7 +241,10 @@ class _VoiceNoteRecorderState extends ConsumerState<VoiceNoteRecorder> {
   Future<void> _discard() async {
     await _discardFile();
     if (!mounted) return;
-    setState(() => _phase = _Phase.idle);
+    setState(() {
+      _phase = _Phase.idle;
+      _autoStopped = false;
+    });
     widget.onChanged(null);
   }
 
@@ -249,32 +265,49 @@ class _VoiceNoteRecorderState extends ConsumerState<VoiceNoteRecorder> {
                 const Icon(AppIcons.voiceNote),
                 const SizedBox(width: Space.sm),
                 Expanded(
-                  child: Text(
-                    'Voice note',
-                    style: context.text.titleSmall,
-                  ),
+                  child: Text('Voice note', style: context.text.titleSmall),
                 ),
               ],
             ),
             const SizedBox(height: Space.xs),
+            // Plain words first (device report 2026-09-28): what it does, then
+            // the limit, then how often it plays.
             Text(
-              switch (_phase) {
-                _Phase.idle when _tooShort =>
-                  'Too short. Record at least 1 second.',
-                _Phase.idle =>
-                  "Plays instead of the ringtone when ${widget.recipientName}'s "
-                      'alarm rings, 3 to 6 times, shorter notes more. '
-                      '1 to 20 seconds.',
-                _Phase.recording =>
-                  'Recording… ${formatVoiceLength(_elapsed)} / '
-                      '${formatVoiceLength(kMaxVoiceNote)}',
-                _Phase.recorded =>
-                  'Voice note ready · ${formatVoiceLength(_elapsed)} · '
-                      'plays ${voicePlaysFor(_elapsed)} times',
-              },
-              key: const ValueKey('voice-note-status'),
-              style: muted,
+              "Rings as the alarm on ${widget.recipientName}'s phone.",
+              key: const ValueKey('voice-note-explainer'),
+              style: context.text.bodyMedium,
             ),
+            Text('Up to 20 seconds. Shorter notes repeat more.', style: muted),
+            if (_phase == _Phase.idle) ...[
+              const SizedBox(height: Space.sm),
+              _PlaysTable(style: muted),
+            ],
+            if (_phase == _Phase.recorded && _autoStopped) ...[
+              const SizedBox(height: Space.sm),
+              Text(
+                'Stopped at 20 seconds, the longest a voice note can be.',
+                key: const ValueKey('voice-note-auto-stopped'),
+                style: muted,
+              ),
+            ],
+            if (_phase != _Phase.idle || _tooShort) ...[
+              const SizedBox(height: Space.xs),
+              Text(
+                switch (_phase) {
+                  _Phase.idle when _tooShort =>
+                    'Too short. Record at least 1 second.',
+                  _Phase.idle => '',
+                  _Phase.recording =>
+                    'Recording… ${formatVoiceLength(_elapsed)} / '
+                        '${formatVoiceLength(kMaxVoiceNote)}',
+                  _Phase.recorded =>
+                    'Voice note ready · ${formatVoiceLength(_elapsed)} · '
+                        'plays ${voicePlaysFor(_elapsed)} times',
+                },
+                key: const ValueKey('voice-note-status'),
+                style: muted,
+              ),
+            ],
             const SizedBox(height: Space.sm),
             Wrap(
               spacing: Space.sm,
@@ -320,6 +353,43 @@ class _VoiceNoteRecorderState extends ConsumerState<VoiceNoteRecorder> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// How many times a note plays, by length — the bands of [voicePlaysFor].
+class _PlaysTable extends StatelessWidget {
+  const _PlaysTable({required this.style});
+
+  final TextStyle? style;
+
+  static const _rows = [
+    ('Under 5 s', Duration(seconds: 1)),
+    ('5 to 10 s', Duration(seconds: 5)),
+    ('10 to 15 s', Duration(seconds: 10)),
+    ('15 to 20 s', Duration(seconds: 15)),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final header = AppText.bodySmallStrong.copyWith(color: style?.color);
+    TableRow row(String a, String b, TextStyle? s) => TableRow(
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(right: Space.xl, bottom: Space.xs),
+          child: Text(a, style: s),
+        ),
+        Text(b, style: s),
+      ],
+    );
+    return Table(
+      key: const ValueKey('voice-note-plays-table'),
+      defaultColumnWidth: const IntrinsicColumnWidth(),
+      children: [
+        row('Length', 'Plays', header),
+        for (final (label, length) in _rows)
+          row(label, '${voicePlaysFor(length)} times', style),
+      ],
     );
   }
 }
