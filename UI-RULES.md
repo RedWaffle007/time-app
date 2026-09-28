@@ -761,7 +761,11 @@ from the earlier "three delegation stances" (those three are now sub-navigation
 *inside* Plan). Full reasoning in DECISIONS.md "UI redesign — Hearth + Candidate
 A". Recipes so it stays Hearth:
 
-- **The bar is flat chrome** (`Elevations.nav`), scaffold-background fill, active
+- **The bar is flat chrome, the screen's own colour** (2026-09-28, DECISIONS.md
+  "Bottom bar + phone nav bar match the screen"): `context.chromeBackground`
+  (the background token: near-white light, near-black dark), no elevation
+  tint, a hairline `outlineVariant` top border; the phone's own navigation
+  bar takes the same colour with matching icon brightness. Active
   pillar = filled brand-green icon + label (§6.6 filled-selected), inactive = outline
   icon in `onSurfaceVariant`. The pending-attention **count** rides the
   **Request** icon (plan requests waiting on you) — the one orange the bar may

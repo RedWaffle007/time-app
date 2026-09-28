@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'app_colors.dart';
 import 'app_text.dart';
@@ -9,6 +10,20 @@ import 'app_tokens.dart';
 ///
 /// Everything visual is decided here so screens never decide it. A screen that
 /// sets a colour, a font size, or an elevation is a screen that has drifted.
+/// The phone's own navigation bar (back / home / recents) for [brightness]:
+/// the screen's colour, icons that read on it, and no Android contrast scrim
+/// (the default drew a light translucent bar under the dark app). Pure, so
+/// it is tested without a device.
+SystemUiOverlayStyle systemNavBarStyle(Brightness brightness, Color chrome) =>
+    SystemUiOverlayStyle(
+      systemNavigationBarColor: chrome,
+      systemNavigationBarDividerColor: chrome,
+      systemNavigationBarIconBrightness: brightness == Brightness.dark
+          ? Brightness.light
+          : Brightness.dark,
+      systemNavigationBarContrastEnforced: false,
+    );
+
 abstract final class AppTheme {
   static ThemeData get light => _build(
     colorScheme: _lightScheme,
@@ -152,6 +167,15 @@ abstract final class AppTheme {
         scrolledUnderElevation: Elevations.flat,
         centerTitle: false,
         titleTextStyle: AppText.titleLarge.copyWith(color: cs.primary),
+      ),
+
+      // The pillar bar: the screen's own colour, flat, untinted (2026-09-28,
+      // UI-RULES §6.12). Its hairline top border is drawn by the shell.
+      bottomAppBarTheme: BottomAppBarThemeData(
+        color: semantic.chromeBackground,
+        elevation: Elevations.flat,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
       ),
 
       navigationBarTheme: NavigationBarThemeData(
@@ -333,6 +357,7 @@ extension AppThemeContext on BuildContext {
   Color get onAttentionContainer => _semantic.onAttentionContainer;
   Color get immersiveForeground => _semantic.immersiveForeground;
   Color get immersiveControlBackground => _semantic.immersiveControlBackground;
+  Color get chromeBackground => _semantic.chromeBackground;
 
   TextStyle get codeDisplay =>
       Theme.of(this).extension<AppTypeExtension>()!.codeDisplay;

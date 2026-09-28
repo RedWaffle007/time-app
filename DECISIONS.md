@@ -7548,3 +7548,22 @@ it, so it has no Done/Skip; the only question is whether it was heard.
   unchanged. `isVoiceAlarm` = has a voice note AND someone else set it.
 - **No rules change**: every write is an existing target outcome write.
   Older builds still show Done/Skip on voice notes until updated.
+
+## Bottom bar + phone nav bar match the screen (2026-09-28)
+
+User-directed ("like Instagram": white bar in light mode, black in dark).
+The app's bottom bar was `surface` (a card fill: near-white in light, a
+grey-green in dark) with M3 elevation tint, and the phone's own back/home bar
+was never themed, so Android drew its default (a light translucent scrim)
+under a dark app.
+
+- **One chrome colour = the screen's own background**
+  (`AppColors.lightBackground` / `darkBackground`, exposed as
+  `context.chromeBackground`): the bar is flat, untinted, and separated from
+  content only by a hairline `outlineVariant` top border.
+- **The phone's navigation bar** takes the same colour, with dark icons in
+  light mode and light icons in dark mode, and Android's contrast scrim off
+  (`AnnotatedRegion<SystemUiOverlayStyle>` at the app root, so every route).
+  On edge-to-edge Android (15+) the system bar is transparent and the same
+  colour shows through from the bottom bar or the backdrop.
+- No new hex: both values are the existing background tokens.

@@ -517,32 +517,41 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
       // See SplashOverlay for both paths.
       // The phone's real 12/24-hour setting for every time shown and the
       // time picker (F1) — outermost, so everything below inherits it.
-      builder: (context, child) => DeviceClockScope(
-        use24Hour: ref.watch(deviceUses24HourProvider),
-        child: Listener(
-          behavior: HitTestBehavior.translucent,
-          onPointerDown: (_) {
-            final currentUid = _activityUid;
-            if (currentUid != null) {
-              ref.read(inactivityTrackerProvider).record(currentUid);
-            }
-          },
-          child: SplashOverlay(
-            skipReveal: _openedFromNotification,
-            playSound: ref.read(startupSoundEnabledProvider),
-            onRevealComplete: () {
-              if (mounted && !_splashReady) {
-                setState(() => _splashReady = true);
+      // The phone's navigation bar takes the screen's colour on every route
+      // (2026-09-28, DECISIONS.md "Bottom bar + phone nav bar match the
+      // screen").
+      builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
+        value: systemNavBarStyle(
+          Theme.of(context).brightness,
+          context.chromeBackground,
+        ),
+        child: DeviceClockScope(
+          use24Hour: ref.watch(deviceUses24HourProvider),
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: (_) {
+              final currentUid = _activityUid;
+              if (currentUid != null) {
+                ref.read(inactivityTrackerProvider).record(currentUid);
               }
             },
-            child: AppLockGate(
-              child: CompletionCelebrationHost(
-                enabled: _splashReady,
-                child: MissedAlarmReviewHost(
+            child: SplashOverlay(
+              skipReveal: _openedFromNotification,
+              playSound: ref.read(startupSoundEnabledProvider),
+              onRevealComplete: () {
+                if (mounted && !_splashReady) {
+                  setState(() => _splashReady = true);
+                }
+              },
+              child: AppLockGate(
+                child: CompletionCelebrationHost(
                   enabled: _splashReady,
-                  child: TimeBackdrop(
-                    key: TimeBackdrop.backdropKey,
-                    child: child ?? const SizedBox.shrink(),
+                  child: MissedAlarmReviewHost(
+                    enabled: _splashReady,
+                    child: TimeBackdrop(
+                      key: TimeBackdrop.backdropKey,
+                      child: child ?? const SizedBox.shrink(),
+                    ),
                   ),
                 ),
               ),

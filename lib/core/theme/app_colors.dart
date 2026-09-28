@@ -164,6 +164,7 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
     required this.onAttentionContainer,
     required this.immersiveForeground,
     required this.immersiveControlBackground,
+    required this.chromeBackground,
   });
 
   final Color attention;
@@ -181,6 +182,11 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
   final Color immersiveForeground;
   final Color immersiveControlBackground;
 
+  /// The bottom bar and the phone's own navigation bar: the screen's
+  /// background colour, so the chrome reads as part of the screen (2026-09-28,
+  /// DECISIONS.md "Bottom bar + phone nav bar match the screen").
+  final Color chromeBackground;
+
   static const light = AppSemanticColors(
     attention: AppColors.lightAttention,
     onAttention: AppColors.lightOnAttention,
@@ -189,6 +195,7 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
     onAttentionContainer: AppColors.lightOnAttentionContainer,
     immersiveForeground: AppColors.immersiveForeground,
     immersiveControlBackground: AppColors.immersiveControlBackground,
+    chromeBackground: AppColors.lightBackground,
   );
 
   static const dark = AppSemanticColors(
@@ -199,6 +206,7 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
     onAttentionContainer: AppColors.darkOnAttentionContainer,
     immersiveForeground: AppColors.immersiveForeground,
     immersiveControlBackground: AppColors.immersiveControlBackground,
+    chromeBackground: AppColors.darkBackground,
   );
 
   @override
@@ -210,6 +218,7 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
     Color? onAttentionContainer,
     Color? immersiveForeground,
     Color? immersiveControlBackground,
+    Color? chromeBackground,
   }) {
     return AppSemanticColors(
       attention: attention ?? this.attention,
@@ -221,6 +230,7 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
       immersiveForeground: immersiveForeground ?? this.immersiveForeground,
       immersiveControlBackground:
           immersiveControlBackground ?? this.immersiveControlBackground,
+      chromeBackground: chromeBackground ?? this.chromeBackground,
     );
   }
 
@@ -253,6 +263,11 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
       immersiveControlBackground: Color.lerp(
         immersiveControlBackground,
         other.immersiveControlBackground,
+        t,
+      )!,
+      chromeBackground: Color.lerp(
+        chromeBackground,
+        other.chromeBackground,
         t,
       )!,
     );

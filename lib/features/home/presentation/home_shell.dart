@@ -183,10 +183,19 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         children: [
           Scaffold(
         body: shell,
-        bottomNavigationBar: BottomAppBar(
-          // Flat scaffold-background chrome (§6.12).
-          color: context.colors.surface,
-          elevation: Elevations.nav,
+        // The screen's own colour, flat, with a hairline on top (§6.12,
+        // 2026-09-28). Colour and flatness come from `bottomAppBarTheme`.
+        bottomNavigationBar: DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border(
+              top: BorderSide(
+                color: context.colors.outlineVariant,
+                width: Sizes.hairline,
+              ),
+            ),
+          ),
+          child: BottomAppBar(
+          key: const ValueKey('pillar-bar'),
           padding: EdgeInsets.zero,
           child: Row(
             children: [
@@ -228,6 +237,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               ),
             ],
           ),
+        ),
         ),
           ),
           if (_walkthroughVisible)
