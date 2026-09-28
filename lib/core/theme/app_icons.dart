@@ -469,6 +469,10 @@ abstract final class AppIcons {
   /// is its own concept (rule 1).
   static const IconData walkthrough = Icons.explore_outlined;
 
+  /// Settings → Send feedback: write to the developer (2026-09-28). A
+  /// feedback bubble, not an envelope: [emptyRequests] already uses mail.
+  static const IconData feedback = Icons.feedback_outlined;
+
   /// Appearance follows the device, or is explicitly light/dark. These are
   /// distinct concepts because the three-way picker states a source as well as
   /// a result.

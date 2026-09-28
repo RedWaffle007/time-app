@@ -169,7 +169,9 @@ Received + Group, layout A, per-card ⋮ replaced by an Archive button.
 at the top of every Plan tab"). **(5) Voice notes without Done/Skip BUILT 2026-09-28, uncommitted**
 (DECISIONS.md "Voice notes without Done/Skip"; Worker change → deploy).
 **(6) Nav bar colour BUILT 2026-09-28, uncommitted** (DECISIONS.md "Bottom
-bar + phone nav bar match the screen"). Next: (7) feedback button.
+bar + phone nav bar match the screen"), committed. **(7) Feedback button
+BUILT 2026-09-28, uncommitted** (DECISIONS.md "Send feedback"; address is a
+PLACEHOLDER). Next: (8) stats audit REPORT first, then the range dropdown.
 Voice-note signed-off spec, kept for the device pass: dismiss while ringing = outcome done shown
 "Heard", planner "{Y} heard your voice note."; ring-out = Uh-Oh "{Y} missed
 your voice note."; missed popup "Missed voice note" / "{Planner} sent you a

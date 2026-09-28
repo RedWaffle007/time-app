@@ -16,6 +16,7 @@ class NavTile extends StatelessWidget {
     required this.onTap,
     this.badgeCount = 0,
     this.showChevron = true,
+    this.subtitle,
   });
 
   final IconData icon;
@@ -23,6 +24,9 @@ class NavTile extends StatelessWidget {
   final VoidCallback onTap;
   final int badgeCount;
   final bool showChevron;
+
+  /// One muted line under the label, when the row needs explaining.
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -38,6 +42,14 @@ class NavTile extends StatelessWidget {
             color: context.colors.categoricalAccentFor(label),
           ),
         ),
+        subtitle: subtitle == null
+            ? null
+            : Text(
+                subtitle!,
+                style: context.text.bodySmall?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
+              ),
         trailing: showChevron ? const Icon(AppIcons.openRow) : null,
         onTap: onTap,
       ),

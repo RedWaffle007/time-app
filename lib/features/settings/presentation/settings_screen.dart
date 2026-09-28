@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -15,6 +16,7 @@ import '../../auth/application/auth_providers.dart';
 import '../../notifications/application/messaging_service.dart';
 import '../../splash/presentation/startup_sound_tile.dart';
 import '../../theme/application/theme_mode_controller.dart';
+import '../data/feedback_launcher.dart';
 
 /// **Settings** (Batch H2, DECISIONS.md "You = your profile; Settings holds
 /// the rest"). Everything that is not your public identity: reminders, quiet
@@ -47,6 +49,16 @@ class SettingsScreen extends ConsumerWidget {
             label: 'How this app works',
             onTap: () => context.push(Routes.howItWorks),
           ),
+          // Near the bottom, off the main tabs (2026-09-28).
+          NavTile(
+            key: const ValueKey('send-feedback'),
+            icon: AppIcons.feedback,
+            label: 'Send feedback',
+            subtitle:
+                'Ideas, bugs or anything else. It goes straight to the '
+                'developer.',
+            onTap: () => sendFeedback(context, ref),
+          ),
           if (kDebugMode)
             NavTile(
               icon: AppIcons.devMenu,
@@ -64,6 +76,50 @@ class SettingsScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Opens the email app on a prefilled message to [kFeedbackAddress]. With
+/// no email app installed, shows the address with a Copy button instead.
+Future<void> sendFeedback(BuildContext context, WidgetRef ref) async {
+  final launcher = ref.read(feedbackLauncherProvider);
+  final version = await launcher.appVersion();
+  final opened = await launcher.compose(
+    to: kFeedbackAddress,
+    subject: kFeedbackSubject,
+    body: feedbackEmailBody(version),
+  );
+  if (opened || !context.mounted) return;
+  await showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Send feedback'),
+      content: Text(
+        'No email app opened. Write to the developer at $kFeedbackAddress.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Close'),
+        ),
+        FilledButton.icon(
+          key: const ValueKey('feedback-copy-address'),
+          onPressed: () async {
+            await Clipboard.setData(
+              const ClipboardData(text: kFeedbackAddress),
+            );
+            if (ctx.mounted) Navigator.pop(ctx);
+            if (context.mounted) {
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('Address copied.')));
+            }
+          },
+          icon: const Icon(AppIcons.copy),
+          label: const Text('Copy address'),
+        ),
+      ],
+    ),
+  );
 }
 
 /// Quiet hours: a window planners are warned about, in your home timezone.

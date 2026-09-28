@@ -143,6 +143,12 @@ class MainActivity : FlutterFragmentActivity() {
         // button and a purely-instructional guided card.
         const val AUTOSTART_CHANNEL = "time_app/autostart"
 
+        // Settings → Send feedback (2026-09-28). `compose` opens the user's
+        // email app on a prefilled message (false if none is installed, so
+        // Dart can show the address instead); `version` is the app version
+        // put in that message.
+        const val FEEDBACK_CHANNEL = "time_app/feedback"
+
         // Candidate autostart / background-launch Activities, most-specific first.
         // Only the manufacturer's own package is installed on any given device, so
         // at most one of these resolves; the resolve-check is what makes trying
@@ -352,6 +358,21 @@ class MainActivity : FlutterFragmentActivity() {
                 }
             }
 
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, FEEDBACK_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "compose" -> result.success(
+                        composeFeedbackEmail(
+                            call.argument<String>("to") ?: "",
+                            call.argument<String>("subject") ?: "",
+                            call.argument<String>("body") ?: "",
+                        ),
+                    )
+                    "version" -> result.success(appVersionName())
+                    else -> result.notImplemented()
+                }
+            }
+
         // The cold-start reveal's clock ting. Constructed HERE (engine config,
         // which runs before the Dart entrypoint) so the sample is preloaded well
         // before the splash mounts — otherwise the async SoundPool load would
@@ -502,6 +523,31 @@ class MainActivity : FlutterFragmentActivity() {
             if (intent.resolveActivity(packageManager) != null) return intent
         }
         return null
+    }
+
+    /**
+     * Open the user's email app on a prefilled message. `mailto:` + SENDTO
+     * reaches email apps only (not every share target). No `<queries>` entry
+     * is needed: we launch and catch, rather than resolve first.
+     */
+    private fun composeFeedbackEmail(to: String, subject: String, body: String): Boolean {
+        val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:")).apply {
+            putExtra(Intent.EXTRA_EMAIL, arrayOf(to))
+            putExtra(Intent.EXTRA_SUBJECT, subject)
+            putExtra(Intent.EXTRA_TEXT, body)
+        }
+        return try {
+            startActivity(intent)
+            true
+        } catch (e: android.content.ActivityNotFoundException) {
+            false
+        }
+    }
+
+    private fun appVersionName(): String? = try {
+        packageManager.getPackageInfo(packageName, 0).versionName
+    } catch (e: Exception) {
+        null
     }
 
     /** Launch the resolved autostart screen; false if none resolves or it throws. */

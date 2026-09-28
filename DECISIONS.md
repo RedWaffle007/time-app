@@ -7567,3 +7567,19 @@ under a dark app.
   On edge-to-edge Android (15+) the system bar is transparent and the same
   colour shows through from the bottom bar or the backdrop.
 - No new hex: both values are the existing background tokens.
+
+## Send feedback (2026-09-28)
+
+User-directed. Settings → **Send feedback** ("Ideas, bugs or anything else.
+It goes straight to the developer."), near the bottom, below the guide and
+above Sign out — off the main tabs.
+
+- Opens the user's email app (`ACTION_SENDTO mailto:`, email apps only) on a
+  message to `kFeedbackAddress`, subject "CHECKMATE feedback", body ending
+  with the app version. Thin native channel `time_app/feedback` in
+  MainActivity (the codebase's pattern; no `url_launcher`, no `<queries>`:
+  it launches and catches).
+- No email app: a dialog shows the address with **Copy address**.
+- **`kFeedbackAddress` is a PLACEHOLDER** (`developer@example.com`) in
+  `lib/features/settings/data/feedback_launcher.dart` until the developer
+  supplies the real Gmail address.
