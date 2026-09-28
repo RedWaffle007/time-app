@@ -32,6 +32,7 @@ import { sendDueInactivityNotifications } from './inactivity.js';
 import { handleGroupAvailability, handleGroupPlanned } from './group-plan.js';
 import { sendPlanRequestReminders } from './plan-request-reminders.js';
 import { expirePlanRequests } from './plan-request-expiry.js';
+import { noteSilentGroupMembers } from './group-summary.js';
 import { settleLapsedItems } from './lapse.js';
 import { rescueUndeliveredVoiceNotes } from './voice-rescue.js';
 import { handleInviteRequest } from './invite.js';
@@ -461,6 +462,10 @@ async function runLapseCron(env, now) {
   // …and close requests whose minute passed unplanned, telling both people.
   const expiry = await expirePlanRequests(context, now);
   console.log(JSON.stringify({ event: 'plan-request-expiry', ...expiry }));
+  // …and add group members whose phone never reported the ring to the
+  // planner's live "Didn't dismiss" list (group-summary.js).
+  const silent = await noteSilentGroupMembers(context, now);
+  console.log(JSON.stringify({ event: 'group-silent-members', ...silent }));
 }
 
 async function runInactivityCron(env, now) {
@@ -557,6 +562,21 @@ async function handleFriendEvent(request, env, body) {
         req.requesterUid !== fromUid ||
         req.plannerUid !== toUid ||
         (req.status !== 'pending' && req.status !== 'inProgress')
+      ) {
+        return json({ error: 'forbidden' }, 403);
+      }
+    } else if (event === 'planRequestDeclined') {
+      // The friend asked (toUid) tells the requester (fromUid) they declined.
+      // The request's declined state is re-verified in notify.js.
+      if (callerUid !== toUid || typeof planRequestId !== 'string') {
+        return json({ error: 'forbidden' }, 403);
+      }
+      const req = await db.getDoc(`planRequests/${planRequestId}`);
+      if (!req) return json({ error: 'request-not-found' }, 404);
+      if (
+        req.requesterUid !== fromUid ||
+        req.plannerUid !== toUid ||
+        req.status !== 'declined'
       ) {
         return json({ error: 'forbidden' }, 403);
       }

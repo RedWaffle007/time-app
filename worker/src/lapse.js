@@ -8,7 +8,17 @@
 // lib/features/scheduling/application/item_lapse_policy.dart: the later of
 // midnight ending the item's own local day and scheduled time + 2 h.
 
-import { ACTIVITY_CHANNEL_ID, hasActiveItemGrant, isVoiceAlarm } from './notify.js';
+import {
+  ACTIVITY_CHANNEL_ID,
+  UNAVAILABLE_CHANNEL_ID,
+  hasActiveItemGrant,
+  isVoiceAlarm,
+} from './notify.js';
+import {
+  isGroupMemberCopy,
+  recordAndBuildSummary,
+  sendToUser as sendSummaryToUser,
+} from './group-summary.js';
 
 export const MIN_RESPONSE_WINDOW_MS = 2 * 60 * 60 * 1000;
 export const LAPSED_SKIP_REASON = 'Did not respond';
@@ -140,13 +150,21 @@ export function buildPlannerLapseMessage(
   return lapseMessage(label(item, groupName), body, targetUid, itemId, 'planner');
 }
 
+// The planner's notice is a negative event, so it plays the "Uh-Oh!"
+// (2026-09-28). The target's own notice keeps the normal tone.
 function lapseMessage(title, body, targetUid, itemId, audience) {
+  const uhOh = audience === 'planner';
   return {
     notification: { title, body },
-    data: { type: 'lapsed', event: 'lapsed', audience, targetUid, itemId },
+    data: {
+      type: 'lapsed', event: 'lapsed', audience, targetUid, itemId,
+      ...(uhOh ? { uhOh: 'true' } : {}),
+    },
     android: {
       priority: 'high',
-      notification: { channel_id: ACTIVITY_CHANNEL_ID },
+      notification: {
+        channel_id: uhOh ? UNAVAILABLE_CHANNEL_ID : ACTIVITY_CHANNEL_ID,
+      },
     },
   };
 }
@@ -251,6 +269,13 @@ export async function settleLapsedItems(ctx, now = new Date(), {
     if (selfPlanned) continue;
     // Like every item push: a revoked grant means the planner is not told.
     if (!(await hasActiveItemGrant(ctx.db, item, plannerUid, targetUid))) continue;
+    // A group member: the planner's live "Didn't respond" list instead of
+    // one push per member (group-summary.js).
+    if (isGroupMemberCopy(item)) {
+      const message = await recordAndBuildSummary(ctx, item, targetUid, 'noResponse', now);
+      if (message) summary.sent += await sendSummaryToUser(ctx, plannerUid, message);
+      continue;
+    }
     const target = await ctx.db.getDoc(`users/${targetUid}`);
     await sendToUser(ctx, plannerUid, buildPlannerLapseMessage(item, {
       targetName: target && target.name ? String(target.name) : null,

@@ -439,6 +439,22 @@ class _RequestsHeader extends StatelessWidget {
   }
 }
 
+/// Decline, then tell the requester — a negative event, so their phone plays
+/// the "Uh-Oh!" (2026-09-28). The write is the truth; the push is
+/// fire-and-forget and never blocks the decline.
+Future<void> declinePlanRequest(WidgetRef ref, PlanRequest request) async {
+  final notifier = ref.read(friendEventNotifierProvider);
+  await ref.read(planRequestRepositoryProvider).decline(request);
+  unawaited(
+    notifier.notify(
+      event: FriendNotifyEvent.planRequestDeclined,
+      fromUid: request.requesterUid,
+      toUid: request.plannerUid,
+      planRequestId: request.id,
+    ),
+  );
+}
+
 /// What a finished request reads as, from the viewer's side.
 String planRequestStatusLabel(
   PlanRequestStatus status, {
@@ -560,9 +576,7 @@ class _PlanRequestCard extends ConsumerWidget {
                 children: [
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: () => ref
-                          .read(planRequestRepositoryProvider)
-                          .decline(request),
+                      onPressed: () => declinePlanRequest(ref, request),
                       child: const Text('Decline'),
                     ),
                   ),
@@ -663,7 +677,7 @@ class _FulfillPlanRequestScreenState
                 OutlinedButton(
                   key: const ValueKey('request-decline'),
                   onPressed: () async {
-                    await ref.read(planRequestRepositoryProvider).decline(live);
+                    await declinePlanRequest(ref, live);
                     if (context.mounted) context.pop();
                   },
                   child: const Text('Decline'),

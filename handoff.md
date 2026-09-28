@@ -172,8 +172,11 @@ at the top of every Plan tab"). **(5) Voice notes without Done/Skip BUILT 2026-0
 bar + phone nav bar match the screen"), committed. **(7) Feedback button
 BUILT 2026-09-28, uncommitted** (DECISIONS.md "Send feedback"; address is a
 PLACEHOLDER). **(8) Stats audit + range dropdown BUILT 2026-09-28,
-uncommitted** (DECISIONS.md "Stats audit + range dropdown"). The 2026-09-28
-build list is DONE; next is the device pass, then item 33.
+uncommitted** (DECISIONS.md "Stats audit + range dropdown"). Committed.
+**(9) Uh-Oh for every negative event + live group lists + silent alarm
+channel + foreground sounds BUILT 2026-09-28, uncommitted** (DECISIONS.md
+"Uh-Oh for every negative event"). Worker deploy + fresh APK needed. Next:
+the device pass, then item 33.
 Voice-note signed-off spec, kept for the device pass: dismiss while ringing = outcome done shown
 "Heard", planner "{Y} heard your voice note."; ring-out = Uh-Oh "{Y} missed
 your voice note."; missed popup "Missed voice note" / "{Planner} sent you a

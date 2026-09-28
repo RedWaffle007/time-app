@@ -167,6 +167,16 @@ function harness({ pending = [], approved = [] } = {}, docs = {}, {
           return claim(path, fields);
         },
         getDoc: async (path) => store[path] ?? null,
+        patchPaths: async (path, fields) => {
+          const merge = (a, b) => {
+            const out = { ...(a || {}) };
+            for (const [k, v] of Object.entries(b)) {
+              out[k] = v && typeof v === 'object' ? merge(out[k], v) : v;
+            }
+            return out;
+          };
+          store[path] = merge(store[path], fields);
+        },
         listDocIds: async (path) => tokens[path.split('/')[1]] ?? [],
         deleteDoc: async () => {},
       },
@@ -273,14 +283,30 @@ test('an ended friendship still settles the item and tells the person, not the p
   assert.deepEqual(h.sent.map((s) => s.token), ['t-token']);
 });
 
-test('group items read the group name and grant', async () => {
+test('group items: the planner gets the live "Didn\'t respond" list, with Uh-Oh', async () => {
   const h = harness({ approved: [row('approved', { groupId: 'g1' })] }, {
     'groups/g1': { name: 'Team', memberUids: ['planner', 'target'] },
   });
   await settleLapsedItems(h.ctx, AFTER);
   assert.equal(h.sent.length, 2);
-  assert.equal(h.sent[1].message.notification.title, 'Group task skipped automatically');
-  assert.match(h.sent[1].message.notification.body, / in Team, so it was marked Skipped\.$/);
+  // The member's own notice still names the group.
+  assert.equal(h.sent[0].message.notification.title, 'Group task skipped automatically');
+  const toPlanner = h.sent[1].message;
+  assert.match(toPlanner.notification.title, /^Didn't respond to "/);
+  assert.equal(toPlanner.notification.body, 'Test Target · Team');
+  assert.equal(toPlanner.android.notification.channel_id, 'planner_unavailable');
+  assert.equal(toPlanner.data.uhOh, 'true');
+});
+
+test('a 1-to-1 lapse: Uh-Oh for the planner, normal tone for the target', async () => {
+  const h = harness({ approved: [row('approved')] });
+  await settleLapsedItems(h.ctx, AFTER);
+  const toTarget = h.sent.find((s) => s.token === 't-token').message;
+  const toPlanner = h.sent.find((s) => s.token === 'p-token').message;
+  assert.equal(toPlanner.android.notification.channel_id, 'planner_unavailable');
+  assert.equal(toPlanner.data.uhOh, 'true');
+  assert.equal(toTarget.android.notification.channel_id, 'planner_activity');
+  assert.equal(toTarget.data.uhOh, undefined);
 });
 
 test('the query window is two hours back to fifty hours back', async () => {

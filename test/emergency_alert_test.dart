@@ -99,11 +99,10 @@ void main() {
           )
           .map((f) => f.path)
           .toList();
-      // Only the reminder channel's frozen legacy metadata; its notifications
-      // are silent and AlarmSoundService owns the ring.
-      expect(hits, [
-        'lib/features/reminders/data/local_notifications_reminder_scheduler.dart',
-      ]);
+      // None at all since 2026-09-28: the reminder channel that carried it
+      // as frozen metadata played it on HyperOS, so it was replaced by a
+      // silent channel. AlarmSoundService alone owns the ring.
+      expect(hits, isEmpty);
     });
   });
 

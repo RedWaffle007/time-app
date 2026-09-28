@@ -23,6 +23,10 @@ enum FriendNotifyEvent {
   planRequested,
   groupJoinApproved,
   groupJoinRequested,
+
+  /// The friend asked declined a plan request; tells the requester
+  /// (2026-09-28, an "Uh-Oh!" event).
+  planRequestDeclined,
 }
 
 /// The seam between "a friend-graph action happened" and "the other party gets a

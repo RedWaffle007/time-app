@@ -41,6 +41,8 @@
 // THE one list of item events. index.js imports it for its request guard, so
 // a new event can never again be accepted here but rejected at the door (the
 // `unavailable` push was 400'd by a second, stale list until 2026-09-27).
+import { recordAndBuildSummary, summaryListFor } from './group-summary.js';
+
 export const ITEM_EVENTS = new Set([
   'created', 'decided', 'outcome', 'withdrawn', 'dismissed', 'voiceFallback',
   'unavailable',
@@ -121,14 +123,23 @@ export async function sendEventNotification(ctx, { event, targetUid, itemId }) {
   // actor is whoever performed this event (the planner for created/withdrawn,
   // the target for decided/outcome). A missing profile degrades to 'Someone'.
   const actorUid = NOTIFIES_TARGET.has(event) ? plannerUid : targetUid;
-  const [actor, group] = await Promise.all([
-    ctx.db.getDoc(`users/${actorUid}`),
-    groupId ? ctx.db.getDoc(`groups/${groupId}`) : Promise.resolve(null),
-  ]);
-  const message = buildMessage(event, derived.subtype, item, targetUid, itemId, {
-    actorName: actor && actor.name ? String(actor.name) : null,
-    groupName: groupId ? (group && group.name ? String(group.name) : '') : null,
-  });
+  // A group plan's ring result and missed-popup answers reach the planner as
+  // LIVE lists, not one push per member (2026-09-28, group-summary.js).
+  const summaryList = summaryListFor(event, derived.subtype, item);
+  let message;
+  if (summaryList) {
+    message = await recordAndBuildSummary(ctx, item, targetUid, summaryList);
+    if (!message) return result(0, 0, recipientUid, 'nothing-to-send');
+  } else {
+    const [actor, group] = await Promise.all([
+      ctx.db.getDoc(`users/${actorUid}`),
+      groupId ? ctx.db.getDoc(`groups/${groupId}`) : Promise.resolve(null),
+    ]);
+    message = buildMessage(event, derived.subtype, item, targetUid, itemId, {
+      actorName: actor && actor.name ? String(actor.name) : null,
+      groupName: groupId ? (group && group.name ? String(group.name) : '') : null,
+    });
+  }
 
   // Every device at once (2026-09-27) rather than one after another.
   let sent = 0;
@@ -269,6 +280,17 @@ function deriveEvent(event, item) {
  * while it rings means heard; the missed popup's Play / Already heard mean
  * heard late; 24 hours unanswered lapses it. Self-plans never carry a note.
  */
+/**
+ * The "Uh-Oh!" item events (2026-09-28): the alarm rang out unanswered, and a
+ * Skip given on the missed popup (after it rang out). Everything else plays
+ * the phone's normal tone.
+ */
+export function isNegativeItemEvent(event, subtype, item) {
+  if (event === 'unavailable') return true;
+  return event === 'outcome' && subtype === 'skipped'
+    && Boolean(item && item.alarm && item.alarm.unavailableAt);
+}
+
 export function isVoiceAlarm(item) {
   return Boolean(item && item.voiceNote)
     && Boolean(item.createdByUid) && item.createdByUid !== item.targetUid;
@@ -467,15 +489,14 @@ export function buildMessage(event, subtype, item, targetUid, itemId, names = {}
 
   // HIGH priority: these are user-visible, and normal priority is batched
   // under Doze — a planner learning of a Done minutes late defeats the push.
+  const uhOh = isNegativeItemEvent(event, subtype, item);
   return {
     notification,
-    data,
+    data: uhOh ? { ...data, uhOh: 'true' } : data,
     android: {
       priority: 'high',
       notification: {
-        channel_id: event === 'unavailable'
-          ? UNAVAILABLE_CHANNEL_ID
-          : ACTIVITY_CHANNEL_ID,
+        channel_id: uhOh ? UNAVAILABLE_CHANNEL_ID : ACTIVITY_CHANNEL_ID,
       },
     },
   };
@@ -506,8 +527,12 @@ function result(sent, cleaned, recipientUid, reason) {
 // by the transport shell BEFORE this runs — see index.js handleFriendEvent.
 export const FRIEND_EVENTS = new Set([
   'friendRequest', 'friendAccept', 'planRequested', 'groupJoinApproved',
-  'groupJoinRequested',
+  'groupJoinRequested', 'planRequestDeclined',
 ]);
+
+// planRequestDeclined (2026-09-28): the friend asked (toUid) declined the
+// requester's (fromUid) plan request — a negative event, "Uh-Oh!".
+const UH_OH_FRIEND_EVENTS = new Set(['planRequestDeclined']);
 
 // Events whose recipient is the `toUid` (the other two notify the `fromUid`).
 const NOTIFIES_TO_UID = new Set([
@@ -534,6 +559,21 @@ export async function sendFriendNotification(
   // ring the same friend twice. The request is durable; stamp it only after at
   // least one device accepted the push, matching item-event dedupe semantics.
   let planRequestPath = null;
+  let declinedTask = null;
+  if (event === 'planRequestDeclined') {
+    if (!planRequestId) return result(0, 0, recipientUid, 'bad-args');
+    planRequestPath = `planRequests/${planRequestId}`;
+    const request = await ctx.db.getDoc(planRequestPath);
+    if (!request) return result(0, 0, recipientUid, 'request-not-found');
+    if (request.status !== 'declined' || request.requesterUid !== fromUid
+      || request.plannerUid !== toUid) {
+      return result(0, 0, recipientUid, 'not-declined');
+    }
+    if (request.notifiedDeclined === true) {
+      return result(0, 0, recipientUid, 'already-notified');
+    }
+    declinedTask = request.title ? String(request.title) : null;
+  }
   if (event === 'planRequested') {
     if (!planRequestId) return result(0, 0, recipientUid, 'bad-args');
     planRequestPath = `planRequests/${planRequestId}`;
@@ -581,6 +621,7 @@ export async function sendFriendNotification(
       groupId,
       groupName: group && group.name ? String(group.name) : '',
       joinSource,
+      task: declinedTask,
     },
   );
 
@@ -604,10 +645,12 @@ export async function sendFriendNotification(
   }
 
   if (sent > 0 && planRequestPath) {
-    await ctx.db.patchDoc(planRequestPath, {
-      notifiedRequested: true,
-      notifiedRequestedAt: new Date().toISOString(),
-    });
+    await ctx.db.patchDoc(planRequestPath, event === 'planRequestDeclined'
+      ? { notifiedDeclined: true, notifiedDeclinedAt: new Date().toISOString() }
+      : {
+          notifiedRequested: true,
+          notifiedRequestedAt: new Date().toISOString(),
+        });
   }
 
   return result(sent, cleaned, recipientUid, sent > 0 ? 'sent' : 'no-delivery');
@@ -640,6 +683,14 @@ function buildFriendMessage(
         body: `${who} has requested you to plan for them. Click to view details.`,
       };
       break;
+    case 'planRequestDeclined':
+      notification = {
+        title: 'Plan request declined',
+        body: groupInfo.task
+          ? `${who} declined your plan request for "${groupInfo.task}".`
+          : `${who} declined your plan request.`,
+      };
+      break;
     case 'groupJoinApproved': {
       const name = groupInfo.groupName || 'the group';
       // A code request was asked for; a friend invitation was not, so it
@@ -655,17 +706,21 @@ function buildFriendMessage(
     }
   }
 
+  const uhOh = UH_OH_FRIEND_EVENTS.has(event);
   return {
     notification,
     android: {
       priority: 'high',
-      notification: { channel_id: ACTIVITY_CHANNEL_ID },
+      notification: {
+        channel_id: uhOh ? UNAVAILABLE_CHANNEL_ID : ACTIVITY_CHANNEL_ID,
+      },
     },
     data: {
       type: event,
       event,
       fromUid,
       toUid,
+      ...(uhOh ? { uhOh: 'true' } : {}),
       ...(kind ? { kind } : {}),
       ...(planRequestId ? { planRequestId } : {}),
       ...(event === 'groupJoinApproved' && groupInfo.groupId

@@ -120,7 +120,16 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
   /// the OEM's notification-stream policy. Moving streams means a new id; the
   /// old one is deleted in [initialize].
   static const _legacyChannelId = 'time_app_reminders';
-  static const channelId = 'time_app_reminders_alert';
+
+  /// Retired 2026-09-28: it carried the phone's ALARM tone as its channel
+  /// sound. Each alarm notification asked to be silent, but HyperOS ignores
+  /// that request, so the notification itself played the alarm tone (device
+  /// report: "alarm tone as a notification tone"). Deleted in [initialize].
+  static const _retiredAlarmSoundChannelId = 'time_app_reminders_alert';
+
+  /// The alarm notification's channel: SILENT at the channel level, so no
+  /// OEM can play a tone for it. [AlarmSoundService] alone plays the alarm.
+  static const channelId = 'time_app_reminders_silent';
 
   /// Retired 2026-09-26 (item 14); `kRetiredEmergencyPlansChannelId`, its
   /// successor, retired in F3. Both are deleted in [initialize].
@@ -129,21 +138,15 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
     channelId,
     'Reminders',
     description: 'Reminders for items on your schedule.',
-    // MAX keeps the scheduled fallback visible. Individual alarm notifications
-    // are silent because AlarmSoundService is the sole audio owner.
+    // MAX keeps the alarm notification visible (heads-up). It never makes a
+    // sound or vibrates itself: AlarmSoundService is the sole audio owner.
     importance: Importance.max,
-    // Retained for channel compatibility with existing installs. Per-notification
-    // `silent`/`playSound: false` suppresses it; the service uses USAGE_ALARM.
-    audioAttributesUsage: AudioAttributesUsage.alarm,
-    playSound: true,
-    // Frozen channel metadata for older installs; current scheduled records do
-    // not play it.
-    sound: const UriAndroidNotificationSound(
-      'content://settings/system/alarm_alert',
-    ),
-    enableVibration: true,
-    vibrationPattern: Int64List.fromList([0, 500, 250, 500]),
+    playSound: false,
+    enableVibration: false,
   );
+
+  @visibleForTesting
+  static AndroidNotificationChannel get alarmChannelForTest => _channel;
 
   static final _details = NotificationDetails(
     android: buildAlarmNotificationDetails(channelId),
@@ -170,6 +173,9 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
     // channel whose frozen audio-usage we are replacing; harmless if it was
     // never created (a fresh install).
     await android?.deleteNotificationChannel(channelId: _legacyChannelId);
+    await android?.deleteNotificationChannel(
+      channelId: _retiredAlarmSoundChannelId,
+    );
     await android?.createNotificationChannel(_channel);
     await android?.deleteNotificationChannel(
       channelId: _legacyReceivedPlanChannelId,

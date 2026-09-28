@@ -57,8 +57,11 @@ void main() {
   test('a lapse is a real notification in the app, not the outcome pop-up', () {
     // The pop-up (item 18) announces a person's own Done/Skip; an automatic
     // lapse has no pop-up record, so its push must still be posted.
-    expect(isAnnouncedInApp(lapsed('target')), isFalse);
-    expect(isAnnouncedInApp(lapsed('planner')), isFalse);
-    expect(channelIdForPush(lapsed('planner')), kPlannerActivityChannelId);
+    expect(channelIdForPush(lapsed('target')), kPlannerActivityChannelId);
+    // The planner's lapse notice is negative: the Worker marks it Uh-Oh.
+    expect(
+      channelIdForPush({...lapsed('planner'), 'uhOh': 'true'}),
+      kPlannerUnavailableChannelId,
+    );
   });
 }

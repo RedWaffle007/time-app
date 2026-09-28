@@ -32,17 +32,25 @@ const kPlannerUnavailableChannelId = 'planner_unavailable';
 /// one plays the phone's normal notification tone (F3) except the
 /// "unavailable" notice (its own "Uh-Oh!"); only the due-time alarm rings,
 /// and that is not a push.
-String channelIdForPush(Map<String, dynamic> data) =>
-    switch (data['event'] ?? data['type']) {
-      'inactivity' => kNudgeChannelId,
-      'unavailable' => kPlannerUnavailableChannelId,
-      _ => kPlannerActivityChannelId,
-    };
+///
+/// Since 2026-09-28 every NEGATIVE event plays the "Uh-Oh!": the Worker marks
+/// it `uhOh: 'true'` (a missed-popup Skip, a lapse, an expired or declined
+/// request, a group's Didn't-dismiss / Skipped / Didn't-respond lists).
+String channelIdForPush(Map<String, dynamic> data) {
+  if (data['uhOh'] == 'true') return kPlannerUnavailableChannelId;
+  return switch (data['event'] ?? data['type']) {
+    'inactivity' => kNudgeChannelId,
+    'unavailable' => kPlannerUnavailableChannelId,
+    _ => kPlannerActivityChannelId,
+  };
+}
 
-const _unavailableName = 'Missed alarms of people you plan for';
+// The channel id and sound are frozen; its name and description are not,
+// and were broadened when every negative event moved here (2026-09-28).
+const _unavailableName = 'Missed, skipped or declined';
 const _unavailableDescription =
-    'When someone did not answer an alarm you set for them. Plays an '
-    '"Uh-Oh!" sound.';
+    'When a plan you set or asked for is not answered, is skipped or is '
+    'declined. Plays an "Uh-Oh!" sound.';
 
 /// The "Uh-Oh!" channel, shared by the foreground presenter and the
 /// killed-app handler like [plannerActivityChannel].
@@ -99,13 +107,6 @@ Map<String, dynamic>? decodePushTapPayload(String? payload) {
     return null;
   }
 }
-
-/// Done/Skipped reach a planner who is IN the app as the in-app pop-up (the
-/// durable `completionCelebrations` record, 2026-09-26), so the matching push
-/// is not also posted as a system notification — one announcement, not two.
-/// Every other push is still posted.
-bool isAnnouncedInApp(Map<String, dynamic> data) =>
-    (data['event'] ?? data['type']) == 'outcome';
 
 /// How a push that arrives while the app is OPEN is presented. FCM draws
 /// nothing in the foreground, so without this the planner — the person most
@@ -225,6 +226,8 @@ class ForegroundPushPresenter {
 @visibleForTesting
 int pushNotificationId(Map<String, dynamic> data) {
   final key = [
+    // A group's live list (2026-09-28) replaces its own notification.
+    data['tag'],
     data['event'] ?? data['type'],
     data['itemId'],
     data['subtype'],

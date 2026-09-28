@@ -79,7 +79,7 @@ class NotificationRouter {
         );
       // A request whose time passed unplanned (2026-09-28): both people
       // find it in Request History.
-      case 'planRequestExpired':
+      case 'planRequestExpired' || 'planRequestDeclined':
         router.go(Routes.planRequestHistory);
       case 'inactivity':
         router.go(Routes.plan);

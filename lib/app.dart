@@ -284,11 +284,10 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
         message.notification?.body ?? (message.data['pushBody'] as String?);
     if (title == null && body == null) return;
 
-    // Done/Skipped are announced by the in-app pop-up (CompletionCelebration
-    // Host, from the durable Firestore record) — posting the push too would
-    // announce the same outcome twice.
-    if (isAnnouncedInApp(message.data)) return;
-
+    // Every push is posted with its sound, Done/Skipped included, even
+    // though the in-app pop-up also announces them (2026-09-28, user-
+    // directed: every notification must be heard — a missed-popup Skip plays
+    // its "Uh-Oh!" on an open app too).
     final shown = await ref
         .read(foregroundPushPresenterProvider)
         .show(title: title, body: body, data: message.data);

@@ -81,7 +81,6 @@ void main() {
 
   test('the heads-up is a real notification in the app, on activity', () {
     const data = {'event': 'approvalPending', 'itemId': 'item-1'};
-    expect(isAnnouncedInApp(data), isFalse);
     expect(channelIdForPush(data), kPlannerActivityChannelId);
   });
 }

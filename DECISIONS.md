@@ -7605,3 +7605,39 @@ User-approved audit of the private Stats page, then built.
   least 3). Zero bars for empty periods, so a new user's chart is empty, not
   broken. Remembered per device (`stats_range_v1`).
 - Nothing published changes: these are private-dashboard numbers only.
+
+## "Uh-Oh!" for every negative event; live group lists (2026-09-28)
+
+User-directed (picks agreed in chat).
+
+- **Uh-Oh events** (`planner_unavailable` channel, `uhOh: 'true'` in data so
+  an open app picks the same channel): an alarm or voice note rang out
+  (unchanged); a **Skip on the missed popup** (Skip after the alarm rang out;
+  a Skip after dismissing stays normal); a plan closed **"Did not respond"**
+  (planner's notice; the end-of-day deadline is the later of local midnight
+  and alarm + 2 h, so an 11 pm alarm closes at 1 am; a voice note's is 24 h);
+  a **plan request expired** (requester's notice); a **plan request
+  declined** (new `planRequestDeclined` friend event, requester notified, once
+  per request). Everything else keeps the phone's normal tone.
+- **Group plans: live lists, not per-member pushes** (`group-summary.js`).
+  The planner gets one notification per list — Didn't dismiss (Uh-Oh),
+  Dismissed / Heard your voice note, Skipped (Uh-Oh), Done, Heard late,
+  Didn't respond (Uh-Oh) — each naming the members, replaced in place (same
+  Android tag / same local id) the MOMENT each member's phone reports. State:
+  `groupPlanSummaries/{groupId}_{planner}_{epochMinute}` (Worker-only; no
+  client rule), one field path per member so simultaneous reports never
+  overwrite each other. Only the ring result and missed-popup answers are
+  summarised; Done/Skip after dismissing stays an individual push.
+- **No 2–3 minute wait.** 1-to-1: the receiver's phone reports the auto-stop
+  natively (P1). Groups: each report updates the list at once. Only a phone
+  that never reports is added to "Didn't dismiss" by the 2-minute cron, 3+
+  minutes after the alarm. A late "dismissed" report wins over that.
+- **Every push is heard in the open app too.** The 2026-09-26 rule "Done/Skip
+  are the in-app pop-up, not a notification" is reversed: the notification is
+  posted (with its sound) as well as the pop-up.
+- **The alarm tone never plays as a notification tone.** The Reminders
+  channel carried the phone's alarm tone as its channel sound and HyperOS
+  ignored the per-notification "silent", so an alarm's notification rang with
+  the alarm tone. It is replaced by a channel-level silent one
+  (`time_app_reminders_silent`; the old `time_app_reminders_alert` is deleted
+  on start). `AlarmSoundService` stays the only thing that plays the alarm.

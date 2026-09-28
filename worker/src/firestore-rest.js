@@ -127,6 +127,21 @@ export function makeFirestoreDb(projectId, accessToken) {
       if (!resp.ok) throw new Error(`Firestore patch ${path} → ${resp.status}`);
     },
 
+    // Upsert ONLY the named (possibly nested) field paths, no precondition —
+    // concurrent writers to different paths never overwrite each other.
+    // Used for the group summary's per-member entries.
+    async patchPaths(path, fields, maskPaths) {
+      const mask = maskPaths
+        .map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`)
+        .join('&');
+      const resp = await fetch(`${urlFor(path)}?${mask}`, {
+        method: 'PATCH',
+        headers: { ...authHeader, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: encodeFields(fields) }),
+      });
+      if (!resp.ok) throw new Error(`Firestore patch ${path} → ${resp.status}`);
+    },
+
     // `maskPaths` (optional) names nested field paths to write, e.g.
     // ['alarm.unavailableAt'] with fields { alarm: { unavailableAt } }, so a
     // sibling in the same map is left untouched. Default: the top-level keys.

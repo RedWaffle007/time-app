@@ -13,7 +13,7 @@
 // hours old is noise. Older than the lookback it is never touched; the app
 // treats any open request whose time has passed as finished anyway.
 
-import { ACTIVITY_CHANNEL_ID } from './notify.js';
+import { ACTIVITY_CHANNEL_ID, UNAVAILABLE_CHANNEL_ID } from './notify.js';
 import { formatTimeIn } from './group-plan.js';
 
 export const EXPIRY_LOOKBACK_MS = 24 * 60 * 60 * 1000;
@@ -50,14 +50,19 @@ export function expiryMessages({ requesterName, plannerName, task, timeForReques
   };
 }
 
-async function push(ctx, uid, message, data) {
+// The requester's notice is a negative event and plays the "Uh-Oh!"
+// (2026-09-28); the friend who did not plan it hears the normal tone.
+async function push(ctx, uid, message, data, { uhOh = false } = {}) {
   const tokens = await ctx.db.listDocIds(`users/${uid}/fcmTokens`);
   let sent = 0;
   for (const token of tokens) {
     const res = await ctx.fcm.send(token, {
       notification: message,
-      android: { priority: 'high', notification: { channel_id: ACTIVITY_CHANNEL_ID } },
-      data,
+      android: {
+        priority: 'high',
+        notification: { channel_id: uhOh ? UNAVAILABLE_CHANNEL_ID : ACTIVITY_CHANNEL_ID },
+      },
+      data: uhOh ? { ...data, uhOh: 'true' } : data,
     });
     if (res.ok) sent += 1;
     else if (res.error === 'UNREGISTERED' || res.error === 'INVALID') {
@@ -107,7 +112,8 @@ export async function expirePlanRequests(ctx, now) {
       toUid: String(data.plannerUid),
       planRequestId: id,
     };
-    sent += await push(ctx, data.requesterUid, messages.requester, { ...base, audience: 'requester' });
+    sent += await push(ctx, data.requesterUid, messages.requester,
+      { ...base, audience: 'requester' }, { uhOh: true });
     sent += await push(ctx, data.plannerUid, messages.planner, { ...base, audience: 'planner' });
   }
   return { scanned: rows.length, expired, sent };

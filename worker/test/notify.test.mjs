@@ -49,6 +49,19 @@ function context(rawDocs, {
     ctx: {
       db: {
         getDoc: async (path) => docs[path] ?? null,
+        // Field-path upsert, like Firestore: deep-merge the written maps.
+        patchPaths: async (path, fields) => {
+          const merge = (a, b) => {
+            const out = { ...(a || {}) };
+            for (const [k, v] of Object.entries(b)) {
+              out[k] = v && typeof v === 'object' && !Array.isArray(v)
+                ? merge(out[k], v)
+                : v;
+            }
+            return out;
+          };
+          docs[path] = merge(docs[path], fields);
+        },
         listDocIds: async (path) => {
           listed.push(path);
           return tokens;
@@ -290,6 +303,8 @@ test('a missed alarm corrected to done sends an explicit late follow-up', () => 
 });
 
 test('skipped notification guard does not suppress the later done follow-up', async () => {
+  // Since 2026-09-28 a GROUP member's missed-popup Done joins the live
+  // "Done" list rather than its own push; the guard behaviour is unchanged.
   const harness = context({
     'scheduleItems/target/items/item-1': {
       targetUid: 'target',
@@ -297,6 +312,7 @@ test('skipped notification guard does not suppress the later done follow-up', as
       groupId: 'group-1',
       title: 'Morning walk',
       status: 'approved',
+      scheduledInstantUtc: '2026-09-24T09:00:00Z',
       alarm: { unavailableAt: '2026-09-24T09:01:00Z' },
       outcome: { result: 'done' },
       notifiedOutcome: 'skipped',
@@ -311,7 +327,7 @@ test('skipped notification guard does not suppress the later done follow-up', as
   });
 
   assert.equal(result.reason, 'sent');
-  assert.equal(harness.sent[0].notification.title, 'Group task completed late');
+  assert.equal(harness.sent[0].notification.title, 'Done "Morning walk"');
   assert.equal(harness.patched[0].fields.notifiedOutcome, 'done');
 });
 

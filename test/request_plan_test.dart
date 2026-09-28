@@ -82,6 +82,8 @@ class _Repo implements PlanRequestRepository {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+var _lastFriends = _Friends();
+
 class _Friends implements FriendEventNotifier {
   final sent = <(FriendNotifyEvent, String, String?)>[];
 
@@ -357,6 +359,7 @@ void main() {
       WidgetTester tester, [
       PlanRequest? value,
     ]) async {
+      _lastFriends = _Friends();
       final repo = _Repo();
       final schedule = _Schedule();
       final router = GoRouter(
@@ -388,6 +391,7 @@ void main() {
             planRequestRepositoryProvider.overrideWithValue(repo),
             scheduleRepositoryProvider.overrideWithValue(schedule),
             notificationEventNotifierProvider.overrideWithValue(_Items()),
+            friendEventNotifierProvider.overrideWithValue(_lastFriends),
           ],
           child: MaterialApp.router(
             theme: AppTheme.light,
@@ -426,11 +430,16 @@ void main() {
       expect(screen, isNot(contains('.fulfill(')));
     });
 
-    testWidgets('Decline declines', (tester) async {
+    testWidgets('Decline declines and tells the requester (Uh-Oh)', (
+      tester,
+    ) async {
       final (repo, _) = await open(tester);
       await tester.tap(find.byKey(const ValueKey('request-decline')));
       await tester.pumpAndSettle();
       expect(repo.declined, ['req-1']);
+      expect(_lastFriends.sent, [
+        (FriendNotifyEvent.planRequestDeclined, 'me', 'req-1'),
+      ]);
     });
 
     testWidgets('a planned request offers no action', (tester) async {

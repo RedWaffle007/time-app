@@ -175,33 +175,54 @@ void main() {
     );
   });
 
-  test(
-    'in the app, Done/Skipped are the pop-up, never a second notification',
-    () {
-      // 2026-09-26: the planner's in-app pop-up is the announcement for an
-      // outcome; every other push is still posted as a system notification.
-      expect(isAnnouncedInApp(_outcomeDone), isTrue);
-      expect(isAnnouncedInApp({..._outcomeDone, 'subtype': 'skipped'}), isTrue);
-      expect(isAnnouncedInApp({'type': 'outcome'}), isTrue, reason: 'legacy');
-      for (final event in [
-        'created',
-        'decided',
-        'withdrawn',
-        'dismissed',
-        'approvalReminder',
-        'inactivity',
-        'friendRequest',
-        'groupJoinApproved',
-      ]) {
-        expect(isAnnouncedInApp({'event': event}), isFalse, reason: event);
-      }
+  test('in the app, EVERY push is posted with its sound (2026-09-28)', () {
+    // Reverses 2026-09-26's "the pop-up instead of the notification": the
+    // user wants every notification heard, and a missed-popup Skip must play
+    // its "Uh-Oh!" even on an open app.
+    final app = File('lib/app.dart').readAsStringSync();
+    expect(app, isNot(contains('isAnnouncedInApp')));
+    expect(channelIdForPush(_outcomeDone), kPlannerActivityChannelId);
+    expect(
+      channelIdForPush({..._outcomeDone, 'subtype': 'skipped', 'uhOh': 'true'}),
+      kPlannerUnavailableChannelId,
+    );
+  });
 
-      final app = File('lib/app.dart').readAsStringSync();
-      final start = app.indexOf('_showForegroundBanner(RemoteMessage');
-      final gate = app.indexOf('isAnnouncedInApp(message.data)', start);
-      final post = app.indexOf('foregroundPushPresenterProvider', start);
-      expect(gate, greaterThan(start));
-      expect(gate, lessThan(post), reason: 'the gate must precede posting');
-    },
-  );
+  test('every Uh-Oh event lands on the Uh-Oh channel', () {
+    for (final event in [
+      'unavailable',
+      'lapsed',
+      'planRequestExpired',
+      'planRequestDeclined',
+      'groupPlanSummary',
+      'outcome',
+    ]) {
+      expect(
+        channelIdForPush({'event': event, 'uhOh': 'true'}),
+        kPlannerUnavailableChannelId,
+        reason: event,
+      );
+    }
+    // Their positive twins keep the normal tone.
+    for (final event in ['groupPlanSummary', 'outcome', 'dismissed']) {
+      expect(
+        channelIdForPush({'event': event}),
+        kPlannerActivityChannelId,
+        reason: event,
+      );
+    }
+  });
+
+  test('a group list replaces its own notification as it grows', () {
+    final a = {
+      'event': 'groupPlanSummary',
+      'groupId': 'g',
+      'tag': 'group-k-missed',
+    };
+    expect(pushNotificationId(a), pushNotificationId({...a}));
+    expect(
+      pushNotificationId(a),
+      isNot(pushNotificationId({...a, 'tag': 'group-k-dismissed'})),
+    );
+  });
 }
