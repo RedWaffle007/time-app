@@ -1,13 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/format/datetime_format.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/widgets/async_view.dart';
+import '../../../core/widgets/highlight_reveal.dart';
 import '../../../core/widgets/collapsible_day_groups.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../calendar/application/calendar_grouping.dart';
@@ -103,12 +103,19 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen>
     _tryScroll(request, 0);
   }
 
-  void _tryScroll(int request, int attempt) {
+  void _tryScroll(int request, int attempt, [int settled = 0]) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _highlighted == null || request != _scrollRequest) return;
       final ctx = _highlightKey.currentContext;
       if (ctx != null) {
-        if (_isVisible(ctx)) return;
+        if (isHighlightRevealed(ctx)) {
+          // Landed; keep watching a few frames in case the page still moves.
+          if (settled < kHighlightSettleFrames) {
+            WidgetsBinding.instance.scheduleFrame();
+            _tryScroll(request, attempt, settled + 1);
+          }
+          return;
+        }
         if (attempt < 60) {
           try {
             Scrollable.ensureVisible(
@@ -117,7 +124,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen>
               // is simply there, no visible scroll (2026-09-28).
               duration: attempt == 0 ? Duration.zero : Motion.fast,
               curve: Motion.curve,
-              alignment: 0.2,
+              alignment: kHighlightAlignment,
             ).whenComplete(() => _tryScroll(request, attempt + 1));
           } catch (_) {
             // The target can be mid page-transition (e.g. arriving from the
@@ -144,23 +151,6 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen>
         }
       }
     });
-  }
-
-  bool _isVisible(BuildContext context) {
-    final box = context.findRenderObject();
-    if (box is! RenderBox || !box.hasSize) return false;
-    final viewport = RenderAbstractViewport.maybeOf(box);
-    final position = Scrollable.maybeOf(context)?.position;
-    if (viewport == null ||
-        position == null ||
-        !position.hasPixels ||
-        !position.hasViewportDimension) {
-      return false;
-    }
-    final top = viewport.getOffsetToReveal(box, 0).offset;
-    final bottom = top + box.size.height;
-    return top < position.pixels + position.viewportDimension &&
-        bottom > position.pixels;
   }
 
   void _scheduleBoundaryTick(List<ScheduleItem> items) {

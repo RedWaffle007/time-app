@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -13,6 +12,7 @@ import '../../../core/theme/app_tokens.dart';
 import '../../../core/theme/plan_badge_style.dart';
 import '../../../core/theme/status_style.dart';
 import '../../../core/widgets/async_view.dart';
+import '../../../core/widgets/highlight_reveal.dart';
 import '../../../core/widgets/collapsible_day_groups.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/tab_action_row.dart';
@@ -184,14 +184,21 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
   /// This also covers the WARM path where the deep link arrives mid inner-TabBar
   /// slide — we simply keep retrying (a no-op once landed) until visible or a
   /// bounded budget runs out. Cold start / a near-top card lands on frame 0.
-  void _tryScroll(int request, int attempt) {
+  void _tryScroll(int request, int attempt, [int settled = 0]) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _highlighted == null || request != _scrollRequest) {
         return;
       }
       final ctx = _highlightKey.currentContext;
       if (ctx != null) {
-        if (_isFullyVisible(ctx)) return; // done.
+        if (isHighlightRevealed(ctx)) {
+          // Landed; keep watching a few frames in case the page still moves.
+          if (settled < kHighlightSettleFrames) {
+            WidgetsBinding.instance.scheduleFrame();
+            _tryScroll(request, attempt, settled + 1);
+          }
+          return;
+        }
         // Wait for this precise reveal to finish before looking again. Scheduling
         // another frame immediately used to keep retrying after the target had
         // already arrived, especially at a list boundary where reveal clamps.
@@ -203,7 +210,7 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
               // is simply there, no visible scroll (2026-09-28).
               duration: attempt == 0 ? Duration.zero : Motion.fast,
               curve: Motion.curve,
-              alignment: 0.2,
+              alignment: kHighlightAlignment,
             ).whenComplete(() => _tryScroll(request, attempt + 1));
           } catch (_) {
             // The target can be mid page-transition (e.g. arriving from the
@@ -239,36 +246,6 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
     });
   }
 
-  /// Whether [ctx]'s render box is laid out and currently within the nearest
-  /// scroll viewport — the signal that the highlight scroll has landed.
-  ///
-  /// Overlap-based, not "pixels == target reveal offset": near the list ends the
-  /// card cannot reach the 0.2 alignment, so `ensureVisible` clamps and the exact
-  /// offset is never hit — a strict equality check then loops forever (the
-  /// "SCROLL exhausted" seen on the device pass). The box is visible when the
-  /// current scroll window contains it.
-  bool _isFullyVisible(BuildContext ctx) {
-    final box = ctx.findRenderObject();
-    if (box is! RenderBox || !box.hasSize) return false;
-    final viewport = RenderAbstractViewport.maybeOf(box);
-    if (viewport == null) return false;
-    final position = Scrollable.maybeOf(ctx)?.position;
-    if (position == null ||
-        !position.hasPixels ||
-        !position.hasViewportDimension) {
-      return false;
-    }
-    // `getOffsetToReveal(box, 0.0).offset` IS the box's top in content
-    // coordinates. The box is on screen when its extent overlaps the current
-    // viewport window — an OVERLAP test, not "exactly aligned", so a near-list-end
-    // card that clamps at `maxScrollExtent` (and can never reach a 0.2 alignment)
-    // still counts as landed instead of retrying forever.
-    final boxTop = viewport.getOffsetToReveal(box, 0.0).offset;
-    final boxBottom = boxTop + box.size.height;
-    final viewTop = position.pixels;
-    final viewBottom = position.pixels + position.viewportDimension;
-    return boxTop < viewBottom && boxBottom > viewTop;
-  }
 
   void _scheduleBoundaryTick(List<ScheduleItem> items) {
     _boundaryTick?.cancel();
