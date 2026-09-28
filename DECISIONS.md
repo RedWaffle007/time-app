@@ -7708,7 +7708,8 @@ launchers apply their own mask and would cut the baked square unevenly.
 - **The name changes everywhere a person reads it**: launcher label, iOS display
   name, `MaterialApp.title`, in-app copy (onboarding's "Settings → Apps →
   …" steps must name what the launcher shows), invite text, the feedback
-  subject, and the Worker's invite page and inactivity push (Worker deploy).
+  subject, and the Worker's invite page and inactivity push (Worker version
+  `c3ba9458`, deployed 2026-09-28).
 - **Unchanged on purpose**: the application id `com.timeapp.time_app`
   (Firebase sign-in and FCM are registered against it), the Dart package name,
   the Firebase project, and notification channel ids (a channel's settings are
@@ -7738,3 +7739,82 @@ zone appeared twice (~140 aliases: `US/Eastern`, `Europe/Kiev`, `Asia/Saigon`…
   same rules.
 - It falls back to the stored name if the bundled tz data cannot resolve the
   current one, so a zone can never become unresolvable.
+
+## Device fixes, evening (2026-09-28)
+
+From the user's device pass. Commits `771361f`, `dcb5c00`, `c979b71`, and
+the archive part of `89ac7b3`.
+
+- **History cards have one fixed layout** (`OutcomeCard`): title top-left,
+  badges always top-right; then time; "Planned by **{name}**" (name bold,
+  `AppText.bodySmallStrong`); then the facts, left-aligned, each on its own
+  line, always in this order: "User unavailable at alarm time", "N min late",
+  the skip reason; then the bottom row, status badge left, Archive right
+  (a `Wrap` so on a very narrow phone Archive drops below and the badge never
+  leaves the left). Cause of the misalignment: the old bottom row was an
+  `OverflowBar` with `overflowAlignment: end`, so when it overflowed the badge
+  and "late" text were pushed to the right edge.
+- **"User unavailable" shown once.** A missed-alarm skip stores the reason
+  `User unavailable`, which repeated the tag on the same card. That reason is
+  hidden when it equals `kUserUnavailableSkipReason`, on History and on the
+  planner's Activity cards.
+- **Planner confetti, twice → once.** Symptom: a bare confetti (no dim, no
+  pop-up), then back to back a second one with the "amazing" pop-up. Cause:
+  `SplashOverlay` swaps its `Stack` for the bare child when the reveal ends,
+  which REBUILDS `CompletionCelebrationHost`; the new instance's `ref.listen`
+  reports only changes, so events already delivered to the old instance
+  (e.g. the planner's own earlier Done as a target) waited until the next
+  record arrived and then played first. Fix: on (re)mount the host also takes
+  the provider's CURRENT unseen events. Guard kept from earlier the same day:
+  each event's burst plays at most once per phone per account
+  (`PlayedCelebrations`, persisted in shared_preferences); a replay still shows
+  the planner's pop-up.
+- **Voice notes.** Auto-stop at 19.5 s, timed from BEFORE the microphone
+  opens (`kVoiceAutoStopAt`), shown as 0:20: start/stop latency could push a
+  "20 s" file past the Worker's 20.5 s limit and fail it at Send (probable
+  cause of the reported failure, not confirmed). Card copy (user-chosen):
+  "Rings as the alarm on {name}'s phone." / "Up to 20 seconds. Shorter notes
+  repeat more." + a Length/Plays table from `voicePlaysFor`; on auto-stop an
+  inline line (not a pop-up) "Stopped at 20 seconds, the longest a voice note
+  can be."
+- **Request tab loads at once**: `HomeShell` listens to the sent requests and
+  the profiles of everyone on a request card or in the friend picker, and
+  precaches those friends' pictures, the same way as the You tab.
+- **Calendar taps land the plan fully.** Home, History and Activity treated
+  the reveal as done when ANY sliver of the card overlapped the viewport, so a
+  card peeking at the bottom edge (or behind the bottom bar) stopped the
+  scroll. Now `isHighlightRevealed()` (`core/widgets/highlight_reveal.dart`)
+  requires the card at the reveal alignment (0.2), clamped to the scroll range,
+  and the reveal keeps checking for 8 frames in case the page still moves.
+- **Archived plans open the status card** on tap (the same read-only sheet as
+  Home / History / Activity); Unarchive stays the card's one action.
+
+## Mind Time rebrand and feedback (2026-09-28)
+
+User chose **Mind Time** and the tagline **"Good plans have a ring to them."**
+This supersedes the RingaPop name/tagline decision above. Commit `9c5d428`
+updates the Android and iOS display names, Flutter title and visible copy,
+startup reveal, invite text/page, Worker inactivity copy, tests, and the
+feedback subject. The existing handset/clock icon art is retained; its master,
+splash tile, and Play Store asset now use `assets/brand/mind_time_*` paths.
+Regenerate derived icons with `python3 scripts/generate_brand_icons.py` after
+editing the master.
+
+- The application id `com.timeapp.time_app`, Dart package, Firebase project,
+  and notification channel ids stay unchanged for the reasons recorded in
+  "RingaPop rebrand".
+- Settings → Send feedback now addresses `mjqsoftware.inc@gmail.com`, subject
+  "Mind Time feedback", with a blank body. The app version is no longer read
+  or inserted. This supersedes the placeholder and version-bearing email in
+  "Send feedback" above; it does not set the Play Console contact email.
+- The user wants the Play Store description to explain why MJQ Software built
+  Mind Time: friends and family can help each other remember and plan. Listing
+  text and a seven-screenshot sequence were proposed, not published or
+  explicitly finalized. Avoid a "never miss" guarantee because delivery also
+  depends on device state and permissions.
+- Verification: Flutter analyzer clean, 989 Flutter tests passed, Worker suite
+  passed, Android debug unit tests passed. Firestore rules were unchanged and
+  not re-run. At this writing `9c5d428` had not been pushed; the last verified
+  live Worker (`c3ba9458`) still has the
+  RingaPop wording, so the Worker needs deployment before its public copy
+  changes.

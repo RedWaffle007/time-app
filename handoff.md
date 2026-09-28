@@ -1,4 +1,4 @@
-# RingaPop (formerly Checkmate) handoff — 2026-09-28 (after the 2026-09-28 build list; release APK installed)
+# Mind Time (formerly RingaPop, originally Checkmate) handoff — 2026-09-28 night
 
 ## Operating rules
 
@@ -48,13 +48,22 @@
 
 ## Current state
 
-- Branch `main`, clean and PUSHED at `3e26ec1` (ignore the untracked build
-  cache `android/.kotlin/`). **Everything below is committed; the Worker is
-  deployed (user-confirmed after `6d4b96e`); no rules change since
-  `ddd77d4d`.** The user built and installed a fresh **release** APK
-  (`flutter build apk --release --target-platform android-arm64`).
-- Test counts at `3e26ec1`: Flutter 971, rules 287, Worker 233, Kotlin green,
-  analyzer clean.
+- Branch `main`; the Mind Time app-code commit is `9c5d428` (**Mind Time
+  rebrand and feedback**). It had not been pushed when this handoff was
+  written. The `.gitignore` rule for the local reference image and these two
+  documentation updates were prepared as a separate follow-up.
+  The last verified live Worker is version `c3ba9458` (2026-09-28 14:54 UTC)
+  with RingaPop wording. The Mind Time Worker copy is committed but has not
+  been verified deployed. No rules change since `ddd77d4d`. The installed APK
+  on the Redmi predates the evening commits and the Mind Time rebrand.
+- The app is now **Mind Time** ("Good plans have a ring to them."). The
+  application id `com.timeapp.time_app`, Dart package, Firebase project, and
+  notification channel ids remain unchanged. The existing clock/handset icon
+  art is reused under `assets/brand/mind_time_*` (DECISIONS.md "Mind Time
+  rebrand and feedback").
+- Verification for `9c5d428`: `flutter analyze` clean; Flutter 989 tests,
+  Worker suite, and Android debug unit tests green. Firestore rules (287)
+  were not re-run because they did not change.
 - Completed: Items **1–32, 34, 35**, Batches **A–H**, and the whole
   2026-09-28 list (commits, oldest first):
   - `b10f2a5` **P1** Uh-Oh the moment the alarm auto-stops (native report →
@@ -67,7 +76,8 @@
   - `a68832c`, `593a4fa` **ARCHIVE at the top** of every Plan tab, instant ⋮
     menus, **voice notes without Done/Skip** (Heard / Heard (Late) / 24 h
     close), **nav bar = screen colour** (+ the phone's own bar).
-  - `5ca7ab4` **Settings → Send feedback** (address is a PLACEHOLDER).
+  - `5ca7ab4` **Settings → Send feedback** (the original placeholder was
+    replaced in `9c5d428`).
   - `561d848` **Stats audit** (renames / removals / 4 new stats) + **range
     dropdown** (Last 8 weeks / Monthly / Yearly).
   - `6d4b96e` **Uh-Oh for every negative event** + **live group lists** +
@@ -77,11 +87,24 @@
     straight to the plan, badges shine every 4 s, You tab pre-loaded,
     three-column top buttons with green outlines, calendar "today" beside the
     heading.
+  - Evening, from the device pass (DECISIONS.md "Device fixes, evening
+    (2026-09-28)"): `771361f` History cards one fixed layout + planner's
+    name bold, "User unavailable" shown once, confetti at most once per
+    phone, voice notes auto-stop at 19.5 s + new card copy with a plays
+    table, Request tab pre-loaded; `dcb5c00` the planner's back-to-back
+    double confetti (root cause: the celebration host is rebuilt as the
+    startup reveal ends and missed already-waiting events); `c979b71`
+    calendar taps land the plan fully in view; `89ac7b3` **RingaPop
+    rebrand**, **one name per timezone** (Calcutta → Kolkata), archived
+    plans open the status card.
   Full reasoning for each is a dated DECISIONS.md entry (2026-09-28).
-- **Parked by the user:** the app version name (`pubspec.yaml` `version:` is
-  `1.0.0+4`; shown in the feedback email) until they pick one (e.g. 1.2.0);
-  the real feedback address (`kFeedbackAddress` in
-  `lib/features/settings/data/feedback_launcher.dart`).
+- **Feedback now goes to `mjqsoftware.inc@gmail.com`** with subject "Mind Time
+  feedback" and an empty body; no app version is inserted. The app version
+  name remains parked (`pubspec.yaml` `version: 1.0.0+4`) until the user picks
+  one. The Play Store listing draft mentions MJQ Software and the motivation:
+  friends and family helping each other remember and follow through. It has
+  not been published or explicitly finalized by the user. The Play Console
+  developer contact email is separate from the in-app feedback address.
 - Supabase: the 7 `group-avatars/…` folders from the 2026-09-27 group reset
   are the user's to remove.
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
@@ -216,15 +239,23 @@ Install a fresh build on every phone first (strict locks; the release APK is
 on the Redmi now). Needs a second account/phone for most of it. Run
 `scripts/check-deployed-rules.sh` first.
 - **Newest (2026-09-28 evening) — check these first:**
-  - **RingaPop rebrand** (DECISIONS.md "RingaPop rebrand"): launcher icon in
+  - **Mind Time rebrand** (DECISIONS.md "Mind Time rebrand and feedback"):
+    launcher label, auth screen, invite links/page, onboarding settings steps,
+    feedback subject, and cold-start wordmark say "Mind Time"; splash tagline
+    says "Good plans have a ring to them." Feedback opens an email to
+    `mjqsoftware.inc@gmail.com` with no version in the body. Check the Worker
+    invite page and inactivity push only after the new Worker is deployed.
+  - **Existing icon artwork** (DECISIONS.md "RingaPop rebrand"): launcher icon in
     light + dark, with the launcher's round/squircle shapes, and with Android
-    13 themed icons on (one colour, face see-through); launcher label
-    "RingaPop"; the startup reveal shows the icon tile, "RingaPop" and "A voice
-    note that rings."; the notification small icon (tray + lock screen) reads as
+    13 themed icons on (one colour, face see-through); the notification small
+    icon (tray + lock screen) reads as
     the handset + clock. Icons are generated: edit
-    `assets/brand/ringapop_mark.svg`, run `python3 scripts/generate_brand_icons.py`.
-    The Worker's invite page / inactivity push say RingaPop only after a
-    Worker deploy.
+    `assets/brand/mind_time_mark.svg`, run `python3 scripts/generate_brand_icons.py`.
+    If the Redmi keeps the old icon, reinstall or restart the launcher.
+  - Planner confetti: exactly ONE burst, together with the "amazing" pop-up,
+    including right after a cold start (the old double burst).
+  - A near-20 s voice note uploads (the 20 s failure was likely start/stop
+    latency pushing the file past the Worker's 20.5 s; unconfirmed).
   - **Timezones** (DECISIONS.md "One name per timezone"): a phone reporting
     Asia/Calcutta now shows Asia/Kolkata; the picker lists each zone once.
     Regenerate with `python3 scripts/generate_timezones.py` on a tzdata bump.
@@ -722,6 +753,10 @@ builds can still create groups.
   a group-tagged plan only — both being members of that group. No grant docs.
 - Every item create carries its minute lock in the same write (strict).
 - Calendar is a projection of existing streams, not a datastore.
+- Icons and the timezone list are GENERATED (`scripts/generate_brand_icons.py`,
+  `scripts/generate_timezones.py`); edit the master / re-run, never the output.
+- Every stored zone passes through `canonicalZone()` on parse; the picker
+  offers `kPickerZones` only.
 - Worker authorization re-reads Firestore; never trust request/notification data.
 - Firestore rules and Worker policy tests are security boundaries.
 - Android alarm/full-screen delivery is permission/OEM dependent; automated
@@ -729,12 +764,13 @@ builds can still create groups.
 
 ## Immediate next action
 
-1. **Device pass** on the installed release APK (and a second phone for the
-   cross-account parts): "Deferred device checks", the **Latest (2026-09-28)**
-   block first. The user is reporting bugs from it; fix what they report
+1. **Device pass** on a FRESH build of `9c5d428` (and a second phone for the
+   cross-account parts): "Deferred device checks", the **Newest (2026-09-28
+   evening)** block first, then **Latest (2026-09-28)**. The user is reporting bugs from it; fix what they report
    before new work, and record verified items in CLAUDE.md "Parked &
    unverified" / DECISIONS.md.
-2. When the user decides: set the version name in `pubspec.yaml` and the
-   real feedback address.
+2. Push `9c5d428` and deploy the Worker when the user is ready. The Play Store
+   listing copy and screenshots are drafts; the app version name remains
+   parked until the user chooses one.
 3. Item 33 (competitor review, PingPal + SnoozeSquad): research only;
    propose findings, change nothing without sign-off.

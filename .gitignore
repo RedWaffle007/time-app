@@ -80,3 +80,4 @@ node_modules/
 # Firestore emulator output (already untracked at the repo root; the rules
 # tests produce their own copy in firestore-tests/).
 firestore-debug.log
+/ChatGPT Image Sep 28, 2026, 08_04_06 PM.png
