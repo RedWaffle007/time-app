@@ -5,6 +5,7 @@ import '../../../core/format/datetime_format.dart';
 import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
+import '../../../core/theme/plan_badge_style.dart';
 import '../../../core/theme/status_style.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../core/widgets/collapsible_day_groups.dart';
@@ -121,9 +122,8 @@ class _ArchivedCard extends ConsumerWidget {
                   child: Text(item.title, style: context.text.titleMedium),
                 ),
                 const SizedBox(width: Space.sm),
-                // Same one-badge rule as everywhere else: an outcome replaces
-                // the approval status, because "Done" implies "Approved".
-                itemStatusBadge(item, context),
+                // The same plan badges as on Home / Activity (UI-RULES §6.18).
+                PlanBadges(item: item, iAmTarget: isMine),
               ],
             ),
             const SizedBox(height: Space.xs),
@@ -147,17 +147,28 @@ class _ArchivedCard extends ConsumerWidget {
             // clutter that rejecting was the act of clearing — so those rows are
             // read-only here. This screen is where their record stays reachable,
             // which is why they are listed at all.
-            if (item.isManuallyArchivable) ...[
-              const SizedBox(height: Space.xs),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: () => _unarchive(ref, uid),
-                  icon: const Icon(AppIcons.unarchive, size: Sizes.inlineIcon),
-                  label: const Text('Unarchive'),
-                ),
-              ),
-            ],
+            // Bottom row (UI-RULES §6.18): the one status badge (an outcome
+            // replaces the approval status, because "Done" implies
+            // "Approved"), and Unarchive on the right.
+            const SizedBox(height: Space.sm),
+            // One line when it fits, else the action drops below, right.
+            OverflowBar(
+              alignment: MainAxisAlignment.spaceBetween,
+              overflowAlignment: OverflowBarAlignment.end,
+              overflowSpacing: Space.xs,
+              children: [
+                itemStatusBadge(item, context),
+                if (item.isManuallyArchivable)
+                  TextButton.icon(
+                    onPressed: () => _unarchive(ref, uid),
+                    icon: const Icon(
+                      AppIcons.unarchive,
+                      size: Sizes.inlineIcon,
+                    ),
+                    label: const Text('Unarchive'),
+                  ),
+              ],
+            ),
           ],
         ),
       ),

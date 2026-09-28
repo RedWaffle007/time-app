@@ -91,6 +91,9 @@ abstract final class Elevations {
 abstract final class Motion {
   static const Duration fast = Duration(milliseconds: 150);
   static const Duration normal = Duration(milliseconds: 250);
+
+  /// The one sheen sweep across a plan badge's border (UI-RULES.md §6.18).
+  static const Duration sheen = Duration(milliseconds: 900);
   static const Curve curve = Curves.easeOutCubic;
 }
 
@@ -117,6 +120,10 @@ abstract final class Sizes {
 
   /// Icon inside a status badge, sized to `labelSmall`.
   static const double badgeIcon = 14;
+
+  /// A plan badge's metallic border (UI-RULES.md §6.18): heavier than
+  /// [hairline] so the sheen reads.
+  static const double badgeBorder = 1.5;
 
   /// The field-glow halo behind the builder's primary inputs (UI-RULES §6.2b).
   static const double fieldGlowBlur = 12;

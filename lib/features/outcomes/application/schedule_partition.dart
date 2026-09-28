@@ -45,3 +45,22 @@ bool isSettledPlanForOthers(ScheduleItem item, String plannerUid) =>
     item.createdByUid == plannerUid &&
     item.targetUid != plannerUid &&
     item.outcome != null;
+
+/// Home's three headings (2026-09-28, user-directed).
+enum HomeSection { waitingOnYou, waitingOnThem, upcoming }
+
+/// Where an open plan sits on Home at [nowUtc]. [isMine] = I am its target
+/// (it came from my own items, self-plans included). A plan that has not rung
+/// yet is **Upcoming** whoever it is for; once it rings it waits for
+/// Done/Skip — **Waiting on You** if it is mine, **Waiting on Them** if I set
+/// it for someone else. It moves the moment its alarm time arrives; an outcome
+/// takes it off Home entirely.
+HomeSection homeSectionFor(
+  ScheduleItem item,
+  DateTime nowUtc, {
+  required bool isMine,
+}) {
+  assert(nowUtc.isUtc, 'The schedule partition clock must be UTC.');
+  if (item.scheduledInstantUtc.isAfter(nowUtc)) return HomeSection.upcoming;
+  return isMine ? HomeSection.waitingOnYou : HomeSection.waitingOnThem;
+}

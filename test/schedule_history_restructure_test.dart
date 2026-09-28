@@ -319,7 +319,8 @@ void main() {
         await tester.pumpAndSettle();
       }
 
-      expect(find.text('No upcoming plans.'), findsNothing);
+      // Since 2026-09-28 it waits under its own heading on Home.
+      expect(find.text('Waiting on You'), findsOneWidget);
       expect(find.text('Dismissed alarm'), findsOneWidget);
       expect(find.widgetWithText(FilledButton, 'Done'), findsOneWidget);
       expect(find.widgetWithText(OutlinedButton, 'Skip'), findsOneWidget);

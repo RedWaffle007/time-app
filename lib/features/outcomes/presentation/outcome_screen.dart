@@ -8,9 +8,11 @@ import 'package:go_router/go_router.dart';
 import '../../../core/format/datetime_format.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
+import '../../../core/theme/plan_badge_style.dart';
 import '../../../core/theme/status_style.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../core/widgets/collapsible_day_groups.dart';
+import '../../../core/widgets/section_header.dart';
 import '../../../routing/app_router.dart';
 import '../../archive/presentation/archive_menu_button.dart';
 import '../../auth/application/auth_providers.dart';
@@ -283,18 +285,39 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
         // Retry the SOURCE stream — see the note in planner_activity_screen.
         onRetry: () => ref.invalidate(allItemsAsTargetProvider),
         builder: (context, items) {
-          _scheduleBoundaryTick(items);
+          _scheduleBoundaryTick([...items, ...forOthers]);
           final mine = items
               .where((item) => isUpcomingPlan(item, _nowUtc))
               .toList();
           // Mine first, then the open plans I set for others (a plan can be
           // both only as a self-plan, which is already in `mine`).
           final mineIds = {for (final item in mine) item.id};
-          final approved = [
+          final open = [
             ...mine,
             for (final item in forOthers)
               if (!mineIds.contains(item.id)) item,
           ];
+          // Three headings (2026-09-28): a plan leaves Upcoming the moment it
+          // rings and waits under Waiting on You / Waiting on Them.
+          final waitingOnYou = <ScheduleItem>[];
+          final waitingOnThem = <ScheduleItem>[];
+          final approved = <ScheduleItem>[];
+          for (final item in open) {
+            switch (homeSectionFor(
+              item,
+              _nowUtc,
+              isMine: mineIds.contains(item.id),
+            )) {
+              case HomeSection.waitingOnYou:
+                waitingOnYou.add(item);
+              case HomeSection.waitingOnThem:
+                waitingOnThem.add(item);
+              case HomeSection.upcoming:
+                approved.add(item);
+            }
+          }
+          waitingOnYou.sort(compareScheduleItemsLatestFirst);
+          waitingOnThem.sort(compareScheduleItemsLatestFirst);
 
           // Upcoming is one surface, grouped only by each item's own-timezone
           // calendar day. The partition itself is absolute-instant based; the
@@ -373,6 +396,23 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
             leading: [
               HeroBand(nextItem: nextItem),
               ReminderPrimerCard(hasUpcomingItems: hasUpcoming),
+              // Few, and each needs an answer: listed flat above Upcoming
+              // (always built, so a deep-link highlight lands directly).
+              if (waitingOnYou.isNotEmpty) ...[
+                const SectionHeader(
+                  'Waiting on You',
+                  key: ValueKey('home-waiting-on-you'),
+                  attention: true,
+                ),
+                for (final item in waitingOnYou) _card(item, me),
+              ],
+              if (waitingOnThem.isNotEmpty) ...[
+                const SectionHeader(
+                  'Waiting on Them',
+                  key: ValueKey('home-waiting-on-them'),
+                ),
+                for (final item in waitingOnThem) _card(item, me),
+              ],
               const _UpcomingPlansHeader(),
               if (approved.isEmpty) const _NoUpcomingPlans(),
             ],
@@ -383,30 +423,32 @@ class _OutcomeScreenState extends ConsumerState<OutcomeScreen>
                   date: dateFor[key]!,
                   label: formatWallDate(context, dateFor[key]!),
                   itemCount: byGroup[key]!.length,
-                  itemBuilder: (context, index) {
-                    final item = byGroup[key]![index];
-                    // A plan for someone else: its planner card — status,
-                    // Cancel alarm, no Done/Skip (those are theirs).
-                    if (item.targetUid != me && item.createdByUid == me) {
-                      return PlannerItemCard(
-                        item: item,
-                        highlighted: item.id == _highlighted,
-                        cardKey: item.id == _highlighted ? _highlightKey : null,
-                      );
-                    }
-                    return OutcomeCard(
-                      item: item,
-                      highlighted: item.id == _highlighted,
-                      // The key rides on the highlighted card only; that is all
-                      // `ensureVisible` needs to find it.
-                      cardKey: item.id == _highlighted ? _highlightKey : null,
-                    );
-                  },
+                  itemBuilder: (context, index) =>
+                      _card(byGroup[key]![index], me),
                 ),
             ],
           );
         },
       ),
+    );
+  }
+
+  Widget _card(ScheduleItem item, String me) {
+    // A plan for someone else: its planner card — status, Cancel alarm, no
+    // Done/Skip (those are theirs).
+    if (item.targetUid != me && item.createdByUid == me) {
+      return PlannerItemCard(
+        item: item,
+        highlighted: item.id == _highlighted,
+        cardKey: item.id == _highlighted ? _highlightKey : null,
+      );
+    }
+    return OutcomeCard(
+      item: item,
+      highlighted: item.id == _highlighted,
+      // The key rides on the highlighted card only; that is all
+      // `ensureVisible` needs to find it.
+      cardKey: item.id == _highlighted ? _highlightKey : null,
     );
   }
 }
@@ -542,11 +584,10 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
                   Expanded(
                     child: Text(item.title, style: context.text.titleMedium),
                   ),
-                  // Archive lives in the card overflow, not inline: this list
-                  // scrolls, and an exposed control that makes a row vanish is a
-                  // mis-tap waiting to happen. Present only once an outcome is
-                  // recorded — a live item is hideable by no route at all.
-                  if (item.isManuallyArchivable) ArchiveMenuButton(item: item),
+                  const SizedBox(width: Space.sm),
+                  // Who the plan is between (+ Group), top-right; status and
+                  // the card's action sit on the bottom row (UI-RULES §6.18).
+                  PlanBadges(item: item, iAmTarget: true),
                 ],
               ),
               const SizedBox(height: Space.xs),
@@ -602,31 +643,36 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
   /// mapping that disagreed with the planner's view; both now read the one
   /// mapping in `status_style.dart` (UI-RULES.md §2.3).
   Widget _outcomeLine(BuildContext context, ScheduleOutcome outcome) {
-    return Row(
+    final muted = context.text.bodySmall?.copyWith(
+      color: context.colors.onSurfaceVariant,
+    );
+    // One line when it fits, else Archive drops below, right-aligned.
+    return OverflowBar(
+      alignment: MainAxisAlignment.spaceBetween,
+      overflowAlignment: OverflowBarAlignment.end,
+      overflowSpacing: Space.xs,
       children: [
-        StatusBadge.itemOutcome(widget.item, context),
-        // Completed, but after its scheduled time — surfaced, never hidden. Line
-        // work / muted text, not a doctrine fill: a late Done is still a Done.
-        if (widget.item.completionDelay case final delay?) ...[
-          const SizedBox(width: Space.sm),
-          Text(
-            '${formatDurationMinutes(context, delay.inMinutes)} late',
-            style: context.text.bodySmall?.copyWith(
-              color: context.colors.onSurfaceVariant,
-            ),
-          ),
-        ],
-        if (outcome.skipReason case final reason?) ...[
-          const SizedBox(width: Space.sm),
-          Expanded(
-            child: Text(
-              reason,
-              style: context.text.bodySmall?.copyWith(
-                color: context.colors.onSurfaceVariant,
+        Wrap(
+          spacing: Space.sm,
+          runSpacing: Space.xs,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            StatusBadge.itemOutcome(widget.item, context),
+            // Completed, but after its scheduled time — surfaced, never
+            // hidden. Line work / muted text, not a doctrine fill: a late
+            // Done is still a Done.
+            if (widget.item.completionDelay case final delay?)
+              Text(
+                '${formatDurationMinutes(context, delay.inMinutes)} late',
+                style: muted,
               ),
-            ),
-          ),
-        ],
+            if (outcome.skipReason case final reason?)
+              Text(reason, style: muted),
+          ],
+        ),
+        // The card's one action, bottom-right (UI-RULES §6.18). Only once an
+        // outcome is recorded — a live item is hideable by no route at all.
+        if (widget.item.isManuallyArchivable) ArchiveButton(item: widget.item),
       ],
     );
   }

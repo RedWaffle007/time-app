@@ -2,30 +2,33 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_icons.dart';
+import '../../../core/theme/app_tokens.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../scheduling/domain/schedule_item.dart';
 import '../application/archive_providers.dart';
 
-/// The card overflow menu carrying Archive, in both My Schedule and Activity.
-/// One widget rather than two copies, so the guard, the wording and the undo
-/// affordance cannot drift apart between the two screens.
+/// The card's **Archive** button, in Home/History and Activity. One widget
+/// rather than two copies, so the guard, the wording and the undo affordance
+/// cannot drift apart between the screens.
 ///
-/// **Overflow, not an inline button.** Settled cards sit in scrollable lists,
-/// and an always-visible Archive control there invites a mis-tap mid-scroll —
-/// on an action whose whole job is to make a row disappear. Archive is a
-/// secondary action on the card; it belongs behind the ⋮.
+/// **A small text button at the card's bottom-right** (2026-09-28, user-
+/// directed; UI-RULES.md §6.18), replacing the ⋮ overflow it used to live in:
+/// the top-right now carries the plan badges, and the popup menu was slow to
+/// close. It sits apart from the Done/Skip controls, which an answered card no
+/// longer shows, so it is not a mis-tap next to a primary action.
 ///
 /// **Never the word "delete", and never a bin glyph.** The document is
 /// untouched, the other party still sees it and was not told — copy that
 /// implied otherwise would be the exact dishonesty "delete for me" was rejected
-/// for (DECISIONS.md "Group D").
+/// for (DECISIONS.md "Group D"). Per account: a group member archiving a group
+/// plan hides it from their own feed only.
 ///
 /// This is the **manual** route only — done / skipped. Rejected and withdrawn
 /// items are auto-hidden by a view rule the moment their status is set and never
-/// reach a card, so they never need (or get) this menu. Callers must gate on
+/// reach a card, so they never need (or get) this button. Callers must gate on
 /// [ScheduleItem.isManuallyArchivable]; the assert catches it if one forgets.
-class ArchiveMenuButton extends ConsumerWidget {
-  const ArchiveMenuButton({super.key, required this.item});
+class ArchiveButton extends ConsumerWidget {
+  const ArchiveButton({super.key, required this.item});
 
   /// How long Undo stays on offer.
   ///
@@ -40,18 +43,16 @@ class ArchiveMenuButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    assert(item.isManuallyArchivable,
-        'manual archive is for items with a recorded outcome only');
+    assert(
+      item.isManuallyArchivable,
+      'manual archive is for items with a recorded outcome only',
+    );
 
-    return PopupMenuButton<String>(
-      icon: const Icon(AppIcons.overflow),
-      tooltip: 'More',
-      onSelected: (value) {
-        if (value == 'archive') _archive(context, ref);
-      },
-      itemBuilder: (context) => [
-        const PopupMenuItem(value: 'archive', child: Text('Archive')),
-      ],
+    return TextButton.icon(
+      key: ValueKey('archive-${item.id}'),
+      onPressed: () => _archive(context, ref),
+      icon: const Icon(AppIcons.archive, size: Sizes.inlineIcon),
+      label: const Text('Archive'),
     );
   }
 

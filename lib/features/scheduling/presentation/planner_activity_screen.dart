@@ -10,6 +10,7 @@ import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_text.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
+import '../../../core/theme/plan_badge_style.dart';
 import '../../../core/theme/status_style.dart';
 import '../../../core/widgets/async_view.dart';
 import '../../../core/widgets/collapsible_day_groups.dart';
@@ -313,16 +314,9 @@ class PlannerItemCard extends ConsumerWidget {
                     child: Text(item.title, style: context.text.titleMedium),
                   ),
                   const SizedBox(width: Space.sm),
-                  // ONE badge. Once an outcome exists it replaces the approval
-                  // status, because "Done" strictly implies "Approved" — showing
-                  // both states the same fact twice.
-                  itemStatusBadge(item, context),
-                  // Done or skipped — the planner may clear it from their own
-                  // feed when they're ready, from the card overflow. Rejected and
-                  // withdrawn rows never render here at all: they are auto-hidden
-                  // the moment their status is set, so this feed no longer
-                  // accumulates them.
-                  if (item.isManuallyArchivable) ArchiveMenuButton(item: item),
+                  // Who the plan is between (+ Group), top-right; status and
+                  // the card's action sit on the bottom row (UI-RULES §6.18).
+                  PlanBadges(item: item, iAmTarget: false),
                 ],
               ),
               const SizedBox(height: Space.xs),
@@ -381,24 +375,49 @@ class PlannerItemCard extends ConsumerWidget {
                   ),
                 ),
               ],
-              // F2: the planner may cancel an alarm they set until it rings
-              // or is answered (every alarm rings directly now).
-              if (plannerCanCancel(item, DateTime.now().toUtc())) ...[
-                const SizedBox(height: Space.xs),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    key: const ValueKey('planner-cancel-alarm'),
-                    onPressed: () => _withdraw(context, ref),
-                    child: const Text('Cancel alarm'),
-                  ),
-                ),
-              ],
+              // Bottom row (UI-RULES §6.18): the ONE status badge on the left
+              // (an outcome replaces the approval status, because "Done"
+              // implies "Approved"), the card's one action on the right —
+              // Cancel alarm while it is open (F2), Archive once answered.
+              // Rejected and withdrawn rows never render here: they are
+              // auto-hidden the moment their status is set.
+              ..._bottomRow(context, ref),
             ],
           ),
         ),
       ),
     );
+  }
+
+  List<Widget> _bottomRow(BuildContext context, WidgetRef ref) {
+    final status = itemStatusBadge(item, context);
+    final canCancel = plannerCanCancel(item, DateTime.now().toUtc());
+    // Mirrors `itemStatusBadge`: a live approved alarm shows no badge.
+    final hasStatus =
+        item.outcome != null || item.status != ScheduleItemStatus.approved;
+    if (!hasStatus && !canCancel && !item.isManuallyArchivable) {
+      return const [];
+    }
+    return [
+      const SizedBox(height: Space.sm),
+      // One line when it fits, else the action drops below, right.
+      OverflowBar(
+        alignment: MainAxisAlignment.spaceBetween,
+        overflowAlignment: OverflowBarAlignment.end,
+        overflowSpacing: Space.xs,
+        children: [
+          status,
+          if (canCancel)
+            TextButton(
+              key: const ValueKey('planner-cancel-alarm'),
+              onPressed: () => _withdraw(context, ref),
+              child: const Text('Cancel alarm'),
+            )
+          else if (item.isManuallyArchivable)
+            ArchiveButton(item: item),
+        ],
+      ),
+    ];
   }
 
   /// Cancel an alarm I set, then tell the target. The write is the source of

@@ -159,6 +159,26 @@ today) → device pass → item 33. Each: plan → sign-off → build → tests.
 **(1) DONE 2026-09-28, uncommitted:** DECISIONS.md "Group busy result shown
 at Send". Worker change → needs `wrangler deploy` (same deploy as P1+P2).
 
+**(2) Home headings DONE 2026-09-28, uncommitted** (DECISIONS.md "Home
+headings").
+
+**(3) Plan badges DONE 2026-09-28, uncommitted** (DECISIONS.md "Plan
+badges"; UI-RULES §6.18; `lib/core/theme/plan_badge_style.dart`). Sent/Self/
+Received + Group, layout A, per-card ⋮ replaced by an Archive button. Next:
+(4) the top ARCHIVE button. Pending user OK: new Activity explainer copy.
+
+**REVISED ORDER (2026-09-28, after the user's archive/badge list):**
+(3) plan badges: ownership (for others / self / from others) + Group Plan,
+shiny outlined, distinct colours, top-right, on Home/History/Activity/Archived;
+must not clash with status badges (layout option to be picked) — needs a
+DECISIONS.md colour entry first (UI-RULES §2.1 allows only green + orange) →
+(4) archive: ARCHIVE button at the top of Home / Activity / Groups (Groups:
+Create · Join · Archive), replacing the ⋮ → Archived; instant menu dismiss;
+group plans archivable (per-card already works once answered; planner side is
+one card per member) → (5) voice notes without Done/Skip → (6) nav bar colour →
+(7) feedback → (8) stats audit report, then range dropdown → device pass →
+item 33. Words/colours/layout awaiting the user's pick.
+
 **Added 2026-09-28 (queue after (5)):** Stats page: a range dropdown ("Last 8
 weeks" / Monthly / Yearly; empty periods show 0-height bars, never a broken
 state) + a full stats AUDIT reported to the user (removed / kept / added)

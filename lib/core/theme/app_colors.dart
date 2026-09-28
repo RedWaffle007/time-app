@@ -131,6 +131,11 @@ abstract final class AppColors {
   static const lightPink = Color(0xFFC03271);
   static const darkPink = Color(0xFFF08AB4);
 
+  /// The "Sent" plan badge only (UI-RULES.md §6.18 — the recorded exception;
+  /// the other plan badges reuse violet, pink and golden above).
+  static const lightBlue = Color(0xFF1F5FC2);
+  static const darkBlue = Color(0xFF7FB0FF);
+
   /// Fixed paper palette for the completion celebration. These colors are
   /// intentionally theme-independent because the particles briefly overlay
   /// both light and dark app content as a categorical animation.

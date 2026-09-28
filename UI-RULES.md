@@ -878,6 +878,23 @@ ringing notification is public on the lock screen and always includes a direct
 full-screen presentation. Ordinary app and push-notification launches must not
 inherit any alarm window flags.
 
+
+### 6.18 Plan badges (ownership + Group)
+
+A plan card's top-right carries **who the plan is between**: `Sent` (blue),
+`Self` (violet), `Received` (pink), plus `Group` (golden) on a group plan.
+One widget, `PlanBadges` in `lib/core/theme/plan_badge_style.dart`; a screen
+never builds one by hand.
+
+- **The only sanctioned exception to §2.1's two hues** (DECISIONS.md "Plan
+  badges"). These accents appear on these four badges and nowhere else.
+- **Outline only**: accent text + a metallic gradient border on the card
+  surface, never a fill (§2.7). Always a text label (§2.6.3).
+- **Placement (layout A):** top row = title, then the plan badges. Bottom row =
+  the status badge (left) and the card's one action (right: Archive,
+  Unarchive or Cancel alarm). Status never sits top-right on a plan card.
+- One sheen sweep on first appearance; none under reduce motion.
+
 ---
 
 ## 7. Accessibility floor

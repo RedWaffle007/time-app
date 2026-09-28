@@ -7449,3 +7449,54 @@ at the time of sending, never as a later notification.
   "couldn't set", never a guess.
 - The app still routes an old `groupPlanSummary` push (sent by the
   pre-change Worker) to the group, harmlessly.
+
+## Home headings: Waiting on You / Waiting on Them (2026-09-28)
+
+User-directed. Home had one "Upcoming Plans" list holding plans that had
+already rung and were waiting for Done/Skip.
+
+- `homeSectionFor(item, me, now)` (schedule_partition.dart): not rung yet
+  (`scheduledInstantUtc` after now) → **Upcoming Plans**, whoever it is for
+  (mine, self or from others, and plans I set for others). Rung, no outcome →
+  **Waiting on You** if I am the target (self-plans included), **Waiting on
+  Them** if I set it for someone else.
+- Order: Waiting on You (attention rule, it needs my answer), Waiting on Them,
+  then Upcoming Plans with its CALENDAR / HISTORY header and day groups. Each
+  heading appears only when non-empty. The two Waiting lists are flat (few
+  rows, always built, so a deep-link highlight lands directly), newest first.
+- A plan moves the moment it rings: the existing boundary timer now also
+  watches plans I set for others. The rule "an outcome is the only thing that
+  moves a plan to History" is unchanged.
+
+## Plan badges — ownership + Group, a recorded colour exception (2026-09-28)
+
+User-directed. Every plan card shows, top-right, WHO the plan is between —
+and a group plan also says it is a group plan — in its own colour.
+
+- **Badges:** **Sent** (I set it for someone else), **Self** (I set it for
+  myself), **Received** (someone set it for me), plus **Group** on any plan
+  that belongs to a group (so a group plan shows e.g. Received + Group).
+- **Colour exception to UI-RULES §2.1 (two hues).** The user directed
+  distinct colours that complement the system. They come from the existing
+  categorical accent set (violet, pink, golden) plus one new blue pair:
+  Sent = blue (`#1F5FC2` / `#7FB0FF`), Self = violet, Received = pink,
+  Group = golden. Scope of the exception: **these four badges only** — never
+  buttons, fills, status or chrome. Green (action/done), orange
+  (attention/pending) and red (errors) are deliberately not used, so an
+  ownership badge can never be mistaken for a status.
+- **Outline only, no fill** — line work (§2.7), so a badge never reads as
+  state. Text in the accent colour on the card surface: AA in both modes
+  (light 4.87–6.14, dark 7.14–10.75 against surface and background).
+- **"Shiny":** a metallic gradient border (accent → a light sheen → accent),
+  and one sheen sweep across it when the card first appears; no sweep when the
+  phone's reduce-motion setting is on. Not a looping animation (battery, and
+  it would never let a screen settle).
+- **Layout A:** ownership (+ Group) badges top-right beside the title. The
+  status badge (Done / Skipped / Rejected / Cancelled…) moves to the card's
+  bottom row, left, with the card's action (Archive / Unarchive / Cancel
+  alarm) bottom-right. They can never collide.
+- **Archive is a small "Archive" button** at the bottom-right of an answered
+  card, replacing the card's ⋮ menu (its slow-closing popup is gone with it).
+  Same undo snackbar and account re-check. Archiving stays per account: a
+  group member archiving a group plan hides it only from their own feed.
+- Shown on Home, History, Activity and Archived.
