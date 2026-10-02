@@ -313,6 +313,95 @@ void main() {
     expect(find.text('PLAN'), findsOneWidget);
   });
 
+  // R5 (2026-10-02, "we cannot tolerate even a single minute delay"): an
+  // alarm opened more than a minute after its time with nothing ringing
+  // never starts a tone; it ends as missed.
+  ScheduleItem dueAgo(Duration ago) => ScheduleItem(
+    id: 'a',
+    targetUid: 'me',
+    createdByUid: 'planner',
+    groupId: '',
+    title: 'Morning run',
+    localWallTime: '',
+    timezone: 'Asia/Kolkata',
+    scheduledInstantUtc: DateTime.now().toUtc().subtract(ago),
+    status: ScheduleItemStatus.approved,
+  );
+
+  testWidgets(
+    'opened more than a minute late: no tone, missed, lands on Plan',
+    (t) async {
+      final sound = _FakeAlarmSound();
+      await t.pumpWidget(
+        harness(
+          sound,
+          _FakeScheduler(),
+          items: Stream.value([dueAgo(const Duration(minutes: 5))]),
+        ),
+      );
+      await t.pumpAndSettle();
+      expect(sound.starts, 0);
+      expect(sound.missedLate, ['a']);
+      expect(find.text('Dismiss'), findsNothing);
+      expect(find.text('PLAN'), findsOneWidget);
+    },
+  );
+
+  testWidgets('late but still ringing natively: shows and keeps ringing', (
+    t,
+  ) async {
+    final sound = _FakeAlarmSound(ringing: 'a');
+    await t.pumpWidget(
+      harness(
+        sound,
+        _FakeScheduler(),
+        items: Stream.value([dueAgo(const Duration(seconds: 70))]),
+      ),
+    );
+    await t.pumpAndSettle();
+    expect(sound.starts, 1);
+    expect(sound.missedLate, isEmpty);
+    expect(find.text('Dismiss'), findsOneWidget);
+  });
+
+  testWidgets('within the minute it rings as normal', (t) async {
+    final sound = _FakeAlarmSound();
+    await t.pumpWidget(
+      harness(
+        sound,
+        _FakeScheduler(),
+        items: Stream.value([dueAgo(const Duration(seconds: 30))]),
+      ),
+    );
+    await t.pumpAndSettle();
+    expect(sound.starts, 1);
+    expect(sound.missedLate, isEmpty);
+  });
+
+  test('alarmTooLateToRing: one full minute is the limit (R5)', () {
+    final due = DateTime.utc(2030, 1, 1, 9);
+    final i = dueAgo(Duration.zero);
+    final at = ScheduleItem(
+      id: i.id,
+      targetUid: i.targetUid,
+      createdByUid: i.createdByUid,
+      groupId: i.groupId,
+      title: i.title,
+      localWallTime: i.localWallTime,
+      timezone: i.timezone,
+      scheduledInstantUtc: due,
+      status: i.status,
+    );
+    bool late(Duration after, {bool ringing = false}) =>
+        alarmTooLateToRing(at, nowUtc: due.add(after), ringingNow: ringing);
+    expect(late(Duration.zero), isFalse);
+    expect(late(const Duration(seconds: 60)), isFalse);
+    expect(late(const Duration(seconds: 61)), isTrue);
+    expect(late(const Duration(hours: 3)), isTrue);
+    expect(late(const Duration(hours: 3), ringing: true), isFalse);
+    expect(late(const Duration(seconds: -30)), isFalse);
+  });
+
   testWidgets('an item already marked unavailable leaves too', (t) async {
     final sound = _FakeAlarmSound();
     final missed = ScheduleItem(
@@ -399,10 +488,14 @@ class _FakeAlarmTimelineRepository implements AlarmTimelineRepository {
 }
 
 class _FakeAlarmSound implements AlarmSound {
-  _FakeAlarmSound({this.startGate, this.delivered});
+  _FakeAlarmSound({this.startGate, this.delivered, this.ringing});
 
   final Completer<void>? startGate;
   final String? delivered;
+
+  /// The item the native service is ringing now (R5).
+  final String? ringing;
+  final missedLate = <String>[];
   int starts = 0;
   int stops = 0;
   final startHeadlines = <String>[];
@@ -419,6 +512,16 @@ class _FakeAlarmSound implements AlarmSound {
 
   @override
   Future<void> stop(String itemId) async => stops++;
+
+  @override
+  Future<String?> ringingItem() async => ringing;
+
+  @override
+  Future<void> missLate(String itemId, {String headline = ''}) async =>
+      missedLate.add(itemId);
+
+  @override
+  void onRinging(void Function(String itemId)? listener) {}
 }
 
 class _FakeScheduler implements ReminderScheduler {

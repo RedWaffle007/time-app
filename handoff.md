@@ -536,8 +536,19 @@ unrelated code.
   (DECISIONS.md "One plan for several friends"). **Plan for multiple friends**
   (no group needed): Plan → "Several friends" → checklist → the group sheet in
   friends mode; ordinary friendship plans, `groupId` empty.
-- **R5 Alarm tone on a notification:** needs the repro (which notification,
-  which phone, app open/closed) — code shows every alarm channel silent.
+- **R5 Tone with no alarm screen — BUILT 2026-10-02, awaiting commit + device
+  check (DECISIONS.md "Exact alarms: USE_EXACT_ALARM (R5)"). Play Console:
+  declare the exact-alarm use (alarm app).** Repro (user, Xiaomi/HyperOS, happened once): a friend's alarm;
+  on opening the app (around or after the due time) the alarm TONE rang with
+  no alarm screen, no popup, no who/what. Cause in code: the ringing service
+  shows its details only through its notification's full-screen intent, which
+  Android turns into a heads-up while the phone is in use, and HyperOS ships
+  "Floating notifications" OFF per app, so nothing appears. The app itself
+  never opens AlarmScreen when an alarm starts ringing while it is open or is
+  opened. A late native delivery (inexact fallback after an install revokes
+  SCHEDULE_EXACT_ALARM on the Redmi) also rings with no lateness check.
+- **Phone tests are deferred until the whole R list is built** (user,
+  2026-10-02); then one device pass covers R2–R6.
 - **R6 Reply notes** — DECIDED 2026-10-02. Optional, one per plan, no edits,
   target → planner. A **Send note** button sits beside the answer buttons
   (default card + missed popup: Skip · Send note · Done; missed voice popup:

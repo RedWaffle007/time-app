@@ -19,6 +19,17 @@ class AlarmDeliveryReceiver : BroadcastReceiver() {
             note = "native_receiver",
         )
         AlarmDeliveryStore.remove(context, id)
+        val now = System.currentTimeMillis()
+        if (AlarmLatenessPolicy.isTooLate(scheduledEpoch, now)) {
+            AlarmSoundService.missWithoutRinging(
+                context,
+                itemId,
+                AlarmDeliveryScheduler.readHeadline(intent),
+                now,
+                scheduledEpoch,
+            )
+            return
+        }
         val started = AlarmSoundService.start(
             context,
             id,

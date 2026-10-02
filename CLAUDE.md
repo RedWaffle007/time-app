@@ -401,8 +401,12 @@ in DECISIONS.md → "Reminder layer, Part 1". **NOT VERIFIED ON A DEVICE** — s
 the bottom of this section.
 
 **The engine is `setExactAndAllowWhileIdle` via flutter_local_notifications**
-(`AndroidScheduleMode.exactAllowWhileIdle`), behind `SCHEDULE_EXACT_ALARM` —
-never `USE_EXACT_ALARM`, which is Play-reviewed against a list we are not on.
+(`AndroidScheduleMode.exactAllowWhileIdle`). **Since 2026-10-02 (R5,
+user-directed) the permission is `USE_EXACT_ALARM`** (granted at install, not
+revocable; every plan is an alarm, so the app is an alarm app under Play
+policy), with `SCHEDULE_EXACT_ALARM` kept only for Android 12/12L; an alarm
+delivered more than a minute late never rings, it ends as missed. DECISIONS.md
+"Exact alarms: USE_EXACT_ALARM (R5)".
 Channel `time_app_reminders`, created in code and deliberately NOT the
 `high_importance_channel` FCM uses: a user must be able to silence
 someone-else's-activity pushes without silencing their own reminders, and a

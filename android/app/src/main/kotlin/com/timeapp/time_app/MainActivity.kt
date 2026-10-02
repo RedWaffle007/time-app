@@ -98,11 +98,24 @@ class MainActivity : FlutterFragmentActivity() {
     }
     private val alarmEndedReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == AlarmSoundService.ACTION_RINGING_ENDED) {
-                showOverLockAndWake(false)
+            when (intent?.action) {
+                AlarmSoundService.ACTION_RINGING_ENDED -> showOverLockAndWake(false)
+                // R5: the open app shows the alarm itself (Dart decides).
+                AlarmSoundService.ACTION_RINGING_STARTED -> {
+                    val itemId = intent.getStringExtra(AlarmSoundService.EXTRA_RINGING_ITEM).orEmpty()
+                    if (itemId.isNotEmpty()) {
+                        alarmSoundChannel?.invokeMethod(
+                            "ringing",
+                            mapOf("itemId" to itemId),
+                        )
+                    }
+                }
             }
         }
     }
+
+    /** The alarm-sound channel, kept to tell Dart a ring started (R5). */
+    private var alarmSoundChannel: MethodChannel? = null
 
     private companion object {
         const val CHANNEL = "time_app/secure_window"
@@ -196,7 +209,9 @@ class MainActivity : FlutterFragmentActivity() {
         ContextCompat.registerReceiver(
             this,
             alarmEndedReceiver,
-            IntentFilter(AlarmSoundService.ACTION_RINGING_ENDED),
+            IntentFilter(AlarmSoundService.ACTION_RINGING_ENDED).apply {
+                addAction(AlarmSoundService.ACTION_RINGING_STARTED)
+            },
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         alarmEndedReceiverRegistered = true
@@ -304,6 +319,7 @@ class MainActivity : FlutterFragmentActivity() {
         // Start / stop the alarm sound, and drive the window flags that make the
         // alarm UI show over the lock screen and stay lit while it rings.
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, ALARM_CHANNEL)
+            .also { alarmSoundChannel = it }
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "start" -> {
@@ -323,6 +339,18 @@ class MainActivity : FlutterFragmentActivity() {
                             call.argument<String>("itemId") ?: "",
                         ),
                     )
+                    // R5: the plan ringing now, for an app opened mid-ring.
+                    "ringingItem" -> result.success(AlarmSoundService.ringingItemId())
+                    // R5: an alarm opened too late to ring ends as missed.
+                    "missLate" -> {
+                        AlarmSoundService.missWithoutRinging(
+                            this,
+                            call.argument<String>("itemId") ?: "",
+                            call.argument<String>("headline") ?: "",
+                            System.currentTimeMillis(),
+                        )
+                        result.success(null)
+                    }
                     "stop" -> {
                         AlarmSoundService.stopForItem(
                             this,

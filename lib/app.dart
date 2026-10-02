@@ -20,6 +20,7 @@ import 'features/notifications/data/foreground_push_presenter.dart';
 import 'features/onboarding/application/onboarding_providers.dart';
 import 'features/groups/application/group_providers.dart';
 import 'features/groups/application/group_stats_providers.dart';
+import 'features/reminders/application/alarm_ringing_presenter.dart';
 import 'features/reminders/application/alarm_timeline_providers.dart';
 import 'features/reminders/application/missed_alarm_providers.dart';
 import 'features/reminders/application/reminder_providers.dart';
@@ -79,6 +80,9 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
   bool _splashReady = false;
   String? _activityUid;
 
+  /// R5: opens the alarm screen for a plan ringing while the app is open.
+  AlarmRingingPresenter? _ringingPresenter;
+
   @override
   void initState() {
     super.initState();
@@ -89,6 +93,30 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     );
     _setupNotificationTaps();
     _setupReminderLaunchTap();
+
+    // R5 (2026-10-02): a ringing alarm always shows its screen in the open
+    // app, never just a tone (HyperOS hides the heads-up by default).
+    _ringingPresenter = AlarmRingingPresenter(
+      sound: ref.read(alarmSoundProvider),
+      open: (itemId) {
+        _dismissColdStartReveal();
+        ref.read(notificationRouterProvider).openItem(itemId);
+      },
+      currentLocation: () {
+        try {
+          return ref
+              .read(routerProvider)
+              .routerDelegate
+              .currentConfiguration
+              .uri;
+        } catch (_) {
+          return null;
+        }
+      },
+    )..start();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_ringingPresenter?.checkNow());
+    });
 
     // Retry trigger #1: app resume. If token registration failed earlier (e.g.
     // the device was briefly offline), coming back to the foreground gives it a
@@ -108,6 +136,7 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _ringingPresenter?.dispose();
     WidgetsBinding.instance.removeObserver(this);
     ref
         .read(messagingServiceProvider)
@@ -119,6 +148,8 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
+    // R5: opened mid-ring (launcher, recents) → show that alarm.
+    unawaited(_ringingPresenter?.checkNow());
 
     final uid = ref.read(authStateProvider).value?.uid;
     if (uid != null) {

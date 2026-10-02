@@ -7915,3 +7915,37 @@ User-directed: plan for several friends at once without a group.
   (`callerMayPlanFor`), so a non-friend is still refused. Group copies are
   unchanged.
 - Groups unchanged: every group-mode string and call is as before (tests).
+
+## Exact alarms: USE_EXACT_ALARM (R5, 2026-10-02)
+
+User-directed, reversing the 2026-08-19 choice of SCHEDULE_EXACT_ALARM:
+"we cannot tolerate even a single minute delay … use exact alarm since this
+is our core feature."
+
+- **The report (Xiaomi, once):** a friend's alarm rang only as a tone when the
+  app was opened, around or after its time, with no alarm screen, popup, or
+  who/what.
+- **Causes in code.** (1) The ringing service shows details only through its
+  notification's full-screen intent; while the phone is in use Android makes
+  that a heads-up, and HyperOS ships "Floating notifications" off per app, so
+  nothing appeared, and the app never opened its own alarm screen. (2) Without
+  the exact-alarm permission, alarms silently fell back to inexact, which
+  HyperOS holds back; on the Redmi every install revokes SCHEDULE_EXACT_ALARM,
+  and the post-update re-arm (setAlarmClock) then fails silently. (3) A late
+  delivery rang with no lateness check.
+- **Fixes.**
+  - `USE_EXACT_ALARM` (Android 13+; granted at install, not revocable) is
+    declared; `SCHEDULE_EXACT_ALARM` stays only for Android 12/12L
+    (`maxSdkVersion 32`). Every plan rings as an alarm since F2, so the app is
+    an alarm app under Play policy; declare it in the Play Console.
+  - Never ring late: delivered more than 60 s (one full ring) after its time,
+    an alarm does not ring and ends as missed (missed notice "Missed alarm from
+    {planner}", timeout row → missed popup, planner's "unavailable" push).
+    Native `AlarmLatenessPolicy` in the delivery receiver; Dart
+    `alarmTooLateToRing` in AlarmScreen for a late notification tap, unless
+    the plan is ringing right now.
+  - The open app shows a ringing alarm itself (`AlarmRingingPresenter`): on a
+    native "ringing started" broadcast while alive, and on start/resume via
+    `ringingItem`; never re-opens the alarm already on screen.
+- No code can ring a switched-off phone or one whose cleaner killed the app;
+  those end as a missed alarm, never a late ring.

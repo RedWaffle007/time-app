@@ -44,6 +44,14 @@ class AlarmSoundService : Service() {
         const val ACTION_START = "com.timeapp.time_app.ALARM_START"
         const val ACTION_STOP = "com.timeapp.time_app.ALARM_STOP"
         const val ACTION_RINGING_ENDED = "com.timeapp.time_app.ALARM_RINGING_ENDED"
+
+        /**
+         * R5 (2026-10-02): an alarm started ringing ([EXTRA_RINGING_ITEM]
+         * says which). The open app shows its own alarm screen on this, so the
+         * details never depend on an OEM letting the heads-up through.
+         */
+        const val ACTION_RINGING_STARTED = "com.timeapp.time_app.ALARM_RINGING_STARTED"
+        const val EXTRA_RINGING_ITEM = "itemId"
         private const val ACTION_STOP_NOTIFICATION =
             "com.timeapp.time_app.ALARM_STOP_NOTIFICATION"
         private const val ACTION_STOP_ITEM = "com.timeapp.time_app.ALARM_STOP_ITEM"
@@ -64,6 +72,9 @@ class AlarmSoundService : Service() {
         private const val WAKE_TAG = "time_app:alarm_sound"
         private const val TAG = "AlarmSound"
         @Volatile private var ringing = false
+
+        /** The plan ringing now, for an app opened mid-ring (R5). */
+        @Volatile private var ringingItem: String? = null
 
         /**
          * itemId → "{planner} planned {task} for you". Delivered with the alarm itself,
@@ -133,6 +144,90 @@ class AlarmSoundService : Service() {
 
         /** True only while this process owns active alarm playback. */
         fun isRinging(): Boolean = ringing
+
+        /** The item ringing now, or null (R5). */
+        fun ringingItemId(): String? = if (ringing) ringingItem else null
+
+        /**
+         * R5 (2026-10-02): an alarm delivered too late to ring
+         * ([AlarmLatenessPolicy]) ends exactly as an unanswered ring does, but
+         * without a sound: the missed notice, the timeout row (the app's
+         * missed popup) and the planner's "unavailable" push.
+         */
+        fun missWithoutRinging(
+            context: Context,
+            itemId: String,
+            headline: String,
+            atEpochMs: Long,
+            scheduledEpoch: Long? = null,
+        ) {
+            if (itemId.isEmpty()) return
+            if (headline.isNotBlank()) headlines[itemId] = headline
+            postMissedNotice(context, itemId)
+            AlarmLifecycleStore.record(
+                context,
+                itemId,
+                AlarmLifecycleStore.KIND_TIMEOUT,
+                atEpochMs,
+            )
+            ReminderAuditLog.write(
+                context,
+                event = "AUDIO_LATE_MISSED",
+                itemId = itemId,
+                scheduledEpoch = scheduledEpoch,
+                atEpoch = atEpochMs,
+                note = "too_late_to_ring",
+            )
+            MissedAlarmReporter.report(context, listOf(itemId), atEpochMs)
+            AlarmLifecycleChannel.notifyChanged()
+        }
+
+        /** One per item, replacing itself; auto-cancelled when tapped. */
+        private fun postMissedNotice(context: Context, itemId: String) {
+            try {
+                val nm = context.getSystemService(Context.NOTIFICATION_SERVICE)
+                    as NotificationManager
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                    nm.getNotificationChannel(MISSED_CHANNEL_ID) == null
+                ) {
+                    nm.createNotificationChannel(
+                        NotificationChannel(
+                            MISSED_CHANNEL_ID,
+                            "Missed alarms",
+                            NotificationManager.IMPORTANCE_DEFAULT,
+                        ).apply {
+                            description = "When an alarm stopped without a response."
+                        },
+                    )
+                }
+                val launch = context.packageManager
+                    .getLaunchIntentForPackage(context.packageName)
+                    ?.addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP,
+                    )
+                val open = launch?.let {
+                    PendingIntent.getActivity(
+                        context,
+                        ("missed:$itemId").hashCode(),
+                        it,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                    )
+                }
+                val text = AlarmSoundPolicy.missedText(headlines[itemId])
+                val notification = NotificationCompat.Builder(context, MISSED_CHANNEL_ID)
+                    .setSmallIcon(R.drawable.ic_notification)
+                    .setContentTitle(AlarmSoundPolicy.missedTitle(headlines[itemId]))
+                    .setContentText(text)
+                    .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+                    .setCategory(NotificationCompat.CATEGORY_REMINDER)
+                    .setAutoCancel(true)
+                    .apply { if (open != null) setContentIntent(open) }
+                    .build()
+                nm.notify(("missed:$itemId").hashCode(), notification)
+            } catch (e: Exception) {
+                Log.e(TAG, "failed to post missed-alarm notification: $e")
+            }
+        }
 
         /** Called only from the foreground Activity's hardware-key dispatch. */
         fun silenceFromVolumeDown(context: Context): Boolean {
@@ -272,6 +367,13 @@ class AlarmSoundService : Service() {
         // The sound starts at once. The ting belongs to app start only
         // (user-directed 2026-09-26) and stays suppressed while this rings.
         ringing = true
+        ringingItem = itemId
+        // R5: tell the open app which plan is ringing, so it shows the alarm.
+        sendBroadcast(
+            Intent(ACTION_RINGING_STARTED)
+                .setPackage(packageName)
+                .putExtra(EXTRA_RINGING_ITEM, itemId),
+        )
         if (voice != null) {
             // A voice-note alarm plays the note 3–6 times by length (F5) — but only
             // the exact file the plan was approved with. Anything else rings
@@ -368,47 +470,7 @@ class AlarmSoundService : Service() {
     }
 
     /** One per item, replacing itself; auto-cancelled when tapped. */
-    private fun postMissedNotification(itemId: String) {
-        try {
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-                nm.getNotificationChannel(MISSED_CHANNEL_ID) == null
-            ) {
-                nm.createNotificationChannel(
-                    NotificationChannel(
-                        MISSED_CHANNEL_ID,
-                        "Missed alarms",
-                        NotificationManager.IMPORTANCE_DEFAULT,
-                    ).apply {
-                        description = "When an alarm stopped without a response."
-                    },
-                )
-            }
-            val launch = packageManager.getLaunchIntentForPackage(packageName)
-                ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            val open = launch?.let {
-                PendingIntent.getActivity(
-                    this,
-                    ("missed:$itemId").hashCode(),
-                    it,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                )
-            }
-            val text = AlarmSoundPolicy.missedText(headlines[itemId])
-            val notification = NotificationCompat.Builder(this, MISSED_CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle(AlarmSoundPolicy.missedTitle(headlines[itemId]))
-                .setContentText(text)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-                .setCategory(NotificationCompat.CATEGORY_REMINDER)
-                .setAutoCancel(true)
-                .apply { if (open != null) setContentIntent(open) }
-                .build()
-            nm.notify(("missed:$itemId").hashCode(), notification)
-        } catch (e: Exception) {
-            Log.e(TAG, "failed to post missed-alarm notification: $e")
-        }
-    }
+    private fun postMissedNotification(itemId: String) = postMissedNotice(this, itemId)
 
     /**
      * ONE notification per alarm (device report 2026-09-25). The scheduled
@@ -471,6 +533,7 @@ class AlarmSoundService : Service() {
         }
         player = null
         ringing = false
+        ringingItem = null
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
         ownership.clear()

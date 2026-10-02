@@ -15,21 +15,24 @@
 
     <!-- ===================== THE REMINDER LAYER ===================== -->
 
-    <!-- EXACT alarms, the user-granted route.
+    <!-- EXACT alarms. R5 (2026-10-02, user-directed): USE_EXACT_ALARM.
 
-         SCHEDULE_EXACT_ALARM, deliberately NOT USE_EXACT_ALARM. Both reach the
-         identical AlarmManager code path; the difference is who approves.
-         USE_EXACT_ALARM is auto-granted but is Play-reviewed against a narrow
-         list ("the app is an alarm or timer app" / "a calendar app that shows
-         event notifications"), and we are neither. SCHEDULE_EXACT_ALARM is a
-         user prompt with NO Play review, which is the whole reason the
-         2026-08-19 policy re-check reopened this. See DECISIONS.md → "Exact
-         alarms: the Play-policy assumption was wrong".
+         Every plan in this app rings as an alarm (F2), so it is the core
+         feature and the app qualifies as "an alarm app" under Play policy
+         (declared in the Play Console). USE_EXACT_ALARM (Android 13+) is
+         granted at install and cannot be revoked, so an install, an update or
+         a Settings switch can no longer drop alarms to the inexact path that
+         HyperOS held back past their time. This reverses the 2026-08-19
+         choice of the user-granted SCHEDULE_EXACT_ALARM — DECISIONS.md
+         "Exact alarms: USE_EXACT_ALARM (R5)".
 
-         From Android 14 this is DENIED by default and must be granted from
-         Settings; `ReminderPermissions` sends the user there. On this Redmi it
-         is also revoked by every reinstall (spike README trap 1). -->
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+         SCHEDULE_EXACT_ALARM stays for Android 12 / 12L only (maxSdkVersion
+         32), where USE_EXACT_ALARM does not exist; it is granted by default
+         there. -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        android:maxSdkVersion="32"/>
 
     <!-- AlarmManager keeps scheduled alarms in volatile memory ONLY — a reboot
          drops every one of them with no error to anyone. This permission is what

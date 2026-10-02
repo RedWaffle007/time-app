@@ -20,6 +20,18 @@ abstract interface class AlarmSound {
   /// The sentence the native alarm was delivered with ("{planner} planned {task} for
   /// you"), or null when this process did not receive one.
   Future<String?> headline(String itemId);
+
+  /// The plan ringing right now, or null (R5, 2026-10-02): an app opened
+  /// mid-ring shows that alarm instead of only playing its tone.
+  Future<String?> ringingItem();
+
+  /// Ends an alarm opened too late to ring ([alarmTooLateToRing]) as missed,
+  /// with no sound: missed notice, missed popup, planner told (R5).
+  Future<void> missLate(String itemId, {String headline = ''});
+
+  /// Called with the item id whenever an alarm starts ringing while this app
+  /// is alive (R5). Null stops listening.
+  void onRinging(void Function(String itemId)? listener);
 }
 
 class PlatformAlarmSound implements AlarmSound {
@@ -33,6 +45,37 @@ class PlatformAlarmSound implements AlarmSound {
 
   @override
   Future<void> stop(String itemId) => _invoke('stop', itemId);
+
+  @override
+  Future<String?> ringingItem() async {
+    try {
+      final id = await _channel.invokeMethod<String>('ringingItem');
+      return id == null || id.isEmpty ? null : id;
+    } on MissingPluginException {
+      return null;
+    } on PlatformException catch (e) {
+      debugPrint('alarm_sound: ringingItem failed: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<void> missLate(String itemId, {String headline = ''}) =>
+      _invoke('missLate', itemId, {'headline': headline});
+
+  @override
+  void onRinging(void Function(String itemId)? listener) {
+    _channel.setMethodCallHandler(
+      listener == null
+          ? null
+          : (call) async {
+              if (call.method != 'ringing') return;
+              final args = call.arguments;
+              final id = args is Map ? args['itemId'] : null;
+              if (id is String && id.isNotEmpty) listener(id);
+            },
+    );
+  }
 
   @override
   Future<String?> headline(String itemId) async {

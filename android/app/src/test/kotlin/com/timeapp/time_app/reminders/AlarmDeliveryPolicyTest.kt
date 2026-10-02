@@ -51,3 +51,28 @@ class AlarmDeliveryPolicyTest {
         )
     }
 }
+
+class AlarmLatenessPolicyTest {
+    private val due = 1_790_000_000_000L
+
+    @Test
+    fun `on time and up to one full ring late still rings (R5)`() {
+        assertEquals(false, AlarmLatenessPolicy.isTooLate(due, due))
+        assertEquals(false, AlarmLatenessPolicy.isTooLate(due, due + 620))
+        assertEquals(false, AlarmLatenessPolicy.isTooLate(due, due + 60_000))
+        // Early delivery is never "late".
+        assertEquals(false, AlarmLatenessPolicy.isTooLate(due, due - 5_000))
+    }
+
+    @Test
+    fun `more than one minute late never rings, it becomes missed (R5)`() {
+        assertEquals(true, AlarmLatenessPolicy.isTooLate(due, due + 60_001))
+        assertEquals(true, AlarmLatenessPolicy.isTooLate(due, due + 110_000))
+        assertEquals(true, AlarmLatenessPolicy.isTooLate(due, due + 3_600_000))
+    }
+
+    @Test
+    fun `an alarm with no recorded time is not treated as late`() {
+        assertEquals(false, AlarmLatenessPolicy.isTooLate(0L, due))
+    }
+}

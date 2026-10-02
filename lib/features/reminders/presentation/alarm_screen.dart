@@ -86,6 +86,23 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
         return;
       }
       if (!mounted) return;
+      // R5 (2026-10-02): never ring late. Opened (from a notification the OS
+      // held back) more than a minute after its time, with nothing ringing
+      // now: it ends as missed, with no tone, exactly like the native path.
+      final item = ref
+          .read(allItemsAsTargetProvider)
+          .maybeWhen(data: _find, orElse: () => null);
+      if (item != null &&
+          alarmTooLateToRing(
+            item,
+            nowUtc: DateTime.now().toUtc(),
+            ringingNow: await sound.ringingItem() == widget.itemId,
+          )) {
+        await sound.missLate(widget.itemId, headline: _headlineNow() ?? '');
+        await _leaveEnded();
+        return;
+      }
+      if (!mounted) return;
       // The UI ownership claim must reach the native service before cancelling
       // the scheduled notification releases its native-delivery owner. These
       // used to race as two unawaited platform calls, briefly stopping and
@@ -302,6 +319,19 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
 /// True when an alarm is over and must not be shown or rung again: the native
 /// side recorded its timeout, or the item already has an answer, an
 /// "unavailable" fact or a dismissal. Pure, for tests.
+/// R5 (2026-10-02): an alarm more than one full ring past its time that is
+/// not ringing now must not start ringing — it ends as missed instead (the
+/// native `AlarmLatenessPolicy` applies the same minute).
+const kMaxAlarmLateness = Duration(minutes: 1);
+
+bool alarmTooLateToRing(
+  ScheduleItem item, {
+  required DateTime nowUtc,
+  required bool ringingNow,
+}) =>
+    !ringingNow &&
+    nowUtc.difference(item.scheduledInstantUtc) > kMaxAlarmLateness;
+
 bool alarmHasEnded({
   required String itemId,
   required ScheduleItem? item,
