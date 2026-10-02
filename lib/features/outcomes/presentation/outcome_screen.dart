@@ -779,6 +779,11 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
           return ok;
         },
       );
+    } catch (_) {
+      // R1 (2026-10-02): an offline transaction throws; it used to escape the
+      // button as an uncaught crash with no message to the person.
+      _showSaveFailed();
+      return;
     } finally {
       if (mounted) setState(() => _writingOutcome = false);
     }
@@ -801,12 +806,16 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
   Future<void> _markHeard({required bool play}) async {
     if (_writingOutcome) return;
     final item = widget.item;
+    // Busy from the FIRST tap, before the fetch (R2, 2026-10-02): repeated
+    // taps must not start a second fetch, play or write.
+    setState(() => _writingOutcome = true);
     if (play) {
       try {
         final path = await ref.read(voiceNoteCacheProvider).ensure(item);
         await ref.read(voicePlayerProvider).play(path);
       } catch (_) {
         if (mounted) {
+          setState(() => _writingOutcome = false);
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text("Couldn't load the voice note. Try again."),
@@ -817,7 +826,6 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
       }
     }
     if (!mounted) return;
-    setState(() => _writingOutcome = true);
     final repository = ref.read(scheduleRepositoryProvider);
     try {
       await showUpdatingPlanner(
@@ -833,6 +841,8 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
           return ok;
         },
       );
+    } catch (_) {
+      _showSaveFailed();
     } finally {
       if (mounted) setState(() => _writingOutcome = false);
     }
@@ -886,9 +896,22 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
           return ok;
         },
       );
+    } catch (_) {
+      _showSaveFailed();
     } finally {
       if (mounted) setState(() => _writingOutcome = false);
     }
+  }
+
+  /// Done / Skip / Heard could not be saved (offline, or refused). Nothing
+  /// was recorded, so the buttons come back for another try.
+  void _showSaveFailed() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("Couldn't save. Check your connection and try again."),
+      ),
+    );
   }
 }
 

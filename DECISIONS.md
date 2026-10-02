@@ -7849,3 +7849,26 @@ Release-build feedback R2 + R3 (handoff.md "Release-build feedback
   only the three alarm surfaces above and the popup.
 - Deploy: the Worker change takes effect for alarms created after the Worker
   deploy; the app half needs a new build. No rules change.
+
+## Crashlytics: offline Done/Skip/Heard crash; native-library crashes (2026-10-02)
+
+Release-build feedback R1, from the user's Crashlytics stack traces.
+
+- **`[cloud_firestore/unavailable]` in `ScheduleRepository.markDone`.** The
+  My Schedule card's Done, Skip and Heard handlers (`outcome_screen.dart`)
+  wrapped the write in `try/finally` with no `catch`. A Firestore transaction
+  cannot run offline, so the error escaped the button as an uncaught,
+  "fatal" error and the person was told nothing. Each now catches, shows
+  "Couldn't save. Check your connection and try again.", records nothing and
+  re-enables the buttons. Same pass: the card's voice-note Play had the R2
+  bug (no guard while the note loads); it is now busy from the first tap.
+- **`UnsatisfiedLinkError` / `MissingLibraryException` (`libflutter.so`).**
+  Not a code bug: the tester APK is built `--target-platform
+  android-arm64`, and it reached an x86_64 device (ARM translation, so it
+  installed and then could not load the library) and a phone running a
+  32-bit ABI. Fix is the build: an App Bundle for Play, or an APK carrying
+  every ABI for sideloading.
+- **Still open:** the `PERMISSION_DENIED` event arrived with no app frames
+  (only the zone handler, `main.dart:37`; a `DocumentReference.get` was in
+  flight), so its caller is not identified yet. The `catchError` type error
+  and the Riverpod "setState() during build" traces are still needed.

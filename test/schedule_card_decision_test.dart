@@ -225,6 +225,45 @@ void main() {
     },
   );
 
+  // R1 (2026-10-02, Crashlytics): an offline Done/Skip escaped the button as
+  // an uncaught crash and told the person nothing. An uncaught error would
+  // fail these tests on its own.
+  const saveFailed = "Couldn't save. Check your connection and try again.";
+
+  testWidgets('an offline Done says it could not save and offers the buttons '
+      'again, with no celebration', (tester) async {
+    final repository = _FakeScheduleRepository(offline: true);
+    await _pumpSchedule(tester, [_missed()], repository: repository);
+    final container = ProviderScope.containerOf(tester.element(done));
+
+    await tester.tap(done);
+    await tester.pump();
+    await tester.pump(kPlannerUpdateDuration);
+    await tester.pumpAndSettle();
+
+    expect(repository.markDoneCalls, 1);
+    expect(find.text(saveFailed), findsOneWidget);
+    expect(find.text('Updating your schedule…'), findsNothing);
+    expect(container.read(committedCelebrationProvider), isNull);
+    expect(tester.widget<FilledButton>(done).onPressed, isNotNull);
+  });
+
+  testWidgets('an offline Skip says it could not save', (tester) async {
+    final repository = _FakeScheduleRepository(offline: true);
+    await _pumpSchedule(tester, [_missed()], repository: repository);
+
+    await tester.tap(skip);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Skip'));
+    await tester.pump();
+    await tester.pump(kPlannerUpdateDuration);
+    await tester.pumpAndSettle();
+
+    expect(repository.markSkippedCalls, 1);
+    expect(find.text(saveFailed), findsOneWidget);
+    expect(tester.widget<OutlinedButton>(skip).onPressed, isNotNull);
+  });
+
   testWidgets('a Done that lost the race does not celebrate', (tester) async {
     final repository = _FakeScheduleRepository(
       result: Completer<bool>()..complete(false),
@@ -329,9 +368,12 @@ ScheduleItem _item(
 );
 
 class _FakeScheduleRepository implements ScheduleRepository {
-  _FakeScheduleRepository({this.result});
+  _FakeScheduleRepository({this.result, this.offline = false});
 
   final Completer<bool>? result;
+
+  /// Every write throws, like a Firestore transaction with no network (R1).
+  final bool offline;
   var markDoneCalls = 0;
   var markSkippedCalls = 0;
   final skipAnnouncedTo = <String?>[];
@@ -345,6 +387,7 @@ class _FakeScheduleRepository implements ScheduleRepository {
   }) async {
     markSkippedCalls++;
     skipAnnouncedTo.add(announceToPlannerUid);
+    if (offline) throw StateError('UNAVAILABLE');
     return true;
   }
 
@@ -355,6 +398,7 @@ class _FakeScheduleRepository implements ScheduleRepository {
     required String plannerUid,
   }) {
     markDoneCalls++;
+    if (offline) return Future.error(StateError('UNAVAILABLE'));
     return result?.future ?? Future.value(true);
   }
 

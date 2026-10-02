@@ -498,7 +498,7 @@ Reported by the user from the 1.0.0 release build + Crashlytics. Plan →
 sign-off → build, one item at a time, each with regression tests. Do not touch
 unrelated code.
 
-- **R1 Crashes.** (a) `UnsatisfiedLinkError` / `MissingLibraryException`
+- **R1 — PARTLY BUILT 2026-10-02 (offline Done/Skip/Heard crash fixed; ABI = build fix; PERMISSION_DENIED, catchError and Riverpod traces still needed — DECISIONS.md "Crashlytics: offline Done/Skip/Heard crash…").** **Crashes.** (a) `UnsatisfiedLinkError` / `MissingLibraryException`
   (relinker): the tester APK is arm64-only (`--target-platform
   android-arm64`) and reached an x86_64 and a 32-bit-ABI device. Build fix,
   no code: ship an AAB to Play / a fat or split-per-ABI APK. (b) `Future.

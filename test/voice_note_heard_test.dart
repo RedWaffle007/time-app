@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -85,6 +87,21 @@ class _Notifier implements NotificationEventNotifier {
 class _Cache implements VoiceNoteCache {
   @override
   Future<String> ensure(ScheduleItem item) async => '/voice/${item.id}.m4a';
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// A note fetch the test completes by hand (R2).
+class _SlowCache implements VoiceNoteCache {
+  final done = Completer<String>();
+  var calls = 0;
+
+  @override
+  Future<String> ensure(ScheduleItem item) {
+    calls++;
+    return done.future;
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -203,8 +220,9 @@ void main() {
 
   Future<(_Repo, _Notifier, _Player)> pumpCard(
     WidgetTester tester,
-    ScheduleItem item,
-  ) async {
+    ScheduleItem item, {
+    VoiceNoteCache? cache,
+  }) async {
     final repo = _Repo();
     final notifier = _Notifier();
     final player = _Player();
@@ -219,7 +237,7 @@ void main() {
           ),
           scheduleRepositoryProvider.overrideWithValue(repo),
           notificationEventNotifierProvider.overrideWithValue(notifier),
-          voiceNoteCacheProvider.overrideWithValue(_Cache()),
+          voiceNoteCacheProvider.overrideWithValue(cache ?? _Cache()),
           voicePlayerProvider.overrideWithValue(player),
         ],
         child: MaterialApp(
@@ -270,6 +288,37 @@ void main() {
       },
     );
   }
+
+  // R2 (2026-10-02): the card's Play had the popup's bug: no guard while the
+  // note loads, so each extra tap started its own fetch, play and write.
+  testWidgets('a rung voice card: repeated Play taps while the note loads '
+      'fetch, play and record it once', (tester) async {
+    final cache = _SlowCache();
+    final (repo, notifier, player) = await pumpCard(
+      tester,
+      _item(at: DateTime.now().toUtc().subtract(const Duration(hours: 1))),
+      cache: cache,
+    );
+    final play = find.byKey(const ValueKey('voice-play-v'));
+    for (var i = 0; i < 4; i++) {
+      await tester.tap(play, warnIfMissed: false);
+      await tester.tap(
+        find.byKey(const ValueKey('voice-already-heard-v')),
+        warnIfMissed: false,
+      );
+      await tester.pump();
+    }
+    expect(cache.calls, 1);
+    expect(repo.done, isEmpty);
+
+    cache.done.complete('/voice/v.m4a');
+    await tester.pump();
+    await tester.pump(kPlannerUpdateDuration);
+    await tester.pumpAndSettle();
+    expect(player.played, ['/voice/v.m4a']);
+    expect(repo.done, ['me/v/planner']);
+    expect(notifier.events, [NotifyEvent.outcome]);
+  });
 
   testWidgets('a default alarm keeps Done/Skip', (tester) async {
     await pumpCard(
