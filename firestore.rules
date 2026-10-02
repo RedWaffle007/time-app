@@ -1546,6 +1546,25 @@ service cloud.firestore {
                   || callerMayGroupPlan(targetUid, request.resource.data.groupId)))
         );
 
+      // R6 (2026-10-02): the TARGET's optional note to the planner. One per
+      // plan, never edited, only on someone else's plan, written alone (no
+      // other key in the same write), 1..200 characters, stamped by the
+      // server. When it may be offered is a UI decision (beside Skip/Done,
+      // on the missed popups, and right after "Dismiss & reply"), so the
+      // rules do not tie it to the outcome. The Worker reads it from here.
+      allow update: if signedIn()
+        && request.auth.uid == targetUid
+        && resource.data.createdByUid != targetUid
+        && resource.data.status == 'approved'
+        && !('reply' in resource.data)
+        && changedKeys().hasOnly(['reply', 'updatedAt'])
+        && request.resource.data.reply is map
+        && request.resource.data.reply.keys().hasOnly(['text', 'sentAt'])
+        && request.resource.data.reply.text is string
+        && request.resource.data.reply.text.trim().size() > 0
+        && request.resource.data.reply.text.size() <= 200
+        && request.resource.data.reply.sentAt == request.time;
+
       // Missed-alarm review is the sole settled-outcome correction. Keep this
       // separate from the generic target update predicate: every field and
       // both sides of the transition are exact, and the independent alarm fact

@@ -22,6 +22,8 @@ import 'package:time_app/features/reminders/data/alarm_lifecycle_store.dart';
 import 'package:time_app/features/reminders/data/alarm_timeline_repository.dart';
 import 'package:time_app/features/reminders/presentation/missed_alarm_review_host.dart';
 import 'package:time_app/features/scheduling/application/item_lapse_policy.dart';
+import 'package:time_app/features/scheduling/application/schedule_providers.dart';
+import 'package:time_app/features/scheduling/data/schedule_repository.dart';
 import 'package:time_app/features/scheduling/domain/schedule_item.dart';
 import 'package:time_app/features/voice_notes/application/voice_note_cache.dart';
 import 'package:time_app/features/voice_notes/application/voice_note_providers.dart';
@@ -976,6 +978,115 @@ void main() {
     });
   });
 
+  // R6 (2026-10-02): "Send note" sits with the missed popup's answers.
+  group('missed popup: Send note', () {
+    Future<(_ReplyRepo, MissedAlarmService)> open(
+      WidgetTester tester,
+      ScheduleItem item, {
+      _RecordingOutcomes? outcomes,
+    }) async {
+      final repo = _ReplyRepo();
+      final service = MissedAlarmService(
+        store: _MemoryLifecycleStore([_event()]),
+        outcomes: outcomes ?? _RecordingOutcomes(),
+        timeline: _RecordingTimeline(),
+        notifier: _RecordingNotifier(),
+      );
+      final lock = AppLockController(
+        store: _NoopLockStore(),
+        auth: _NoopDeviceAuth(),
+        secureWindow: _NoopSecureWindow(),
+        initiallyEnabled: false,
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            missedAlarmServiceProvider.overrideWithValue(service),
+            appLockControllerProvider.overrideWithValue(lock),
+            scheduleRepositoryProvider.overrideWithValue(repo),
+            notificationEventNotifierProvider.overrideWithValue(
+              _RecordingNotifier(),
+            ),
+            voiceNoteCacheProvider.overrideWithValue(_Cache()),
+            voicePlayerProvider.overrideWithValue(_Player()),
+            profileByUidProvider.overrideWith(
+              (ref, uid) => Stream.value(
+                const UserProfile(
+                  uid: 'planner',
+                  name: '{planner}',
+                  homeTimezone: 'Etc/UTC',
+                ),
+              ),
+            ),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.light,
+            home: const MissedAlarmReviewHost(
+              enabled: true,
+              child: Scaffold(body: Text('Schedule')),
+            ),
+          ),
+        ),
+      );
+      await service.sync([item], 'target');
+      await tester.pumpAndSettle();
+      return (repo, service);
+    }
+
+    final sendNote = find.text('Send note');
+
+    testWidgets('a missed alarm offers Send note with its two answers', (
+      tester,
+    ) async {
+      await open(tester, _item());
+      expect(find.text('Mark as Skipped'), findsOneWidget);
+      expect(find.text('Mark as Done'), findsOneWidget);
+      expect(sendNote, findsOneWidget);
+    });
+
+    testWidgets('a missed voice note offers it too', (tester) async {
+      await open(tester, _item(voiceNote: _voiceMeta));
+      expect(find.text('Play'), findsOneWidget);
+      expect(sendNote, findsOneWidget);
+    });
+
+    testWidgets('a missed self-plan has no one to send a note to', (
+      tester,
+    ) async {
+      await open(tester, _item(createdByUid: 'target'));
+      expect(find.text('Mark as Done'), findsOneWidget);
+      expect(sendNote, findsNothing);
+    });
+
+    testWidgets('after a note is sent the button goes and the answers stay', (
+      tester,
+    ) async {
+      final outcomes = _RecordingOutcomes();
+      final (repo, _) = await open(tester, _item(), outcomes: outcomes);
+      await tester.tap(sendNote);
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('send-note-text')),
+        'Was driving',
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('send-note-send')));
+      await tester.pumpAndSettle();
+
+      expect(repo.replies, ['target/item/Was driving']);
+      expect(sendNote, findsNothing);
+      expect(find.text('Mark as Done'), findsOneWidget);
+      // The note did not answer the alarm.
+      expect(outcomes.done, isEmpty);
+
+      await tester.tap(find.text('Mark as Done'));
+      await tester.pump();
+      await tester.pump(kPlannerUpdateDuration);
+      await tester.pumpAndSettle();
+      expect(outcomes.done, [('target', 'item', 'planner')]);
+    });
+  });
+
   testWidgets('review remains hidden while app lock is active', (tester) async {
     final service = MissedAlarmService(
       store: _MemoryLifecycleStore([_event()]),
@@ -1411,6 +1522,18 @@ class _SlowCache implements VoiceNoteCache {
     calls++;
     return _done.future;
   }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// Records the R6 note writes.
+class _ReplyRepo implements ScheduleRepository {
+  final replies = <String>[];
+
+  @override
+  Future<void> sendReply(String targetUid, String itemId, String text) async =>
+      replies.add('$targetUid/$itemId/$text');
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

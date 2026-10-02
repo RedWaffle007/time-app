@@ -63,6 +63,8 @@ class NotificationRouter {
       case 'voiceFallback':
       // "{name} was unavailable to dismiss the task" (item 6).
       case 'unavailable':
+      // "Note from {name}" (R6): the plan the note is about.
+      case 'replied':
         _openItemInSchedule(data['itemId']);
       // Friend-graph pushes: a new request opens the requests inbox; an accept
       // opens the friends list, where the new friend now appears.

@@ -30,6 +30,10 @@ enum NotifyEvent {
   /// with the "Uh-Oh!" tone. Requires `alarm.unavailableAt`, which the Worker
   /// re-reads.
   unavailable,
+
+  /// The target sent their one note (R6) → notify the planner. Requires
+  /// `reply.text`, which the Worker re-reads; the text never travels here.
+  replied,
 }
 
 /// The app's seam between "something happened to an item" and "the other party

@@ -549,7 +549,8 @@ unrelated code.
   SCHEDULE_EXACT_ALARM on the Redmi) also rings with no lateness check.
 - **Phone tests are deferred until the whole R list is built** (user,
   2026-10-02); then one device pass covers R2–R6.
-- **R6 Reply notes** — DECIDED 2026-10-02. Optional, one per plan, no edits,
+- **R6 Reply notes — BUILT 2026-10-02, awaiting rules deploy → Worker
+  deploy → commit; device check deferred** (DECISIONS.md "Reply notes"). DECIDED 2026-10-02. Optional, one per plan, no edits,
   target → planner. A **Send note** button sits beside the answer buttons
   (default card + missed popup: Skip · Send note · Done; missed voice popup:
   Already heard · Play · Send note; ringing voice alarm: Dismiss · Dismiss &
@@ -838,8 +839,10 @@ builds can still create groups.
 
 ## Immediate next action
 
-0. **"Release-build feedback 2026-10-02" (R1–R6)**: get the user's sign-off
-   on the plan, then build in the agreed order.
+0. **"Release-build feedback 2026-10-02" (R1–R6) is BUILT** (2026-10-02).
+   Next: deploy rules (R6) → Worker (R4 voice copy, R6 `replied`) → build
+   `1.0.0+5`, then ONE device pass for R2–R6 (deferred by the user until the
+   list was done). Play Console: declare the exact-alarm use (R5).
 1. **Device pass** on a FRESH build of `9c5d428` (and a second phone for the
    cross-account parts): "Deferred device checks", the **Newest (2026-09-28
    evening)** block first, then **Latest (2026-09-28)**. The user is reporting bugs from it; fix what they report

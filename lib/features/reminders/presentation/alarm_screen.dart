@@ -19,6 +19,7 @@ import '../application/missed_alarm_providers.dart';
 import '../application/reminder_policy.dart';
 import '../application/reminder_providers.dart';
 import '../data/alarm_lifecycle_store.dart';
+import '../../outcomes/presentation/reply_note.dart';
 
 /// The full-screen alarm surface a reminder lands on.
 ///
@@ -201,6 +202,25 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
   Future<void> _leave() async {
     if (_dismissing) return;
     _dismissing = true;
+    await _stopAndRecordDismissed();
+    if (!mounted) return;
+    _goToPlan();
+  }
+
+  /// R6: "Dismiss & reply" on a voice note. Dismissing first (so the tone
+  /// stops and the planner hears "heard", as with Dismiss), then the optional
+  /// note pop-up right here, then the same landing as Dismiss.
+  Future<void> _dismissAndReply(ScheduleItem item) async {
+    if (_dismissing) return;
+    _dismissing = true;
+    await _stopAndRecordDismissed();
+    if (!mounted) return;
+    await showSendNoteDialog(context, ref, item);
+    if (!mounted) return;
+    _goToPlan();
+  }
+
+  Future<void> _stopAndRecordDismissed() async {
     await ref.read(alarmSoundProvider).stop(widget.itemId);
     final uid = ref.read(currentUidProvider);
     if (uid != null) {
@@ -211,7 +231,9 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
             .recordDismissed(uid, widget.itemId),
       );
     }
-    if (!mounted) return;
+  }
+
+  void _goToPlan() {
     if (widget.itemId.isNotEmpty) {
       // Set the highlight intent BEFORE navigating — the deterministic signal
       // the Plan shell listens to (query params were unreliable on the cached
@@ -307,6 +329,21 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
                     child: Text('Dismiss'),
                   ),
                 ),
+                // R6: a voice note may be answered with a note. Dismiss alone
+                // sends none.
+                if (item != null &&
+                    item.isVoiceAlarm &&
+                    item.reply == null) ...[
+                  const SizedBox(height: Space.sm),
+                  OutlinedButton(
+                    key: const ValueKey('alarm-dismiss-reply'),
+                    onPressed: () => _dismissAndReply(item),
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(vertical: Space.sm),
+                      child: Text('Dismiss & reply'),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -316,9 +353,6 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
   }
 }
 
-/// True when an alarm is over and must not be shown or rung again: the native
-/// side recorded its timeout, or the item already has an answer, an
-/// "unavailable" fact or a dismissal. Pure, for tests.
 /// R5 (2026-10-02): an alarm more than one full ring past its time that is
 /// not ringing now must not start ringing — it ends as missed instead (the
 /// native `AlarmLatenessPolicy` applies the same minute).
@@ -332,6 +366,9 @@ bool alarmTooLateToRing(
     !ringingNow &&
     nowUtc.difference(item.scheduledInstantUtc) > kMaxAlarmLateness;
 
+/// True when an alarm is over and must not be shown or rung again: the native
+/// side recorded its timeout, or the item already has an answer, an
+/// "unavailable" fact or a dismissal. Pure, for tests.
 bool alarmHasEnded({
   required String itemId,
   required ScheduleItem? item,

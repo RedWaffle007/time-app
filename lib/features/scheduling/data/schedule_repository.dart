@@ -361,6 +361,16 @@ class ScheduleRepository {
     );
   }
 
+  /// The target's one note to the planner (R6). Written alone and
+  /// server-stamped; the rules refuse a second one, a blank one or one over
+  /// [ScheduleReply.maxLength]. The planner's push follows separately.
+  Future<void> sendReply(String targetUid, String itemId, String text) {
+    return _items(targetUid).doc(itemId).update({
+      'reply': {'text': text.trim(), 'sentAt': FieldValue.serverTimestamp()},
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   /// Target records completion — status stays `approved`, outcome is layered on.
   Future<bool> markDone(
     String targetUid,

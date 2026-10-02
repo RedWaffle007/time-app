@@ -263,6 +263,64 @@ void main() {
     expect(find.text('PLAN'), findsOneWidget);
   });
 
+  // R6 (2026-10-02): a ringing VOICE note can be answered with a note.
+  ScheduleItem voiceItem() => ScheduleItem(
+    id: 'a',
+    targetUid: 'me',
+    createdByUid: 'planner',
+    groupId: '',
+    title: 'Voice alarm',
+    localWallTime: '',
+    timezone: 'Asia/Kolkata',
+    scheduledInstantUtc: DateTime.utc(2030, 1, 1, 3, 30),
+    status: ScheduleItemStatus.approved,
+    voiceNote: const VoiceNoteMeta(
+      durationMs: 5000,
+      sha256:
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      sizeBytes: 100,
+    ),
+  );
+  final dismissReply = find.byKey(const ValueKey('alarm-dismiss-reply'));
+
+  testWidgets('a default alarm offers Dismiss only', (t) async {
+    await t.pumpWidget(harness(_FakeAlarmSound(), _FakeScheduler()));
+    await t.pumpAndSettle();
+    expect(find.text('Dismiss'), findsOneWidget);
+    expect(dismissReply, findsNothing);
+  });
+
+  testWidgets('a voice note: Dismiss & reply stops it, records the '
+      'dismissal, then asks for the optional note before leaving', (t) async {
+    final sound = _FakeAlarmSound();
+    final timeline = _FakeAlarmTimelineRepository();
+    await t.pumpWidget(
+      harness(
+        sound,
+        _FakeScheduler(),
+        timeline: timeline,
+        items: Stream.value([voiceItem()]),
+      ),
+    );
+    await t.pumpAndSettle();
+    expect(find.text('Dismiss'), findsOneWidget);
+    expect(find.text('Dismiss & reply'), findsOneWidget);
+
+    await t.tap(dismissReply);
+    await t.pumpAndSettle();
+    expect(sound.stops, 1);
+    expect(timeline.dismissed, ['a']);
+    expect(
+      find.text('Optional: send a note to {planner} about this voice note.'),
+      findsOneWidget,
+    );
+    expect(find.text('PLAN'), findsNothing);
+
+    await t.tap(find.text('Cancel'));
+    await t.pumpAndSettle();
+    expect(find.text('PLAN'), findsOneWidget);
+  });
+
   testWidgets('Volume Down silence leaves through the same dismiss path', (
     t,
   ) async {

@@ -163,6 +163,29 @@ class VoiceNoteMeta {
   }
 }
 
+/// The target's optional note to the planner (R6, 2026-10-02): one per plan,
+/// never edited, 1..[maxLength] characters, server-stamped. Shown on the
+/// History cards of both people; sent to the planner as its own push.
+class ScheduleReply {
+  const ScheduleReply({required this.text, this.sentAt});
+
+  static const maxLength = 200;
+
+  final String text;
+  final DateTime? sentAt;
+
+  static ScheduleReply? fromMap(Object? raw) {
+    if (raw is! Map) return null;
+    final text = raw['text'];
+    if (text is! String || text.trim().isEmpty) return null;
+    final at = raw['sentAt'];
+    return ScheduleReply(
+      text: text.trim(),
+      sentAt: at is Timestamp ? at.toDate() : null,
+    );
+  }
+}
+
 /// A timetable item a planner created for a target. Stored at
 /// `scheduleItems/{targetUid}/items/{itemId}`.
 class ScheduleItem {
@@ -183,6 +206,7 @@ class ScheduleItem {
     this.note,
     this.outcome,
     this.alarm,
+    this.reply,
     this.rejectionReason,
     this.createdAt,
     this.decidedAt,
@@ -222,6 +246,9 @@ class ScheduleItem {
 
   final ScheduleOutcome? outcome;
   final ScheduleAlarmTimeline? alarm;
+
+  /// The target's note to the planner, if they sent one (R6).
+  final ScheduleReply? reply;
   final String? rejectionReason;
   final DateTime? createdAt;
 
@@ -282,6 +309,15 @@ class ScheduleItem {
   /// popup's Play / Already heard mean heard late; 24 hours unanswered lapses
   /// it. A self-plan never carries a voice note (F4).
   bool get isVoiceAlarm => voiceNote != null && createdByUid != targetUid;
+
+  /// Whether the target may still send a note (R6): someone else's live plan,
+  /// no note yet, not answered. "Dismiss & reply" opens the note right after
+  /// the dismissal instead, so it does not ask this.
+  bool get canSendReply =>
+      createdByUid != targetUid &&
+      status == ScheduleItemStatus.approved &&
+      outcome == null &&
+      reply == null;
 
   /// Nothing further will happen to this item.
   bool get isSettled => isAutoArchived || isManuallyArchivable;
@@ -345,6 +381,7 @@ class ScheduleItem {
       voiceNote: VoiceNoteMeta.fromMap(d['voiceNote']),
       outcome: ScheduleOutcome.fromMap(d['outcome'] as Map<String, dynamic>?),
       alarm: ScheduleAlarmTimeline.fromMap(d['alarm'] as Map<String, dynamic>?),
+      reply: ScheduleReply.fromMap(d['reply']),
       rejectionReason: d['rejectionReason'] as String?,
       createdAt: (d['createdAt'] as Timestamp?)?.toDate(),
       decidedAt: (d['decidedAt'] as Timestamp?)?.toDate(),

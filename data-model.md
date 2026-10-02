@@ -154,6 +154,7 @@ Split into **commitment fields** (changing these re-triggers consent) and
 | `status` | enum | See state machine. |
 | `outcome` | map? | See below. Target-recorded completion or skip. |
 | `alarm` | map? | Target-device observations: optional `rangAt`, `dismissedAt`, and `unavailableAt` timestamps. See below. |
+| `reply` | map? | R6 (2026-10-02): the target's optional note to the planner, `{text (1..200), sentAt (server time)}`. Target-only, once, never edited, never on a self-plan, written alone. The Worker's `replied` event reads it for the planner's "Note from {name}" push (dedup `notifiedReply`). |
 | `rejectionReason` / `withdrawnReason` / `cancellationReason` | string? | Optional, per terminal transition. |
 | `createdAt` / `decidedAt` / `updatedAt` | Timestamp | `decidedAt` = when the target approved/rejected. |
 

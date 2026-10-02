@@ -37,6 +37,7 @@ import '../application/schedule_partition.dart';
 import '../application/schedule_time_section.dart';
 import 'hero_band.dart';
 import 'updating_planner_dialog.dart';
+import 'reply_note.dart';
 
 /// The target's approved items — where they mark Done or Skip, and where a
 /// tapped reminder lands.
@@ -629,8 +630,10 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
               // same two choices as the missed popup.
               if (outcome == null && item.isVoiceAlarm) ...[
                 if (!item.scheduledInstantUtc.isAfter(DateTime.now().toUtc()))
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
+                  Wrap(
+                    alignment: WrapAlignment.end,
+                    spacing: Space.sm,
+                    runSpacing: Space.xs,
                     children: [
                       OutlinedButton(
                         key: ValueKey('voice-already-heard-${item.id}'),
@@ -639,7 +642,9 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
                             : () => _markHeard(play: false),
                         child: const Text('Already heard'),
                       ),
-                      const SizedBox(width: Space.sm),
+                      // R6: the optional note, beside the answers.
+                      if (item.canSendReply)
+                        SendNoteButton(item: item, enabled: !_writingOutcome),
                       FilledButton.icon(
                         key: ValueKey('voice-play-${item.id}'),
                         onPressed: _writingOutcome
@@ -651,8 +656,10 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
                     ],
                   ),
               ] else if (outcome == null)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
+                Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: Space.sm,
+                  runSpacing: Space.xs,
                   children: [
                     // Skipping is a legitimate outcome, so it gets the neutral
                     // secondary treatment — never red (UI-RULES.md §2.5).
@@ -660,7 +667,10 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
                       onPressed: _writingOutcome ? null : () => _skip(context),
                       child: const Text('Skip'),
                     ),
-                    const SizedBox(width: Space.sm),
+                    // R6: Skip · Send note · Done. Tapping Skip or Done
+                    // directly means no note; nothing extra is asked.
+                    if (item.canSendReply)
+                      SendNoteButton(item: item, enabled: !_writingOutcome),
                     FilledButton(
                       onPressed: _writingOutcome ? null : _markDone,
                       child: Text(_writingOutcome ? 'Saving…' : 'Done'),
@@ -721,6 +731,9 @@ class _OutcomeCardState extends ConsumerState<OutcomeCard> {
       runSpacing: Space.xs,
       children: [
         StatusBadge.itemOutcome(widget.item, context),
+        // R6: the note this plan was answered with, if one was sent.
+        if (widget.item.reply != null)
+          ReplyNoteButton(item: widget.item, iAmTarget: true),
         // Only once an outcome is recorded — a live item is hideable by no
         // route at all.
         if (widget.item.isManuallyArchivable) ArchiveButton(item: widget.item),

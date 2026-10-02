@@ -27,6 +27,7 @@ import '../domain/schedule_item.dart';
 import 'planner_item_detail_sheet.dart';
 import '../../voice_notes/application/voice_delivery_policy.dart';
 import '../../outcomes/application/schedule_partition.dart';
+import '../../outcomes/presentation/reply_note.dart';
 
 /// The planner's view of everything they created — updates LIVE as the target
 /// approves/rejects and marks Done/Skip (Option B: no push, just a Firestore
@@ -420,6 +421,9 @@ class PlannerItemCard extends ConsumerWidget {
         overflowSpacing: Space.xs,
         children: [
           status,
+          // R6: the target's note, on the answered card only.
+          if (item.outcome != null && item.reply != null)
+            ReplyNoteButton(item: item, iAmTarget: false),
           if (canCancel)
             TextButton(
               key: const ValueKey('planner-cancel-alarm'),

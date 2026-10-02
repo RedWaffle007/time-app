@@ -7949,3 +7949,29 @@ is our core feature."
     `ringingItem`; never re-opens the alarm already on screen.
 - No code can ring a switched-off phone or one whose cleaner killed the app;
   those end as a missed alarm, never a late ring.
+
+## Reply notes: the target's optional note to the planner (R6, 2026-10-02)
+
+User-directed and decided step by step on 2026-10-02.
+
+- **Where:** "Send note" sits BESIDE the answer buttons, never after them:
+  a friend's alarm card on Home, Skip · Send note · Done; a rung voice-note
+  card, Already heard · Send note · Play; the missed popups (alarm and voice)
+  under their two answers; the ringing voice alarm, Dismiss · "Dismiss &
+  reply". Tapping an answer directly means no note and nothing extra is asked
+  (the user's lower-friction choice). No note once a plan is answered,
+  except "Dismiss & reply", which opens it right after the dismissal.
+- **The pop-up:** "Optional: send a note to {planner} about this alarm /
+  voice note", up to 200 characters, Send / Cancel. A failed save says so and
+  keeps the text.
+- **One note per plan, never edited** (`item.reply {text, sentAt}`), only on
+  someone else's plan, written alone and server-stamped. A separate rules
+  branch, so the existing target update rule is byte-for-byte unchanged.
+- **Its own push**, never folded into Done/Skip/heard: Worker event
+  `replied` (target-triggered; text re-read from Firestore), title "Note from
+  {name}" (+ " in {group}"), body "About {task}: {note}" or "About your voice
+  note: {note}". A group plan's note is a push of its own, not a live list.
+  Tapping it opens the plan.
+- **Reading it:** History cards of both people, only when a note exists and
+  the plan is answered: "Note" opens "Your note" / "Note from {name}".
+- Deploy order: rules → Worker → app.

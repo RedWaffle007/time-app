@@ -33,6 +33,7 @@
 //   decided     target         planner    approved | rejected  (item.status)
 //   outcome     target         planner    done | skipped       (outcome.result)
 //   dismissed   target         planner    —  (requires item.alarm.dismissedAt)
+//   replied     target         planner    —  (requires item.reply.text, R6)
 //
 // `event` says WHICH transition this push is for; it is NOT trusted as the state.
 // The item is re-read and the sub-type is DERIVED from Firestore — the caller
@@ -45,7 +46,7 @@ import { recordAndBuildSummary, summaryListFor } from './group-summary.js';
 
 export const ITEM_EVENTS = new Set([
   'created', 'decided', 'outcome', 'withdrawn', 'dismissed', 'voiceFallback',
-  'unavailable',
+  'unavailable', 'replied',
 ]);
 const EVENTS = ITEM_EVENTS;
 
@@ -266,6 +267,12 @@ function deriveEvent(event, item) {
         return { ok: false, reason: 'not-dismissed' };
       }
       return { ok: true, subtype: null, field: 'notifiedDismissed', value: true };
+    case 'replied':
+      // R6 (2026-10-02): the target's one note to the planner. The text is
+      // read HERE from Firestore (the rules let only the target write it,
+      // once), never taken from the request.
+      if (!replyText(item)) return { ok: false, reason: 'no-reply' };
+      return { ok: true, subtype: null, field: 'notifiedReply', value: true };
     default:
       return { ok: false, reason: 'bad-args' };
   }
@@ -289,6 +296,12 @@ export function isNegativeItemEvent(event, subtype, item) {
   if (event === 'unavailable') return true;
   return event === 'outcome' && subtype === 'skipped'
     && Boolean(item && item.alarm && item.alarm.unavailableAt);
+}
+
+/** The target's note (R6), trimmed, or '' when there is none. */
+export function replyText(item) {
+  const text = item && item.reply && item.reply.text;
+  return typeof text === 'string' ? text.trim() : '';
 }
 
 export function isVoiceAlarm(item) {
@@ -417,6 +430,16 @@ export function buildMessage(event, subtype, item, targetUid, itemId, names = {}
             title: `${noun('alarm')} dismissed`,
             body: `${who} dismissed the alarm for ${title}${inGroup}`,
           };
+      break;
+    case 'replied':
+      // R6: its own push, never folded into Done/Skip/heard. Names the sender
+      // and the plan it is about (a voice note has no task name).
+      notification = {
+        title: `Note from ${who}${inGroup}`,
+        body: isVoiceAlarm(item)
+          ? `About your voice note: ${replyText(item)}`
+          : `About ${title}: ${replyText(item)}`,
+      };
       break;
     case 'outcome': {
       const timing = outcomeTiming(subtype, item);

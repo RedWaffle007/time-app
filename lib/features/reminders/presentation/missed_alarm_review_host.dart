@@ -12,6 +12,7 @@ import '../../celebrations/application/celebration_providers.dart';
 import '../../celebrations/domain/completion_celebration.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../outcomes/application/outcome_feedback.dart';
+import '../../outcomes/presentation/reply_note.dart';
 import '../../voice_notes/application/voice_note_cache.dart';
 import '../../voice_notes/application/voice_note_providers.dart';
 import '../application/missed_alarm_providers.dart';
@@ -42,6 +43,10 @@ class _MissedAlarmReviewHostState extends ConsumerState<MissedAlarmReviewHost> {
   /// 2026-10-02). Set on the FIRST tap, before any await, so repeated taps
   /// cannot start a second fetch, play or "heard" write.
   bool _preparingVoice = false;
+
+  /// Reviews whose note was just sent (R6). The review holds an item
+  /// snapshot, so the button is hidden here rather than waiting for a resync.
+  final _noteSent = <String>{};
 
   /// The review being answered. The service drops it from its list at once,
   /// so it is held here to keep "Updating {planner}…" on screen for the full
@@ -347,6 +352,26 @@ class _MissedAlarmReviewHostState extends ConsumerState<MissedAlarmReviewHost> {
                                           ),
                                         ),
                                       ],
+                                    ),
+                                  // R6: the optional note, with the
+                                  // answers. Answering directly sends none.
+                                  if (!_acting &&
+                                      review.item.canSendReply &&
+                                      !_noteSent.contains(review.event.key))
+                                    Padding(
+                                      padding: const EdgeInsets.only(
+                                        top: Space.sm,
+                                      ),
+                                      child: Center(
+                                        child: SendNoteButton(
+                                          item: review.item,
+                                          enabled: !_preparingVoice,
+                                          onSent: () => setState(
+                                            () =>
+                                                _noteSent.add(review.event.key),
+                                          ),
+                                        ),
+                                      ),
                                     ),
                                 ],
                               ),
