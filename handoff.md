@@ -39,6 +39,9 @@
   except to check the exact APK being shared with an external tester (see
   "International test build"); switching signatures needs an uninstall, which
   wipes the app's data and sign-in.
+- **Raise the build number (`version: 1.0.0+N` in pubspec.yaml) before every
+  build shared with anyone** (2026-10-02): Crashlytics can only tell builds
+  apart by it. Now `+5`.
 - **Release APK for testers (arm64 only, lean):**
   `flutter build apk --release --target-platform android-arm64` →
   `build/app/outputs/flutter-apk/app-release.apk`. The release SHA-1
@@ -506,6 +509,20 @@ unrelated code.
   (`main.dart:37` = the zone-level `platformDispatcher.onError`), (d) Riverpod
   "setState() or markNeedsBuild() called during build": need the full
   Crashlytics stack traces before fixing; no guessed fixes.
+- **R1 Crashlytics read 2026-10-02** (API `firebasecrashlytics.googleapis.com`
+  now enabled; read-only via `gcloud auth print-access-token`, project number
+  1017134330881, app `1:1017134330881:android:0ed2f09fe549a2978b7c00`,
+  `.../v1alpha/projects/{n}/apps/{app}/reports/topIssues` and
+  `/events?filter.issue.id=`). Every event says `1.0.0 (4)`: the build number
+  never changes, so reports cannot be tied to a build. Findings: Riverpod
+  markNeedsBuild (2 events, 09-25/26, `calendar_screen.dart:122` + tab
+  ticker resume) = upstream bug fixed in riverpod 3.4.0/3.4.2 (we lock 3.3.2);
+  pending_approvals crashes = removed code (F2); go_router back-gesture null
+  check once (09-25); catchError once (09-27, no frames); PERMISSION_DENIED
+  twice (09-29, no frames, likely an old build against the 09-27 rules);
+  non-fatal Worker push "failures" are 60% `already-notified` (normal dedup),
+  24 `no-active-grant` all on 09-26 (F2 day), 14 real timeouts.
+  DONE same day: riverpod 3.4.3, build `+5`, `already-notified` not reported.
 - **R2 — BUILT 2026-10-02, awaiting Worker deploy + commit + device check.** **Missed voice-note popup Play lag.** Root cause: `_actVoice(play: true)`
   has no in-flight guard while `voiceNoteCache.ensure` runs, so repeated taps
   each start fetch + play + `markDone`; the duplicates surface as "Could not
@@ -515,8 +532,10 @@ unrelated code.
   `notify.js` `isRemoteAlarm`), not the `alarmHeadline()` sentence, so the
   ringing notification, lock-screen alarm and missed notice have no name until
   the app is opened. Also the default-alarm missed popup body has no name.
-- **R4 Plan for multiple friends** (no group needed): N independent friendship
-  plans in one Send.
+- **R4 — BUILT 2026-10-02, awaiting Worker deploy + commit + device check**
+  (DECISIONS.md "One plan for several friends"). **Plan for multiple friends**
+  (no group needed): Plan → "Several friends" → checklist → the group sheet in
+  friends mode; ordinary friendship plans, `groupId` empty.
 - **R5 Alarm tone on a notification:** needs the repro (which notification,
   which phone, app open/closed) — code shows every alarm channel silent.
 - **R6 Reply notes** — DECIDED 2026-10-02. Optional, one per plan, no edits,

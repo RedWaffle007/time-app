@@ -7872,3 +7872,46 @@ Release-build feedback R1, from the user's Crashlytics stack traces.
   (only the zone handler, `main.dart:37`; a `DocumentReference.get` was in
   flight), so its caller is not identified yet. The `catchError` type error
   and the Riverpod "setState() during build" traces are still needed.
+
+## Crashlytics hygiene: Riverpod 3.4.3, build number per build, no dedup noise (2026-10-02)
+
+From reading Crashlytics directly (handoff.md R1).
+
+- **Riverpod 3.3.2 → 3.4.3** (`flutter_riverpod: ^3.4.3`). The two
+  "setState() or markNeedsBuild() called during build" crashes flush a
+  provider inside a widget's mount / TickerMode resume (`calendar_screen.dart`
+  build, tab switch) — the upstream bug fixed in 3.4.0 ("markNeedsBuild
+  exception when flushing a provider inside Widget lifecycle") and 3.4.2. Only
+  riverpod/flutter_riverpod changed (+ their new `listen` dep); 26 transitive
+  packages dropped because riverpod no longer depends on `test`.
+- **Build number goes up with every shared build** (`1.0.0+5` now). Every
+  report so far said `1.0.0 (4)`, so no crash could be tied to a build. The
+  version NAME stays parked for the user.
+- **`already-notified` is no longer reported** (`shouldReportUndelivered`).
+  It is the Worker's dedup reply, treated as success by every caller, and was
+  60% of all Crashlytics reports.
+
+## One plan for several friends (R4, 2026-10-02)
+
+User-directed: plan for several friends at once without a group.
+
+- **Entry:** the Plan screen's person list gains a "Several friends" row
+  under you (only with 2+ friends) → a friend checklist (at least two) → the
+  group plan sheet in a friends mode (`showFriendsPlanSheet`). The screen's
+  own single-person pick is untouched.
+- **Same as a group, decided by the user:** each friend's alarm rings at the
+  chosen wall time in THEIR home zone; Default Alarm or Voice Note; "Everyone's
+  time"; who gets it before Send. You are not included.
+- **Ordinary friendship plans underneath:** `planForGroup` with an empty
+  `groupId`, so every alarm is exactly a single-friend plan (friendship is the
+  permission, minute lock in the same write, each friend's answer reaches the
+  planner as a normal push). No rules change.
+- **Busy friends:** checked before Send by reading each friend's minute lock
+  directly (what the Plan screen already does); the group-only Worker calls
+  (`groupAvailability`, busy report) are never made, and, like a single-friend
+  plan, a busy friend is not pushed. The planner's message names them.
+- **Voice:** one upload, then a server-side `/voice/copy` per further friend.
+  The Worker's copy now accepts an empty group and then checks friendship
+  (`callerMayPlanFor`), so a non-friend is still refused. Group copies are
+  unchanged.
+- Groups unchanged: every group-mode string and call is as before (tests).

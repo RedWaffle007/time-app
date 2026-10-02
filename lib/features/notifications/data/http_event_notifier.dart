@@ -19,6 +19,13 @@ import '../application/outcome_notifier.dart';
 /// creator; for a target-triggered event (decided/outcome) the target. The
 /// caller does NOT assert the outcome/decision — the Worker re-reads it from
 /// Firestore — so only `event`, `targetUid`, `itemId` are sent.
+/// Whether a Worker reply is worth a Crashlytics report. `already-notified`
+/// is the Worker's dedup answering a repeat of a push it already sent, which
+/// every caller treats as success; it was 60% of all reports (2026-10-02) and
+/// hid the real failures.
+bool shouldReportUndelivered(NotificationDeliveryResult result) =>
+    !result.delivered && result.reason != 'already-notified';
+
 class HttpEventNotifier implements NotificationEventNotifier {
   @override
   Future<void> notify({
@@ -72,7 +79,7 @@ class HttpEventNotifier implements NotificationEventNotifier {
         statusCode: response.statusCode,
         body: response.body,
       );
-      if (!result.delivered) {
+      if (shouldReportUndelivered(result)) {
         FirebaseCrashlytics.instance.recordError(
           StateError('Worker delivery failed: ${result.reason}'),
           StackTrace.current,
