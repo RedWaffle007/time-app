@@ -492,6 +492,50 @@ Batch E — build, one item at a time, thorough regression tests each:
     Share buttons send the link. Needs the signing SHA-256 fingerprints (debug
     now; release when a release key exists) for assetlinks.
 
+## Release-build feedback 2026-10-02 — PLANNED, awaiting sign-off (not started)
+
+Reported by the user from the 1.0.0 release build + Crashlytics. Plan →
+sign-off → build, one item at a time, each with regression tests. Do not touch
+unrelated code.
+
+- **R1 Crashes.** (a) `UnsatisfiedLinkError` / `MissingLibraryException`
+  (relinker): the tester APK is arm64-only (`--target-platform
+  android-arm64`) and reached an x86_64 and a 32-bit-ABI device. Build fix,
+  no code: ship an AAB to Play / a fat or split-per-ABI APK. (b) `Future.
+  catchError` handler type error, (c) two uncaught `PERMISSION_DENIED`
+  (`main.dart:37` = the zone-level `platformDispatcher.onError`), (d) Riverpod
+  "setState() or markNeedsBuild() called during build": need the full
+  Crashlytics stack traces before fixing; no guessed fixes.
+- **R2 — BUILT 2026-10-02, awaiting Worker deploy + commit + device check.** **Missed voice-note popup Play lag.** Root cause: `_actVoice(play: true)`
+  has no in-flight guard while `voiceNoteCache.ensure` runs, so repeated taps
+  each start fetch + play + `markDone`; the duplicates surface as "Could not
+  finish syncing" snackbars. Fix: busy state from the first tap, single flight.
+- **R3 — BUILT 2026-10-02 (same status as R2; DECISIONS.md "Missed voice-note Play lag; planner name on missed alarms").** **Planner name missing.** Root cause: a killed-app alarm is armed by the
+  FCM background handler with `data.title` = the raw task title (Worker
+  `notify.js` `isRemoteAlarm`), not the `alarmHeadline()` sentence, so the
+  ringing notification, lock-screen alarm and missed notice have no name until
+  the app is opened. Also the default-alarm missed popup body has no name.
+- **R4 Plan for multiple friends** (no group needed): N independent friendship
+  plans in one Send.
+- **R5 Alarm tone on a notification:** needs the repro (which notification,
+  which phone, app open/closed) — code shows every alarm channel silent.
+- **R6 Reply notes** — DECIDED 2026-10-02. Optional, one per plan, no edits,
+  target → planner. A **Send note** button sits beside the answer buttons
+  (default card + missed popup: Skip · Send note · Done; missed voice popup:
+  Already heard · Play · Send note; ringing voice alarm: Dismiss · Dismiss &
+  reply). Tapping Skip/Done/Dismiss directly = no note, no extra prompt. Send
+  note opens a SEPARATE pop-up ("Optional: send a note to {planner} about
+  this alarm / voice note"); the note is its OWN push, never folded into
+  Done/Skip/heard: title "Note from {name}" (+ " in {group}"), body "About
+  {task}: {note}" / "About your voice note: {note}". NOT sendable once the
+  plan is answered (Done/Skip/heard ends it; user-directed). History cards
+  (both target and planner) show a **Note** button only when a note exists;
+  tapping it shows the note. Rules + Worker + app.
+- R3 also: missed notification title "Missed alarm from {planner}" /
+  "Missed voice note from {planner}" (user-approved).
+- Order agreed: R2 + R3 → R1 (needs stack traces) → R5 (needs repro) → R4
+  (same local time per friend, like groups) → R6.
+
 ## Remaining roadmap
 
 ### Batch F — device feedback after 32c (added 2026-09-26) — DONE
@@ -764,6 +808,8 @@ builds can still create groups.
 
 ## Immediate next action
 
+0. **"Release-build feedback 2026-10-02" (R1–R6)**: get the user's sign-off
+   on the plan, then build in the agreed order.
 1. **Device pass** on a FRESH build of `9c5d428` (and a second phone for the
    cross-account parts): "Deferred device checks", the **Newest (2026-09-28
    evening)** block first, then **Latest (2026-09-28)**. The user is reporting bugs from it; fix what they report

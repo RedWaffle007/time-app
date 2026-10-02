@@ -397,7 +397,7 @@ class AlarmSoundService : Service() {
             val text = AlarmSoundPolicy.missedText(headlines[itemId])
             val notification = NotificationCompat.Builder(this, MISSED_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle(AlarmSoundPolicy.MISSED_TITLE)
+                .setContentTitle(AlarmSoundPolicy.missedTitle(headlines[itemId]))
                 .setContentText(text)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(text))
                 .setCategory(NotificationCompat.CATEGORY_REMINDER)

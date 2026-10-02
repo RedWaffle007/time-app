@@ -296,6 +296,23 @@ export function isVoiceAlarm(item) {
     && Boolean(item.createdByUid) && item.createdByUid !== item.targetUid;
 }
 
+// R3 (2026-10-02): the ONE alarm sentence, word for word the app's
+// `alarmHeadline()` (lib/features/reminders/application/reminder_policy.dart).
+// A killed-app alarm is armed from this push, and its sentence is what the
+// ringing notification, the lock-screen alarm and the missed notice say, so it
+// must carry the planner's name. Both sides are pinned by the shared
+// test/fixtures/alarm_headline_cases.json.
+export function alarmHeadline(item, plannerName) {
+  const title = String(item.title || '').trim();
+  if (item.createdByUid && item.createdByUid === item.targetUid) {
+    return `You planned ${title}`;
+  }
+  const name = typeof plannerName === 'string' ? plannerName.trim() : '';
+  const who = name || 'Someone';
+  if (item.voiceNote) return `${who} sent you a voice alarm`;
+  return `${who} planned ${title} for you`;
+}
+
 export const ACTIVITY_CHANNEL_ID = 'planner_activity';
 
 // Item 6 (2026-09-27): "{Y} was unavailable…" plays a cartoon "Uh-Oh!"
@@ -468,7 +485,7 @@ export function buildMessage(event, subtype, item, targetUid, itemId, names = {}
         ...data,
         command: 'scheduleReminder',
         fireAtUtc: String(item.scheduledInstantUtc || ''),
-        title,
+        title: alarmHeadline(item, names.actorName),
         body: item.note
           ? String(item.note)
           : 'Tap to mark it done or skip.',

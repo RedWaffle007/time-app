@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   ACTIVITY_CHANNEL_ID,
+  alarmHeadline,
   buildMessage,
   groupAdminUids,
   hasActiveItemGrant,
@@ -143,7 +144,7 @@ test('an alarm set through the (merged) emergency grant carries the alarm comman
     itemId: 'item-2',
     command: 'scheduleReminder',
     fireAtUtc,
-    title: 'Take medicine',
+    title: 'Someone planned Take medicine for you',
     body: 'With water',
     pushTitle: 'New alarm for you',
     pushBody: 'Someone set Take medicine for you',
@@ -688,7 +689,7 @@ test('a new group alarm keeps the alarm command and says group', () => {
     scheduledInstantUtc: '2030-01-01T10:00:00.000Z',
   }, 't', 'i', { actorName: 'Test Person', groupName: 'Family' });
   assert.equal(message.data.command, 'scheduleReminder');
-  assert.equal(message.data.title, 'Evacuate');
+  assert.equal(message.data.title, 'Test Person planned Evacuate for you');
   assert.equal(message.data.pushTitle, 'New group alarm for you');
   assert.equal(message.data.pushBody, 'Test Person set Evacuate for you in Family');
 });
@@ -1110,7 +1111,7 @@ test('every NEW alarm is an alarm command, so a killed app still arms it', () =>
   assert.equal(message.notification, undefined, 'data-only');
   assert.equal(message.android.priority, 'high');
   assert.equal(message.data.command, 'scheduleReminder');
-  assert.equal(message.data.title, 'Meds');
+  assert.equal(message.data.title, 'Test Planner planned Meds for you');
   assert.equal(message.data.body, 'With water');
   assert.equal(message.data.pushTitle, 'New alarm for you');
   assert.equal(message.data.pushBody, 'Test Planner set Meds for you');
@@ -1524,4 +1525,36 @@ test('the unavailable push rides the Uh-Oh channel and is claimed once', async (
   ]);
   assert.equal(h.sent.length, 1);
   assert.equal(h.sent[0].android.notification.channel_id, 'planner_unavailable');
+});
+
+// R3 (2026-10-02): the killed-app alarm says who planned it, word for word
+// the app's alarmHeadline(); both sides read the same fixture.
+test('the alarm command carries the app\'s alarm sentence (shared fixture)', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const cases = JSON.parse(await readFile(
+    new URL('../../test/fixtures/alarm_headline_cases.json', import.meta.url),
+  ));
+  assert.ok(cases.length >= 5);
+  for (const c of cases) {
+    assert.equal(alarmHeadline(c.item, c.plannerName), c.expected, c.name);
+  }
+});
+
+test('a killed-app alarm for someone else names the planner, voice too', () => {
+  const plain = buildMessage('created', null, {
+    title: 'Walk', status: 'approved', targetUid: 't', createdByUid: 'p',
+    scheduledInstantUtc: '2030-01-01T10:00:00.000Z',
+  }, 't', 'i', { actorName: 'Test Planner', groupName: null });
+  assert.equal(plain.data.title, 'Test Planner planned Walk for you');
+  const voice = buildMessage('created', null, {
+    title: 'Voice alarm', status: 'approved', targetUid: 't', createdByUid: 'p',
+    voiceNote: { sha256: 'a'.repeat(64), sizeBytes: 100 },
+    scheduledInstantUtc: '2030-01-01T10:00:00.000Z',
+  }, 't', 'i', { actorName: 'Test Planner', groupName: null });
+  assert.equal(voice.data.title, 'Test Planner sent you a voice alarm');
+  const unnamed = buildMessage('created', null, {
+    title: 'Walk', status: 'approved', targetUid: 't', createdByUid: 'p',
+    scheduledInstantUtc: '2030-01-01T10:00:00.000Z',
+  }, 't', 'i', {});
+  assert.equal(unnamed.data.title, 'Someone planned Walk for you');
 });

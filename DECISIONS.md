@@ -7818,3 +7818,34 @@ editing the master.
   live Worker (`c3ba9458`) still has the
   RingaPop wording, so the Worker needs deployment before its public copy
   changes.
+
+## Missed voice-note Play lag; planner name on missed alarms (2026-10-02)
+
+Release-build feedback R2 + R3 (handoff.md "Release-build feedback
+2026-10-02").
+
+- **R2 — Play lag.** The missed voice-note popup's Play awaited the note fetch
+  (`voiceNoteCache.ensure`) with no in-flight guard, so while a slow fetch ran
+  every extra tap started its own fetch, play and "heard" write; the
+  duplicates failed and showed "Could not finish syncing". Now the first tap
+  sets a loading state before any await: Play reads "Loading…", both buttons
+  are off, and exactly one fetch/play/write runs. A failed fetch re-enables
+  Play and records nothing.
+- **R3 — planner name.** Root cause: a killed-app alarm is armed from the
+  Worker's `created` push, whose `data.title` was the raw task title (or
+  "Voice alarm"), not the alarm sentence. That title is the headline the
+  ringing notification, lock-screen alarm and missed notice show, so none of
+  them had the name until the app was opened. The Worker now sends
+  `alarmHeadline()` word for word the app's; both sides read
+  `test/fixtures/alarm_headline_cases.json`. The missed notification title is
+  "Missed alarm from {planner}" / "Missed voice note from {planner}", read back
+  natively from that sentence (`AlarmSoundPolicy.missedTitle`) rather than
+  adding a field to the whole arming path; known limit: a planner whose own
+  name contains " planned " is cut at that word. The Default Alarm missed
+  popup now reads "{planner} planned {task} for you. It rang for one minute
+  with no response."; both popups wait for a still-loading planner profile
+  and fall back to "Someone" (never "Your friend").
+- Audit of the rest: every Worker push already names the actor; the gaps were
+  only the three alarm surfaces above and the popup.
+- Deploy: the Worker change takes effect for alarms created after the Worker
+  deploy; the app half needs a new build. No rules change.

@@ -60,6 +60,30 @@ class AlarmSoundPolicyTest {
         )
         assertEquals("Missed alarm", AlarmSoundPolicy.MISSED_TITLE)
     }
+
+    @Test
+    fun `the missed-alarm title names the planner (R3)`() {
+        assertEquals(
+            "Missed alarm from Test Planner",
+            AlarmSoundPolicy.missedTitle("Test Planner planned Walk for you"),
+        )
+        // The task may contain the word; the name is cut at the FIRST one.
+        assertEquals(
+            "Missed alarm from Test Planner",
+            AlarmSoundPolicy.missedTitle("Test Planner planned Run as planned for you"),
+        )
+        assertEquals(
+            "Missed voice note from Test Planner",
+            AlarmSoundPolicy.missedTitle("Test Planner sent you a voice alarm"),
+        )
+        // Unknown name, self-plan, nothing armed, or a foreign sentence.
+        assertEquals("Missed alarm", AlarmSoundPolicy.missedTitle("Someone planned Walk for you"))
+        assertEquals("Missed voice note", AlarmSoundPolicy.missedTitle("Someone sent you a voice alarm"))
+        assertEquals("Missed alarm", AlarmSoundPolicy.missedTitle("You planned Stretch"))
+        assertEquals("Missed alarm", AlarmSoundPolicy.missedTitle(null))
+        assertEquals("Missed alarm", AlarmSoundPolicy.missedTitle("  "))
+        assertEquals("Missed alarm", AlarmSoundPolicy.missedTitle("Walk"))
+    }
 }
 
 class DuplicateNotificationPolicyTest {

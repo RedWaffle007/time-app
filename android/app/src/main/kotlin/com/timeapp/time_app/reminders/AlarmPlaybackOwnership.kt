@@ -79,6 +79,41 @@ internal object AlarmSoundPolicy {
 
     const val MISSED_TITLE = "Missed alarm"
 
+    private const val VOICE_SUFFIX = " sent you a voice alarm"
+    private const val PLANNED_INFIX = " planned "
+    private const val PLANNED_SUFFIX = " for you"
+    private const val UNKNOWN_PLANNER = "Someone"
+
+    /**
+     * "Missed alarm from {planner}" / "Missed voice note from {planner}" (R3,
+     * 2026-10-02), read back from the one alarm sentence the alarm was armed
+     * with (Dart `alarmHeadline()`, Worker `alarmHeadline()`), so no second
+     * field rides the arming path. A self-plan, an unknown name ("Someone")
+     * or an unrecognised sentence keeps the plain title. Known limit: a
+     * planner whose own name contains " planned " is cut at that word.
+     */
+    fun missedTitle(headline: String?): String {
+        val sentence = headline?.trim().orEmpty()
+        if (sentence.endsWith(VOICE_SUFFIX)) {
+            val who = sentence.removeSuffix(VOICE_SUFFIX).trim()
+            return if (who.isEmpty() || who == UNKNOWN_PLANNER) {
+                "Missed voice note"
+            } else {
+                "Missed voice note from $who"
+            }
+        }
+        if (sentence.endsWith(PLANNED_SUFFIX)) {
+            val cut = sentence.indexOf(PLANNED_INFIX)
+            if (cut > 0) {
+                val who = sentence.substring(0, cut).trim()
+                if (who.isNotEmpty() && who != UNKNOWN_PLANNER && who != "You") {
+                    return "$MISSED_TITLE from $who"
+                }
+            }
+        }
+        return MISSED_TITLE
+    }
+
     fun missedText(headline: String?): String =
         headline?.trim()?.takeIf { it.isNotEmpty() }
             ?.let { "You didn't respond: $it" }

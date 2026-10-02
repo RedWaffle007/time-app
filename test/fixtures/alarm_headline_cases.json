@@ -1,0 +1,9 @@
+[
+  {"name": "friend, named", "item": {"targetUid": "t", "createdByUid": "p", "title": "Walk"}, "plannerName": "Test Planner", "expected": "Test Planner planned Walk for you"},
+  {"name": "friend, name not known", "item": {"targetUid": "t", "createdByUid": "p", "title": "Walk"}, "plannerName": null, "expected": "Someone planned Walk for you"},
+  {"name": "friend, blank name", "item": {"targetUid": "t", "createdByUid": "p", "title": "Walk"}, "plannerName": "   ", "expected": "Someone planned Walk for you"},
+  {"name": "title and name are trimmed", "item": {"targetUid": "t", "createdByUid": "p", "title": "  Walk  "}, "plannerName": " Test Planner ", "expected": "Test Planner planned Walk for you"},
+  {"name": "voice alarm, named", "item": {"targetUid": "t", "createdByUid": "p", "title": "Voice alarm", "voiceNote": true}, "plannerName": "Test Planner", "expected": "Test Planner sent you a voice alarm"},
+  {"name": "voice alarm, name not known", "item": {"targetUid": "t", "createdByUid": "p", "title": "Voice alarm", "voiceNote": true}, "plannerName": null, "expected": "Someone sent you a voice alarm"},
+  {"name": "self-plan", "item": {"targetUid": "t", "createdByUid": "t", "title": "Stretch"}, "plannerName": "Test Planner", "expected": "You planned Stretch"}
+]

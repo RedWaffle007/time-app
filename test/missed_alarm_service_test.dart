@@ -752,6 +752,230 @@ void main() {
     );
   }
 
+  // R2 (2026-10-02): Play fetched the note with no in-flight guard, so a
+  // slow fetch let every extra tap start its own fetch + play + "heard"
+  // write; the duplicates failed as "Could not finish syncing" snackbars.
+  testWidgets('a missed voice note: repeated Play taps while the note loads '
+      'fetch, play and record it exactly once', (tester) async {
+    final outcomes = _RecordingOutcomes();
+    final service = MissedAlarmService(
+      store: _MemoryLifecycleStore([_event()]),
+      outcomes: outcomes,
+      timeline: _RecordingTimeline(),
+      notifier: _RecordingNotifier(),
+    );
+    final lock = AppLockController(
+      store: _NoopLockStore(),
+      auth: _NoopDeviceAuth(),
+      secureWindow: _NoopSecureWindow(),
+      initiallyEnabled: false,
+    );
+    final cache = _SlowCache();
+    final player = _Player();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          missedAlarmServiceProvider.overrideWithValue(service),
+          appLockControllerProvider.overrideWithValue(lock),
+          voiceNoteCacheProvider.overrideWithValue(cache),
+          voicePlayerProvider.overrideWithValue(player),
+          profileByUidProvider.overrideWith(
+            (ref, uid) => Stream.value(
+              const UserProfile(
+                uid: 'planner',
+                name: '{planner}',
+                homeTimezone: 'Etc/UTC',
+              ),
+            ),
+          ),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: const MissedAlarmReviewHost(
+            enabled: true,
+            child: Scaffold(body: Text('Schedule')),
+          ),
+        ),
+      ),
+    );
+    await service.sync([_item(voiceNote: _voiceMeta)], 'target');
+    await tester.pumpAndSettle();
+
+    final play = find.byKey(const ValueKey('missed-voice-play'));
+    await tester.tap(play);
+    await tester.pump();
+    // Loading: both buttons are off and the first tap is the only one.
+    expect(find.text('Loading…'), findsOneWidget);
+    for (var i = 0; i < 4; i++) {
+      await tester.tap(play, warnIfMissed: false);
+      await tester.tap(
+        find.byKey(const ValueKey('missed-voice-already-heard')),
+        warnIfMissed: false,
+      );
+      await tester.pump();
+    }
+    expect(cache.calls, 1);
+    expect(player.played, isEmpty);
+
+    cache.finish();
+    await tester.pump();
+    await tester.pump(kPlannerUpdateDuration);
+    await tester.pumpAndSettle();
+
+    expect(player.played, ['/voice/item.m4a']);
+    expect(outcomes.done, [('target', 'item', 'planner')]);
+    expect(find.textContaining('Could not finish syncing'), findsNothing);
+    expect(find.text('Missed voice note'), findsNothing);
+  });
+
+  testWidgets('a missed voice note that cannot load re-enables Play', (
+    tester,
+  ) async {
+    final outcomes = _RecordingOutcomes();
+    final service = MissedAlarmService(
+      store: _MemoryLifecycleStore([_event()]),
+      outcomes: outcomes,
+      timeline: _RecordingTimeline(),
+      notifier: _RecordingNotifier(),
+    );
+    final lock = AppLockController(
+      store: _NoopLockStore(),
+      auth: _NoopDeviceAuth(),
+      secureWindow: _NoopSecureWindow(),
+      initiallyEnabled: false,
+    );
+    final cache = _SlowCache();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          missedAlarmServiceProvider.overrideWithValue(service),
+          appLockControllerProvider.overrideWithValue(lock),
+          voiceNoteCacheProvider.overrideWithValue(cache),
+          voicePlayerProvider.overrideWithValue(_Player()),
+          profileByUidProvider.overrideWith(
+            (ref, uid) => Stream.value(
+              const UserProfile(
+                uid: 'planner',
+                name: '{planner}',
+                homeTimezone: 'Etc/UTC',
+              ),
+            ),
+          ),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: const MissedAlarmReviewHost(
+            enabled: true,
+            child: Scaffold(body: Text('Schedule')),
+          ),
+        ),
+      ),
+    );
+    await service.sync([_item(voiceNote: _voiceMeta)], 'target');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('missed-voice-play')));
+    await tester.pump();
+    cache.fail();
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.text("Couldn't load the voice note. Try again."),
+      findsOneWidget,
+    );
+    expect(find.text('Play'), findsOneWidget);
+    expect(find.text('Loading…'), findsNothing);
+    expect(outcomes.done, isEmpty);
+    expect(find.text('Missed voice note'), findsOneWidget);
+  });
+
+  // R3 (2026-10-02): the Default Alarm popup names the planner too.
+  testWidgets('the missed alarm popup says who planned it', (tester) async {
+    final service = MissedAlarmService(
+      store: _MemoryLifecycleStore([_event()]),
+      outcomes: _RecordingOutcomes(),
+      timeline: _RecordingTimeline(),
+      notifier: _RecordingNotifier(),
+    );
+    final lock = AppLockController(
+      store: _NoopLockStore(),
+      auth: _NoopDeviceAuth(),
+      secureWindow: _NoopSecureWindow(),
+      initiallyEnabled: false,
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          missedAlarmServiceProvider.overrideWithValue(service),
+          appLockControllerProvider.overrideWithValue(lock),
+          profileByUidProvider.overrideWith(
+            (ref, uid) => Stream.value(
+              const UserProfile(
+                uid: 'planner',
+                name: '{planner}',
+                homeTimezone: 'Etc/UTC',
+              ),
+            ),
+          ),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: const MissedAlarmReviewHost(
+            enabled: true,
+            child: Scaffold(body: Text('Schedule')),
+          ),
+        ),
+      ),
+    );
+    await service.sync([_item()], 'target');
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        '{planner} planned Morning walk for you. '
+        'It rang for one minute with no response.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  group('missedPopupMessage (R3)', () {
+    test('a Default Alarm leads with the alarm sentence', () {
+      expect(
+        missedPopupMessage(_item(), plannerName: '{planner}'),
+        '{planner} planned Morning walk for you. '
+        'It rang for one minute with no response.',
+      );
+      expect(
+        missedPopupMessage(_item()),
+        'Someone planned Morning walk for you. '
+        'It rang for one minute with no response.',
+      );
+    });
+
+    test('a self-plan needs no name', () {
+      expect(
+        missedPopupMessage(_item(createdByUid: 'target'), plannerName: 'x'),
+        'You planned Morning walk. It rang for one minute with no response.',
+      );
+    });
+
+    test('a voice note names the planner, or Someone, never "Your friend"', () {
+      expect(
+        missedPopupMessage(
+          _item(voiceNote: _voiceMeta),
+          plannerName: '{planner}',
+        ),
+        '{planner} sent you a voice note. Listen now?',
+      );
+      expect(
+        missedPopupMessage(_item(voiceNote: _voiceMeta), plannerName: ' '),
+        'Someone sent you a voice note. Listen now?',
+      );
+    });
+  });
+
   testWidgets('review remains hidden while app lock is active', (tester) async {
     final service = MissedAlarmService(
       store: _MemoryLifecycleStore([_event()]),
@@ -1172,4 +1396,22 @@ class _Player implements VoicePlayer {
 
   @override
   Stream<void> get completed => const Stream.empty();
+}
+
+/// A voice-note fetch the test finishes (or fails) by hand (R2).
+class _SlowCache implements VoiceNoteCache {
+  final _done = Completer<String>();
+  var calls = 0;
+
+  void finish() => _done.complete('/voice/item.m4a');
+  void fail() => _done.completeError(StateError('offline'));
+
+  @override
+  Future<String> ensure(ScheduleItem item) {
+    calls++;
+    return _done.future;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
