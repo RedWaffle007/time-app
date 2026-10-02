@@ -31,6 +31,31 @@ class OnboardingGate extends ConsumerStatefulWidget {
 
 class _OnboardingGateState extends ConsumerState<OnboardingGate> {
   bool _autoCompleteScheduled = false;
+  bool _updateCheckScheduled = false;
+
+  /// After an update with nothing missing: record the check, off the build.
+  void _markUpdateCheckedSilently() {
+    if (_updateCheckScheduled) return;
+    _updateCheckScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) markOnboardingUpdateChecked(ref);
+    });
+  }
+
+  /// 2026-10-02 (user-directed): after every update the permissions page
+  /// opens again if a permission the app can check is missing, and is
+  /// skipped when everything is granted. Never blocks the app on a read.
+  Widget _afterUpdate() {
+    final checked = ref.watch(onboardingUpdateCheckedProvider);
+    if (checked.value ?? true) return widget.child;
+    final state = ref.watch(reminderPermissionStateProvider).value;
+    if (state == null) return widget.child;
+    if (stepsMissingAfterUpdate(state).isEmpty) {
+      _markUpdateCheckedSilently();
+      return widget.child;
+    }
+    return const OnboardingScreen();
+  }
 
   /// Record completion for a device with nothing to ask, off the build phase.
   void _completeSilently() {
@@ -53,7 +78,7 @@ class _OnboardingGateState extends ConsumerState<OnboardingGate> {
       loading: () => widget.child,
       error: (_, _) => widget.child,
       data: (done) {
-        if (done) return widget.child;
+        if (done) return _afterUpdate();
 
         final stateAsync = ref.watch(reminderPermissionStateProvider);
         return stateAsync.when(

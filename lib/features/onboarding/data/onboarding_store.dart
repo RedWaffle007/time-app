@@ -7,6 +7,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// unlike SharedPreferences, which Android Auto Backup may restore.
 abstract interface class InstallIdentity {
   Future<String> current();
+
+  /// Changes on every install AND every update of the app (Android's
+  /// `lastUpdateTime`), so the permissions page can re-check after each one.
+  Future<String> lastUpdate();
 }
 
 class MethodChannelInstallIdentity implements InstallIdentity {
@@ -27,6 +31,17 @@ class MethodChannelInstallIdentity implements InstallIdentity {
       return 'platform-unavailable';
     }
   }
+
+  @override
+  Future<String> lastUpdate() async {
+    try {
+      return await _channel.invokeMethod<String>('lastUpdate') ??
+          'platform-unavailable';
+    } catch (error) {
+      debugPrint('InstallIdentity: lastUpdate read failed: $error');
+      return 'platform-unavailable';
+    }
+  }
 }
 
 /// Remembers that the first-run permission flow has been SHOWN, on this device.
@@ -42,6 +57,11 @@ class MethodChannelInstallIdentity implements InstallIdentity {
 abstract interface class OnboardingStore {
   Future<bool> isCompleted();
   Future<void> markCompleted();
+
+  /// Whether the permissions have been checked since this build was
+  /// installed or updated (2026-10-02). [markCompleted] counts as a check.
+  Future<bool> isCheckedForThisUpdate();
+  Future<void> markUpdateChecked();
 
   /// Clears completion so the debug reset affordance can re-run the flow.
   Future<void> reset();
@@ -60,6 +80,7 @@ class SharedPrefsOnboardingStore implements OnboardingStore {
   // the suffix to re-show the flow rather than silently leaving old users behind
   // a permission that did not exist when they onboarded.
   static const _key = 'onboarding_permissions_completed_install_v2';
+  static const _updateKey = 'onboarding_permissions_checked_update_v1';
 
   @override
   Future<bool> isCompleted() async {
@@ -72,11 +93,25 @@ class SharedPrefsOnboardingStore implements OnboardingStore {
   Future<void> markCompleted() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_key, await _installIdentity.current());
+    await prefs.setString(_updateKey, await _installIdentity.lastUpdate());
+  }
+
+  @override
+  Future<bool> isCheckedForThisUpdate() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_updateKey) == await _installIdentity.lastUpdate();
+  }
+
+  @override
+  Future<void> markUpdateChecked() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_updateKey, await _installIdentity.lastUpdate());
   }
 
   @override
   Future<void> reset() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_key);
+    await prefs.remove(_updateKey);
   }
 }

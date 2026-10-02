@@ -284,14 +284,15 @@ class MainActivity : FlutterFragmentActivity() {
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, INSTALL_IDENTITY_CHANNEL)
             .setMethodCallHandler { call, result ->
-                if (call.method != "current") {
-                    result.notImplemented()
-                    return@setMethodCallHandler
-                }
                 @Suppress("DEPRECATION")
-                val firstInstallTime =
-                    packageManager.getPackageInfo(packageName, 0).firstInstallTime
-                result.success(firstInstallTime.toString())
+                val info = packageManager.getPackageInfo(packageName, 0)
+                when (call.method) {
+                    "current" -> result.success(info.firstInstallTime.toString())
+                    // 2026-10-02: changes on every install AND update, so the
+                    // permissions page can re-check after each one.
+                    "lastUpdate" -> result.success(info.lastUpdateTime.toString())
+                    else -> result.notImplemented()
+                }
             }
 
         // Can a full-screen reminder actually launch over the top of another app?

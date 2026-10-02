@@ -32,10 +32,15 @@ final onboardingCompletedProvider = FutureProvider<bool>((ref) async {
   return ref.watch(onboardingStoreProvider).isCompleted();
 });
 
+/// Whether the permissions were checked since this build was installed or
+/// updated (2026-10-02). See [OnboardingStore.isCheckedForThisUpdate].
+final onboardingUpdateCheckedProvider = FutureProvider<bool>((ref) async {
+  return ref.watch(onboardingStoreProvider).isCheckedForThisUpdate();
+});
+
 /// True only while this app has handed the user into an OS permission or
 /// settings flow. It is presentation state, not a record of permission state:
-/// the OS remains authoritative for that. The FCM failure banner observes this
-/// so it cannot cover the explanation that led into a system prompt.
+/// the OS remains authoritative for that.
 final permissionFlowInProgressProvider =
     NotifierProvider<PermissionFlowController, bool>(
       PermissionFlowController.new,
@@ -54,4 +59,11 @@ class PermissionFlowController extends Notifier<bool> {
 Future<void> markOnboardingCompleted(WidgetRef ref) async {
   await ref.read(onboardingStoreProvider).markCompleted();
   ref.invalidate(onboardingCompletedProvider);
+  ref.invalidate(onboardingUpdateCheckedProvider);
+}
+
+/// This update was checked and nothing was missing: skip the page silently.
+Future<void> markOnboardingUpdateChecked(WidgetRef ref) async {
+  await ref.read(onboardingStoreProvider).markUpdateChecked();
+  ref.invalidate(onboardingUpdateCheckedProvider);
 }

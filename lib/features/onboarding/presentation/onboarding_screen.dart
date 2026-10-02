@@ -12,6 +12,7 @@ import '../../reminders/data/reminder_scheduler.dart';
 import '../application/onboarding_plan.dart';
 import '../application/onboarding_providers.dart';
 import '../domain/onboarding_step.dart';
+import '../../notifications/application/messaging_service.dart';
 
 /// **The first-run permission flow** — the deliberate, explained ask for every
 /// permission a reminder depends on, in one place, most-consequential first.
@@ -196,7 +197,19 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     onAction: () => _run(step, oem),
                   ),
                 ),
-              const SizedBox(height: Space.sm),
+              // 2026-10-02: replaces the old "Setting up notifications"
+              // banner. Informational only; the app retries by itself.
+              ValueListenableBuilder<FcmRegistrationStatus>(
+                valueListenable: ref.watch(messagingServiceProvider).status,
+                builder: (context, status, _) => Text(
+                  friendsNotificationsStatusText(status),
+                  key: const ValueKey('friends-notifications-status'),
+                  style: context.text.bodySmall?.copyWith(
+                    color: context.colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              const SizedBox(height: Space.md),
               FilledButton(
                 onPressed: _busy ? null : _finish,
                 child: Text(
@@ -441,3 +454,15 @@ class _StepCard extends StatelessWidget {
     );
   }
 }
+
+/// Whether this phone can receive pushes from friends (its token is
+/// registered). Shown on the permissions page instead of a banner.
+String friendsNotificationsStatusText(FcmRegistrationStatus status) =>
+    switch (status) {
+      FcmRegistrationStatus.registered => "Friends' notifications: connected.",
+      FcmRegistrationStatus.failed =>
+        "Friends' notifications: not connected yet. Mind Time keeps trying "
+            'on its own.',
+      FcmRegistrationStatus.idle || FcmRegistrationStatus.registering =>
+        "Friends' notifications: connecting…",
+    };

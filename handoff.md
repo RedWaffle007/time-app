@@ -547,6 +547,11 @@ unrelated code.
   never opens AlarmScreen when an alarm starts ringing while it is open or is
   opened. A late native delivery (inexact fallback after an install revokes
   SCHEDULE_EXACT_ALARM on the Redmi) also rings with no lateness check.
+- **R7 — BUILT 2026-10-02, awaiting commit + device check** (DECISIONS.md
+  "Push setup: quiet retries; permissions page after updates"): the useless
+  "Setting up notifications… Retrying…" banner is gone (quiet backoff
+  retries, status on the permissions page); the permissions page re-opens
+  after an update only if a checkable permission is missing. Build `+6`.
 - **Phone tests are deferred until the whole R list is built** (user,
   2026-10-02); then one device pass covers R2–R6.
 - **R6 Reply notes — BUILT 2026-10-02, awaiting rules deploy → Worker

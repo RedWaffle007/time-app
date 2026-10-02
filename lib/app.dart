@@ -14,10 +14,8 @@ import 'features/auth/application/auth_providers.dart';
 import 'features/celebrations/presentation/completion_celebration_host.dart';
 import 'features/notifications/application/foreground_push_providers.dart';
 import 'features/notifications/application/messaging_service.dart';
-import 'features/notifications/application/fcm_failure_banner_policy.dart';
 import 'features/notifications/application/inactivity_tracker.dart';
 import 'features/notifications/data/foreground_push_presenter.dart';
-import 'features/onboarding/application/onboarding_providers.dart';
 import 'features/groups/application/group_providers.dart';
 import 'features/groups/application/group_stats_providers.dart';
 import 'features/reminders/application/alarm_ringing_presenter.dart';
@@ -64,12 +62,6 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
   /// against each new auth emission to spot a session ENDING — see the listener
   /// in build().
   String? _sessionUid;
-
-  /// A dismissal belongs to one unchanged failed registration state. A new
-  /// attempt (Retry or resume) may report its own result, but ordinary rebuilds
-  /// cannot re-post a banner the user just dismissed.
-  bool _registrationFailureDismissed = false;
-  bool _registrationRetryRequested = false;
 
   /// An ALARM launch that cold-started this process (see [launchSkipsReveal]:
   /// push taps deliberately keep the startup screen). The local plugin reports
@@ -125,23 +117,16 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     // — is handled in build(), which re-runs when authStateProvider changes.)
     WidgetsBinding.instance.addObserver(this);
 
-    // Surface a token-registration FAILURE instead of it being silent. A silent
-    // no-token state is exactly what cost a whole debugging session
-    // (DECISIONS.md 2026-07-24) — this shows a dismissible banner with Retry.
-    ref
-        .read(messagingServiceProvider)
-        .status
-        .addListener(_onRegistrationStatus);
+    // 2026-10-02: no token-registration banner. Its Retry could not fix the
+    // cause and only looped "Retrying…"; MessagingService retries on its own
+    // and the permissions page shows the state (DECISIONS.md "Push setup:
+    // quiet retries; permissions page after updates").
   }
 
   @override
   void dispose() {
     _ringingPresenter?.dispose();
     WidgetsBinding.instance.removeObserver(this);
-    ref
-        .read(messagingServiceProvider)
-        .status
-        .removeListener(_onRegistrationStatus);
     super.dispose();
   }
 
@@ -187,60 +172,6 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
     // cached answer is re-read rather than trusted. This is what makes the
     // primer card disappear the moment the user grants what it asked for.
     ref.invalidate(reminderPermissionStateProvider);
-  }
-
-  void _onRegistrationStatus() {
-    final status = ref.read(messagingServiceProvider).status.value;
-    if (status != FcmRegistrationStatus.failed) {
-      _registrationFailureDismissed = false;
-    }
-    if (status != FcmRegistrationStatus.registering) {
-      _registrationRetryRequested = false;
-    }
-    _syncRegistrationBanner();
-  }
-
-  void _syncRegistrationBanner() {
-    final messenger = _scaffoldMessengerKey.currentState;
-    if (messenger == null) return;
-    final status = ref.read(messagingServiceProvider).status.value;
-    // An unresolved first-run preference is treated as incomplete. If the
-    // preference itself fails, OnboardingGate deliberately lets the app through
-    // (there is no active flow to cover), so presentation may proceed rather
-    // than deferring a genuine registration failure forever.
-    final onboarding = ref.read(onboardingCompletedProvider);
-    final onboardingCompleted = onboarding.hasError || onboarding.value == true;
-    final mode = fcmFailureBannerMode(
-      registrationStatus: status,
-      onboardingCompleted: onboardingCompleted,
-      permissionFlowInProgress: ref.read(permissionFlowInProgressProvider),
-      failureDismissed: _registrationFailureDismissed,
-      retryRequested: _registrationRetryRequested,
-    );
-
-    if (mode == FcmFailureBannerMode.hidden) {
-      messenger.hideCurrentMaterialBanner();
-      return;
-    }
-
-    messenger.hideCurrentMaterialBanner();
-    messenger.showMaterialBanner(
-      FcmRegistrationBanner(
-        mode: mode,
-        onDismiss: () {
-          _registrationFailureDismissed = true;
-          _syncRegistrationBanner();
-        },
-        onRetry: () {
-          final uid = ref.read(authStateProvider).value?.uid;
-          if (uid == null) return;
-          _registrationRetryRequested = true;
-          // `_attempt` synchronously enters `registering`, which updates this
-          // same banner to an explicit busy state.
-          ref.read(messagingServiceProvider).retryRegistration(uid);
-        },
-      ),
-    );
   }
 
   /// A local reminder that was tapped while the app was DEAD.
@@ -417,16 +348,6 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
       ref.read(profileStatsPublisherProvider).reset();
       ref.read(groupStatsPublisherProvider).reset();
     });
-    // A failure may have occurred while the first-run gate was explaining
-    // permissions. Re-evaluate when that gate finishes and when an OS/settings
-    // surface opens or returns; this is state policy, never route inspection.
-    ref.listen(onboardingCompletedProvider, (previous, next) {
-      _syncRegistrationBanner();
-    });
-    ref.listen(permissionFlowInProgressProvider, (previous, next) {
-      _syncRegistrationBanner();
-    });
-
     // Register / refresh the device token whenever a user is signed in. The
     // MessagingService dedups per-uid internally, so calling it on rebuilds is
     // safe — the permission prompt + token write happen once per signed-in user.

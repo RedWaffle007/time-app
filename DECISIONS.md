@@ -7975,3 +7975,27 @@ User-directed and decided step by step on 2026-10-02.
 - **Reading it:** History cards of both people, only when a note exists and
   the plan is answered: "Note" opens "Your note" / "Note from {name}".
 - Deploy order: rules → Worker → app.
+
+## Push setup: quiet retries; permissions page after updates (2026-10-02)
+
+User report on the 1.0.0+5 release: the "Setting up notifications… /
+Retrying…" banner was "EXTREMELY annoying because it's useless".
+
+- **What it was:** the FCM token-registration failure banner, not a
+  permission. Its Retry re-ran the same `getToken` + save, so while the cause
+  lasted (no connection, Google services unavailable, a timeout) it looped
+  "Retrying…" and failed again. The person could not fix it.
+- **Removed** (`fcm_failure_banner_policy.dart` and its wiring in `app.dart`).
+  `MessagingService` now retries by itself after a failure, spaced 30 s, 2 min,
+  10 min, then every 30 min (`fcmRetryDelay`), on top of the existing
+  resume / sign-in triggers; failures are still recorded in Crashlytics.
+- **The state moved to the permissions page:** "Friends' notifications:
+  connected / connecting… / not connected yet. Mind Time keeps trying on its
+  own." Informational only.
+- **Permissions page after every install AND update** (user's idea): a fresh
+  install runs the first-run flow as before. After an update (Android's
+  `lastUpdateTime` changed) the page opens again ONLY if a permission the app
+  can check is missing; when everything is granted it is skipped (user's
+  choice). Autostart cannot be read, so it never forces the page after an
+  update; it is still asked on a fresh install and stays listed on the page.
+- Build number `1.0.0+6` for the next shared build.

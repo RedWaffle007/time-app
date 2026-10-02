@@ -143,6 +143,21 @@ final messagingServiceProvider = Provider<MessagingService>((ref) {
   return MessagingService(ref.watch(fcmTokenRepositoryProvider));
 });
 
+/// How long to wait before the next automatic registration attempt after
+/// [failures] consecutive failures (2026-10-02). The banner with Retry was
+/// removed: the person could not fix the cause (no connection, Google
+/// services busy), so the app keeps trying on its own, spacing attempts out.
+Duration fcmRetryDelay(int failures) {
+  const steps = [
+    Duration(seconds: 30),
+    Duration(minutes: 2),
+    Duration(minutes: 10),
+    Duration(minutes: 30),
+  ];
+  if (failures < 1) return steps.first;
+  return steps[(failures - 1).clamp(0, steps.length - 1)];
+}
+
 /// Owns FCM setup: permission, token registration/refresh, and cleanup.
 class MessagingService {
   MessagingService(this._tokenRepo);
@@ -174,6 +189,10 @@ class MessagingService {
   /// A timeout converts that into a visible `failed` we can retry.
   static const _opTimeout = Duration(seconds: 15);
 
+  /// The quiet automatic retry after a failure ([fcmRetryDelay]).
+  Timer? _retryTimer;
+  int _failures = 0;
+
   final ValueNotifier<FcmRegistrationStatus> _status = ValueNotifier(
     FcmRegistrationStatus.idle,
   );
@@ -193,6 +212,7 @@ class MessagingService {
     if (uid != _attemptUid) {
       _attemptUid = uid;
       _lastAttemptAt = null;
+      _failures = 0;
     }
 
     // Persistent-failure throttle: skip if we failed too recently.
@@ -204,16 +224,9 @@ class MessagingService {
     await _attempt(uid);
   }
 
-  /// Explicit user-driven retry (the banner's Retry action). Bypasses the
-  /// cooldown — a deliberate tap is a fresh signal, not the resume spam the
-  /// cooldown exists to damp.
-  Future<void> retryRegistration(String uid) async {
-    if (_inFlight) return;
-    _lastAttemptAt = null;
-    await _attempt(uid);
-  }
-
   Future<void> _attempt(String uid) async {
+    _retryTimer?.cancel();
+    _retryTimer = null;
     _inFlight = true;
     _lastAttemptAt = DateTime.now();
     _status.value = FcmRegistrationStatus.registering;
@@ -247,6 +260,7 @@ class MessagingService {
 
       // Only NOW is it safe to latch: the token is actually in Firestore.
       _registeredUid = uid;
+      _failures = 0;
       _status.value = FcmRegistrationStatus.registered;
 
       await _refreshSub?.cancel();
@@ -265,9 +279,18 @@ class MessagingService {
     } catch (e, st) {
       // If the token never lands in Firestore, the Worker has nothing to push
       // to and EVERY outcome for this user silently misses forever. Record it,
-      // AND flip the observable status so the UI can show a banner — the latch
-      // stays null, so a resume / auth change / Retry tap will try again.
+      // flip the observable status (the permissions page shows it), and try
+      // again on our own: the latch stays null, so resume / auth change and
+      // the timer below all retry. No banner: the person cannot fix this.
       _status.value = FcmRegistrationStatus.failed;
+      _failures++;
+      _retryTimer = Timer(fcmRetryDelay(_failures), () {
+        _retryTimer = null;
+        if (_registeredUid != uid && _attemptUid == uid) {
+          _lastAttemptAt = null;
+          unawaited(registerForUser(uid));
+        }
+      });
       FirebaseCrashlytics.instance.recordError(
         e,
         st,
@@ -286,6 +309,9 @@ class MessagingService {
   Future<void> unregister(String uid) async {
     await _refreshSub?.cancel();
     _refreshSub = null;
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    _failures = 0;
     _registeredUid = null;
     _attemptUid = null;
     _lastAttemptAt = null;

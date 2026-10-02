@@ -45,3 +45,13 @@ List<OnboardingStep> remainingSteps(ReminderPermissionState state) {
 /// here and is never interrupted.
 bool hasOnboardingWork(ReminderPermissionState state) =>
     remainingSteps(state).isNotEmpty;
+
+/// After an UPDATE (2026-10-02, user-directed): the permissions page opens
+/// again only if something the app can check is missing; when everything is
+/// granted it is skipped. Autostart is left out: no API can read it, so it
+/// would show the page after every update on Xiaomi and friends. It is asked
+/// on a fresh install ([remainingSteps]) and stays on the page itself.
+List<OnboardingStep> stepsMissingAfterUpdate(ReminderPermissionState state) => [
+  for (final step in remainingSteps(state))
+    if (step != OnboardingStep.autostart) step,
+];
