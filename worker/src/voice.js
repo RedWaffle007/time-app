@@ -174,14 +174,15 @@ export async function voiceUpload(ctx, { callerUid, targetUid, itemId, groupId, 
 /**
  * Group voice notes (2026-09-27): copy the planner's ONE upload, server side,
  * onto another member's not-yet-created alarm, so the phone uploads once no
- * matter how big the group is. Only for a group plan; the caller must own the
- * source upload and share the group with the member. The copy is marked
- * saved-to-library, so the planner's library gets the note once (from the
- * source), never once per member.
+ * matter how big the group is. The caller must own the source upload and be
+ * allowed to plan for the member: share the group (a group plan) or, with no
+ * group, be their friend (R4, 2026-10-02: one plan for several friends). The
+ * copy is marked saved-to-library, so the planner's library gets the note
+ * once (from the source), never once per member.
  */
 export async function voiceCopy(ctx, { callerUid, fromItemId, targetUid, itemId, groupId }) {
   if (!ITEM_ID.test(fromItemId || '') || !UID.test(targetUid || '')
-      || !ITEM_ID.test(itemId || '') || !ITEM_ID.test(groupId || '')
+      || !ITEM_ID.test(itemId || '') || (groupId && !ITEM_ID.test(groupId))
       || fromItemId === itemId) {
     return reply(400, { error: 'invalid-request' });
   }

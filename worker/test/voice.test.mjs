@@ -389,9 +389,9 @@ test('group copy: the member must share the group with the planner', async () =>
   assert.equal((await copy(h)).status, 403);
 });
 
-test('group copy: needs a group, never a self-plan, never an existing alarm', async () => {
+test('group copy: a malformed group, a self-plan or an existing alarm is refused', async () => {
   const h = await withSource();
-  assert.equal((await copy(h, { groupId: '' })).status, 400);
+  assert.equal((await copy(h, { groupId: 'not a group id' })).status, 400);
   assert.equal((await copy(h, { targetUid: 'B' })).status, 403);
   h.store[`scheduleItems/C/items/${COPY}`] = { targetUid: 'C' };
   assert.equal((await copy(h)).status, 409);
@@ -414,4 +414,39 @@ test('the /voice/copy route is POST-only and authenticated', async () => {
   const get = await worker.fetch(new Request('https://w.example/voice/copy'), env);
   assert.equal(get.status, 405);
   assert.equal(get.headers.get('allow'), 'POST');
+});
+
+// ---------------------------------------------------------------- friends copy (R4, 2026-10-02)
+
+// One plan for several friends: the planner (B) uploads once for friend A,
+// then each further FRIEND gets a server-side copy, with no group at all.
+async function withFriendSource(extra = {}) {
+  const h = harness({ 'friendships/B_C': { participants: ['B', 'C'] }, ...extra });
+  const res = await upload(h, { itemId: SOURCE });
+  assert.equal(res.status, 200);
+  return h;
+}
+
+test('friends copy: with no group, a friend of the planner gets the copy', async () => {
+  const h = await withFriendSource();
+  const res = await copy(h, { groupId: '' });
+  assert.equal(res.status, 200);
+  const record = h.store[`voiceUploads/${COPY}`];
+  assert.equal(record.uploaderUid, 'B');
+  assert.equal(record.targetUid, 'C');
+  assert.equal(record.sha256, h.store[`voiceUploads/${SOURCE}`].sha256);
+  assert.ok(record.librarySavedAt instanceof Date, 'library gets it once');
+});
+
+test('friends copy: someone who is not the planner\'s friend is refused', async () => {
+  const h = await withFriendSource({ 'friendships/B_C': null });
+  assert.equal((await copy(h, { groupId: '' })).status, 403);
+});
+
+test('friends copy: only the uploader, never a self-plan or an existing alarm', async () => {
+  const h = await withFriendSource();
+  assert.equal((await copy(h, { groupId: '', callerUid: 'C', targetUid: 'A' })).status, 404);
+  assert.equal((await copy(h, { groupId: '', targetUid: 'B' })).status, 403);
+  h.store[`scheduleItems/C/items/${COPY}`] = { targetUid: 'C' };
+  assert.equal((await copy(h, { groupId: '' })).status, 409);
 });

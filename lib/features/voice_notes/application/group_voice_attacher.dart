@@ -19,6 +19,8 @@ class GroupVoiceAttacher {
   }) : assert((recording == null) != (libraryNoteId == null));
 
   final VoiceNoteClient client;
+
+  /// Empty when one plan goes to several friends with no group (R4).
   final String groupId;
   final Uint8List? recording;
   final String? libraryNoteId;

@@ -62,6 +62,112 @@ Future<void> showGroupPlanSheet(
   );
 }
 
+/// **One plan for several friends at once** (R4, 2026-10-02) — no group
+/// needed. The same sheet and fan-out as a group plan, but every alarm is an
+/// ordinary friendship plan (`groupId` empty): friendship is the permission,
+/// each friend gets their own alarm in THEIR home zone at the chosen wall
+/// time (like a group), a friend already busy at that minute is skipped, and
+/// each friend's answer reaches the planner as it does for a single plan.
+Future<void> showFriendsPlanSheet(
+  BuildContext context,
+  WidgetRef ref, {
+  required List<String> friendUids,
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (_) => _GroupPlanSheet(
+      groupId: null,
+      groupName: '',
+      candidates: [for (final uid in friendUids) (uid: uid, isSelf: false)],
+    ),
+  );
+}
+
+/// Choose who gets one plan (R4): a checklist of friends, at least two.
+/// Returns the chosen uids in list order, or null when cancelled.
+Future<List<String>?> pickSeveralFriends(
+  BuildContext context, {
+  required List<String> friendUids,
+}) {
+  return showDialog<List<String>>(
+    context: context,
+    builder: (_) => _SeveralFriendsDialog(friendUids: friendUids),
+  );
+}
+
+class _SeveralFriendsDialog extends ConsumerStatefulWidget {
+  const _SeveralFriendsDialog({required this.friendUids});
+
+  final List<String> friendUids;
+
+  @override
+  ConsumerState<_SeveralFriendsDialog> createState() =>
+      _SeveralFriendsDialogState();
+}
+
+class _SeveralFriendsDialogState extends ConsumerState<_SeveralFriendsDialog> {
+  final _chosen = <String>{};
+
+  @override
+  Widget build(BuildContext context) {
+    final maxHeight =
+        MediaQuery.sizeOf(context).height * Sizes.modalMaxHeightFraction;
+    final n = _chosen.length;
+    return AlertDialog(
+      title: const Text('Choose friends'),
+      content: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: SizedBox(
+          width: double.maxFinite,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final uid in widget.friendUids)
+                CheckboxListTile(
+                  key: ValueKey('several-friend-$uid'),
+                  value: _chosen.contains(uid),
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    // Never the raw uid, even while the profile loads.
+                    ref.watch(profileByUidProvider(uid)).value?.name ??
+                        'Loading…',
+                  ),
+                  onChanged: (on) => setState(() {
+                    if (on ?? false) {
+                      _chosen.add(uid);
+                    } else {
+                      _chosen.remove(uid);
+                    }
+                  }),
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          key: const ValueKey('several-friends-next'),
+          onPressed: n < 2
+              ? null
+              : () => Navigator.of(context).pop([
+                  for (final uid in widget.friendUids)
+                    if (_chosen.contains(uid)) uid,
+                ]),
+          child: Text(
+            n < 2 ? 'Pick at least 2' : 'Plan for ${formatCount(context, n)}',
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _GroupPlanSheet extends ConsumerStatefulWidget {
   const _GroupPlanSheet({
     required this.groupId,
@@ -69,7 +175,8 @@ class _GroupPlanSheet extends ConsumerStatefulWidget {
     required this.candidates,
   });
 
-  final String groupId;
+  /// Null for one plan sent to several friends ([showFriendsPlanSheet]).
+  final String? groupId;
   final String groupName;
   final List<GroupPlanCandidate> candidates;
 
@@ -104,6 +211,16 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
 
   bool get _isVoice => _kind == AlarmKind.voiceNote;
 
+  /// Several friends, no group (R4).
+  bool get _forFriends => widget.groupId == null;
+
+  /// "friend(s)" for several friends, "member(s)" for a group.
+  String _noun(int n) => _forFriends
+      ? (n == 1 ? 'friend' : 'friends')
+      : (n == 1 ? 'member' : 'members');
+
+  String get _unknownName => _forFriends ? 'A friend' : 'A member';
+
   /// Who this plan is for. A voice note is the planner's own voice, and a
   /// self-plan can never carry one (F4), so a voice plan goes to the OTHER
   /// members only; a default alarm includes the planner, as before.
@@ -123,7 +240,7 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
 
   String _nameOf(GroupPlanCandidate c) => c.isSelf
       ? 'You'
-      : (ref.read(profileByUidProvider(c.uid)).value?.name ?? 'A member');
+      : (ref.read(profileByUidProvider(c.uid)).value?.name ?? _unknownName);
 
   String? _zoneOf(String uid) =>
       ref.read(profileByUidProvider(uid)).value?.homeTimezone;
@@ -145,14 +262,41 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
       return;
     }
     setState(() => _checking = true);
-    final busy = await ref
-        .read(groupPlanReporterProvider)
-        .availability(groupId: widget.groupId, members: members);
+    final groupId = widget.groupId;
+    final busy = groupId == null
+        ? await _friendsBusy(members)
+        : await ref
+              .read(groupPlanReporterProvider)
+              .availability(groupId: groupId, members: members);
     if (!mounted || gen != _checkGen) return;
     setState(() {
       _busy = busy;
       _checking = false;
     });
+  }
+
+  /// Several friends (R4): each friend's minute lock is read directly, as
+  /// the single-friend Plan screen does (friendship allows it). Null when any
+  /// read fails, which shows "Couldn't check"; the rules still refuse a taken
+  /// minute at Send, and that friend is then listed as not set.
+  Future<Set<String>?> _friendsBusy(
+    List<({String uid, DateTime instantUtc})> members,
+  ) async {
+    final repository = ref.read(scheduleRepositoryProvider);
+    try {
+      final held = await Future.wait([
+        for (final m in members)
+          repository
+              .minuteHeldByLivePlan(m.uid, m.instantUtc)
+              .timeout(const Duration(seconds: 6)),
+      ]);
+      return {
+        for (var i = 0; i < members.length; i++)
+          if (held[i]) members[i].uid,
+      };
+    } catch (_) {
+      return null;
+    }
   }
 
   /// **Everyone's time**, grouped by timezone so it stays readable at any
@@ -193,7 +337,10 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
                 width: double.maxFinite,
                 child: ListView(
                   shrinkWrap: true,
-                  children: [for (final g in groups) _ZoneSection(group: g)],
+                  children: [
+                    for (final g in groups)
+                      _ZoneSection(group: g, friends: _forFriends),
+                  ],
                 ),
               ),
             ),
@@ -254,7 +401,7 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
                 .timeout(const Duration(seconds: 8));
             final tz = p?.homeTimezone;
             if (tz == null || tz.isEmpty) return null;
-            names[c.uid] = p?.name ?? 'A member';
+            names[c.uid] = p?.name ?? _unknownName;
             return (uid: c.uid, timezone: tz, isSelf: c.isSelf);
           } catch (_) {
             return null;
@@ -273,7 +420,7 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
       final attach = _isVoice
           ? GroupVoiceAttacher(
               client: ref.read(voiceNoteClientProvider),
-              groupId: widget.groupId,
+              groupId: widget.groupId ?? '',
               recording: bytes,
               libraryNoteId: bytes == null ? library?.id : null,
             )
@@ -283,7 +430,7 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
       final result = await ref
           .read(scheduleRepositoryProvider)
           .planForGroup(
-            groupId: widget.groupId,
+            groupId: widget.groupId ?? '',
             createdByUid: me,
             targets: targets,
             title: title,
@@ -314,12 +461,15 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
       // Worker verifies who was really busy and tells each of them. NOT
       // awaited (2026-09-28): the planner's answer is shown NOW, from what
       // the preview already verified, never after a network round trip.
-      if (result.failed.isNotEmpty) {
+      // Several friends (R4): like a single-friend plan, a busy friend is not
+      // pushed; the planner's message below names them.
+      final groupId = widget.groupId;
+      if (result.failed.isNotEmpty && groupId != null) {
         unawaited(
           ref
               .read(groupPlanReporterProvider)
               .reportBusy(
-                groupId: widget.groupId,
+                groupId: groupId,
                 title: title.trim(),
                 setCount: result.sent.length,
                 failed: result.failed,
@@ -334,12 +484,14 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
         skippedOther: result.skippedOther,
         busyNames: [
           for (final f in result.failed)
-            if (_busy?.contains(f.uid) ?? false) names[f.uid] ?? 'A member',
+            if (_busy?.contains(f.uid) ?? false) names[f.uid] ?? _unknownName,
         ],
         notSetNames: [
           for (final f in result.failed)
-            if (!(_busy?.contains(f.uid) ?? false)) names[f.uid] ?? 'A member',
+            if (!(_busy?.contains(f.uid) ?? false))
+              names[f.uid] ?? _unknownName,
         ],
+        friends: _forFriends,
       );
       messenger.showSnackBar(SnackBar(content: Text(message)));
       Navigator.pop(context);
@@ -512,13 +664,19 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Plan for ${widget.groupName}',
+              _forFriends
+                  ? 'Plan for ${formatCount(context, widget.candidates.length)} '
+                        'friends'
+                  : 'Plan for ${widget.groupName}',
               style: context.text.titleLarge,
             ),
             const SizedBox(height: Space.xs),
             Text(
               count == 0
                   ? "You can't plan for anyone in this group yet."
+                  : _forFriends
+                  ? 'Rings for ${formatCount(context, count)} ${_noun(count)}, '
+                        'each at this time in their own local zone.'
                   : _isVoice
                   ? 'Rings for $count ${count == 1 ? 'member' : 'members'}, '
                         'each at this time in their own local zone. Your '
@@ -604,7 +762,7 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
               else ...[
                 VoiceNoteRecorder(
                   key: const ValueKey('group-voice'),
-                  recipientName: 'each member',
+                  recipientName: _forFriends ? 'each friend' : 'each member',
                   enabled: !_saving,
                   onChanged: (note) => setState(() {
                     _voiceDraft = note;
@@ -674,7 +832,12 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
                       width: Sizes.buttonSpinner,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('Send to the group'),
+                  : Text(
+                      _forFriends
+                          ? 'Send to ${formatCount(context, count)} '
+                                '${_noun(count)}'
+                          : 'Send to the group',
+                    ),
             ),
           ],
         ),
@@ -687,9 +850,12 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
 /// its members. Long lists collapse after [_collapsedLimit] names so a big
 /// group stays scannable; busy members carry a "Busy" tag.
 class _ZoneSection extends StatefulWidget {
-  const _ZoneSection({required this.group});
+  const _ZoneSection({required this.group, this.friends = false});
 
   final ZoneGroup group;
+
+  /// Counts "friends" instead of "members" (R4, several friends).
+  final bool friends;
 
   @override
   State<_ZoneSection> createState() => _ZoneSectionState();
@@ -727,7 +893,7 @@ class _ZoneSectionState extends State<_ZoneSection> {
             [
               if (g.zone != null) zoneCityName(g.zone!),
               '${formatCount(context, members.length)} '
-                  '${members.length == 1 ? 'member' : 'members'}',
+                  '${widget.friends ? (members.length == 1 ? 'friend' : 'friends') : (members.length == 1 ? 'member' : 'members')}',
             ].join(' · '),
             style: context.text.labelSmall?.copyWith(color: muted),
           ),
@@ -777,8 +943,12 @@ String groupPlanSentMessage({
   required int skippedOther,
   required List<String> busyNames,
   required List<String> notSetNames,
+  bool friends = false,
 }) {
   final n = setCount;
+  final noun = friends
+      ? (n == 1 ? 'friend' : 'friends')
+      : (n == 1 ? 'member' : 'members');
   if (n == 0 && skippedPast > 0 && skippedOther == 0) {
     return 'That time has already passed. Pick a later time.';
   }
@@ -786,9 +956,7 @@ String groupPlanSentMessage({
     return 'No one could be planned for right now.';
   }
   final parts = <String>[
-    n == 0
-        ? 'No alarm was set.'
-        : 'Alarm set for $n ${n == 1 ? 'member' : 'members'}.',
+    n == 0 ? 'No alarm was set.' : 'Alarm set for $n $noun.',
     if (busyNames.isNotEmpty) 'Busy at that time: ${busyNames.join(', ')}.',
     if (notSetNames.isNotEmpty) "Couldn't set for: ${notSetNames.join(', ')}.",
   ];

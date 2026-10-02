@@ -35,6 +35,7 @@ import '../../../routing/app_router.dart';
 import '../application/schedule_clash.dart';
 import '../application/schedule_providers.dart';
 import '../domain/schedule_item.dart';
+import 'group_plan_sheet.dart' show pickSeveralFriends, showFriendsPlanSheet;
 
 /// The two kinds of alarm (F4). A self-plan is always [defaultAlarm].
 enum AlarmKind { voiceNote, defaultAlarm }
@@ -570,6 +571,8 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
         const SectionHeader('Plan for'),
         if (_showTargetList) ...[
           _selfTile(),
+          // One plan for several friends at once, no group needed (R4).
+          if (grants.length >= 2 && !_fromRequest) _severalFriendsTile(grants),
           for (final grant in grants) _targetTile(grant),
         ] else
           _chosenTargetTile(selectedProfile),
@@ -856,6 +859,27 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
           _libraryNote = null;
           _voiceRecorderGen++;
         }),
+      ),
+    );
+  }
+
+  /// Opens the friend checklist, then the several-friends plan sheet (R4).
+  /// This screen's own selection is left as it was.
+  Widget _severalFriendsTile(List<PlannerGrant> grants) {
+    return Card(
+      key: const ValueKey('plan-several-friends'),
+      child: ListTile(
+        leading: const Icon(AppIcons.friends),
+        title: const Text('Several friends'),
+        subtitle: const Text('One plan, each in their own time'),
+        onTap: () async {
+          final chosen = await pickSeveralFriends(
+            context,
+            friendUids: [for (final g in grants) g.targetUid],
+          );
+          if (chosen == null || !mounted) return;
+          await showFriendsPlanSheet(context, ref, friendUids: chosen);
+        },
       ),
     );
   }

@@ -46,6 +46,7 @@ abstract interface class VoiceNoteClient {
 
   /// Group voice notes (2026-09-27): copy the planner's ONE upload (made for
   /// [fromItemId]) server side onto another member's not-yet-created alarm.
+  /// An empty [groupId] copies to a friend instead (R4, several friends).
   Future<VoiceNoteMeta> copyToMember({
     required String fromItemId,
     required String targetUid,
@@ -187,7 +188,9 @@ class HttpVoiceNoteClient implements VoiceNoteClient {
             'x-from-item-id': fromItemId,
             'x-target-uid': targetUid,
             'x-item-id': itemId,
-            'x-group-id': groupId,
+            // Empty for one plan sent to several friends (R4): the Worker then
+            // checks friendship instead of group membership.
+            if (groupId.isNotEmpty) 'x-group-id': groupId,
           },
         )
         .timeout(const Duration(seconds: 30));
