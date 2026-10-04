@@ -230,10 +230,7 @@ class _VoiceLibraryTileState extends ConsumerState<VoiceLibraryTile> {
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),
-        subtitle: Text(
-          '${formatVoiceLength(note.length)} · '
-          'plays ${voicePlaysFor(note.length)} times',
-        ),
+        subtitle: Text(formatVoiceLength(note.length)),
         trailing: PopupMenuButton<String>(
           popUpAnimationStyle: Motion.menu,
           key: ValueKey('voice-library-menu-${note.id}'),

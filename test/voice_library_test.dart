@@ -181,7 +181,7 @@ void main() {
         final context = tester.element(find.byType(VoiceLibraryScreen));
         expect(find.text(formatLocalInstant(context, at)), findsOneWidget);
         expect(find.text('Gym call'), findsOneWidget);
-        expect(find.text('0:12 · plays 4 times'), findsNWidgets(2));
+        expect(find.text('0:12'), findsNWidgets(2));
         expect(find.textContaining('newest 20'), findsOneWidget);
       },
     );

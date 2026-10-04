@@ -8,7 +8,7 @@ import org.junit.Test
 import java.io.File
 import java.security.MessageDigest
 
-/** Item 32c-2 + F5 (2026-09-26): voice-note alarms at ring time. */
+/** Item 32c-2 (2026-09-26) + 2026-10-04: voice-note alarms at ring time. */
 class VoiceAlarmTest {
     private fun sha(bytes: ByteArray) =
         MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
@@ -17,36 +17,11 @@ class VoiceAlarmTest {
         File.createTempFile("note", ".m4a").apply { writeBytes(bytes) }
 
     @Test
-    fun `plays scale with length - boundaries take the longer band`() {
-        val cases = mapOf(
-            20_500 to 3, 20_000 to 3, 15_001 to 3, 15_000 to 3,
-            14_999 to 4, 10_000 to 4,
-            9_999 to 5, 5_000 to 5,
-            4_999 to 6, 1_000 to 6, 1 to 6,
-        )
-        for ((ms, plays) in cases) assertEquals("$ms ms", plays, VoiceAlarmPolicy.playsFor(ms))
-    }
-
-    @Test
-    fun `play again until the band's count, then stop`() {
-        for ((ms, plays) in mapOf(18_000 to 3, 12_000 to 4, 7_000 to 5, 2_000 to 6)) {
-            for (done in 0 until plays) assertTrue("$ms after $done", VoiceAlarmPolicy.playAgain(done, ms))
-            assertFalse("$ms after $plays", VoiceAlarmPolicy.playAgain(plays, ms))
-            assertFalse(VoiceAlarmPolicy.playAgain(plays + 1, ms))
-        }
-    }
-
-    @Test
-    fun `the cap is plays x duration plus a second, inside the wake lock`() {
-        assertEquals(26_000L, VoiceAlarmPolicy.capMs(5_000)) // 5 s x 5
-        assertEquals(30_994L, VoiceAlarmPolicy.capMs(4_999)) // 4.999 s x 6
-        assertEquals(61_000L, VoiceAlarmPolicy.capMs(20_000)) // 20 s x 3
-        assertEquals(49_000L, VoiceAlarmPolicy.capMs(12_000)) // 12 s x 4
-        // Every length the Worker accepts (1 s .. 20.5 s) ends before the
-        // wake lock (MAX_RING_DURATION_MS + 5 s) is released.
-        for (ms in 1_000..20_500 step 1) {
-            assertTrue("$ms", VoiceAlarmPolicy.capMs(ms) < AlarmSoundPolicy.MAX_RING_DURATION_MS + 5_000L)
-        }
+    fun `a note repeats for the whole ring with a short pause (2026-10-04)`() {
+        assertEquals(1_000L, VoiceAlarmPolicy.REPLAY_GAP_MS)
+        // Must match the Worker's MAX_VOICE_BYTES and the rules' 524288, or a
+        // valid one-minute note fails the ring-time check and rings the tone.
+        assertEquals(524_288L, VoiceAlarmPolicy.MAX_BYTES)
     }
 
     @Test
@@ -108,5 +83,11 @@ class VoiceAlarmTest {
         val voice = source.substringAfter("private fun startVoiceNow").substringBefore("private fun recordVoiceFallback")
         assertTrue(voice.contains("setAudioAttributes(alarmAttributes())"))
         assertTrue(voice.contains("isLooping = false"))
+        // It repeats after the pause and is ended only by the ring cap.
+        assertTrue(voice.contains("handler.postDelayed(voiceReplay, VoiceAlarmPolicy.REPLAY_GAP_MS)"))
+        assertTrue(voice.contains("handler.postDelayed(autoStop, AlarmSoundPolicy.MAX_RING_DURATION_MS)"))
+        // Stopping the alarm cancels a pending replay, so nothing restarts.
+        val stop = source.substringAfter("private fun stopAlarm()").substringBefore("\n    }\n")
+        assertTrue(stop.contains("handler.removeCallbacks(voiceReplay)"))
     }
 }

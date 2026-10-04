@@ -57,7 +57,7 @@ abstract interface class VoiceNoteClient {
 
 /// The words for each Worker refusal.
 String voiceNoteErrorMessage(String? code) => switch (code) {
-  'too-long' => 'Voice notes can be at most 20 seconds.',
+  'too-long' => 'Voice notes can be at most 1 minute.',
   'too-short' => 'That recording is too short. Try again.',
   'too-large' => 'That recording is too large. Try a shorter one.',
   'unsupported-type' ||

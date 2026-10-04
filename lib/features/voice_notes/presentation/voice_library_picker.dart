@@ -55,10 +55,7 @@ class _Picker extends ConsumerWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  subtitle: Text(
-                    '${formatVoiceLength(note.length)} · '
-                    'plays ${voicePlaysFor(note.length)} times',
-                  ),
+                  subtitle: Text(formatVoiceLength(note.length)),
                   onTap: () => Navigator.pop(context, note),
                 ),
               ),

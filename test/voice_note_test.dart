@@ -328,7 +328,7 @@ void main() {
 
     test('every refusal becomes a plain sentence, never a code', () {
       for (final (status, code, words) in [
-        (413, 'too-long', 'at most 20 seconds'),
+        (413, 'too-long', 'at most 1 minute'),
         (400, 'too-short', 'too short'),
         (415, 'unsupported-type', "couldn't be read"),
         (403, 'no-planning-permission', "can't plan for this person"),
@@ -491,7 +491,7 @@ void main() {
       await settleIo(tester);
       await tester.pump();
       expect(find.textContaining('Recording…'), findsOneWidget);
-      expect(find.textContaining('/ 0:20'), findsOneWidget);
+      expect(find.textContaining('/ 1:00'), findsOneWidget);
 
       await tester.pump(const Duration(seconds: 7));
       await tester.tap(find.text('Stop'));
@@ -500,7 +500,7 @@ void main() {
       expect(changes.single, isNotNull);
       expect(changes.single!.length.inSeconds, 7);
       expect(
-        find.text('Voice note ready · 0:07 · plays 5 times'),
+        find.text('Voice note ready · 0:07'),
         findsOneWidget,
       );
       final path = changes.single!.path;
@@ -528,7 +528,7 @@ void main() {
       expect(find.text('Record'), findsOneWidget);
     });
 
-    testWidgets('recording stops itself at 20 seconds', (tester) async {
+    testWidgets('recording stops itself at 1 minute (2026-10-04)', (tester) async {
       final (changes, _, _) = await pump(tester, permission: true);
       await tester.tap(find.text('Record'));
       await settleIo(tester);
@@ -537,16 +537,16 @@ void main() {
       await settleIo(tester);
       expect(changes, isNotEmpty);
       expect(find.text('Re-record'), findsOneWidget);
-      // Told inline, and shown as the full 20 s.
+      // Told inline, and shown as the full minute.
       expect(
-        find.text('Stopped at 20 seconds, the longest a voice note can be.'),
+        find.text('Stopped at 1 minute, the longest a voice note can be.'),
         findsOneWidget,
       );
-      expect(find.textContaining('0:20 · plays 3 times'), findsOneWidget);
+      expect(find.text('Voice note ready · 1:00'), findsOneWidget);
     });
 
     testWidgets('it stops itself half a second early, so a full-length file '
-        'stays under the Worker\'s 20.5 s (device report 2026-09-28)', (
+        'stays under the Worker\'s 60.5 s (device report 2026-09-28)', (
       tester,
     ) async {
       final (changes, _, _) = await pump(tester, permission: true);
@@ -561,23 +561,32 @@ void main() {
       expect(kVoiceAutoStopAt, lessThan(kMaxVoiceNote));
     });
 
-    testWidgets('the card says it rings as their alarm, with the plays '
-        'table (device report 2026-09-28)', (tester) async {
+    testWidgets('a 59-second recording is kept at its own length', (
+      tester,
+    ) async {
+      final (changes, _, _) = await pump(tester, permission: true);
+      await tester.tap(find.text('Record'));
+      await settleIo(tester);
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 59));
+      expect(find.text('Stop'), findsOneWidget, reason: 'still recording');
+      await tester.tap(find.text('Stop'));
+      await settleIo(tester);
+      await tester.pump();
+      expect(changes.last, isNotNull);
+      expect(find.text('Voice note ready · 0:59'), findsOneWidget);
+      expect(find.textContaining('Stopped at'), findsNothing);
+    });
+
+    testWidgets('the card says it rings as their alarm, and repeats for '
+        'the whole ring (2026-10-04)', (tester) async {
       await pump(tester, permission: true);
       expect(find.textContaining('Rings as the alarm on'), findsOneWidget);
       expect(
-        find.text('Up to 20 seconds. Shorter notes repeat more.'),
+        find.text('Up to 1 minute. It repeats for as long as the alarm rings.'),
         findsOneWidget,
       );
-      for (final (length, plays) in [
-        ('Under 5 s', '6 times'),
-        ('5 to 10 s', '5 times'),
-        ('10 to 15 s', '4 times'),
-        ('15 to 20 s', '3 times'),
-      ]) {
-        expect(find.text(length), findsOneWidget);
-        expect(find.text(plays), findsOneWidget);
-      }
+      expect(find.textContaining('times'), findsNothing, reason: 'no plays table');
     });
 
     testWidgets('a note under a second is thrown away and explained (F5)', (
@@ -610,46 +619,35 @@ void main() {
       await settleIo(tester);
       await tester.pump();
       expect(changes.last, isNotNull, reason: 'exactly 1 s is accepted');
-      expect(find.textContaining('plays 6 times'), findsOneWidget);
+      expect(find.text('Voice note ready · 0:01'), findsOneWidget);
     });
 
-    test('plays scale with length; boundaries take the longer band (F5)', () {
-      const cases = {
-        20500: 3, 20000: 3, 15001: 3, 15000: 3, //
-        14999: 4, 10000: 4, //
-        9999: 5, 5000: 5, //
-        4999: 6, 1000: 6,
-      };
-      cases.forEach((ms, plays) {
-        expect(
-          voicePlaysFor(Duration(milliseconds: ms)),
-          plays,
-          reason: '$ms ms',
-        );
-      });
+    test('the recorder, Worker, rules and ring-time check agree on the '
+        'limits (2026-10-04)', () {
       expect(kMinVoiceNote, const Duration(seconds: 1));
-    });
-
-    test('Dart and native agree on the bands', () {
+      expect(kMaxVoiceNote, const Duration(minutes: 1));
+      expect(kVoiceAutoStopAt, const Duration(milliseconds: 59500));
+      expect(kVoiceRecordConfig.bitRate, 32000);
+      expect(kVoiceRecordConfig.sampleRate, 24000);
+      expect(kVoiceRecordConfig.numChannels, 1);
+      expect(kVoiceRecordConfig.autoGain, isTrue);
+      final worker = File('worker/src/voice.js').readAsStringSync();
+      expect(worker, contains('MIN_VOICE_MS = 1_000'));
+      expect(worker, contains('MAX_VOICE_MS = 60_500'));
+      expect(worker, contains('MAX_VOICE_BYTES = 512 * 1024'));
+      final rules = File('firestore.rules').readAsStringSync();
+      expect(rules, contains('note.durationMs <= 60500'));
+      expect(rules, contains('note.sizeBytes <= 524288'));
       final native = File(
         'android/app/src/main/kotlin/com/timeapp/time_app/reminders/VoiceAlarm.kt',
       ).readAsStringSync();
-      for (final line in [
-        'durationMs >= 15_000 -> 3',
-        'durationMs >= 10_000 -> 4',
-        'durationMs >= 5_000 -> 5',
-        'else -> 6',
-      ]) {
-        expect(native, contains(line));
-      }
-      final worker = File('worker/src/voice.js').readAsStringSync();
-      expect(worker, contains('MIN_VOICE_MS = 1_000'));
+      expect(native, contains('MAX_BYTES = 512L * 1024L'));
     });
 
     test('lengths read as m:ss in any locale', () {
       expect(formatVoiceLength(Duration.zero), '0:00');
       expect(formatVoiceLength(const Duration(seconds: 9)), '0:09');
-      expect(formatVoiceLength(kMaxVoiceNote), '0:20');
+      expect(formatVoiceLength(kMaxVoiceNote), '1:00');
     });
   });
 
@@ -1334,7 +1332,7 @@ void main() {
         tester,
         client: _Client(
           failUpload: const VoiceNoteFailure(
-            'Voice notes can be at most 20 seconds.',
+            'Voice notes can be at most 1 minute.',
           ),
         ),
       );
@@ -1342,7 +1340,7 @@ void main() {
       await send(tester);
       expect(repo.created, isEmpty);
       expect(
-        find.text('Voice notes can be at most 20 seconds.'),
+        find.text('Voice notes can be at most 1 minute.'),
         findsOneWidget,
       );
       expect(find.text('Play'), findsOneWidget, reason: 'the draft is kept');
@@ -1468,7 +1466,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('library-choice')), findsOneWidget);
       expect(find.byKey(const ValueKey('voice-note-recorder')), findsNothing);
-      expect(find.textContaining('plays 5 times'), findsOneWidget);
+      expect(find.textContaining('From your library · '), findsOneWidget);
 
       await send(tester);
       expect(client.uploads, isEmpty);

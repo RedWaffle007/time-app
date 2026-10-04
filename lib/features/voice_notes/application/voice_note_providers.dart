@@ -24,30 +24,19 @@ final voiceNoteClientProvider = Provider<VoiceNoteClient>(
   (ref) => HttpVoiceNoteClient(),
 );
 
-/// The recorder's hard stop. The Worker allows 20.5 s for encoder slack.
-const kMaxVoiceNote = Duration(seconds: 20);
+/// The recorder's hard stop (2026-10-04: 1 minute). The Worker and the rules
+/// allow 60.5 s for encoder slack.
+const kMaxVoiceNote = Duration(minutes: 1);
 
 /// When the recorder actually stops itself, timed from BEFORE the microphone
 /// opens. The half second under [kMaxVoiceNote] absorbs the start/stop
 /// latency the phone adds to the file, which could push a full-length note
-/// past the Worker's 20.5 s and fail it at Send (device report 2026-09-28).
-const kVoiceAutoStopAt = Duration(milliseconds: 19500);
+/// past the Worker's 60.5 s and fail it at Send (device report 2026-09-28).
+const kVoiceAutoStopAt = Duration(milliseconds: 59500);
 
-/// The shortest note the Worker accepts (F5, `MIN_VOICE_MS`), so every note
-/// falls in a replay band. Shorter recordings are discarded on the spot.
+/// The shortest note the Worker accepts (F5, `MIN_VOICE_MS`). Shorter
+/// recordings are discarded on the spot.
 const kMinVoiceNote = Duration(seconds: 1);
-
-/// How many times a note plays when the alarm rings (F5, user-directed
-/// 2026-09-26): 15–20 s → 3, 10–15 s → 4, 5–10 s → 5, under 5 s → 6. An exact
-/// boundary takes the LONGER band's count. Mirrors native
-/// `VoiceAlarmPolicy.playsFor`, which decides at ring time.
-int voicePlaysFor(Duration length) {
-  final ms = length.inMilliseconds;
-  if (ms >= 15000) return 3;
-  if (ms >= 10000) return 4;
-  if (ms >= 5000) return 5;
-  return 6;
-}
 
 final voiceLibraryRepositoryProvider = Provider<VoiceLibraryRepository>(
   (ref) => FirestoreVoiceLibraryRepository(FirebaseFirestore.instance),

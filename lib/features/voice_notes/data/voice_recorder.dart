@@ -19,13 +19,16 @@ abstract interface class VoiceRecorder {
   Future<void> dispose();
 }
 
-/// The one format the Worker accepts: AAC-LC in an MPEG-4 container, mono,
-/// ~64 kbps — a 20 s note is ~160 KB, under the 256 KB cap.
+/// The one format the Worker accepts: AAC-LC in an MPEG-4 container, mono.
+/// 2026-10-04: 32 kbps at 24 kHz — a voice has almost nothing above 12 kHz,
+/// so the bits go where speech is; a full minute is ~240 KB, under the
+/// 512 KB cap. Auto-gain lifts a quiet speaker to a level that can wake.
 const kVoiceRecordConfig = RecordConfig(
   encoder: AudioEncoder.aacLc,
-  bitRate: 64000,
-  sampleRate: 44100,
+  bitRate: 32000,
+  sampleRate: 24000,
   numChannels: 1,
+  autoGain: true,
 );
 
 class RecordPackageVoiceRecorder implements VoiceRecorder {

@@ -252,8 +252,17 @@ class AlarmSoundService : Service() {
     /** Why the alarm ended on its own, for the audit CSV. */
     private var endNote = "one_minute_cap"
 
-    /** Voice-note plays completed in this ring (item 32c-2). */
+    /** Voice-note plays completed in this ring (item 32c-2), for the audit. */
     private var voicePlays = 0
+
+    /** Starts the next play of the voice note after [VoiceAlarmPolicy.REPLAY_GAP_MS]. */
+    private val voiceReplay = Runnable {
+        try {
+            player?.let { it.seekTo(0); it.start() }
+        } catch (e: IllegalStateException) {
+            Log.e(TAG, "voice replay failed: $e")
+        }
+    }
 
     private val autoStop = Runnable {
         val at = System.currentTimeMillis()
@@ -269,7 +278,7 @@ class AlarmSoundService : Service() {
                 event = "AUDIO_TIMEOUT",
                 itemId = itemId,
                 atEpoch = at,
-                note = endNote,
+                note = if (endNote == "voice_cap") "voice_cap x$voicePlays" else endNote,
             )
         }
         // Tell the planner now, not when the app is next opened (2026-09-27).
@@ -375,7 +384,7 @@ class AlarmSoundService : Service() {
                 .putExtra(EXTRA_RINGING_ITEM, itemId),
         )
         if (voice != null) {
-            // A voice-note alarm plays the note 3–6 times by length (F5) — but only
+            // A voice-note alarm repeats the note for the whole ring — but only
             // the exact file the plan was approved with. Anything else rings
             // the normal ringtone (never silence) and tells the planner.
             if (VoiceAlarmPolicy.verify(voice) && startVoiceNow(voice)) return
@@ -387,36 +396,26 @@ class AlarmSoundService : Service() {
     }
 
     /**
-     * Plays [voice] on the alarm stream — 3 to 6 times by its length
-     * ([VoiceAlarmPolicy.playsFor]) — then ends the alarm.
+     * Plays [voice] on the alarm stream, again and again with a short pause
+     * between plays, until the ring cap ends the alarm (2026-10-04).
      */
     private fun startVoiceNow(voice: VoiceAlarmSpec): Boolean = try {
         voicePlays = 0
-        var noteMs = 1
         player = MediaPlayer().apply {
             setAudioAttributes(alarmAttributes())
             setDataSource(voice.path)
             isLooping = false
-            setOnCompletionListener { mp ->
+            setOnCompletionListener {
                 voicePlays += 1
-                if (VoiceAlarmPolicy.playAgain(voicePlays, noteMs)) {
-                    mp.seekTo(0)
-                    mp.start()
-                } else {
-                    // Every play done: the alarm ends into the missed flow.
-                    endNote = "voice_all_plays"
-                    handler.removeCallbacks(autoStop)
-                    handler.post(autoStop)
-                }
+                handler.postDelayed(voiceReplay, VoiceAlarmPolicy.REPLAY_GAP_MS)
             }
             prepare()
         }
         val durationMs = player!!.duration.coerceAtLeast(1)
-        noteMs = durationMs
         endNote = "voice_cap"
-        handler.postDelayed(autoStop, VoiceAlarmPolicy.capMs(durationMs))
+        handler.postDelayed(autoStop, AlarmSoundPolicy.MAX_RING_DURATION_MS)
         player!!.start()
-        ReminderAuditLog.write(this, event = "VOICE_PLAYING", note = "${durationMs}ms x${VoiceAlarmPolicy.playsFor(durationMs)}")
+        ReminderAuditLog.write(this, event = "VOICE_PLAYING", note = "${durationMs}ms repeating")
         true
     } catch (e: Exception) {
         Log.e(TAG, "voice note failed, ringing instead: $e")
@@ -524,6 +523,7 @@ class AlarmSoundService : Service() {
 
     private fun stopAlarm() {
         handler.removeCallbacks(autoStop)
+        handler.removeCallbacks(voiceReplay)
         player?.let {
             try {
                 if (it.isPlaying) it.stop()

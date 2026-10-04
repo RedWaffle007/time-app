@@ -1395,9 +1395,9 @@ service cloud.firestore {
             && note is map
             && note.keys().hasOnly(['durationMs', 'sha256', 'sizeBytes'])
             && note.durationMs is int
-            && note.durationMs > 0 && note.durationMs <= 20500
+            && note.durationMs > 0 && note.durationMs <= 60500
             && note.sizeBytes is int
-            && note.sizeBytes > 0 && note.sizeBytes <= 262144
+            && note.sizeBytes > 0 && note.sizeBytes <= 524288
             && note.sha256 is string && note.sha256.size() == 64
             && exists(upload)
             && get(upload).data.uploaderUid == request.auth.uid

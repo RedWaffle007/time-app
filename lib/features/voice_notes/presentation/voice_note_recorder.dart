@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../../core/theme/app_icons.dart';
-import '../../../core/theme/app_text.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../application/voice_note_providers.dart';
@@ -37,7 +36,7 @@ String formatVoiceLength(Duration d) {
 
 enum _Phase { idle, recording, recorded }
 
-/// The schedule builder's voice-note section (item 32b): record up to 20 s
+/// The schedule builder's voice-note section (item 32b): record up to 1 min
 /// (auto-stops), then preview, discard or re-record. Reports the current
 /// draft through [onChanged] (null = no voice note). Nothing is uploaded
 /// here — the builder uploads on save.
@@ -178,7 +177,7 @@ class _VoiceNoteRecorderState extends ConsumerState<VoiceNoteRecorder> {
     _ticker?.cancel();
     _hardStop?.cancel();
     _clock.stop();
-    // An automatic stop is the full-length note: shown as 0:20.
+    // An automatic stop is the full-length note: shown as 1:00.
     final length = auto || _clock.elapsed > kMaxVoiceNote
         ? kMaxVoiceNote
         : _clock.elapsed;
@@ -271,21 +270,20 @@ class _VoiceNoteRecorderState extends ConsumerState<VoiceNoteRecorder> {
             ),
             const SizedBox(height: Space.xs),
             // Plain words first (device report 2026-09-28): what it does, then
-            // the limit, then how often it plays.
+            // the limit. It repeats for the whole ring, whatever its length.
             Text(
               "Rings as the alarm on ${widget.recipientName}'s phone.",
               key: const ValueKey('voice-note-explainer'),
               style: context.text.bodyMedium,
             ),
-            Text('Up to 20 seconds. Shorter notes repeat more.', style: muted),
-            if (_phase == _Phase.idle) ...[
-              const SizedBox(height: Space.sm),
-              _PlaysTable(style: muted),
-            ],
+            Text(
+              'Up to 1 minute. It repeats for as long as the alarm rings.',
+              style: muted,
+            ),
             if (_phase == _Phase.recorded && _autoStopped) ...[
               const SizedBox(height: Space.sm),
               Text(
-                'Stopped at 20 seconds, the longest a voice note can be.',
+                'Stopped at 1 minute, the longest a voice note can be.',
                 key: const ValueKey('voice-note-auto-stopped'),
                 style: muted,
               ),
@@ -301,8 +299,7 @@ class _VoiceNoteRecorderState extends ConsumerState<VoiceNoteRecorder> {
                     'Recording… ${formatVoiceLength(_elapsed)} / '
                         '${formatVoiceLength(kMaxVoiceNote)}',
                   _Phase.recorded =>
-                    'Voice note ready · ${formatVoiceLength(_elapsed)} · '
-                        'plays ${voicePlaysFor(_elapsed)} times',
+                    'Voice note ready · ${formatVoiceLength(_elapsed)}',
                 },
                 key: const ValueKey('voice-note-status'),
                 style: muted,
@@ -353,43 +350,6 @@ class _VoiceNoteRecorderState extends ConsumerState<VoiceNoteRecorder> {
           ],
         ),
       ),
-    );
-  }
-}
-
-/// How many times a note plays, by length — the bands of [voicePlaysFor].
-class _PlaysTable extends StatelessWidget {
-  const _PlaysTable({required this.style});
-
-  final TextStyle? style;
-
-  static const _rows = [
-    ('Under 5 s', Duration(seconds: 1)),
-    ('5 to 10 s', Duration(seconds: 5)),
-    ('10 to 15 s', Duration(seconds: 10)),
-    ('15 to 20 s', Duration(seconds: 15)),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final header = AppText.bodySmallStrong.copyWith(color: style?.color);
-    TableRow row(String a, String b, TextStyle? s) => TableRow(
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(right: Space.xl, bottom: Space.xs),
-          child: Text(a, style: s),
-        ),
-        Text(b, style: s),
-      ],
-    );
-    return Table(
-      key: const ValueKey('voice-note-plays-table'),
-      defaultColumnWidth: const IntrinsicColumnWidth(),
-      children: [
-        row('Length', 'Plays', header),
-        for (final (label, length) in _rows)
-          row(label, '${voicePlaysFor(length)} times', style),
-      ],
     );
   }
 }

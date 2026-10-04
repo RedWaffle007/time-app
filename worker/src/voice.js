@@ -15,8 +15,9 @@
 
 import { bothInGroup } from './notify.js';
 
-export const MAX_VOICE_BYTES = 256 * 1024;
-export const MAX_VOICE_MS = 20_500; // 20 s recorder cap + encoder slack
+// 2026-10-04: 1-minute notes at 32 kbps (~240 KB); 512 KB leaves headroom.
+export const MAX_VOICE_BYTES = 512 * 1024;
+export const MAX_VOICE_MS = 60_500; // 60 s recorder cap + encoder slack
 // F5 (2026-09-26): at least 1 s, so every note falls in a replay band.
 export const MIN_VOICE_MS = 1_000;
 export const ORPHAN_TTL_MS = 24 * 60 * 60 * 1000; // upload never became a plan

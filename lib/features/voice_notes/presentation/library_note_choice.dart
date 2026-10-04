@@ -84,8 +84,7 @@ class _LibraryNoteChoiceState extends ConsumerState<LibraryNoteChoice> {
           overflow: TextOverflow.ellipsis,
         ),
         subtitle: Text(
-          'From your library · ${formatVoiceLength(note.length)} · '
-          'plays ${voicePlaysFor(note.length)} times',
+          'From your library · ${formatVoiceLength(note.length)}',
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,

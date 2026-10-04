@@ -6,6 +6,7 @@ import worker, { VOICE_SWEEP_CRON, cronJobFor } from '../src/index.js';
 import { makeFirestoreDb } from '../src/firestore-rest.js';
 import {
   MAX_VOICE_BYTES,
+  MAX_VOICE_MS,
   MIN_VOICE_MS,
   ORPHAN_TTL_MS,
   RETAIN_AFTER_DUE_MS,
@@ -171,7 +172,7 @@ test('bad audio is refused before anything is stored', async () => {
     [new Uint8Array(MAX_VOICE_BYTES + 1), 413, 'too-large'],
     [new TextEncoder().encode('<script>alert(1)</script>'), 415, 'unsupported-type'],
     [m4a({ noMoov: true }), 415, 'unreadable-audio'],
-    [m4a({ ms: 20600 }), 413, 'too-long'],
+    [m4a({ ms: 60600 }), 413, 'too-long'],
     [m4a({ ms: 100 }), 400, 'too-short'],
     [m4a({ ms: 999 }), 400, 'too-short'],
   ];
@@ -189,6 +190,16 @@ test('the shortest accepted note is exactly one second (F5)', async () => {
   const res = await upload(h, { bytes: m4a({ ms: 1000 }) });
   assert.equal(res.status, 200);
   assert.equal(h.store[`voiceUploads/${ITEM}`].durationMs, 1000);
+});
+
+test('a full one-minute note is accepted (2026-10-04)', async () => {
+  assert.equal(MAX_VOICE_MS, 60_500);
+  for (const ms of [59_000, 60_000, 60_500]) {
+    const h = harness();
+    const res = await upload(h, { bytes: m4a({ ms }) });
+    assert.equal(res.status, 200, `${ms} ms`);
+    assert.equal(h.store[`voiceUploads/${ITEM}`].durationMs, ms);
+  }
 });
 
 test('self-plans, malformed ids and existing plans are refused', async () => {
