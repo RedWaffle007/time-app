@@ -25,6 +25,10 @@ abstract interface class AlarmSound {
   /// mid-ring shows that alarm instead of only playing its tone.
   Future<String?> ringingItem();
 
+  /// Every alarm ringing right now, oldest first (2026-10-04). Only the
+  /// newest makes a sound; the rest keep their own rings.
+  Future<List<String>> ringingItems();
+
   /// Ends an alarm opened after its ring cycle ran out ([alarmScreenPhase])
   /// as missed, with no sound: missed notice, missed popup, planner told.
   Future<void> missLate(String itemId, {String headline = ''});
@@ -56,6 +60,22 @@ class PlatformAlarmSound implements AlarmSound {
     } on PlatformException catch (e) {
       debugPrint('alarm_sound: ringingItem failed: $e');
       return null;
+    }
+  }
+
+  @override
+  Future<List<String>> ringingItems() async {
+    try {
+      final ids = await _channel.invokeListMethod<String>('ringingItems');
+      return [
+        for (final id in ids ?? const <String>[])
+          if (id.isNotEmpty) id,
+      ];
+    } on MissingPluginException {
+      return const [];
+    } on PlatformException catch (e) {
+      debugPrint('alarm_sound: ringingItems failed: $e');
+      return const [];
     }
   }
 

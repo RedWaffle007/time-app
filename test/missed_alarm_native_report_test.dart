@@ -32,7 +32,7 @@ void main() {
       'AlarmSoundService.kt',
     );
     final report = service.indexOf('MissedAlarmReporter.report(');
-    final stop = service.indexOf('ring ended; \${missed.size} missed');
+    final stop = service.indexOf('Log.i(TAG, "ring ended for');
     expect(report, greaterThan(0));
     expect(report, lessThan(stop));
   });

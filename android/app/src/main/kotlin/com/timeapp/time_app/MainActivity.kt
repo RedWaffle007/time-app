@@ -342,6 +342,8 @@ class MainActivity : FlutterFragmentActivity() {
                     )
                     // R5: the plan ringing now, for an app opened mid-ring.
                     "ringingItem" -> result.success(AlarmSoundService.ringingItemId())
+                    // 2026-10-04: every alarm ringing now, oldest first.
+                    "ringingItems" -> result.success(AlarmSoundService.ringingItemIds())
                     // R5: an alarm opened too late to ring ends as missed.
                     "missLate" -> {
                         AlarmSoundService.missWithoutRinging(

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -62,6 +63,11 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
   /// silent and offers Dismiss, which also cancels the rings still to come.
   DateTime? _quietUntilUtc;
 
+  /// Other alarms ringing at the same time (2026-10-04), oldest first. Only
+  /// the newest makes a sound; each can be dismissed here on its own.
+  List<String> _alsoRinging = const [];
+  Timer? _ringingPoll;
+
   @override
   void initState() {
     super.initState();
@@ -72,7 +78,13 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
       if (!mounted) return;
       final keyEvents = ref.read(alarmKeyEventsProvider);
       _keyEvents = keyEvents;
-      keyEvents.listen(_leave);
+      // Volume Down silenced EVERY ringing alarm natively (2026-10-04): leave
+      // without opening another one.
+      keyEvents.listen(() async {
+        _ringingPoll?.cancel();
+        _alsoRinging = const [];
+        await _leave();
+      });
       final sound = ref.read(alarmSoundProvider);
       // Both reads start together: the "already ended?" check never delays
       // the delivered sentence.
@@ -107,6 +119,7 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
             return;
           case Quiet(:final nextRingAtUtc):
             if (mounted) setState(() => _quietUntilUtc = nextRingAtUtc);
+            _watchRinging();
             return;
           case Ringing():
             break;
@@ -134,13 +147,75 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
       // service owns sound and its actionable notification. It does not
       // navigate; that is `_leave`.
       await ref.read(reminderServiceProvider).dismiss(widget.itemId);
+      if (mounted) _watchRinging();
     });
   }
 
   @override
   void dispose() {
+    _ringingPoll?.cancel();
     _keyEvents?.listen(null);
     super.dispose();
+  }
+
+  /// Keeps "Also ringing" current: alarms start and end on their own clocks.
+  void _watchRinging() {
+    _ringingPoll?.cancel();
+    unawaited(_refreshRinging());
+    _ringingPoll = Timer.periodic(
+      const Duration(seconds: 2),
+      (_) => unawaited(_refreshRinging()),
+    );
+  }
+
+  Future<void> _refreshRinging() async {
+    final ids = await ref.read(alarmSoundProvider).ringingItems();
+    if (!mounted) return;
+    final others = alsoRingingIds(ids, widget.itemId);
+    // This alarm's own ring ended while others still ring: if it rings again
+    // later, say when (the native side armed it).
+    DateTime? quiet = _quietUntilUtc;
+    if (quiet == null && ids.isNotEmpty && !ids.contains(widget.itemId)) {
+      final item = ref
+          .read(allItemsAsTargetProvider)
+          .maybeWhen(data: _find, orElse: () => null);
+      if (item != null) {
+        final phase = alarmScreenPhase(item, nowUtc: DateTime.now().toUtc());
+        if (phase is Quiet) quiet = phase.nextRingAtUtc;
+      }
+    }
+    if (listEquals(others, _alsoRinging) && quiet == _quietUntilUtc) return;
+    setState(() {
+      _alsoRinging = others;
+      _quietUntilUtc = quiet;
+    });
+  }
+
+  /// Dismiss one of the other alarms: it stops, its later rings are
+  /// cancelled, and its planner hears it was dismissed — as with Dismiss.
+  Future<void> _dismissOther(String itemId) async {
+    setState(
+      () => _alsoRinging = [
+        for (final id in _alsoRinging)
+          if (id != itemId) id,
+      ],
+    );
+    await ref.read(alarmSoundProvider).stop(itemId);
+    final uid = ref.read(currentUidProvider);
+    if (uid != null) {
+      unawaited(
+        ref.read(alarmTimelineServiceProvider).recordDismissed(uid, itemId),
+      );
+    }
+    await ref.read(reminderServiceProvider).dismiss(itemId);
+  }
+
+  /// Dismiss every alarm ringing now, this one last, then leave as Dismiss.
+  Future<void> _dismissAll() async {
+    for (final id in List.of(_alsoRinging)) {
+      await _dismissOther(id);
+    }
+    await _leave();
   }
 
   /// Whether this alarm is already over, from the facts this phone has now:
@@ -248,6 +323,12 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
   }
 
   void _goToPlan() {
+    // Another alarm still ringing (2026-10-04): show it rather than leave its
+    // sound playing behind the Plan tab.
+    if (_alsoRinging.isNotEmpty) {
+      context.go(Routes.alarmForItem(_alsoRinging.last));
+      return;
+    }
     if (widget.itemId.isNotEmpty) {
       // Set the highlight intent BEFORE navigating — the deterministic signal
       // the Plan shell listens to (query params were unreliable on the cached
@@ -255,6 +336,50 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
       ref.read(planIntentProvider.notifier).highlightItem(widget.itemId);
     }
     context.go(Routes.plan);
+  }
+
+  /// One other ringing alarm: who planned what, and its own Dismiss.
+  Widget _alsoRingingRow(String id) {
+    final items = ref.watch(allItemsAsTargetProvider);
+    final item = items.maybeWhen(
+      data: (list) {
+        for (final i in list) {
+          if (i.id == id) return i;
+        }
+        return null;
+      },
+      orElse: () => null,
+    );
+    final headline = item == null
+        ? null
+        : alarmHeadline(
+            item,
+            plannerName: ref
+                .watch(profileByUidProvider(item.createdByUid))
+                .value
+                ?.name,
+          );
+    return Padding(
+      padding: const EdgeInsets.only(top: Space.sm),
+      child: Row(
+        key: ValueKey('alarm-also-$id'),
+        children: [
+          Expanded(
+            child: Text(
+              headline ?? '',
+              style: context.text.bodyMedium,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          TextButton(
+            key: ValueKey('alarm-also-dismiss-$id'),
+            onPressed: () => _dismissOther(id),
+            child: const Text('Dismiss'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -346,7 +471,23 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
                     style: context.text.bodyMedium,
                   ),
                 ],
+                if (_alsoRinging.isNotEmpty) ...[
+                  const SizedBox(height: Space.xl),
+                  Text('Also ringing', style: context.text.titleSmall),
+                  for (final id in _alsoRinging) _alsoRingingRow(id),
+                ],
                 const Spacer(),
+                if (_alsoRinging.isNotEmpty) ...[
+                  OutlinedButton(
+                    key: const ValueKey('alarm-dismiss-all'),
+                    onPressed: _dismissAll,
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(vertical: Space.sm),
+                      child: Text('Dismiss all'),
+                    ),
+                  ),
+                  const SizedBox(height: Space.sm),
+                ],
                 FilledButton(
                   onPressed: _leave,
                   child: const Padding(
@@ -377,6 +518,12 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
     );
   }
 }
+
+/// The other alarms ringing with [itemId], oldest first. Pure, for tests.
+List<String> alsoRingingIds(List<String> ringing, String itemId) => [
+  for (final id in ringing)
+    if (id != itemId) id,
+];
 
 /// Where an alarm opened on this screen stands in its ring cycle, when the
 /// native service is not ringing it (2026-10-04). Pure, for tests.

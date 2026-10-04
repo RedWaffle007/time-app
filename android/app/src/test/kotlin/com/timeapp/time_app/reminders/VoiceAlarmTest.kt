@@ -83,11 +83,13 @@ class VoiceAlarmTest {
         val voice = source.substringAfter("private fun startVoiceNow").substringBefore("private fun recordVoiceFallback")
         assertTrue(voice.contains("setAudioAttributes(alarmAttributes())"))
         assertTrue(voice.contains("isLooping = false"))
-        // It repeats after the pause and is ended only by the ring cap.
+        // It repeats after the pause; its ring's own end stops it.
         assertTrue(voice.contains("handler.postDelayed(voiceReplay, VoiceAlarmPolicy.REPLAY_GAP_MS)"))
-        assertTrue(voice.contains("handler.postDelayed(autoStop, ringMs())"))
-        // Stopping the alarm cancels a pending replay, so nothing restarts.
+        // Releasing the player (stop, or another alarm taking the speaker)
+        // cancels a pending replay, so nothing restarts.
+        val release = source.substringAfter("private fun releasePlayer()").substringBefore("\n    }\n")
+        assertTrue(release.contains("handler.removeCallbacks(voiceReplay)"))
         val stop = source.substringAfter("private fun stopAlarm()").substringBefore("\n    }\n")
-        assertTrue(stop.contains("handler.removeCallbacks(voiceReplay)"))
+        assertTrue(stop.contains("releasePlayer()"))
     }
 }

@@ -81,3 +81,43 @@ class AlarmPlaybackOwnershipTest {
         assertFalse(AlarmSoundPolicy.shouldStartPlayer(playerAlreadyExists = true))
     }
 }
+
+/** 2026-10-04: several alarms in a ring at once. */
+class AlarmRingSetTest {
+    @Test
+    fun `the newest alarm has the speaker, the one before takes it back`() {
+        val rings = AlarmRingSet()
+        rings.add("a", 100L)
+        rings.add("b", 200L)
+        rings.add("c", 300L)
+        assertEquals("c", rings.sounding())
+        assertEquals(listOf("a", "b", "c"), rings.ids())
+
+        assertTrue(rings.remove("c"))
+        assertEquals("b", rings.sounding())
+        // Removing one that is not sounding leaves the speaker where it is.
+        assertTrue(rings.remove("a"))
+        assertEquals("b", rings.sounding())
+        assertFalse(rings.remove("a"))
+    }
+
+    @Test
+    fun `each alarm keeps its own end, a repeat start changes nothing`() {
+        val rings = AlarmRingSet()
+        rings.add("a", 100L)
+        rings.add("b", 200L)
+        rings.add("a", 999L)
+        assertEquals(100L, rings.endsAt("a"))
+        assertEquals("a repeat does not take the speaker", "b", rings.sounding())
+    }
+
+    @Test
+    fun `notification owners can be found per alarm`() {
+        val ownership = AlarmPlaybackOwnership()
+        ownership.claimNotification(1, "a")
+        ownership.claimNotification(2, "b")
+        assertEquals("a", ownership.itemForNotification(1))
+        assertEquals(setOf(2), ownership.notificationIdsOf("b"))
+        assertNull(ownership.itemForNotification(3))
+    }
+}

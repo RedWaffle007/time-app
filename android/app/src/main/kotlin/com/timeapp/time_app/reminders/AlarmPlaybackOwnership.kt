@@ -45,12 +45,48 @@ internal class AlarmPlaybackOwnership {
 
     fun itemIds(): Set<String> = notifications.values.toSet() + uiItems
 
+    fun itemForNotification(notificationId: Int): String? = notifications[notificationId]
+
+    fun notificationIdsOf(itemId: String): Set<Int> =
+        notifications.filterValues { it == itemId }.keys.toSet()
+
     fun notificationIds(): Set<Int> = notifications.keys.toSet()
 
     fun clear() {
         notifications.clear()
         uiItems.clear()
     }
+}
+
+/**
+ * The alarms in a ring right now (2026-10-04), in the order they started, each
+ * with its own end time. The newest one has the speaker; the rest keep their
+ * own clocks and take it back, newest first, as later ones end. Android-free,
+ * for a plain JVM test.
+ */
+internal class AlarmRingSet {
+    private val ends = linkedMapOf<String, Long>()
+
+    val isEmpty: Boolean get() = ends.isEmpty()
+
+    fun contains(itemId: String): Boolean = itemId in ends
+
+    /** Adds [itemId] as the newest; an alarm already here is unchanged. */
+    fun add(itemId: String, endsAt: Long) {
+        if (itemId !in ends) ends[itemId] = endsAt
+    }
+
+    /** True when [itemId] was ringing. */
+    fun remove(itemId: String): Boolean = ends.remove(itemId) != null
+
+    /** The one with the speaker: the newest still ringing. */
+    fun sounding(): String? = ends.keys.lastOrNull()
+
+    fun endsAt(itemId: String): Long? = ends[itemId]
+
+    fun ids(): List<String> = ends.keys.toList()
+
+    fun clear() = ends.clear()
 }
 
 /** Constants whose values are part of the alarm's user-visible contract. */

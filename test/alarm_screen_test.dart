@@ -470,6 +470,72 @@ void main() {
     expect(sound.missedLate, isEmpty);
   });
 
+  // 2026-10-04: several alarms at once. Each is listed with its own Dismiss.
+  ScheduleItem other(String id, String title) => ScheduleItem(
+    id: id,
+    targetUid: 'me',
+    createdByUid: 'planner',
+    groupId: '',
+    title: title,
+    localWallTime: '',
+    timezone: 'Asia/Kolkata',
+    scheduledInstantUtc: DateTime.now().toUtc(),
+    status: ScheduleItemStatus.approved,
+  );
+
+  testWidgets('other alarms ringing too are listed, each with Dismiss', (
+    t,
+  ) async {
+    final sound = _FakeAlarmSound(ringingList: ['b', 'a']);
+    final scheduler = _FakeScheduler();
+    await t.pumpWidget(
+      harness(
+        sound,
+        scheduler,
+        items: Stream.value([
+          dueAgo(const Duration(seconds: 10)),
+          other('b', 'Stretch'),
+        ]),
+      ),
+    );
+    await t.pumpAndSettle();
+    expect(find.text('Also ringing'), findsOneWidget);
+    expect(find.byKey(const ValueKey('alarm-also-b')), findsOneWidget);
+    expect(find.byKey(const ValueKey('alarm-also-a')), findsNothing);
+    expect(find.byKey(const ValueKey('alarm-dismiss-all')), findsOneWidget);
+
+    await t.tap(find.byKey(const ValueKey('alarm-also-dismiss-b')));
+    await t.pumpAndSettle();
+    expect(sound.stopped, ['b']);
+    expect(find.text('Also ringing'), findsNothing);
+    expect(find.text('Dismiss'), findsOneWidget, reason: 'this alarm stays');
+  });
+
+  testWidgets('Dismiss all stops every ringing alarm and leaves', (t) async {
+    final sound = _FakeAlarmSound(ringingList: ['b', 'c', 'a']);
+    await t.pumpWidget(
+      harness(
+        sound,
+        _FakeScheduler(),
+        items: Stream.value([
+          dueAgo(const Duration(seconds: 10)),
+          other('b', 'Stretch'),
+          other('c', 'Water'),
+        ]),
+      ),
+    );
+    await t.pumpAndSettle();
+    await t.tap(find.byKey(const ValueKey('alarm-dismiss-all')));
+    await t.pumpAndSettle();
+    expect(sound.stopped.toSet(), {'a', 'b', 'c'});
+    expect(find.text('PLAN'), findsOneWidget);
+  });
+
+  test('alsoRingingIds leaves out this alarm and keeps the order', () {
+    expect(alsoRingingIds(['b', 'a', 'c'], 'a'), ['b', 'c']);
+    expect(alsoRingingIds(const [], 'a'), isEmpty);
+  });
+
   test('alarmScreenPhase follows the 25-minute cycle (2026-10-04)', () {
     final due = DateTime.utc(2030, 1, 1, 9);
     final i = dueAgo(Duration.zero);
@@ -581,7 +647,16 @@ class _FakeAlarmTimelineRepository implements AlarmTimelineRepository {
 }
 
 class _FakeAlarmSound implements AlarmSound {
-  _FakeAlarmSound({this.startGate, this.delivered, this.ringing});
+  _FakeAlarmSound({
+    this.startGate,
+    this.delivered,
+    this.ringing,
+    this.ringingList = const [],
+  });
+
+  /// Every alarm the native service is ringing now (2026-10-04).
+  List<String> ringingList;
+  final stopped = <String>[];
 
   final Completer<void>? startGate;
   final String? delivered;
@@ -604,7 +679,17 @@ class _FakeAlarmSound implements AlarmSound {
   Future<String?> headline(String itemId) async => delivered;
 
   @override
-  Future<void> stop(String itemId) async => stops++;
+  Future<void> stop(String itemId) async {
+    stops++;
+    stopped.add(itemId);
+    ringingList = [
+      for (final id in ringingList)
+        if (id != itemId) id,
+    ];
+  }
+
+  @override
+  Future<List<String>> ringingItems() async => ringingList;
 
   @override
   Future<String?> ringingItem() async => ringing;
