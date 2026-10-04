@@ -13,8 +13,8 @@ import '../../../core/widgets/field_glow.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../notifications/application/group_plan_reporter.dart';
 import '../../notifications/application/outcome_notifier.dart';
-import '../../voice_notes/application/group_voice_attacher.dart';
 import '../../voice_notes/application/voice_note_providers.dart';
+import '../../voice_notes/application/voice_prep.dart';
 import '../../voice_notes/data/voice_note_client.dart';
 import '../../voice_notes/domain/voice_library_note.dart';
 import '../../voice_notes/presentation/library_note_choice.dart';
@@ -192,8 +192,32 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
   bool _saving = false;
   String? _error;
 
-  /// The same two alarm kinds as a plan for one friend (F4), always offered.
-  AlarmKind _kind = AlarmKind.defaultAlarm;
+  /// The same two alarm kinds as a plan for one friend (F4), always offered,
+  /// and chosen FIRST (2026-10-04): the rest appears once one is picked (for
+  /// a voice note, once it is recorded).
+  AlarmKind? _kind;
+
+  /// Sends the note to every recipient while the planner picks the time
+  /// (2026-10-04): one upload, then a server copy per further person.
+  ///
+  /// Made on first use, so a screen that never sends a voice note never
+  /// touches the voice client.
+  VoicePrep? _prepOrNull;
+  VoicePrep get _prep => _prepOrNull ??= VoicePrep(
+    client: ref.read(voiceNoteClientProvider),
+    mintItemId: ref.read(scheduleRepositoryProvider).newItemId,
+  );
+  bool get _prepHasSource => _prepOrNull?.hasSource ?? false;
+
+  /// Set when Send found the note could not be sent; shown with Retry.
+  String? _uploadError;
+
+  /// Once shown, the date, time and the rest stay shown.
+  bool _detailsRevealed = false;
+  bool get _showDetails =>
+      _detailsRevealed ||
+      _kind == AlarmKind.defaultAlarm ||
+      (_isVoice && (_voiceDraft != null || _libraryNote != null));
   RecordedVoiceNote? _voiceDraft;
   VoiceLibraryNote? _libraryNote;
   bool _nameError = false;
@@ -231,9 +255,54 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
 
   @override
   void dispose() {
+    _prepOrNull?.dispose();
     _title.dispose();
     _note.dispose();
     super.dispose();
+  }
+
+  /// Everyone a voice note goes to: never the planner (F4).
+  List<String> get _voiceRecipients => [
+    for (final c in widget.candidates)
+      if (!c.isSelf) c.uid,
+  ];
+
+  /// Starts sending the current note to every recipient (2026-10-04).
+  Future<void> _startPrep() async {
+    final library = _libraryNote;
+    final draft = _voiceDraft;
+    final groupId = widget.groupId ?? '';
+    if (library != null) {
+      _prep.start(
+        libraryNoteId: library.id,
+        targetUids: _voiceRecipients,
+        groupId: groupId,
+      );
+    } else if (draft != null) {
+      final bytes = await File(draft.path).readAsBytes();
+      if (!mounted || _voiceDraft != draft) return;
+      _prep.start(
+        recording: bytes,
+        targetUids: _voiceRecipients,
+        groupId: groupId,
+      );
+    }
+  }
+
+  void _onVoiceDraft(RecordedVoiceNote? note) {
+    setState(() {
+      _voiceDraft = note;
+      _uploadError = null;
+      if (note != null) {
+        _voiceError = false;
+        _detailsRevealed = true;
+      }
+    });
+    if (note == null) {
+      _prepOrNull?.clear();
+    } else {
+      unawaited(_startPrep());
+    }
   }
 
   bool get _canSend => _date != null && _time != null && !_saving;
@@ -362,7 +431,10 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
     setState(() {
       _libraryNote = picked;
       _voiceError = false;
+      _uploadError = null;
+      _detailsRevealed = true;
     });
+    unawaited(_startPrep());
   }
 
   Future<void> _send() async {
@@ -383,6 +455,7 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
     setState(() {
       _saving = true;
       _error = null;
+      _uploadError = null;
     });
     try {
       // Resolve every recipient's home timezone in PARALLEL via a one-shot
@@ -412,19 +485,28 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
         for (final t in resolved) ?t,
       ];
 
-      // Voice: the planner's device uploads ONCE (or attaches the library
-      // note); every other member gets a server-side copy (/voice/copy).
+      // Voice: already sent while the time was picked (2026-10-04) — one
+      // upload, then a server copy per person. Send waits for anything still
+      // on its way and tries once more if the connection had dropped; it
+      // never plans while a note is missing for a connection reason.
       final draft = _isVoice ? _voiceDraft : null;
-      final library = _isVoice && draft == null ? _libraryNote : null;
-      final bytes = draft == null ? null : await File(draft.path).readAsBytes();
-      final attach = _isVoice
-          ? GroupVoiceAttacher(
-              client: ref.read(voiceNoteClientProvider),
-              groupId: widget.groupId ?? '',
-              recording: bytes,
-              libraryNoteId: bytes == null ? library?.id : null,
-            )
-          : null;
+      Map<String, PreparedVoice?> prepared = const {};
+      if (_isVoice) {
+        if (!_prepHasSource) await _startPrep();
+        prepared = await _prep.ready();
+        if (!mounted) return;
+        final missing = prepared.entries.any(
+          (e) => e.value == null && !_prep.refused.containsKey(e.key),
+        );
+        if (missing || prepared.values.every((p) => p == null)) {
+          setState(
+            () => _uploadError = missing
+                ? (_prep.error ?? kVoiceUploadFailed)
+                : (_prep.refused.values.firstOrNull ?? kVoiceUploadFailed),
+          );
+          return;
+        }
+      }
 
       final title = _isVoice ? kVoiceAlarmTitle : _title.text;
       final result = await ref
@@ -436,7 +518,15 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
             title: title,
             note: _note.text,
             wall: _wall(),
-            attachVoice: attach?.call,
+            // A person the Worker refused has no note, so no alarm.
+            attachVoice: _isVoice
+                ? ({required targetUid, required itemId}) async =>
+                      prepared[targetUid]?.meta ??
+                      (throw VoiceNoteFailure(
+                        _prepOrNull?.refused[targetUid] ?? kVoiceUploadFailed,
+                      ))
+                : null,
+            itemIdFor: _isVoice ? (uid) => prepared[uid]?.itemId ?? '' : null,
             knownBusy: _busy ?? const {},
           );
       if (draft != null) unawaited(_deleteQuietly(draft.path));
@@ -503,6 +593,29 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
       if (mounted) setState(() => _saving = false);
     }
   }
+
+  /// The note could not be sent: say so, with Retry (= Send again).
+  Widget _uploadFailed(String message) => Padding(
+    padding: const EdgeInsets.only(top: Space.md),
+    child: Row(
+      key: const ValueKey('group-voice-upload-failed'),
+      children: [
+        Expanded(
+          child: Text(
+            message,
+            style: context.text.bodySmall?.copyWith(
+              color: context.colors.error,
+            ),
+          ),
+        ),
+        TextButton(
+          key: const ValueKey('group-voice-upload-retry'),
+          onPressed: _saving ? null : _send,
+          child: const Text('Retry'),
+        ),
+      ],
+    ),
+  );
 
   static Future<void> _deleteQuietly(String path) async {
     try {
@@ -689,42 +802,8 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
               ),
             ),
             const SizedBox(height: Space.xl),
-            Row(
-              children: [
-                Expanded(
-                  child: _pickerButton(
-                    key: const ValueKey('group-pick-date'),
-                    onPressed: _saving ? null : _pickDate,
-                    icon: AppIcons.date,
-                    label: _date == null
-                        ? 'Pick date'
-                        : formatWallDate(context, _date!),
-                  ),
-                ),
-                const SizedBox(width: Space.md),
-                Expanded(
-                  child: _pickerButton(
-                    key: const ValueKey('group-pick-time'),
-                    onPressed: _saving ? null : _pickTime,
-                    icon: AppIcons.time,
-                    label: _time == null
-                        ? 'Pick time'
-                        : formatTimeOfDay(context, _time!),
-                  ),
-                ),
-              ],
-            ),
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: TextButton.icon(
-                key: const ValueKey('everyones-time'),
-                onPressed: _showMemberTimes,
-                icon: const Icon(AppIcons.time),
-                label: const Text("Everyone's time"),
-              ),
-            ),
-            _whoGetsIt(context),
-            const SizedBox(height: Space.xl),
+            // 2026-10-04 (user-directed): the alarm kind first; the date,
+            // time and the rest once it is chosen (a voice note: recorded).
             SegmentedButton<AlarmKind>(
               key: const ValueKey('group-alarm-kind'),
               showSelectedIcon: false,
@@ -740,14 +819,23 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
                   label: Text('Default Alarm'),
                 ),
               ],
-              selected: {_kind},
+              // Nothing chosen yet (2026-10-04): the choice comes first.
+              emptySelectionAllowed: true,
+              selected: {?_kind},
               onSelectionChanged: _saving
                   ? null
-                  : (picked) => setState(() {
-                      _kind = picked.first;
-                      _nameError = false;
-                      _voiceError = false;
-                    }),
+                  : (picked) {
+                      if (picked.isEmpty) return;
+                      setState(() {
+                        _kind = picked.first;
+                        _nameError = false;
+                        _voiceError = false;
+                        _uploadError = null;
+                        if (_kind == AlarmKind.defaultAlarm) {
+                          _detailsRevealed = true;
+                        }
+                      });
+                    },
             ),
             const SizedBox(height: Space.xl),
             if (_isVoice) ...[
@@ -756,7 +844,9 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
                   note: note,
                   enabled: !_saving,
                   onRemove: () {
-                    if (mounted) setState(() => _libraryNote = null);
+                    if (!mounted) return;
+                    setState(() => _libraryNote = null);
+                    _prepOrNull?.clear();
                   },
                 )
               else ...[
@@ -764,10 +854,7 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
                   key: const ValueKey('group-voice'),
                   recipientName: _forFriends ? 'each friend' : 'each member',
                   enabled: !_saving,
-                  onChanged: (note) => setState(() {
-                    _voiceDraft = note;
-                    if (note != null) _voiceError = false;
-                  }),
+                  onChanged: _onVoiceDraft,
                 ),
                 if (_voiceDraft == null &&
                     (ref.watch(voiceLibraryProvider).value?.isNotEmpty ??
@@ -783,62 +870,112 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
                   ),
               ],
               if (_voiceError) _errorLine(kVoiceNoteRequired),
-            ] else ...[
-              Text('Name of the Task', style: context.text.titleMedium),
-              const SizedBox(height: Space.sm),
-              FieldGlow(
-                error: _nameError,
-                child: TextField(
-                  key: const ValueKey('group-task-name'),
-                  controller: _title,
-                  textCapitalization: TextCapitalization.sentences,
-                  decoration: InputDecoration(
-                    hintText: 'What should everyone do?',
-                    enabledBorder: _nameError ? _errorBorder() : null,
-                    focusedBorder: _nameError ? _errorBorder() : null,
-                  ),
-                  onChanged: (_) {
-                    if (_nameError) setState(() => _nameError = false);
-                  },
-                ),
-              ),
-              if (_nameError) _errorLine(kTaskNameRequired),
             ],
-            const SizedBox(height: Space.xl),
-            FieldGlow(
-              child: TextField(
-                key: const ValueKey('group-note'),
-                controller: _note,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(labelText: 'Note (optional)'),
-              ),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: Space.md),
-              Text(
-                _error!,
-                style: context.text.bodySmall?.copyWith(
-                  color: context.colors.error,
-                ),
-              ),
-            ],
-            const SizedBox(height: Space.xl),
-            FilledButton(
-              key: const ValueKey('group-send'),
-              onPressed: (_canSend && count > 0) ? _send : null,
-              child: _saving
-                  ? const SizedBox(
-                      height: Sizes.buttonSpinner,
-                      width: Sizes.buttonSpinner,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Text(
-                      _forFriends
-                          ? 'Send to ${formatCount(context, count)} '
-                                '${_noun(count)}'
-                          : 'Send to the group',
+            if (_showDetails) ...[
+              if (_isVoice) const SizedBox(height: Space.xl),
+              Row(
+                children: [
+                  Expanded(
+                    child: _pickerButton(
+                      key: const ValueKey('group-pick-date'),
+                      onPressed: _saving ? null : _pickDate,
+                      icon: AppIcons.date,
+                      label: _date == null
+                          ? 'Pick date'
+                          : formatWallDate(context, _date!),
                     ),
-            ),
+                  ),
+                  const SizedBox(width: Space.md),
+                  Expanded(
+                    child: _pickerButton(
+                      key: const ValueKey('group-pick-time'),
+                      onPressed: _saving ? null : _pickTime,
+                      icon: AppIcons.time,
+                      label: _time == null
+                          ? 'Pick time'
+                          : formatTimeOfDay(context, _time!),
+                    ),
+                  ),
+                ],
+              ),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton.icon(
+                  key: const ValueKey('everyones-time'),
+                  onPressed: _showMemberTimes,
+                  icon: const Icon(AppIcons.time),
+                  label: const Text("Everyone's time"),
+                ),
+              ),
+              _whoGetsIt(context),
+              const SizedBox(height: Space.xl),
+              if (!_isVoice) ...[
+                Text('Name of the Task', style: context.text.titleMedium),
+                const SizedBox(height: Space.sm),
+                FieldGlow(
+                  error: _nameError,
+                  child: TextField(
+                    key: const ValueKey('group-task-name'),
+                    controller: _title,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: InputDecoration(
+                      hintText: 'What should everyone do?',
+                      enabledBorder: _nameError ? _errorBorder() : null,
+                      focusedBorder: _nameError ? _errorBorder() : null,
+                    ),
+                    onChanged: (_) {
+                      if (_nameError) setState(() => _nameError = false);
+                    },
+                  ),
+                ),
+                if (_nameError) _errorLine(kTaskNameRequired),
+              ],
+              const SizedBox(height: Space.xl),
+              FieldGlow(
+                child: TextField(
+                  key: const ValueKey('group-note'),
+                  controller: _note,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: const InputDecoration(
+                    labelText: 'Note (optional)',
+                  ),
+                ),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: Space.md),
+                Text(
+                  _error!,
+                  style: context.text.bodySmall?.copyWith(
+                    color: context.colors.error,
+                  ),
+                ),
+              ],
+              const SizedBox(height: Space.xl),
+              FilledButton(
+                key: const ValueKey('group-send'),
+                onPressed: (_canSend && count > 0) ? _send : null,
+                child: _saving
+                    ? const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            height: Sizes.buttonSpinner,
+                            width: Sizes.buttonSpinner,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          SizedBox(width: Space.sm),
+                          Text('Sending…'),
+                        ],
+                      )
+                    : Text(
+                        _forFriends
+                            ? 'Send to ${formatCount(context, count)} '
+                                  '${_noun(count)}'
+                            : 'Send to the group',
+                      ),
+              ),
+              if (_uploadError case final message?) _uploadFailed(message),
+            ],
           ],
         ),
       ),

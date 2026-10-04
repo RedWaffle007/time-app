@@ -122,7 +122,7 @@ class _PlanRequests implements PlanRequestRepository {
 
 class _Client implements VoiceNoteClient {
   _Client({this.failUpload, this.downloadBytes});
-  final VoiceNoteFailure? failUpload;
+  VoiceNoteFailure? failUpload;
   Uint8List? downloadBytes;
   final uploads = <(String, String, String?, int)>[];
   var downloads = 0;
@@ -499,10 +499,7 @@ void main() {
       await tester.pump();
       expect(changes.single, isNotNull);
       expect(changes.single!.length.inSeconds, 7);
-      expect(
-        find.text('Voice note ready · 0:07'),
-        findsOneWidget,
-      );
+      expect(find.text('Voice note ready · 0:07'), findsOneWidget);
       final path = changes.single!.path;
       expect(File(path).existsSync(), isTrue);
       expect(find.text('Play'), findsOneWidget);
@@ -528,7 +525,9 @@ void main() {
       expect(find.text('Record'), findsOneWidget);
     });
 
-    testWidgets('recording stops itself at 1 minute (2026-10-04)', (tester) async {
+    testWidgets('recording stops itself at 1 minute (2026-10-04)', (
+      tester,
+    ) async {
       final (changes, _, _) = await pump(tester, permission: true);
       await tester.tap(find.text('Record'));
       await settleIo(tester);
@@ -586,7 +585,11 @@ void main() {
         find.text('Up to 1 minute. It repeats for as long as the alarm rings.'),
         findsOneWidget,
       );
-      expect(find.textContaining('times'), findsNothing, reason: 'no plays table');
+      expect(
+        find.textContaining('times'),
+        findsNothing,
+        reason: 'no plays table',
+      );
     });
 
     testWidgets('a note under a second is thrown away and explained (F5)', (
@@ -666,6 +669,9 @@ void main() {
       _PlanRequests? planRequests,
       NotificationEventNotifier? notifier,
       bool routed = false,
+      // 2026-10-04: the alarm kind is chosen first; most tests start from a
+      // default alarm, as the screen did before.
+      bool chooseDefault = true,
     }) async {
       final repo = _Repo();
       final voice = client ?? _Client();
@@ -779,6 +785,10 @@ void main() {
       }
       if (planRequest != null) {
         await tester.tap(find.text('Request screen'));
+        await tester.pumpAndSettle();
+      }
+      if (chooseDefault && target != 'me') {
+        await tester.tap(find.text('Default Alarm'));
         await tester.pumpAndSettle();
       }
       return (repo, voice);
@@ -1170,16 +1180,17 @@ void main() {
         scrollable: find.byType(Scrollable).first,
       );
       expect(sendEnabled(tester), isTrue);
-      expect(client.uploads, isEmpty, reason: 'nothing uploads before Send');
+      // 2026-10-04: the note is already on its way while the time is picked.
+      expect(client.uploads, hasLength(1), reason: 'uploaded at Stop');
     });
 
-    testWidgets('Send uploads the recording once, then saves the plan', (
-      tester,
-    ) async {
+    testWidgets('the recording uploads the moment it stops; Send only saves '
+        'the plan (2026-10-04)', (tester) async {
       final (repo, client) = await pumpBuilder(tester);
       await fillAndRecord(tester);
       await tester.pumpAndSettle();
-      expect(client.uploads, isEmpty);
+      expect(client.uploads, hasLength(1), reason: 'before Send');
+      expect(repo.created, isEmpty);
 
       await send(tester);
       expect(client.uploads, hasLength(1));
@@ -1199,8 +1210,11 @@ void main() {
       await tester.pumpAndSettle();
 
       await send(tester);
-      expect(client.uploads, hasLength(1), reason: 'one upload, at Send');
-      expect(repo.created.single['itemId'], client.uploads.single.$2);
+      // Each recording uploads under its own fresh id; the plan carries the
+      // latest one only (the first is swept by the Worker as an orphan).
+      expect(client.uploads, hasLength(2));
+      expect(client.uploads.first.$2, isNot(client.uploads.last.$2));
+      expect(repo.created.single['itemId'], client.uploads.last.$2);
     });
 
     // 2026-09-27 (user-directed): once sent, the builder closes and My
@@ -1313,7 +1327,7 @@ void main() {
 
       expect(client.uploads.single.$1, 'friend-1');
       expect(client.uploads.single.$2, 'prepared-id-000001');
-      expect(client.uploads.single.$3, isNull, reason: 'friendship plan');
+      expect(client.uploads.single.$3, '', reason: 'friendship plan');
       expect(client.uploads.single.$4, _audio.length);
       final created = repo.created.single;
       expect(created['itemId'], 'prepared-id-000001');
@@ -1339,11 +1353,41 @@ void main() {
       await fillAndRecord(tester);
       await send(tester);
       expect(repo.created, isEmpty);
-      expect(
-        find.text('Voice notes can be at most 1 minute.'),
-        findsOneWidget,
-      );
+      expect(find.text('Voice notes can be at most 1 minute.'), findsOneWidget);
       expect(find.text('Play'), findsOneWidget, reason: 'the draft is kept');
+    });
+
+    testWidgets('a note that cannot get through keeps the planner on the '
+        'screen with Retry; Retry sends it and saves (2026-10-04)', (
+      tester,
+    ) async {
+      final client = _Client(
+        failUpload: const VoiceNoteFailure('offline', retryable: true),
+      );
+      final (repo, _) = await pumpBuilder(tester, client: client);
+      await fillAndRecord(tester);
+      // The quiet background retries run out while the time is picked.
+      await tester.pump(const Duration(seconds: 10));
+      await send(tester);
+      await tester.pump(const Duration(seconds: 10));
+      await tester.pumpAndSettle();
+      expect(repo.created, isEmpty, reason: 'never planned without the note');
+      expect(find.byKey(const ValueKey('voice-upload-failed')), findsOneWidget);
+      expect(find.text('Play'), findsOneWidget, reason: 'the draft is kept');
+      final attemptsBefore = client.uploads.length;
+      expect(attemptsBefore, greaterThan(4), reason: 'retried quietly');
+
+      client.failUpload = null; // signal is back
+      final retry = find.byKey(const ValueKey('voice-upload-retry'));
+      await tester.ensureVisible(retry);
+      await tester.pumpAndSettle();
+      await tester.tap(retry);
+      await settleIo(tester);
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(repo.created, hasLength(1));
+      expect(repo.created.single['itemId'], client.uploads.last.$2);
+      expect(find.byKey(const ValueKey('voice-upload-failed')), findsNothing);
     });
 
     testWidgets('without a recording the plan saves exactly as before', (
@@ -1407,14 +1451,14 @@ void main() {
         tester.getSize(find.byKey(const ValueKey('pick-date'))).height,
         greaterThanOrEqualTo(Sizes.pickerButton),
       );
-      // Order: date/time → choice → name → note → Send.
+      // Order (2026-10-04): choice → date/time → name → note → Send.
       double top(Finder f) => tester.getRect(f).top;
       expect(
-        top(find.byKey(const ValueKey('pick-date'))),
-        lessThan(top(find.byKey(const ValueKey('alarm-kind')))),
+        top(find.byKey(const ValueKey('alarm-kind'))),
+        lessThan(top(find.byKey(const ValueKey('pick-date')))),
       );
       expect(
-        top(find.byKey(const ValueKey('alarm-kind'))),
+        top(find.byKey(const ValueKey('pick-date'))),
         lessThan(top(find.byKey(const ValueKey('task-name')))),
       );
       expect(
@@ -1474,7 +1518,7 @@ void main() {
         'note0000000000000001',
         'friend-1',
         'prepared-id-000001',
-        null,
+        '',
       ));
       final created = repo.created.single;
       expect(created['itemId'], 'prepared-id-000001');
@@ -1531,8 +1575,9 @@ void main() {
       expect(find.byKey(const ValueKey('voice-note-recorder')), findsOneWidget);
       await send(tester);
       expect(find.text(kVoiceNoteRequired), findsOneWidget);
-      // Nothing is attached until Send, and a removed choice is never sent.
-      expect(client.attaches, isEmpty);
+      // 2026-10-04: the pick starts the server copy at once, but a removed
+      // choice is never sent with a plan (the Worker sweeps the copy).
+      expect(client.attaches, hasLength(1));
       expect(repo.created, isEmpty);
     });
   });

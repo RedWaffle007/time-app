@@ -39,7 +39,7 @@ enum _Phase { idle, recording, recorded }
 /// The schedule builder's voice-note section (item 32b): record up to 1 min
 /// (auto-stops), then preview, discard or re-record. Reports the current
 /// draft through [onChanged] (null = no voice note). Nothing is uploaded
-/// here — the builder uploads on save.
+/// here — the screen starts the upload when a draft is reported.
 class VoiceNoteRecorder extends ConsumerStatefulWidget {
   const VoiceNoteRecorder({
     super.key,
@@ -139,7 +139,11 @@ class _VoiceNoteRecorderState extends ConsumerState<VoiceNoteRecorder> {
 
   Future<void> _start() async {
     if (!await _ensurePermission() || !mounted) return;
+    // Re-recording: the old note is gone from this moment, so the screen must
+    // stop sending it (2026-10-04: its upload already started).
+    final hadDraft = _draft != null;
     await _discardFile();
+    if (hadDraft) widget.onChanged(null);
     final path = await ref.read(voiceDraftPathProvider)();
     // Timed from before the microphone opens, so the file is never longer
     // than the clock says.

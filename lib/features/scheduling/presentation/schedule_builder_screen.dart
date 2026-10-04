@@ -26,7 +26,7 @@ import '../../plan_requests/application/plan_request_providers.dart';
 import '../../plan_requests/domain/plan_request.dart';
 import '../../social/application/social_providers.dart';
 import '../../voice_notes/application/voice_note_providers.dart';
-import '../../voice_notes/data/voice_note_client.dart';
+import '../../voice_notes/application/voice_prep.dart';
 import '../../voice_notes/domain/voice_library_note.dart';
 import '../../voice_notes/presentation/library_note_choice.dart';
 import '../../voice_notes/presentation/voice_library_picker.dart';
@@ -131,8 +131,34 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
   bool _saving = false;
 
   /// Voice Note or Default Alarm (F4). Self-plans are always a default alarm.
-  AlarmKind _kind = AlarmKind.defaultAlarm;
+  /// Null until the planner chooses (2026-10-04): the choice is the first
+  /// thing after who, and the rest of the plan appears once it is made.
+  AlarmKind? _kind;
   bool get _isVoice => !_isSelf && _kind == AlarmKind.voiceNote;
+
+  /// The voice note's upload, started the moment it is recorded or picked
+  /// (2026-10-04), so Send usually only writes the plan.
+  ///
+  /// Made on first use, so a screen that never sends a voice note never
+  /// touches the voice client.
+  VoicePrep? _prepOrNull;
+  VoicePrep get _prep => _prepOrNull ??= VoicePrep(
+    client: ref.read(voiceNoteClientProvider),
+    mintItemId: ref.read(scheduleRepositoryProvider).newItemId,
+  );
+  bool get _prepHasSource => _prepOrNull?.hasSource ?? false;
+
+  /// Set when Send found the voice note could not be sent; shown with Retry.
+  String? _uploadError;
+
+  /// The date, time and the rest, once revealed, stay revealed: discarding a
+  /// note must not make fields the planner already filled in vanish.
+  bool _detailsRevealed = false;
+  bool get _showDetails =>
+      _detailsRevealed ||
+      _isSelf ||
+      _kind == AlarmKind.defaultAlarm ||
+      (_isVoice && (_voiceDraft != null || _libraryNote != null));
 
   /// Validation shown after Send was tapped (F4) — never before.
   bool _nameError = false;
@@ -181,6 +207,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
 
   @override
   void dispose() {
+    _prepOrNull?.dispose();
     _scrollController.dispose();
     _titleController.dispose();
     _noteController.dispose();
@@ -306,6 +333,7 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       return; // planning for others needs a group
     }
     if (!_validate()) return;
+    if (_uploadError != null) setState(() => _uploadError = null);
 
     final wall = _wall();
     final instantUtc = resolveWallTimeToUtc(wall, timezone);
@@ -357,38 +385,23 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       String? preparedId;
       VoiceNoteMeta? voiceNote;
       if (draft != null || fromLibrary != null) {
-        preparedId = repository.newItemId(_targetUid!);
-        final client = ref.read(voiceNoteClientProvider);
-        final groupId = (_groupId ?? '').isEmpty ? null : _groupId;
-        try {
-          voiceNote = fromLibrary != null
-              ? await client.attachFromLibrary(
-                  noteId: fromLibrary.id,
-                  targetUid: _targetUid!,
-                  itemId: preparedId,
-                  groupId: groupId,
-                )
-              : await client.upload(
-                  bytes: await File(draft!.path).readAsBytes(),
-                  targetUid: _targetUid!,
-                  itemId: preparedId,
-                  groupId: groupId,
-                );
-        } on VoiceNoteFailure catch (e) {
-          if (mounted) {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(SnackBar(content: Text(e.message)));
-          }
-          return;
-        } on Object {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(voiceNoteErrorMessage(null))),
-            );
-          }
+        // Usually already done (2026-10-04): it started when the note was
+        // recorded. Otherwise this waits for it, trying once more if the
+        // connection had dropped. Nothing is saved unless it arrived.
+        if (!_prepHasSource) await _startPrep();
+        final prepared = (await _prep.ready())[_targetUid];
+        if (!mounted) return;
+        if (prepared == null) {
+          setState(
+            () => _uploadError =
+                _prepOrNull?.refused[_targetUid] ??
+                _prep.error ??
+                kVoiceUploadFailed,
+          );
           return;
         }
+        preparedId = prepared.itemId;
+        voiceNote = prepared.meta;
       }
       final request = widget.planRequest;
       final itemId = request != null
@@ -491,7 +504,9 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
         _voiceRecorderGen++;
         _nameError = false;
         _voiceError = false;
+        _uploadError = null;
       });
+      _prepOrNull?.clear();
     } catch (e) {
       // Refused by the rules? If it is because the minute was taken in the
       // meantime (item 4), say so in the red line instead of a raw error.
@@ -579,74 +594,11 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
         const Divider(height: Space.xxl),
 
         if (_targetUid != null) ...[
-          if (timezone != null)
-            // Neutral, not a doctrine colour: this is orientation, neither an
-            // action (green) nor something waiting on you (orange).
-            Container(
-              padding: const EdgeInsets.all(Space.md),
-              decoration: BoxDecoration(
-                color: context.colors.surfaceContainer,
-                borderRadius: Radii.sm,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _isSelf
-                        ? "You're building in your local time: $timezone."
-                        : "You're building in "
-                              '${possessive(selectedProfile?.name)} local time'
-                              ': $timezone.',
-                    style: context.text.bodySmall?.copyWith(
-                      color: context.colors.onSurfaceVariant,
-                    ),
-                  ),
-                  if (!_isSelf) TimeThereLine(timezone: timezone),
-                ],
-              ),
-            ),
-          const SizedBox(height: Space.lg),
-          Row(
-            children: [
-              Expanded(
-                child: _pickerButton(
-                  key: const ValueKey('pick-date'),
-                  onPressed: _fromRequest ? null : _pickDate,
-                  icon: AppIcons.date,
-                  label: _date == null
-                      ? 'Pick date'
-                      : formatWallDate(context, _date!),
-                ),
-              ),
-              const SizedBox(width: Space.md),
-              Expanded(
-                child: _pickerButton(
-                  key: const ValueKey('pick-time'),
-                  onPressed: _fromRequest ? null : _pickTime,
-                  icon: AppIcons.time,
-                  label: _time == null
-                      ? 'Pick time'
-                      : formatTimeOfDay(context, _time!),
-                ),
-              ),
-            ],
-          ),
-          if (_fromRequest)
-            Padding(
-              padding: const EdgeInsets.only(top: Space.sm),
-              child: Text(
-                'Requested for this exact time.',
-                key: const ValueKey('plan-request-locked'),
-                style: context.text.bodySmall?.copyWith(
-                  color: context.colors.onSurfaceVariant,
-                ),
-              ),
-            ),
-          if (_clashBlocked) _errorLine(_clashMessage(selectedProfile?.name)),
-          // Voice notes are for someone else: a self-plan is a default alarm
-          // and shows no choice (F4).
+          // 2026-10-04 (user-directed): who, then the alarm kind, then -
+          // once a kind is chosen (for a voice note, once it is recorded) -
+          // the date, time and the rest. Recording first gives the upload
+          // the whole time-picking to finish.
           if (!_isSelf) ...[
-            const SizedBox(height: Space.xl),
             SizedBox(
               width: double.infinity,
               child: SegmentedButton<AlarmKind>(
@@ -664,14 +616,24 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
                     label: Text('Default Alarm'),
                   ),
                 ],
-                selected: {_kind},
+                // Nothing chosen yet (2026-10-04): the choice comes first.
+                emptySelectionAllowed: true,
+                selected: {?_kind},
                 onSelectionChanged: _saving
                     ? null
-                    : (picked) => setState(() {
-                        _kind = picked.first;
-                        _nameError = false;
-                        _voiceError = false;
-                      }),
+                    : (picked) {
+                        // Tapping the chosen one again keeps it chosen.
+                        if (picked.isEmpty) return;
+                        setState(() {
+                          _kind = picked.first;
+                          _nameError = false;
+                          _voiceError = false;
+                          _uploadError = null;
+                          if (_kind == AlarmKind.defaultAlarm) {
+                            _detailsRevealed = true;
+                          }
+                        });
+                      },
               ),
             ),
           ],
@@ -681,13 +643,12 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
               _libraryChoice(note)
             else ...[
               VoiceNoteRecorder(
-                key: ValueKey('voice-$_targetUid-$_voiceRecorderGen'),
+                // Not keyed by the person: changing who keeps the note
+                // (2026-10-04), and it is sent again for them.
+                key: ValueKey('voice-$_voiceRecorderGen'),
                 recipientName: selectedProfile?.name ?? 'their',
                 enabled: !_saving,
-                onChanged: (note) => setState(() {
-                  _voiceDraft = note;
-                  if (note != null) _voiceError = false;
-                }),
+                onChanged: _onVoiceDraft,
               ),
               // Reuse a saved note instead (32d) — offered while nothing is
               // recorded, and only once the library has something in it.
@@ -704,65 +665,143 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
                 ),
             ],
             if (_voiceError) _errorLine(kVoiceNoteRequired),
-          ] else ...[
-            Text('Name of the Task', style: context.text.titleMedium),
-            const SizedBox(height: Space.sm),
-            FieldGlow(
-              error: _nameError,
-              child: TextField(
-                key: const ValueKey('task-name'),
-                controller: _titleController,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: InputDecoration(
-                  hintText: 'What should they do?',
-                  enabledBorder: _nameError ? _errorBorder() : null,
-                  focusedBorder: _nameError ? _errorBorder() : null,
+          ],
+          if (_showDetails) ...[
+            if (_isVoice) const SizedBox(height: Space.xl),
+            if (timezone != null)
+              // Neutral, not a doctrine colour: this is orientation, neither an
+              // action (green) nor something waiting on you (orange).
+              Container(
+                padding: const EdgeInsets.all(Space.md),
+                decoration: BoxDecoration(
+                  color: context.colors.surfaceContainer,
+                  borderRadius: Radii.sm,
                 ),
-                onChanged: (_) {
-                  if (_nameError) setState(() => _nameError = false);
-                },
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _isSelf
+                          ? "You're building in your local time: $timezone."
+                          : "You're building in "
+                                '${possessive(selectedProfile?.name)} local time'
+                                ': $timezone.',
+                      style: context.text.bodySmall?.copyWith(
+                        color: context.colors.onSurfaceVariant,
+                      ),
+                    ),
+                    if (!_isSelf) TimeThereLine(timezone: timezone),
+                  ],
+                ),
               ),
-            ),
-            if (_nameError) _errorLine(kTaskNameRequired),
-          ],
-          const SizedBox(height: Space.xl),
-          FieldGlow(
-            child: TextField(
-              key: const ValueKey('note'),
-              controller: _noteController,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: const InputDecoration(labelText: 'Note (optional)'),
-            ),
-          ),
-          if (timezone != null && _date != null && _time != null) ...[
             const SizedBox(height: Space.lg),
-            Text(
-              'Fires at: ${_previewLocal(context, timezone)}  ($timezone)',
-              style: context.text.bodySmall?.copyWith(
-                color: context.colors.onSurfaceVariant,
+            Row(
+              children: [
+                Expanded(
+                  child: _pickerButton(
+                    key: const ValueKey('pick-date'),
+                    onPressed: _fromRequest ? null : _pickDate,
+                    icon: AppIcons.date,
+                    label: _date == null
+                        ? 'Pick date'
+                        : formatWallDate(context, _date!),
+                  ),
+                ),
+                const SizedBox(width: Space.md),
+                Expanded(
+                  child: _pickerButton(
+                    key: const ValueKey('pick-time'),
+                    onPressed: _fromRequest ? null : _pickTime,
+                    icon: AppIcons.time,
+                    label: _time == null
+                        ? 'Pick time'
+                        : formatTimeOfDay(context, _time!),
+                  ),
+                ),
+              ],
+            ),
+            if (_fromRequest)
+              Padding(
+                padding: const EdgeInsets.only(top: Space.sm),
+                child: Text(
+                  'Requested for this exact time.',
+                  key: const ValueKey('plan-request-locked'),
+                  style: context.text.bodySmall?.copyWith(
+                    color: context.colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            if (_clashBlocked) _errorLine(_clashMessage(selectedProfile?.name)),
+            const SizedBox(height: Space.xl),
+            if (!_isVoice) ...[
+              Text('Name of the Task', style: context.text.titleMedium),
+              const SizedBox(height: Space.sm),
+              FieldGlow(
+                error: _nameError,
+                child: TextField(
+                  key: const ValueKey('task-name'),
+                  controller: _titleController,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: InputDecoration(
+                    hintText: 'What should they do?',
+                    enabledBorder: _nameError ? _errorBorder() : null,
+                    focusedBorder: _nameError ? _errorBorder() : null,
+                  ),
+                  onChanged: (_) {
+                    if (_nameError) setState(() => _nameError = false);
+                  },
+                ),
+              ),
+              if (_nameError) _errorLine(kTaskNameRequired),
+            ],
+            const SizedBox(height: Space.xl),
+            FieldGlow(
+              child: TextField(
+                key: const ValueKey('note'),
+                controller: _noteController,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(labelText: 'Note (optional)'),
               ),
             ),
-            _dstBanner(timezone),
-            _warningBanner(
-              timezone,
-              selectedProfile?.quietHoursStartMinutes,
-              selectedProfile?.quietHoursEndMinutes,
+            if (timezone != null && _date != null && _time != null) ...[
+              const SizedBox(height: Space.lg),
+              Text(
+                'Fires at: ${_previewLocal(context, timezone)}  ($timezone)',
+                style: context.text.bodySmall?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
+              ),
+              _dstBanner(timezone),
+              _warningBanner(
+                timezone,
+                selectedProfile?.quietHoursStartMinutes,
+                selectedProfile?.quietHoursEndMinutes,
+              ),
+            ],
+            const SizedBox(height: Space.xl),
+            FilledButton(
+              key: const ValueKey('plan-send'),
+              onPressed: (_canSend && timezone != null)
+                  ? () => _save(timezone)
+                  : null,
+              child: _saving
+                  ? const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          height: Sizes.buttonSpinner,
+                          width: Sizes.buttonSpinner,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        SizedBox(width: Space.sm),
+                        Text('Sending…'),
+                      ],
+                    )
+                  : Text(_isSelf ? 'Add to my schedule' : 'Send'),
             ),
+            if (_uploadError case final message? when timezone != null)
+              _uploadFailed(message, timezone),
           ],
-          const SizedBox(height: Space.xl),
-          FilledButton(
-            key: const ValueKey('plan-send'),
-            onPressed: (_canSend && timezone != null)
-                ? () => _save(timezone)
-                : null,
-            child: _saving
-                ? const SizedBox(
-                    height: Sizes.buttonSpinner,
-                    width: Sizes.buttonSpinner,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Text(_isSelf ? 'Add to my schedule' : 'Send'),
-          ),
         ],
       ],
     );
@@ -774,7 +813,10 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     setState(() {
       _libraryNote = picked;
       _voiceError = false;
+      _uploadError = null;
+      _detailsRevealed = true;
     });
+    unawaited(_startPrep());
   }
 
   /// The chosen library note (shared widget, also used by the group sheet).
@@ -782,8 +824,72 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
     note: note,
     enabled: !_saving,
     onRemove: () {
-      if (mounted) setState(() => _libraryNote = null);
+      if (!mounted) return;
+      setState(() => _libraryNote = null);
+      _prepOrNull?.clear();
     },
+  );
+
+  /// A new recording (or none) from the recorder.
+  void _onVoiceDraft(RecordedVoiceNote? note) {
+    setState(() {
+      _voiceDraft = note;
+      _uploadError = null;
+      if (note != null) {
+        _voiceError = false;
+        _detailsRevealed = true;
+      }
+    });
+    if (note == null) {
+      _prepOrNull?.clear();
+    } else {
+      unawaited(_startPrep());
+    }
+  }
+
+  /// Starts sending the current note for the chosen person (2026-10-04).
+  Future<void> _startPrep() async {
+    final target = _targetUid;
+    if (target == null || _isSelf) return;
+    final groupId = _groupId ?? '';
+    final library = _libraryNote;
+    final draft = _voiceDraft;
+    if (library != null) {
+      _prep.start(
+        libraryNoteId: library.id,
+        targetUids: [target],
+        groupId: groupId,
+      );
+    } else if (draft != null) {
+      final bytes = await File(draft.path).readAsBytes();
+      // Re-recorded or changed person while reading: that run supersedes.
+      if (!mounted || _voiceDraft != draft || _targetUid != target) return;
+      _prep.start(recording: bytes, targetUids: [target], groupId: groupId);
+    }
+  }
+
+  /// Send could not get the voice note there: say so and offer Retry. Retry
+  /// is Send again, so it saves the plan the moment the note arrives.
+  Widget _uploadFailed(String message, String timezone) => Padding(
+    padding: const EdgeInsets.only(top: Space.md),
+    child: Row(
+      key: const ValueKey('voice-upload-failed'),
+      children: [
+        Expanded(
+          child: Text(
+            message,
+            style: context.text.bodySmall?.copyWith(
+              color: context.colors.error,
+            ),
+          ),
+        ),
+        TextButton(
+          key: const ValueKey('voice-upload-retry'),
+          onPressed: _saving ? null : () => _save(timezone),
+          child: const Text('Retry'),
+        ),
+      ],
+    ),
   );
 
   /// Pick date / Pick time: taller, `titleMedium`, with the field glow (F4).
@@ -853,11 +959,13 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
           _isSelf = true;
           _kind = AlarmKind.defaultAlarm;
           _voiceError = false;
+          _uploadError = null;
           _targetUid = me.uid;
           _groupId = null;
           _voiceDraft = null;
           _libraryNote = null;
           _voiceRecorderGen++;
+          _prepOrNull?.clear();
         }),
       ),
     );
@@ -896,12 +1004,20 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
         subtitle: profile == null ? null : Text(profile.homeTimezone),
         trailing: selected ? const Icon(AppIcons.selected) : null,
         onTap: () => _choose(() {
+          final from = _isSelf;
           _isSelf = false;
           _targetUid = grant.targetUid;
           _groupId = grant.groupId;
-          _voiceDraft = null;
-          _libraryNote = null;
-          _voiceRecorderGen++;
+          _uploadError = null;
+          // From yourself, the alarm kind is still to choose. Between
+          // friends the note is kept and sent again for the new person.
+          if (from) {
+            _kind = null;
+            _detailsRevealed = false;
+          }
+          if (_prepHasSource) {
+            _prep.retarget([grant.targetUid], groupId: grant.groupId);
+          }
         }),
       ),
     );

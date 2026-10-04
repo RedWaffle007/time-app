@@ -8,8 +8,12 @@ import '../../scheduling/domain/schedule_item.dart';
 
 /// A voice-note request that did not work, with a message written for people.
 class VoiceNoteFailure implements Exception {
-  const VoiceNoteFailure(this.message);
+  const VoiceNoteFailure(this.message, {this.retryable = false});
   final String message;
+
+  /// A connection or server hiccup that trying again may fix — never a
+  /// refusal (no permission, bad audio), which would only fail again.
+  final bool retryable;
   @override
   String toString() => message;
 }
@@ -209,13 +213,17 @@ String? errorCode(String body) =>
 /// Upload response → metadata, or a [VoiceNoteFailure]. Pure, for tests.
 VoiceNoteMeta parseUploadResponse(int status, String body) {
   if (status != 200) {
-    throw VoiceNoteFailure(voiceNoteErrorMessage(errorCode(body)));
+    final code = errorCode(body);
+    throw VoiceNoteFailure(
+      voiceNoteErrorMessage(code),
+      retryable: isRetryableVoiceStatus(status, code),
+    );
   }
   final sha = RegExp(r'"sha256"\s*:\s*"([0-9a-f]{64})"').firstMatch(body);
   final duration = RegExp(r'"durationMs"\s*:\s*(\d+)').firstMatch(body);
   final size = RegExp(r'"sizeBytes"\s*:\s*(\d+)').firstMatch(body);
   if (sha == null || duration == null || size == null) {
-    throw VoiceNoteFailure(voiceNoteErrorMessage(null));
+    throw VoiceNoteFailure(voiceNoteErrorMessage(null), retryable: true);
   }
   return VoiceNoteMeta(
     durationMs: int.parse(duration.group(1)!),
@@ -223,3 +231,12 @@ VoiceNoteMeta parseUploadResponse(int status, String body) {
     sizeBytes: int.parse(size.group(1)!),
   );
 }
+
+/// Whether a Worker answer is worth another attempt: a server error, rate
+/// limit, timeout or expired sign-in — or an answer without a known refusal.
+bool isRetryableVoiceStatus(int status, String? code) =>
+    status >= 500 ||
+    status == 408 ||
+    status == 429 ||
+    status == 401 ||
+    code == null;

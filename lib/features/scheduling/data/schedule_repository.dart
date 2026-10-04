@@ -213,6 +213,9 @@ class ScheduleRepository {
       required String itemId,
     })?
     attachVoice,
+    // The plan id each member's note was already sent under (2026-10-04: the
+    // sheet sends it while the planner picks the time). Null mints one here.
+    String Function(String targetUid)? itemIdFor,
     // Members the Worker already verified busy at this minute (the before-Send
     // preview): not attempted, reported in `failed` so the busy notices still
     // go out, and no voice copy is wasted on them.
@@ -237,7 +240,7 @@ class ScheduleRepository {
       String? preparedId;
       VoiceNoteMeta? voiceNote;
       if (attachVoice != null && !t.isSelf) {
-        preparedId = newItemId(t.uid);
+        preparedId = itemIdFor?.call(t.uid) ?? newItemId(t.uid);
         try {
           voiceNote = await attachVoice(targetUid: t.uid, itemId: preparedId);
         } catch (_) {

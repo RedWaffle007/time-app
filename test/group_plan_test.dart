@@ -27,6 +27,11 @@ const _normalA = (uid: 'MEMBER_A', isSelf: false);
 const _normalB = (uid: 'MEMBER_B', isSelf: false);
 
 class _Repo implements ScheduleRepository {
+  var _ids = 0;
+
+  @override
+  String newItemId(String targetUid) => 'prepared-${++_ids}';
+
   _Repo({this.busy = const {}});
 
   /// Members whose minute is already taken (item 4): no plan is set for them.
@@ -54,6 +59,7 @@ class _Repo implements ScheduleRepository {
       required String itemId,
     })?
     attachVoice,
+    String Function(String targetUid)? itemIdFor,
     Set<String> knownBusy = const {},
   }) async {
     calls.add([for (final t in targets) t.uid]);
@@ -205,6 +211,9 @@ Future<(_Repo, _Notifier)> _open(
   _Reporter? reporter,
   _VoiceClient? voiceClient,
   List<VoiceLibraryNote> library = const [],
+  // 2026-10-04: the alarm kind is chosen first; most tests start from a
+  // default alarm, as the sheet did before.
+  bool chooseDefault = true,
 }) async {
   tester.view.physicalSize = Size(width * 3, 900 * 3);
   tester.view.devicePixelRatio = 3;
@@ -254,6 +263,10 @@ Future<(_Repo, _Notifier)> _open(
   );
   await tester.tap(find.text('Open'));
   await tester.pumpAndSettle();
+  if (chooseDefault) {
+    await tester.tap(find.text('Default Alarm'));
+    await tester.pumpAndSettle();
+  }
   return (repo, notifier);
 }
 

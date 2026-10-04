@@ -77,6 +77,11 @@ void main() {
       expect(find.text('Name friend-${friendCount - 1}'), findsOneWidget);
       expect(change, findsOneWidget);
 
+      // 2026-10-04: the alarm kind comes first; the fields follow it.
+      expect(titleField, findsNothing);
+      await tester.tap(find.text('Default Alarm'));
+      await tester.pumpAndSettle();
+
       // The planning fields are on screen with no scrolling: back at the top.
       final scrollable = tester.state<ScrollableState>(
         find.byType(Scrollable).first,
@@ -122,6 +127,11 @@ void main() {
     expect(find.text('Name friend-3'), findsOneWidget);
     expect(find.text('Name friend-0'), findsNothing);
     expect(change, findsOneWidget);
+    // 2026-10-04: the alarm kind first, then the fields.
+    expect(find.byKey(const ValueKey('alarm-kind')), findsOneWidget);
+    expect(titleField, findsNothing);
+    await tester.tap(find.text('Default Alarm'));
+    await tester.pumpAndSettle();
     expect(titleField, findsOneWidget);
   });
 
@@ -157,6 +167,8 @@ void main() {
     await tester.pumpWidget(host());
     await tester.pumpAndSettle();
     await tester.tap(find.text('Name friend-0'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Default Alarm'));
     await tester.pumpAndSettle();
     await tester.enterText(titleField, 'Stretch');
 

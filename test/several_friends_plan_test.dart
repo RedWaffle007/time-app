@@ -30,6 +30,11 @@ const _meta = VoiceNoteMeta(
 );
 
 class _Repo implements ScheduleRepository {
+  var _ids = 0;
+
+  @override
+  String newItemId(String targetUid) => 'prepared-${++_ids}';
+
   _Repo({this.held = const {}, this.minuteReadFails = false});
 
   /// Friends whose minute already holds a live plan.
@@ -69,6 +74,7 @@ class _Repo implements ScheduleRepository {
       required String itemId,
     })?
     attachVoice,
+    String Function(String targetUid)? itemIdFor,
     Set<String> knownBusy = const {},
   }) async {
     groupIds.add(groupId);
@@ -201,6 +207,9 @@ Future<(_Repo, _Notifier, _Reporter)> _open(
   _Repo? repo,
   _VoiceClient? voiceClient,
   List<VoiceLibraryNote> library = const [],
+  // 2026-10-04: the alarm kind is chosen first; most tests start from a
+  // default alarm, as the sheet did before.
+  bool chooseDefault = true,
 }) async {
   tester.view.physicalSize = const Size(360 * 3, 900 * 3);
   tester.view.devicePixelRatio = 3;
@@ -242,6 +251,10 @@ Future<(_Repo, _Notifier, _Reporter)> _open(
   );
   await tester.tap(find.text('Open'));
   await tester.pumpAndSettle();
+  if (chooseDefault) {
+    await tester.tap(find.text('Default Alarm'));
+    await tester.pumpAndSettle();
+  }
   return (r, notifier, reporter);
 }
 
