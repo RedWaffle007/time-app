@@ -21,7 +21,9 @@ import '../../calendar/application/calendar_grouping.dart';
 import '../../archive/presentation/archive_menu_button.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../notifications/application/outcome_notifier.dart';
+import '../application/planner_ring_status.dart';
 import '../application/schedule_item_order.dart';
+import '../../reminders/application/ring_cycle.dart';
 import '../application/schedule_providers.dart';
 import '../domain/schedule_item.dart';
 import 'planner_item_detail_sheet.dart';
@@ -380,6 +382,9 @@ class PlannerItemCard extends ConsumerWidget {
                   ),
                 ),
               ],
+              // Live while it goes off (2026-10-04): which ring, or when it
+              // rings again. Worked out on this phone, no push.
+              PlannerRingStatusLine(item: item),
               if (item.wasUnavailableAtAlarmTime) ...[
                 const SizedBox(height: Space.xs),
                 Text(
@@ -512,5 +517,69 @@ class PlannerItemCard extends ConsumerWidget {
         ),
       ),
     ];
+  }
+}
+
+/// "Ringing · 2 of 3" or "Quiet · rings again 5:10" while the alarm is in its
+/// ring cycle; nothing otherwise. Re-checks itself every few seconds, only
+/// while there is something live to show.
+class PlannerRingStatusLine extends StatefulWidget {
+  const PlannerRingStatusLine({super.key, required this.item, this.now});
+
+  final ScheduleItem item;
+
+  /// The clock, for tests.
+  final DateTime Function()? now;
+
+  @override
+  State<PlannerRingStatusLine> createState() => _PlannerRingStatusLineState();
+}
+
+class _PlannerRingStatusLineState extends State<PlannerRingStatusLine> {
+  Timer? _tick;
+
+  DateTime _now() => (widget.now ?? DateTime.now)().toUtc();
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  void _keepTicking(bool live) {
+    if (live && _tick == null) {
+      _tick = Timer.periodic(const Duration(seconds: 5), (_) {
+        if (mounted) setState(() {});
+      });
+    } else if (!live && _tick != null) {
+      _tick!.cancel();
+      _tick = null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final status = plannerRingStatus(widget.item, _now());
+    // The rang fact arrives with the item stream, which rebuilds this; from
+    // then on it ticks by itself until the cycle is over.
+    _keepTicking(status != null);
+    final text = switch (status) {
+      Ringing(:final ring) => 'Ringing · $ring of $kRingCount',
+      Quiet(:final nextRingAtUtc) =>
+        'Quiet · rings again '
+            '${formatInstantTime(context, nextRingAtUtc, widget.item.timezone)}',
+      _ => null,
+    };
+    if (text == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: Space.xs),
+      child: Text(
+        text,
+        key: const ValueKey('planner-ring-status'),
+        style: context.text.bodySmall?.copyWith(
+          color: context.colors.onSurfaceVariant,
+        ),
+      ),
+    );
   }
 }

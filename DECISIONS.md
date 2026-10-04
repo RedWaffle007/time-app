@@ -7999,3 +7999,53 @@ Retrying…" banner was "EXTREMELY annoying because it's useless".
   choice). Autostart cannot be read, so it never forces the page after an
   update; it is still asked on a fresh install and stays listed on the page.
 - Build number `1.0.0+6` for the next shared build.
+
+## Alarm duration overhaul: ring like a phone alarm (2026-10-04)
+
+User-directed ("mirror standard phone alarm behavior"). Researched first:
+stock clocks give up after ~10-15 min (Google "Silence after" default 10
+min; iPhone ~15 min; Samsung/Xiaomi ring then auto-snooze and repeat), and
+every one ends with a "Missed alarm" notice. Chosen with the user:
+
+- **Ring cycle:** ring 5 min, quiet 5, three times (rings at 0, 10, 20 min);
+  missed only at 25 min. "User unavailable", the Missed notice and the
+  missed pop-up are KEPT and now fire at 25 min, not 1. One rule in two
+  places, kept equal by tests: Dart `ring_cycle.dart`, native
+  `RingCyclePolicy`.
+- **Between rings nothing runs:** each next ring is its own exact alarm
+  (`AlarmDeliveryScheduler.arm(..., triggerEpoch)`, persisted with its
+  trigger so a reboot restores it), plus an ongoing "Rings again at {time}"
+  notice whose Dismiss (`AlarmQuietDismissReceiver`) cancels the rest and
+  records a dismissal. Late delivery joins its cycle (replaces R5's "more
+  than a minute late never rings"); a reboot re-arms anything still inside
+  its 25 min.
+- **Reconciler fix that this required:** an alarm stays desired until its
+  cycle ends (unless answered, dismissed or ran out), and an armed alarm
+  mid-cycle is never cancelled or re-armed. Before, the first stream
+  emission after its time would have cancelled rings 2 and 3.
+- **Several alarms at once:** each keeps its own ring end; only the newest
+  sounds and the previous takes the speaker back (`AlarmRingSet`). The alarm
+  screen lists the others with their own Dismiss and Dismiss all; the
+  ringing notification's Dismiss answers the one it names; Volume Down
+  silences all. No blocking window between plans (rejected: it would not
+  prevent overlap and would block real plans).
+- **Planner:** no push per ring. The card shows "Ringing · 2 of 3" /
+  "Quiet · rings again 5:10", derived from `alarm.rangAt` + the cycle; no
+  new data, rules or push.
+- **Voice notes:** up to 1 minute (recorder stops at 59.5 s; Worker + rules
+  60.5 s / 512 KB; ring-time check 512 KB), recorded at 32 kbps / 24 kHz
+  mono with auto-gain, and repeated with a 1 s pause for the whole ring.
+  The 3-6 plays-by-length bands are gone.
+- **Plan screens (one friend, several friends, group):** who, then Voice
+  Note / Default Alarm, then (after recording) date, time and the rest. The
+  note uploads the moment recording stops (`VoicePrep`: fresh ids per run,
+  quiet retries, one upload + server copies for several people). Send waits
+  only for what is left; a note that genuinely cannot get through keeps the
+  planner on the screen with "Upload failed" + Retry (user rejected a
+  background send queue: leaving the screen must mean it was really sent).
+- **Known limit:** an alarm started only from the alarm screen (the native
+  receiver never ran) has no cycle info and ends after one 5-minute ring.
+- Deploys: Worker `c2fc16aa` and ruleset `79722aee-679b-4a5e-861d-a67b3b803b20`
+  (byte-verified) for the voice limits. NOT VERIFIED ON A DEVICE; the user
+  runs the Redmi pass in person.
+

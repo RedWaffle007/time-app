@@ -95,7 +95,7 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
         setState(() => _deliveredHeadline = delivered.trim());
       }
       // An alarm that already ENDED (rang out unanswered, or was answered) is
-      // not rung again. Opening the app after the one-minute cap used to land
+      // not rung again. Opening the app after the ring cycle ran out used to land
       // here with a Dismiss button on top of the missed-alarm popup, and this
       // screen re-started the tone (2026-09-27 device report). Leave quietly
       // instead; the missed-alarm review shows over the Plan tab.
@@ -455,7 +455,7 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
                 if (_quietUntilUtc case final until?) ...[
                   const SizedBox(height: Space.md),
                   Text(
-                    'Rings again at ${formatInstantTime(context, until, item?.timezone ?? 'UTC')}',
+                    'Rings again at ${formatInstantTime(context, until, item?.timezone ?? 'Etc/UTC')}',
                     key: const ValueKey('alarm-quiet'),
                     textAlign: TextAlign.center,
                     style: context.text.bodyMedium?.copyWith(

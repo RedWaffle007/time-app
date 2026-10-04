@@ -48,8 +48,9 @@ enum ItemTier { normal, emergency }
 enum OutcomeResult { done, skipped }
 
 /// The automatic outcome reason written when an alarm rings for its full
-/// one-minute cap without a response. Kept in the domain layer so persistence,
-/// rules-facing repositories, and presentation agree on the exact value.
+/// 25-minute ring cycle without a response. Kept in the domain layer so
+/// persistence, rules-facing repositories, and presentation agree on the
+/// exact value.
 const kUserUnavailableSkipReason = 'User unavailable';
 
 /// The outcome layered on top of an approved item. Kept separate from status so

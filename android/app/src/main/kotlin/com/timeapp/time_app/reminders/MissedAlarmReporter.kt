@@ -13,7 +13,7 @@ import java.util.concurrent.TimeUnit
 /**
  * Tells the planner AT ONCE that an alarm rang out unanswered (2026-09-27).
  *
- * The one-minute auto-stop runs here in native code, usually with the app's
+ * The last ring's stop (25 minutes in, 2026-10-04) runs here in native code, usually with the app's
  * Dart side not running. Before this, the "unavailable" fact and its "Uh-Oh!"
  * push waited for the app to be opened (often when the person answered
  * Done/Skip). Now the stop itself POSTs `{event: alarmTimeout}` to the push

@@ -153,12 +153,14 @@ passing it does NOT close item 1.
    up yet.** (DECISIONS.md, 2026-07-22.)
 
 **Leave / remove / stop-planning — BUILT + RULES DEPLOYED AND VERIFIED
-2026-08-20.** **THE live ruleset is now `32ca90f0-0fa0-4cc2-bb44-afe07ff5a980`**
-(deployed 2026-08-26 — see "Session 2026-08-26" below for what it added). It
-supersedes `d31d2f84-83bf-4fc6-a85e-e45ec03614bf` (2026-08-25) and, through it,
+2026-08-20.** **THE live ruleset is now `79722aee-679b-4a5e-861d-a67b3b803b20`**
+(deployed 2026-10-04: voice notes up to 60.5 s / 512 KB; byte-verified with
+`scripts/check-deployed-rules.sh`). It supersedes `32ca90f0-0fa0-4cc2-bb44-afe07ff5a980`
+(deployed 2026-08-26 — see "Session 2026-08-26" below for what it added),
+`d31d2f84-83bf-4fc6-a85e-e45ec03614bf` (2026-08-25) and, through it,
 `33468095`, `56e11d6d` and every earlier id — all verified the same way (deployed
 source re-fetched from `firebaserules.googleapis.com` and diffed byte-for-byte).
-**`32ca90f0` is the only current ruleset id in this file; every earlier one is
+**`79722aee` is the only current ruleset id in this file; every earlier one is
 superseded.** The 2026-08-25 predecessor added the `users/{uid}/trackedTime`
 block (personal time-tracking — DECISIONS.md "Stats capture foundation — Step
 2"); it did not touch the relationship/slot-lock rules. The live ruleset
@@ -185,7 +187,8 @@ member's grants with *third parties* stale-but-inert.
 ## Session 2026-08-26 — friendship grants, emergency tier, group features (SHIPPED + DEPLOYED)
 
 Five things shipped and deployed this session (full reasoning in the dated
-DECISIONS.md entries named below). **Live ruleset `32ca90f0-…`** (byte-verified);
+DECISIONS.md entries named below). Ruleset then: `32ca90f0-…` (byte-verified,
+since superseded — see above);
 all NON-two-device verification passed on the Redmi. **Everything cross-account
 is two-device-DEFERRED — see the single checklist at the end of this section.**
 
@@ -404,9 +407,10 @@ the bottom of this section.
 (`AndroidScheduleMode.exactAllowWhileIdle`). **Since 2026-10-02 (R5,
 user-directed) the permission is `USE_EXACT_ALARM`** (granted at install, not
 revocable; every plan is an alarm, so the app is an alarm app under Play
-policy), with `SCHEDULE_EXACT_ALARM` kept only for Android 12/12L; an alarm
-delivered more than a minute late never rings, it ends as missed. DECISIONS.md
-"Exact alarms: USE_EXACT_ALARM (R5)".
+policy), with `SCHEDULE_EXACT_ALARM` kept only for Android 12/12L. DECISIONS.md
+"Exact alarms: USE_EXACT_ALARM (R5)". **Since 2026-10-04 an alarm rings 5 min,
+quiet 5, three times, and is missed only at 25 min** (a late delivery joins its
+cycle) — see "Alarm duration overhaul" below.
 Channel `time_app_reminders`, created in code and deliberately NOT the
 `high_importance_channel` FCM uses: a user must be able to silence
 someone-else's-activity pushes without silencing their own reminders, and a
@@ -537,6 +541,29 @@ Play ever objects.
 autostart/battery onboarding, iOS, quiet-hours enforcement, recurring reminders,
 snooze, and a lead-time offset (it wants `ScheduleItem.durationMinutes` — decide
 it WITH goals).
+
+## Alarm duration overhaul — SHIPPED 2026-10-04 (NOT VERIFIED ON A DEVICE)
+
+Full reasoning in DECISIONS.md → "Alarm duration overhaul". The user runs the
+Redmi pass in person.
+
+- **Ring cycle:** 5 min ring / 5 min quiet × 3 (rings at 0, 10, 20 min); "User
+  unavailable" + Missed notice + missed pop-up at 25 min. ONE rule in two places,
+  kept equal by tests: `reminders/application/ring_cycle.dart` and native
+  `RingCyclePolicy`. Each next ring is its own exact alarm with a "Rings again
+  at …" notice + Dismiss; nothing runs between rings.
+- **Do not undo:** `desiredReminders` keeps an alarm desired until its cycle
+  ends, and `reconcileReminders` never cancels or re-arms an armed alarm
+  mid-cycle. Reverting either silently kills rings 2 and 3.
+- **Several alarms at once:** own ring ends, newest has the speaker
+  (`AlarmRingSet`); alarm screen lists the others with Dismiss / Dismiss all;
+  Volume Down silences all.
+- **Planner:** no push per ring; the card derives "Ringing · 2 of 3" /
+  "Quiet · rings again …" from `alarm.rangAt` + the cycle.
+- **Voice notes:** up to 1 min, 32 kbps / 24 kHz + auto-gain, repeated for the
+  whole ring. Plan screens ask Voice Note / Default Alarm first; the note
+  uploads at Stop (`VoicePrep`), and Send stays on screen with Retry if it
+  never got through.
 
 ## Permissions onboarding — SHIPPED 2026-08-23 (first-run, deep-linked, OEM-aware)
 

@@ -20,7 +20,7 @@ import '../application/missed_alarm_service.dart';
 import '../application/reminder_policy.dart';
 import '../../scheduling/domain/schedule_item.dart';
 
-/// App-wide review surface for alarms that exhausted the one-minute ring cap.
+/// App-wide review surface for alarms that rang out their whole 25-minute cycle.
 class MissedAlarmReviewHost extends ConsumerStatefulWidget {
   const MissedAlarmReviewHost({
     super.key,

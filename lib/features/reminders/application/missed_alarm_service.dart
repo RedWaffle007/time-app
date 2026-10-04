@@ -92,8 +92,8 @@ bool _isLegacyAutomaticSkip(ScheduleOutcome? outcome) =>
     outcome?.result == OutcomeResult.skipped &&
     outcome?.skipReason == kMissedAlarmSkipReason;
 
-/// Reconciles native one-minute timeouts into the shared alarm-time fact and
-/// the review UI.
+/// Reconciles native ring-cycle timeouts (25 minutes, 2026-10-04) into the
+/// shared alarm-time fact and the review UI.
 ///
 /// A timeout records ONLY `alarm.unavailableAt` — the permanent "User
 /// unavailable at alarm time" fact. It never writes a task outcome: the task
