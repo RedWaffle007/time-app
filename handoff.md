@@ -1,4 +1,4 @@
-# Mind Time (formerly RingaPop, originally Checkmate) handoff — 2026-09-28 night
+# Mind Time (formerly RingaPop, originally Checkmate) handoff — 2026-10-04
 
 ## Operating rules
 
@@ -41,15 +41,56 @@
   wipes the app's data and sign-in.
 - **Raise the build number (`version: 1.0.0+N` in pubspec.yaml) before every
   build shared with anyone** (2026-10-02): Crashlytics can only tell builds
-  apart by it. Now `+5`.
-- **Release APK for testers (arm64 only, lean):**
-  `flutter build apk --release --target-platform android-arm64` →
+  apart by it. `pubspec.yaml` is `+6`, which the Redmi already has: bump to
+  `+7` before the next shared build.
+- **Release build for testers (ALL phone types, 2026-10-02):** the old
+  arm64-only APK crashed on x86_64 and 32-bit phones (Crashlytics R1). For
+  Play: `flutter build appbundle --release`. For sideloading:
+  `flutter build apk --release` (no `--target-platform`) →
   `build/app/outputs/flutter-apk/app-release.apk`. The release SHA-1
   (`89:73:22:BE:…:06:60`) is registered in Firebase (verified 2026-09-26 via
   `./gradlew :app:signingReport`, which prints fingerprints only), so Google
   sign-in works on other phones. Never read `android/key.properties`.
 
 ## Current state
+
+- **2026-10-04 (latest): alarm duration overhaul — BUILT, committed
+  (`462f091` … `6286eee`), deploys done; NOT checked on a phone.** User-directed
+  ("mirror standard phone alarm behavior"). Full reasoning: DECISIONS.md "Alarm
+  duration overhaul"; summary: CLAUDE.md section of the same name.
+  - Alarms ring 5 min, quiet 5, three times (rings at 0/10/20 min); "User
+    unavailable" + Missed notice + missed pop-up only at **25 min**. Between
+    rings: an exact alarm for the next ring + an ongoing "Rings again at …"
+    notice with Dismiss. Late delivery joins its cycle (R5's "1 min late never
+    rings" is gone); reboot re-arms anything still inside its 25 min.
+  - Reminder scheduler now keeps an alarm armed until its cycle ends
+    (otherwise rings 2-3 were cancelled the moment its time passed). Do not
+    revert (`reminder_policy.dart`, `reminder_reconciler.dart`).
+  - Several alarms at once: each keeps its own timing, newest sounds; alarm
+    screen "Also ringing" list with Dismiss each / Dismiss all; Volume Down
+    silences all.
+  - Planner card: live "Ringing · 2 of 3" / "Quiet · rings again …" (no push).
+  - Voice notes up to **1 min** (32 kbps / 24 kHz mono, auto-gain), repeated
+    for the whole ring. Plan screens (one friend, several friends, group): pick
+    **Voice Note / Default Alarm first**, then date/time/etc. The note uploads
+    the moment recording stops; Send stays on screen with "Upload failed" +
+    Retry if it never got through (the user rejected a background send queue).
+  - **Deployed:** Worker `c2fc16aa` (voice limit 60.5 s / 512 KB) and ruleset
+    `79722aee-679b-4a5e-861d-a67b3b803b20` (same limits, byte-verified).
+  - Verification at `6286eee`: analyze clean, Flutter 1087, Worker 247, rules
+    299, Android unit tests green. The Redmi still has release `1.0.0+6` from
+    BEFORE this work.
+  - Known limit: an alarm started only from the alarm screen (native receiver
+    never ran) gets one 5-min ring, then missed.
+
+- **2026-10-02 (latest):** the release-build feedback list R1–R7 is BUILT,
+  committed and pushed (`5c25125` … `ac8c10a`). Firestore rules (R6 reply
+  note branch) and the Worker (R3 alarm sentence, R4 friend voice copy, R6
+  `replied`) are DEPLOYED. The Redmi had release `1.0.0+5`; `pubspec.yaml`
+  is now `1.0.0+6` (R7). Verification at `ac8c10a`: analyze clean, Flutter
+  1063, Worker 246, rules 298, Android unit tests green. NOTHING from R2–R7
+  has been checked on a phone yet: see "Device test list (2026-10-02)".
+  Crashlytics is readable from this machine (see R1 below).
 
 - Branch `main`; the Mind Time app-code commit is `9c5d428` (**Mind Time
   rebrand and feedback**). It had not been pushed when this handoff was
@@ -236,6 +277,139 @@
   `calendar_markers.dart` are known-unclean. Formatting a directory reflowed
   unrelated files twice on 2026-09-28 (restored from HEAD each time).
 
+## Device test list (2026-10-04) — DO THIS FIRST
+
+The user runs this in person. Build a release with `version: 1.0.0+7`
+(`flutter build apk --release`, then `adb install -r
+build/app/outputs/flutter-apk/app-release.apk` — same release key as the
+installed `+6`, so data and sign-in are kept). Release has no dev menu, so the
+reminder audit CSV is unavailable; a debug install needs an uninstall first
+(wipes data). Phones: A = the Redmi (receives), B = a friend (plans for A).
+
+1. **1-minute voice note:** B records a full minute: it stops itself at 1:00,
+   plays back clearly at the lower bitrate, and Send is near-instant after
+   picking the time.
+2. **Order:** on every plan screen (one friend, several friends, group) only
+   Voice Note / Default Alarm shows first; date/time appear after choosing
+   (after recording, for a voice note).
+3. **Upload failure:** B records with data off, picks a time, Send → stays on
+   the screen with "Upload failed" + Retry; data on, Retry → sent.
+4. **Full cycle:** B sets an alarm for A; nobody touches it. Rings at 0, 10,
+   20 min (5 min each, voice note repeating), "Rings again at …" notice in
+   the gaps, Missed notice + pop-up on A and B's "Uh-Oh / unavailable" at 25.
+5. **Dismiss in a gap** (notice's Dismiss): no more rings; B hears
+   dismissed/heard.
+6. **Two alarms a minute apart:** the newer sounds, the older is under "Also
+   ringing"; dismissing the newer hands the sound back.
+7. **Volume Down** while two ring: both stop.
+8. **Reboot A during a quiet gap:** the next ring still comes.
+9. **Planner card on B:** "Ringing · 2 of 3" / "Quiet · rings again …" while
+   it goes off (after A's phone has reported the ring).
+
+## Device test list (2026-10-02) — after the 2026-10-04 list
+
+The one device pass for everything built on 2026-10-02 (R2–R7). Nothing here
+has run on a phone. Record each result (pass / fail + what you saw) in
+DECISIONS.md, and move verified items into CLAUDE.md "Parked & unverified".
+
+**Setup.** Build `1.0.0+6` as an App Bundle for Play, or for sideloading
+`flutter build apk --release` WITHOUT `--target-platform` (all phone types,
+R1). Install over `+5` on every phone (an update, not a reinstall).
+Phones: **A** = the Redmi (receives plans), **B** = a friend (plans for A),
+**C** = a second friend of B (for R4). Run `scripts/check-deployed-rules.sh`
+first. Keep `npx wrangler tail` open for the push checks.
+
+**R7 — permissions after an update / no setup banner** (do first, right
+after installing `+6`)
+1. Open the app on each phone. Everything granted → it goes straight to Home,
+   no permissions page. If something is off (e.g. notifications) → the
+   permissions page opens by itself; grant it, tap Done → Home.
+2. Open the app a second time → the page does NOT come back for this build.
+3. Settings → permissions page: the line "Friends' notifications: connected."
+   is there. No "Setting up notifications… / Retrying…" banner anywhere,
+   ever, including with Wi-Fi and data off for a minute and back on.
+4. Fresh install on a spare phone (uninstall first): the full first-run
+   permissions flow runs, including the autostart step on a Xiaomi.
+
+**R5 — on time or not at all (USE_EXACT_ALARM)**
+5. A: Android Settings → Apps → Mind Time → "Alarms & reminders" shows
+   allowed and cannot be switched off (Android 13+). The onboarding's
+   "Remind me on time" step shows granted.
+6. B sets a Default Alarm for A 3 min ahead; A keeps Mind Time OPEN on
+   Home. When it rings: the full alarm screen opens by itself with
+   "{B} planned {task} for you" and Dismiss (not just a tone).
+7. Same, but A is in another app (e.g. YouTube) when it rings: tone + alarm
+   (screen or notification). Then open Mind Time while it still rings → the
+   alarm screen appears at once.
+8. Same, but A opens Mind Time from the launcher while it rings (screen was
+   off) → the alarm screen, never a bare tone.
+9. **SUPERSEDED 2026-10-04:** a late alarm now joins its ring cycle; it is
+   missed only if delivered 25+ min late (see the 2026-10-04 list).
+
+**R3 — planner's name everywhere**
+10. A force-stops Mind Time (swipe away). B sets a Default Alarm for A 3 min
+    ahead. While it rings (app still closed): the lock screen / notification
+    reads "{B} planned {task} for you" (not just the task, not "Someone").
+11. Let it ring out (1 min). The missed notification title reads "Missed
+    alarm from {B}"; opening the app shows the popup "{B} planned {task} for
+    you. It rang for one minute with no response."
+12. Repeat 10–11 with a Voice Note: "{B} sent you a voice alarm", then
+    "Missed voice note from {B}" and "{B} sent you a voice note. Listen now?"
+
+**R2 — missed voice note Play**
+13. On the missed voice-note popup tap Play 5 times fast: the button reads
+    "Loading…" and greys out after the first tap; the note plays ONCE; no
+    "Could not finish syncing" snackbars; the popup closes as Heard (Late)
+    and B gets ONE "heard your voice note late" push.
+14. Same on a rung voice-note card on Home (Play tapped repeatedly).
+
+**R1 — offline saves don't crash**
+15. A, airplane mode on: tap Done on an open plan card → message "Couldn't
+    save. Check your connection and try again.", buttons come back, no crash.
+    Same for Skip, and Already heard on a voice card. Airplane mode off →
+    Done works.
+16. Later: Crashlytics shows new reports as `1.0.0 (6)` (build number), and
+    no new `libflutter.so` crashes from the all-phone-types build.
+
+**R4 — one plan for several friends**
+17. B: Plan → "Several friends" row (only with 2+ friends) → tick A and C
+    (Next needs at least 2) → the sheet says "Plan for 2 friends".
+18. Default Alarm for both, pick a time → "Rings for 2 friends: …" → Send →
+    "Alarm set for 2 friends." Both phones get "New alarm for you" and ring
+    at that time in THEIR own timezone (try A and C in different zones if
+    possible). Each one's Done/Skip reaches B as a normal push.
+19. Make C busy at that minute first (another plan) → before Send C is
+    listed "Busy then, won't get it"; after Send "Busy at that time: {C}";
+    C gets no push.
+20. Voice Note to A and C (record, or choose from library) → both ring with
+    B's voice; B's library gets the note once.
+
+**R6 — reply notes**
+21. A, open default alarm card from B: buttons Skip · Send note · Done.
+    Send note → "Optional: send a note to {B} about this alarm." → Send stays
+    grey until you type → send "Running late" → B gets "Note from {A}" /
+    "About {task}: Running late"; tapping it opens that plan. A's Send note
+    button disappears.
+22. Tapping Skip or Done directly asks nothing extra and sends no note.
+23. After answering, no Send note anywhere for that plan. In A's History and
+    B's Activity the answered card shows "Note"; tapping opens "Your note"
+    (A) / "Note from {A}" (B). A plan with no note has no Note button.
+24. Ringing voice note from B: Dismiss and "Dismiss & reply". Dismiss & reply
+    → tone stops, B gets "heard your voice note", then the note box; send →
+    B gets "Note from {A}" / "About your voice note: …". Cancel instead →
+    no note push, lands on Home.
+25. Missed popups (default and voice): "Send note" under the two answers;
+    after sending it disappears and Done/Skip (Play/Already heard) still
+    work. A missed SELF-plan shows no Send note.
+26. Group plan from B with a note from A → "Note from {A} in {group}".
+27. Long note: the box stops at 200 characters.
+
+**Regression spot checks** (quick, same session)
+28. A self-plan still rings and has Skip/Done only.
+29. Group plans unchanged: "Plan for the group" still says members, busy
+    members still get their "not set" push.
+30. Calendar / History / Activity open and tap through as before.
+
 ## Deferred device checks (everything since Batch A — run in one pass)
 
 Install a fresh build on every phone first (strict locks; the release APK is
@@ -311,7 +485,8 @@ on the Redmi now). Needs a second account/phone for most of it. Run
   Activity only answered ones; the ⊕ goes straight to voice planning; bigger
   Play/X in light + dark.
 - **Batch F / 32:** alarm rings with no approval; Cancel alarm; voice alarm
-  plays 3–6× and reads "{planner} sent you a voice alarm" locked and unlocked;
+  repeats for the whole ring (was 3–6×; 2026-10-04) and reads "{planner}
+  sent you a voice alarm" locked and unlocked;
   ringtone fallback when the note is missing; normal tone for other pushes;
   Plan screen light + dark; You → Voice notes; Choose from library → send;
   12/24-hour on the Nothing 4a.
@@ -495,7 +670,7 @@ Batch E — build, one item at a time, thorough regression tests each:
     Share buttons send the link. Needs the signing SHA-256 fingerprints (debug
     now; release when a release key exists) for assetlinks.
 
-## Release-build feedback 2026-10-02 — PLANNED, awaiting sign-off (not started)
+## Release-build feedback 2026-10-02 — R1–R7 BUILT, committed, deployed; device pass pending
 
 Reported by the user from the 1.0.0 release build + Crashlytics. Plan →
 sign-off → build, one item at a time, each with regression tests. Do not touch
@@ -552,8 +727,9 @@ unrelated code.
   "Setting up notifications… Retrying…" banner is gone (quiet backoff
   retries, status on the permissions page); the permissions page re-opens
   after an update only if a checkable permission is missing. Build `+6`.
-- **Phone tests are deferred until the whole R list is built** (user,
-  2026-10-02); then one device pass covers R2–R6.
+- **Phone tests were deferred until the whole list was built** (user,
+  2026-10-02); the list is built, so the one device pass is next ("Device
+  test list (2026-10-02)").
 - **R6 Reply notes — BUILT 2026-10-02, awaiting rules deploy → Worker
   deploy → commit; device check deferred** (DECISIONS.md "Reply notes"). DECIDED 2026-10-02. Optional, one per plan, no edits,
   target → planner. A **Send note** button sits beside the answer buttons
@@ -844,17 +1020,14 @@ builds can still create groups.
 
 ## Immediate next action
 
-0. **"Release-build feedback 2026-10-02" (R1–R6) is BUILT** (2026-10-02).
-   Next: deploy rules (R6) → Worker (R4 voice copy, R6 `replied`) → build
-   `1.0.0+5`, then ONE device pass for R2–R6 (deferred by the user until the
-   list was done). Play Console: declare the exact-alarm use (R5).
-1. **Device pass** on a FRESH build of `9c5d428` (and a second phone for the
-   cross-account parts): "Deferred device checks", the **Newest (2026-09-28
-   evening)** block first, then **Latest (2026-09-28)**. The user is reporting bugs from it; fix what they report
-   before new work, and record verified items in CLAUDE.md "Parked &
-   unverified" / DECISIONS.md.
-2. Push `9c5d428` and deploy the Worker when the user is ready. The Play Store
-   listing copy and screenshots are drafts; the app version name remains
-   parked until the user chooses one.
+0. **Device pass: "Device test list (2026-10-04)"** (the user runs it in
+   person) on release `1.0.0+7`. Then "Device test list (2026-10-02)" on the
+   same build. Fix what fails before new work; record results in
+   DECISIONS.md and CLAUDE.md "Parked & unverified".
+1. Then the older "Deferred device checks" blocks (Newest 2026-09-28
+   evening, Latest 2026-09-28) on the same build.
+2. Play Console: declare the exact-alarm use (R5, "alarm app") when
+   uploading. The Play Store listing copy and screenshots are drafts; the app
+   version name remains parked until the user chooses one.
 3. Item 33 (competitor review, PingPal + SnoozeSquad): research only;
    propose findings, change nothing without sign-off.
