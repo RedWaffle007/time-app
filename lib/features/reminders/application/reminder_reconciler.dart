@@ -1,4 +1,5 @@
 import '../domain/reminder.dart';
+import 'ring_cycle.dart';
 
 /// One thing to tell the OS.
 class ReminderScheduleAction {
@@ -57,16 +58,21 @@ ReminderPlan reconcileReminders({
   // Sorted so that id allocation is a deterministic function of the inputs.
   // Firestore snapshot order is not stable, and without this two devices — or
   // the same device twice — could resolve a collision differently.
+  final mirrorByItem = {for (final m in mirror) m.itemId: m};
   final wanted = [
     for (final r in desired)
       // The last guard against arming something in the past. Callers filter too,
       // but this is the one place `now` is in scope, so this is where the rule
-      // belongs rather than being trusted to every caller.
-      if (r.fireAtUtc.isAfter(now)) r,
+      // belongs rather than being trusted to every caller. An alarm already
+      // armed whose time has passed is still mid-cycle (2026-10-04): it stays,
+      // untouched, so its next rings are not cancelled.
+      if (r.fireAtUtc.isAfter(now) ||
+          (mirrorByItem.containsKey(r.itemId) &&
+              r.fireAtUtc.add(kRingCycleTotal).isAfter(now)))
+        r,
   ]..sort((a, b) => a.itemId.compareTo(b.itemId));
 
   final wantedIds = {for (final r in wanted) r.itemId};
-  final mirrorByItem = {for (final m in mirror) m.itemId: m};
 
   // Anything mirrored that is no longer wanted. This ONE rule covers withdraw,
   // reject, cancel, done, skip, un-approval, an item deleted outright, an item
@@ -92,13 +98,18 @@ ReminderPlan reconcileReminders({
 
   for (final request in wanted) {
     final existing = mirrorByItem[request.itemId];
-    final id = existing?.notificationId ??
+    final id =
+        existing?.notificationId ??
         allocateNotificationId(request.itemId, taken);
     taken.add(id);
 
-    if (existing != null && existing.fingerprint == request.fingerprint) {
-      // Already believed scheduled, unchanged. The no-op case, and by far the
-      // most common one.
+    if (existing != null &&
+        (existing.fingerprint == request.fingerprint ||
+            !request.fireAtUtc.isAfter(now))) {
+      // Already believed scheduled, unchanged — the no-op case, and by far the
+      // most common one. Also an alarm already ringing out its cycle: it is
+      // never re-armed (that would be arming the past), even if its sentence
+      // changed after it fired.
       nextMirror.add(existing);
       continue;
     }

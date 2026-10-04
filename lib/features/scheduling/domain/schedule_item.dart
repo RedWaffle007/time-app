@@ -93,7 +93,7 @@ class ScheduleAlarmTimeline {
   final DateTime? rangAt;
   final DateTime? dismissedAt;
 
-  /// The alarm exhausted its one-minute cap without a response. Unlike the
+  /// The alarm rang out its whole 25-minute cycle without a response. Unlike the
   /// mutable task outcome, this device-observed fact is permanent.
   final DateTime? unavailableAt;
 

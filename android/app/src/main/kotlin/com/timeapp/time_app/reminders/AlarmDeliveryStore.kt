@@ -18,6 +18,8 @@ object AlarmDeliveryStore {
         val headline: String = "",
         /** The voice note to play (32c-2); survives reboot re-arming too. */
         val voice: VoiceAlarmSpec? = null,
+        /** When it fires: the plan's time, or its next ring (2026-10-04). */
+        val triggerEpoch: Long = scheduledEpoch,
     )
 
     private fun prefs(context: Context) =
@@ -60,6 +62,7 @@ object AlarmDeliveryStore {
                         value.optString("voiceSha256", "").ifEmpty { null },
                         value.optLong("voiceSize", 0L),
                     ),
+                    value.optLong("triggerEpoch", value.getLong("scheduledEpoch")),
                 )
             }
         } catch (_: Throwable) {
@@ -77,6 +80,7 @@ object AlarmDeliveryStore {
                     put("scheduledEpoch", item.scheduledEpoch)
                     put("exact", item.exact)
                     put("headline", item.headline)
+                    put("triggerEpoch", item.triggerEpoch)
                     item.voice?.let {
                         put("voicePath", it.path)
                         put("voiceSha256", it.sha256)
@@ -95,6 +99,11 @@ object AlarmDeliveryStore {
     internal fun withoutId(items: List<Pending>, id: Int): List<Pending> =
         items.filterNot { it.id == id }
 
-    internal fun futureOnly(items: List<Pending>, nowEpoch: Long): List<Pending> =
-        items.filter { it.scheduledEpoch > nowEpoch }
+    /**
+     * What a reboot re-arms (2026-10-04): every alarm whose ring cycle has not
+     * run out. One whose ring time passed while the phone was off fires at
+     * once and joins its cycle where it stands, rather than vanishing.
+     */
+    internal fun stillLive(items: List<Pending>, nowEpoch: Long): List<Pending> =
+        items.filter { RingCyclePolicy.isLive(it.scheduledEpoch, nowEpoch) }
 }

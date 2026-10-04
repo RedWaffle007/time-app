@@ -8,8 +8,8 @@ import android.content.Intent
 class AlarmDeliveryBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val now = System.currentTimeMillis()
-        val future = AlarmDeliveryStore.futureOnly(AlarmDeliveryStore.load(context), now)
-        future.forEach { item ->
+        val live = AlarmDeliveryStore.stillLive(AlarmDeliveryStore.load(context), now)
+        live.forEach { item ->
             AlarmDeliveryScheduler.arm(
                 context,
                 item.id,
@@ -18,8 +18,9 @@ class AlarmDeliveryBootReceiver : BroadcastReceiver() {
                 item.exact,
                 item.headline,
                 item.voice,
+                triggerEpoch = maxOf(item.triggerEpoch, now + 1_000L),
             )
         }
-        AlarmDeliveryStore.save(context, future)
+        AlarmDeliveryStore.save(context, live)
     }
 }

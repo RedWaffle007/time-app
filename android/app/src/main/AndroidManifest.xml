@@ -205,6 +205,12 @@
             android:exported="false"
             android:directBootAware="true"
             android:name=".reminders.AlarmDeliveryReceiver" />
+        <!-- Dismiss on the "Rings again at ..." notice between rings
+             (2026-10-04): cancels the next ring, records the dismissal. -->
+        <receiver
+            android:exported="false"
+            android:directBootAware="true"
+            android:name=".reminders.AlarmQuietDismissReceiver" />
         <receiver
             android:exported="true"
             android:directBootAware="true"

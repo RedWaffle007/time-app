@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 ///
 /// The sound does NOT live here or in the Dart UI: it lives in the native
 /// `AlarmSoundService`, a foreground service holding a wake lock, so it keeps
-/// ringing with the screen off, bounded by the native one-minute cap. This is
+/// ringing with the screen off, each ring bounded by the native 5-minute cap. This is
 /// only the switch. `start` also drives the window flags that show the alarm
 /// over the lock screen; `stop` clears them.
 ///
@@ -25,8 +25,8 @@ abstract interface class AlarmSound {
   /// mid-ring shows that alarm instead of only playing its tone.
   Future<String?> ringingItem();
 
-  /// Ends an alarm opened too late to ring ([alarmTooLateToRing]) as missed,
-  /// with no sound: missed notice, missed popup, planner told (R5).
+  /// Ends an alarm opened after its ring cycle ran out ([alarmScreenPhase])
+  /// as missed, with no sound: missed notice, missed popup, planner told.
   Future<void> missLate(String itemId, {String headline = ''});
 
   /// Called with the item id whenever an alarm starts ringing while this app

@@ -59,9 +59,9 @@ class AlarmPlaybackOwnershipTest {
     }
 
     @Test
-    fun `the playback policy loops a complete tone for at most one minute`() {
+    fun `the playback policy loops a complete tone for one 5-minute ring`() {
         assertTrue(AlarmSoundPolicy.LOOP_WHOLE_TONE)
-        assertEquals(60_000L, AlarmSoundPolicy.MAX_RING_DURATION_MS)
+        assertEquals(5 * 60_000L, AlarmSoundPolicy.MAX_RING_DURATION_MS)
     }
 
     @Test

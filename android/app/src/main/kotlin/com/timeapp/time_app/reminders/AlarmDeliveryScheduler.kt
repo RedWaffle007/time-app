@@ -71,6 +71,9 @@ object AlarmDeliveryScheduler {
         exact: Boolean,
         headline: String = "",
         voice: VoiceAlarmSpec? = null,
+        // When to fire: the plan's own time, or a later ring of its cycle
+        // (2026-10-04). [scheduledEpoch] always stays the plan's time.
+        triggerEpoch: Long = scheduledEpoch,
     ): String = try {
         val manager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         // FLAG_UPDATE_CURRENT replaces the extras, so a changed headline (e.g.
@@ -89,19 +92,27 @@ object AlarmDeliveryScheduler {
             AlarmDeliveryMode.ALARM_CLOCK ->
                 manager.setAlarmClock(
                     AlarmManager.AlarmClockInfo(
-                        scheduledEpoch,
+                        triggerEpoch,
                         showPending(context, id, itemId),
                     ),
                     operation,
                 )
             AlarmDeliveryMode.INEXACT_ALLOW_IDLE ->
-                manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, scheduledEpoch, operation)
+                manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerEpoch, operation)
             AlarmDeliveryMode.INEXACT ->
-                manager.set(AlarmManager.RTC_WAKEUP, scheduledEpoch, operation)
+                manager.set(AlarmManager.RTC_WAKEUP, triggerEpoch, operation)
         }
         AlarmDeliveryStore.put(
             context,
-            AlarmDeliveryStore.Pending(id, itemId, scheduledEpoch, exact, headline, voice),
+            AlarmDeliveryStore.Pending(
+                id,
+                itemId,
+                scheduledEpoch,
+                exact,
+                headline,
+                voice,
+                triggerEpoch,
+            ),
         )
         "ok"
     } catch (_: SecurityException) {
@@ -120,6 +131,9 @@ object AlarmDeliveryScheduler {
         } catch (_: Throwable) {
         } finally {
             AlarmDeliveryStore.remove(context, id)
+            // A plan answered or dismissed between rings: its "rings again"
+            // notice goes with its next ring.
+            AlarmSoundService.cancelQuietNotice(context, id)
             // If it already fired, the PendingIntent is gone but its service may
             // still be ringing. A future alarm with another id is unaffected.
             AlarmSoundService.stopForNotification(context, id)

@@ -936,7 +936,7 @@ void main() {
     expect(
       find.text(
         '{planner} planned Morning walk for you. '
-        'It rang for one minute with no response.',
+        'It rang for 25 minutes with no response.',
       ),
       findsOneWidget,
     );
@@ -947,19 +947,19 @@ void main() {
       expect(
         missedPopupMessage(_item(), plannerName: '{planner}'),
         '{planner} planned Morning walk for you. '
-        'It rang for one minute with no response.',
+        'It rang for 25 minutes with no response.',
       );
       expect(
         missedPopupMessage(_item()),
         'Someone planned Morning walk for you. '
-        'It rang for one minute with no response.',
+        'It rang for 25 minutes with no response.',
       );
     });
 
     test('a self-plan needs no name', () {
       expect(
         missedPopupMessage(_item(createdByUid: 'target'), plannerName: 'x'),
-        'You planned Morning walk. It rang for one minute with no response.',
+        'You planned Morning walk. It rang for 25 minutes with no response.',
       );
     });
 

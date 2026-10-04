@@ -1,6 +1,7 @@
 package com.timeapp.time_app.reminders
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
@@ -52,27 +53,51 @@ class AlarmDeliveryPolicyTest {
     }
 }
 
-class AlarmLatenessPolicyTest {
+class RingCyclePolicyTest {
     private val due = 1_790_000_000_000L
+    private val min = 60_000L
 
     @Test
-    fun `on time and up to one full ring late still rings (R5)`() {
-        assertEquals(false, AlarmLatenessPolicy.isTooLate(due, due))
-        assertEquals(false, AlarmLatenessPolicy.isTooLate(due, due + 620))
-        assertEquals(false, AlarmLatenessPolicy.isTooLate(due, due + 60_000))
-        // Early delivery is never "late".
-        assertEquals(false, AlarmLatenessPolicy.isTooLate(due, due - 5_000))
+    fun `ring 5, quiet 5, three times, missed at 25 minutes (2026-10-04)`() {
+        assertEquals(25 * min, RingCyclePolicy.TOTAL_MS)
+        assertEquals(RingCyclePolicy.Phase.Ring(1, due + 5 * min), RingCyclePolicy.phaseAt(due, due))
+        assertEquals(RingCyclePolicy.Phase.Ring(1, due + 5 * min), RingCyclePolicy.phaseAt(due, due + 5 * min - 1))
+        assertEquals(RingCyclePolicy.Phase.Gap(2, due + 10 * min), RingCyclePolicy.phaseAt(due, due + 5 * min))
+        assertEquals(RingCyclePolicy.Phase.Ring(2, due + 15 * min), RingCyclePolicy.phaseAt(due, due + 10 * min))
+        assertEquals(RingCyclePolicy.Phase.Gap(3, due + 20 * min), RingCyclePolicy.phaseAt(due, due + 17 * min))
+        assertEquals(RingCyclePolicy.Phase.Ring(3, due + 25 * min), RingCyclePolicy.phaseAt(due, due + 20 * min))
+        assertEquals(RingCyclePolicy.Phase.Ring(3, due + 25 * min), RingCyclePolicy.phaseAt(due, due + 25 * min - 1))
+        assertEquals(RingCyclePolicy.Phase.Over, RingCyclePolicy.phaseAt(due, due + 25 * min))
+        assertEquals(RingCyclePolicy.Phase.Over, RingCyclePolicy.phaseAt(due, due + 60 * min))
     }
 
     @Test
-    fun `more than one minute late never rings, it becomes missed (R5)`() {
-        assertEquals(true, AlarmLatenessPolicy.isTooLate(due, due + 60_001))
-        assertEquals(true, AlarmLatenessPolicy.isTooLate(due, due + 110_000))
-        assertEquals(true, AlarmLatenessPolicy.isTooLate(due, due + 3_600_000))
+    fun `a late delivery joins the ring it lands in, not a fresh full ring`() {
+        // 3 minutes late: ring 1, ending at its own 5 minutes, not 8.
+        assertEquals(RingCyclePolicy.Phase.Ring(1, due + 5 * min), RingCyclePolicy.phaseAt(due, due + 3 * min))
     }
 
     @Test
-    fun `an alarm with no recorded time is not treated as late`() {
-        assertEquals(false, AlarmLatenessPolicy.isTooLate(0L, due))
+    fun `early delivery is ring 1, and an unknown time rings one full ring`() {
+        assertEquals(RingCyclePolicy.Phase.Ring(1, due + 5 * min), RingCyclePolicy.phaseAt(due, due - 5_000))
+        assertEquals(RingCyclePolicy.Phase.Ring(1, due + 5 * min), RingCyclePolicy.phaseAt(0L, due))
+    }
+
+    @Test
+    fun `rings start at 0, 10 and 20 minutes`() {
+        assertEquals(due, RingCyclePolicy.ringStart(due, 1))
+        assertEquals(due + 10 * min, RingCyclePolicy.ringStart(due, 2))
+        assertEquals(due + 20 * min, RingCyclePolicy.ringStart(due, 3))
+    }
+
+    @Test
+    fun `the Dart cycle uses the same numbers`() {
+        val dart = java.io.File(
+            "../../lib/features/reminders/application/ring_cycle.dart",
+        ).readText()
+        assertTrue(dart.contains("kRingLength = Duration(minutes: 5)"))
+        assertTrue(dart.contains("kRingGap = Duration(minutes: 5)"))
+        assertTrue(dart.contains("kRingCount = 3"))
+        assertTrue(dart.contains("kRingCycleTotal = Duration(minutes: 25)"))
     }
 }

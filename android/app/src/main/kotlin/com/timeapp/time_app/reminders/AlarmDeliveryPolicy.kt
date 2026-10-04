@@ -22,14 +22,46 @@ internal fun alarmDeliveryMode(exact: Boolean, sdkInt: Int): AlarmDeliveryMode =
     }
 
 /**
- * R5 (2026-10-02, user-directed: "we cannot tolerate even a single minute
- * delay"). An alarm delivered more than one full ring after its time does not
- * ring at all: it ends as missed, exactly like an unanswered ring. Exact
- * delivery lands within a second; this only catches an OS that held it back.
+ * How long an alarm keeps trying (2026-10-04, user-directed: like a phone's
+ * own alarm). Ring 5 minutes, quiet 5, three times — rings start at 0, 10 and
+ * 20 minutes — and give up at 25: only then is it missed. An alarm the OS
+ * delivered late joins whichever ring or quiet spell it lands in.
+ *
+ * Dart's `ring_cycle.dart` applies the same numbers; keep them equal.
  */
-internal object AlarmLatenessPolicy {
-    const val MAX_LATE_MS = 60_000L
+internal object RingCyclePolicy {
+    const val RING_MS = 5 * 60_000L
+    const val GAP_MS = 5 * 60_000L
+    const val RINGS = 3
+    const val TOTAL_MS = RINGS * RING_MS + (RINGS - 1) * GAP_MS
 
-    fun isTooLate(scheduledEpoch: Long, nowEpoch: Long): Boolean =
-        scheduledEpoch > 0 && nowEpoch - scheduledEpoch > MAX_LATE_MS
+    sealed class Phase {
+        data class Ring(val index: Int, val endsAt: Long) : Phase()
+        data class Gap(val nextIndex: Int, val nextAt: Long) : Phase()
+        object Over : Phase()
+    }
+
+    fun ringStart(scheduledEpoch: Long, index: Int): Long =
+        scheduledEpoch + (index - 1) * (RING_MS + GAP_MS)
+
+    /** Where an alarm at [scheduledEpoch] is at [nowEpoch]. */
+    fun phaseAt(scheduledEpoch: Long, nowEpoch: Long): Phase {
+        // No known time (a UI-only start): one full ring from now.
+        if (scheduledEpoch <= 0) return Phase.Ring(1, nowEpoch + RING_MS)
+        val elapsed = nowEpoch - scheduledEpoch
+        if (elapsed >= TOTAL_MS) return Phase.Over
+        if (elapsed < 0) return Phase.Ring(1, scheduledEpoch + RING_MS)
+        val period = RING_MS + GAP_MS
+        val index = (elapsed / period).toInt()
+        val within = elapsed % period
+        return if (within < RING_MS) {
+            Phase.Ring(index + 1, ringStart(scheduledEpoch, index + 1) + RING_MS)
+        } else {
+            Phase.Gap(index + 2, ringStart(scheduledEpoch, index + 2))
+        }
+    }
+
+    /** Still worth re-arming after a reboot: the cycle has not run out. */
+    fun isLive(scheduledEpoch: Long, nowEpoch: Long): Boolean =
+        scheduledEpoch + TOTAL_MS > nowEpoch
 }

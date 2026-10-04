@@ -18,6 +18,7 @@ import '../application/alarm_timeline_providers.dart';
 import '../application/missed_alarm_providers.dart';
 import '../application/reminder_policy.dart';
 import '../application/reminder_providers.dart';
+import '../application/ring_cycle.dart';
 import '../data/alarm_lifecycle_store.dart';
 import '../../outcomes/presentation/reply_note.dart';
 
@@ -57,6 +58,10 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
   /// ("Reminder" / "Planner") that then changes — a device-reported flash.
   String? _deliveredHeadline;
 
+  /// Opened between rings (2026-10-04): when it rings again. The screen stays
+  /// silent and offers Dismiss, which also cancels the rings still to come.
+  DateTime? _quietUntilUtc;
+
   @override
   void initState() {
     super.initState();
@@ -87,21 +92,25 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
         return;
       }
       if (!mounted) return;
-      // R5 (2026-10-02): never ring late. Opened (from a notification the OS
-      // held back) more than a minute after its time, with nothing ringing
-      // now: it ends as missed, with no tone, exactly like the native path.
+      // 2026-10-04: where the alarm is in its 25-minute cycle. Past it, with
+      // nothing ringing now, it ends as missed with no tone, exactly like the
+      // native path. Between rings it stays quiet: the next ring is already
+      // armed natively, so this screen must not ring early.
       final item = ref
           .read(allItemsAsTargetProvider)
           .maybeWhen(data: _find, orElse: () => null);
-      if (item != null &&
-          alarmTooLateToRing(
-            item,
-            nowUtc: DateTime.now().toUtc(),
-            ringingNow: await sound.ringingItem() == widget.itemId,
-          )) {
-        await sound.missLate(widget.itemId, headline: _headlineNow() ?? '');
-        await _leaveEnded();
-        return;
+      if (item != null && await sound.ringingItem() != widget.itemId) {
+        switch (alarmScreenPhase(item, nowUtc: DateTime.now().toUtc())) {
+          case RingOver():
+            await sound.missLate(widget.itemId, headline: _headlineNow() ?? '');
+            await _leaveEnded();
+            return;
+          case Quiet(:final nextRingAtUtc):
+            if (mounted) setState(() => _quietUntilUtc = nextRingAtUtc);
+            return;
+          case Ringing():
+            break;
+        }
       }
       if (!mounted) return;
       // The UI ownership claim must reach the native service before cancelling
@@ -222,6 +231,11 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
 
   Future<void> _stopAndRecordDismissed() async {
     await ref.read(alarmSoundProvider).stop(widget.itemId);
+    // Between rings the next one is armed natively: cancel it now, without
+    // waiting for the dismissal to reach the item stream (2026-10-04).
+    if (_quietUntilUtc != null) {
+      await ref.read(reminderServiceProvider).dismiss(widget.itemId);
+    }
     final uid = ref.read(currentUidProvider);
     if (uid != null) {
       // Navigation must not wait on Firestore: Dismiss has to work offline.
@@ -313,6 +327,17 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
                     ),
                   ),
                 ],
+                if (_quietUntilUtc case final until?) ...[
+                  const SizedBox(height: Space.md),
+                  Text(
+                    'Rings again at ${formatInstantTime(context, until, item?.timezone ?? 'UTC')}',
+                    key: const ValueKey('alarm-quiet'),
+                    textAlign: TextAlign.center,
+                    style: context.text.bodyMedium?.copyWith(
+                      color: context.colors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
                 if (item?.note != null && item!.note!.trim().isNotEmpty) ...[
                   const SizedBox(height: Space.md),
                   Text(
@@ -353,18 +378,10 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
   }
 }
 
-/// R5 (2026-10-02): an alarm more than one full ring past its time that is
-/// not ringing now must not start ringing — it ends as missed instead (the
-/// native `AlarmLatenessPolicy` applies the same minute).
-const kMaxAlarmLateness = Duration(minutes: 1);
-
-bool alarmTooLateToRing(
-  ScheduleItem item, {
-  required DateTime nowUtc,
-  required bool ringingNow,
-}) =>
-    !ringingNow &&
-    nowUtc.difference(item.scheduledInstantUtc) > kMaxAlarmLateness;
+/// Where an alarm opened on this screen stands in its ring cycle, when the
+/// native service is not ringing it (2026-10-04). Pure, for tests.
+RingPhase alarmScreenPhase(ScheduleItem item, {required DateTime nowUtc}) =>
+    ringPhaseAt(item.scheduledInstantUtc, nowUtc);
 
 /// True when an alarm is over and must not be shown or rung again: the native
 /// side recorded its timeout, or the item already has an answer, an

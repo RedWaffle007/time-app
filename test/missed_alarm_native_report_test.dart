@@ -26,13 +26,13 @@ void main() {
     );
   });
 
-  test('the one-minute stop reports before it stops', () {
+  test('the last ring reports before it stops', () {
     final service = read(
       'android/app/src/main/kotlin/com/timeapp/time_app/reminders/'
       'AlarmSoundService.kt',
     );
     final report = service.indexOf('MissedAlarmReporter.report(');
-    final stop = service.indexOf('one-minute ring cap reached; stopping');
+    final stop = service.indexOf('ring ended; \${missed.size} missed');
     expect(report, greaterThan(0));
     expect(report, lessThan(stop));
   });

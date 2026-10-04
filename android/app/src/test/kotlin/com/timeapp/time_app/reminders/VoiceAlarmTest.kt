@@ -85,7 +85,7 @@ class VoiceAlarmTest {
         assertTrue(voice.contains("isLooping = false"))
         // It repeats after the pause and is ended only by the ring cap.
         assertTrue(voice.contains("handler.postDelayed(voiceReplay, VoiceAlarmPolicy.REPLAY_GAP_MS)"))
-        assertTrue(voice.contains("handler.postDelayed(autoStop, AlarmSoundPolicy.MAX_RING_DURATION_MS)"))
+        assertTrue(voice.contains("handler.postDelayed(autoStop, ringMs())"))
         // Stopping the alarm cancels a pending replay, so nothing restarts.
         val stop = source.substringAfter("private fun stopAlarm()").substringBefore("\n    }\n")
         assertTrue(stop.contains("handler.removeCallbacks(voiceReplay)"))

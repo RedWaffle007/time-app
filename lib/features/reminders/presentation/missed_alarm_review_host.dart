@@ -400,5 +400,5 @@ String missedPopupMessage(ScheduleItem item, {String? plannerName}) {
     return '$who sent you a voice note. Listen now?';
   }
   return '${alarmHeadline(item, plannerName: plannerName)}. '
-      'It rang for one minute with no response.';
+      'It rang for 25 minutes with no response.';
 }

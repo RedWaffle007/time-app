@@ -9,6 +9,7 @@ import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:time_app/core/theme/app_theme.dart';
 import 'package:time_app/features/auth/application/auth_providers.dart';
 import 'package:time_app/features/auth/domain/user_profile.dart';
+import 'package:time_app/features/reminders/application/ring_cycle.dart';
 import 'package:time_app/features/reminders/application/alarm_timeline_providers.dart';
 import 'package:time_app/features/reminders/application/alarm_timeline_service.dart';
 import 'package:time_app/features/reminders/application/missed_alarm_providers.dart';
@@ -371,9 +372,9 @@ void main() {
     expect(find.text('PLAN'), findsOneWidget);
   });
 
-  // R5 (2026-10-02, "we cannot tolerate even a single minute delay"): an
-  // alarm opened more than a minute after its time with nothing ringing
-  // never starts a tone; it ends as missed.
+  // 2026-10-04: an alarm opened after its whole 25-minute ring cycle, with
+  // nothing ringing, never starts a tone; it ends as missed. Between rings
+  // it stays quiet and says when it rings again.
   ScheduleItem dueAgo(Duration ago) => ScheduleItem(
     id: 'a',
     targetUid: 'me',
@@ -387,14 +388,14 @@ void main() {
   );
 
   testWidgets(
-    'opened more than a minute late: no tone, missed, lands on Plan',
+    'opened after the 25-minute cycle: no tone, missed, lands on Plan',
     (t) async {
       final sound = _FakeAlarmSound();
       await t.pumpWidget(
         harness(
           sound,
           _FakeScheduler(),
-          items: Stream.value([dueAgo(const Duration(minutes: 5))]),
+          items: Stream.value([dueAgo(const Duration(minutes: 26))]),
         ),
       );
       await t.pumpAndSettle();
@@ -405,6 +406,39 @@ void main() {
     },
   );
 
+  testWidgets('opened between rings: silent, says when, Dismiss offered', (
+    t,
+  ) async {
+    final sound = _FakeAlarmSound();
+    await t.pumpWidget(
+      harness(
+        sound,
+        _FakeScheduler(),
+        items: Stream.value([dueAgo(const Duration(minutes: 7))]),
+      ),
+    );
+    await t.pumpAndSettle();
+    expect(sound.starts, 0, reason: 'the next ring is armed natively');
+    expect(sound.missedLate, isEmpty);
+    expect(find.byKey(const ValueKey('alarm-quiet')), findsOneWidget);
+    expect(find.textContaining('Rings again at'), findsOneWidget);
+    expect(find.text('Dismiss'), findsOneWidget);
+  });
+
+  testWidgets('opened during ring 2 with nothing ringing: rings', (t) async {
+    final sound = _FakeAlarmSound();
+    await t.pumpWidget(
+      harness(
+        sound,
+        _FakeScheduler(),
+        items: Stream.value([dueAgo(const Duration(minutes: 12))]),
+      ),
+    );
+    await t.pumpAndSettle();
+    expect(sound.starts, 1);
+    expect(sound.missedLate, isEmpty);
+  });
+
   testWidgets('late but still ringing natively: shows and keeps ringing', (
     t,
   ) async {
@@ -413,7 +447,7 @@ void main() {
       harness(
         sound,
         _FakeScheduler(),
-        items: Stream.value([dueAgo(const Duration(seconds: 70))]),
+        items: Stream.value([dueAgo(const Duration(minutes: 30))]),
       ),
     );
     await t.pumpAndSettle();
@@ -422,13 +456,13 @@ void main() {
     expect(find.text('Dismiss'), findsOneWidget);
   });
 
-  testWidgets('within the minute it rings as normal', (t) async {
+  testWidgets('a few minutes late it still rings (ring 1)', (t) async {
     final sound = _FakeAlarmSound();
     await t.pumpWidget(
       harness(
         sound,
         _FakeScheduler(),
-        items: Stream.value([dueAgo(const Duration(seconds: 30))]),
+        items: Stream.value([dueAgo(const Duration(minutes: 3))]),
       ),
     );
     await t.pumpAndSettle();
@@ -436,7 +470,7 @@ void main() {
     expect(sound.missedLate, isEmpty);
   });
 
-  test('alarmTooLateToRing: one full minute is the limit (R5)', () {
+  test('alarmScreenPhase follows the 25-minute cycle (2026-10-04)', () {
     final due = DateTime.utc(2030, 1, 1, 9);
     final i = dueAgo(Duration.zero);
     final at = ScheduleItem(
@@ -450,14 +484,15 @@ void main() {
       scheduledInstantUtc: due,
       status: i.status,
     );
-    bool late(Duration after, {bool ringing = false}) =>
-        alarmTooLateToRing(at, nowUtc: due.add(after), ringingNow: ringing);
-    expect(late(Duration.zero), isFalse);
-    expect(late(const Duration(seconds: 60)), isFalse);
-    expect(late(const Duration(seconds: 61)), isTrue);
-    expect(late(const Duration(hours: 3)), isTrue);
-    expect(late(const Duration(hours: 3), ringing: true), isFalse);
-    expect(late(const Duration(seconds: -30)), isFalse);
+    RingPhase at_(Duration after) =>
+        alarmScreenPhase(at, nowUtc: due.add(after));
+    expect(at_(Duration.zero), isA<Ringing>());
+    expect(at_(const Duration(minutes: 4)), isA<Ringing>());
+    expect(at_(const Duration(minutes: 5)), isA<Quiet>());
+    expect(at_(const Duration(minutes: 10)), isA<Ringing>());
+    expect(at_(const Duration(minutes: 24)), isA<Ringing>());
+    expect(at_(const Duration(minutes: 25)), isA<RingOver>());
+    expect(at_(const Duration(seconds: -30)), isA<Ringing>());
   });
 
   testWidgets('an item already marked unavailable leaves too', (t) async {

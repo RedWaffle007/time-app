@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:time_app/features/reminders/application/ring_cycle.dart';
 import 'package:time_app/features/reminders/application/reminder_policy.dart';
 import 'package:time_app/features/reminders/application/reminder_reconciler.dart';
 import 'package:time_app/features/reminders/application/reminder_service.dart';
@@ -53,6 +54,7 @@ void main() {
     DateTime? at,
     String title = 'Run',
     String? note,
+    ScheduleAlarmTimeline? alarm,
   }) => ScheduleItem(
     id: id,
     targetUid: targetUid,
@@ -65,6 +67,7 @@ void main() {
     scheduledInstantUtc: at ?? inHours(2),
     status: status,
     outcome: outcome,
+    alarm: alarm,
   );
 
   ReminderRequest request(String id, {DateTime? at, String title = 'Run'}) =>
@@ -306,12 +309,45 @@ void main() {
       }
     });
 
-    test('a past item is not reminded, including exactly now', () {
+    test('an item past its whole 25-minute ring cycle is not reminded', () {
       expect(
         desiredReminders(
           items: [
             item(id: 'a', at: inHours(-1)),
-            item(id: 'b', at: now),
+            item(id: 'b', at: now.subtract(kRingCycleTotal)),
+          ],
+          uid: 'me',
+          now: now,
+        ),
+        isEmpty,
+      );
+    });
+
+    test('an item mid-cycle stays desired, so its later rings are not '
+        'cancelled (2026-10-04)', () {
+      final d = desiredReminders(
+        items: [item(id: 'a', at: now.subtract(const Duration(minutes: 7)))],
+        uid: 'me',
+        now: now,
+      );
+      expect(d.single.itemId, 'a');
+    });
+
+    test('a dismissed or ran-out alarm ends its cycle', () {
+      final at = now.subtract(const Duration(minutes: 7));
+      expect(
+        desiredReminders(
+          items: [
+            item(
+              id: 'd',
+              at: at,
+              alarm: ScheduleAlarmTimeline(dismissedAt: now),
+            ),
+            item(
+              id: 'u',
+              at: at,
+              alarm: ScheduleAlarmTimeline(unavailableAt: now),
+            ),
           ],
           uid: 'me',
           now: now,
@@ -525,6 +561,33 @@ void main() {
       );
       expect(later.toCancel, [armed.mirror.single.notificationId]);
       expect(later.mirror, isEmpty);
+    });
+
+    test('an armed alarm mid-cycle is kept as is, never re-armed in the '
+        'past, even if its sentence changed (2026-10-04)', () {
+      final armed = reconcileReminders(
+        desired: [request('a')],
+        mirror: const [],
+        now: now,
+      );
+      final midCycle = inHours(2).add(const Duration(minutes: 12));
+      final later = reconcileReminders(
+        desired: [request('a', title: 'renamed')],
+        mirror: armed.mirror,
+        now: midCycle,
+      );
+      expect(later.toCancel, isEmpty);
+      expect(later.toSchedule, isEmpty);
+      expect(later.mirror, armed.mirror);
+    });
+
+    test('an alarm whose time passed but was never armed is not armed now', () {
+      final plan = reconcileReminders(
+        desired: [request('a', at: now.subtract(const Duration(minutes: 3)))],
+        mirror: const [],
+        now: now,
+      );
+      expect(plan.toSchedule, isEmpty);
     });
 
     test('a colliding newcomer gets a different id and does NOT displace the '

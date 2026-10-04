@@ -35,8 +35,10 @@ import com.timeapp.time_app.R
  * before each replay and keeps ringing with the screen off until dismissal.
  *
  * Lifecycle is driven from Dart over `time_app/alarm_sound` (start on mount, stop
- * on dismiss), with a one-minute cap so a missed dismiss cannot ring — or hold
- * the wake lock — indefinitely.
+ * on dismiss). Each ring is capped at 5 minutes so a missed dismiss cannot ring
+ * — or hold the wake lock — indefinitely. Between rings (2026-10-04) nothing
+ * runs at all: the next ring is an exact OS alarm, and a quiet notice with
+ * Dismiss stands in for it ([enterQuiet]).
  */
 class AlarmSoundService : Service() {
 
@@ -62,7 +64,11 @@ class AlarmSoundService : Service() {
         private const val EXTRA_NOTIFICATION_ID = "notification_id"
         private const val EXTRA_ITEM_ID = "item_id"
         private const val EXTRA_HEADLINE = "headline"
+        private const val EXTRA_SCHEDULED = "scheduled_epoch"
+        private const val EXTRA_RING_INDEX = "ring_index"
+        private const val EXTRA_RING_ENDS = "ring_ends_epoch"
         private const val MISSED_CHANNEL_ID = "time_app_missed_alarms"
+        private const val QUIET_CHANNEL_ID = "time_app_alarm_quiet"
 
         private const val CHANNEL_ID = "time_app_alarm_ringing_v2"
         private const val LEGACY_CHANNEL_ID = "time_app_alarm_ringing"
@@ -85,12 +91,26 @@ class AlarmSoundService : Service() {
 
         fun headlineFor(itemId: String): String? = headlines[itemId]
 
+        /** Where a ringing item is in its cycle (2026-10-04), so the end of
+         *  this ring knows whether another follows. */
+        private data class Cycle(
+            val notificationId: Int,
+            val scheduledEpoch: Long,
+            val ringIndex: Int,
+            val voice: VoiceAlarmSpec?,
+        )
+
+        private val cycles = java.util.concurrent.ConcurrentHashMap<String, Cycle>()
+
         fun start(
             context: Context,
             notificationId: Int,
             itemId: String,
             headline: String = "",
             voice: VoiceAlarmSpec? = null,
+            scheduledEpoch: Long = 0L,
+            ringIndex: Int = 0,
+            ringEndsEpoch: Long = 0L,
         ): Boolean {
             if (itemId.isNotEmpty() && headline.isNotBlank()) {
                 headlines[itemId] = headline
@@ -100,6 +120,9 @@ class AlarmSoundService : Service() {
                 .putExtra(EXTRA_NOTIFICATION_ID, notificationId)
                 .putExtra(EXTRA_ITEM_ID, itemId)
                 .putExtra(EXTRA_HEADLINE, headline)
+                .putExtra(EXTRA_SCHEDULED, scheduledEpoch)
+                .putExtra(EXTRA_RING_INDEX, ringIndex)
+                .putExtra(EXTRA_RING_ENDS, ringEndsEpoch)
             voice?.putInto(intent, "")
             return try {
                 ContextCompat.startForegroundService(context, intent)
@@ -149,8 +172,8 @@ class AlarmSoundService : Service() {
         fun ringingItemId(): String? = if (ringing) ringingItem else null
 
         /**
-         * R5 (2026-10-02): an alarm delivered too late to ring
-         * ([AlarmLatenessPolicy]) ends exactly as an unanswered ring does, but
+         * An alarm delivered after its whole ring cycle ran out
+         * ([RingCyclePolicy]) ends exactly as an unanswered ring does, but
          * without a sound: the missed notice, the timeout row (the app's
          * missed popup) and the planner's "unavailable" push.
          */
@@ -180,6 +203,123 @@ class AlarmSoundService : Service() {
             )
             MissedAlarmReporter.report(context, listOf(itemId), atEpochMs)
             AlarmLifecycleChannel.notifyChanged()
+        }
+
+        /**
+         * Between rings (2026-10-04): arm ring [nextIndex] at [nextAt] and show
+         * "Rings again at …" with Dismiss. Nothing runs meanwhile, so the
+         * phone sleeps. False if the next ring could not be armed — the
+         * caller then ends the alarm as missed rather than lose it silently.
+         */
+        fun enterQuiet(
+            context: Context,
+            notificationId: Int,
+            itemId: String,
+            scheduledEpoch: Long,
+            nextIndex: Int,
+            nextAt: Long,
+            headline: String,
+            voice: VoiceAlarmSpec?,
+        ): Boolean {
+            if (itemId.isEmpty() || notificationId < 0) return false
+            if (headline.isNotBlank()) headlines[itemId] = headline
+            val armed = AlarmDeliveryScheduler.arm(
+                context,
+                notificationId,
+                itemId,
+                scheduledEpoch,
+                exact = true,
+                headline = headline.ifBlank { headlines[itemId].orEmpty() },
+                voice = voice,
+                triggerEpoch = nextAt,
+            )
+            ReminderAuditLog.write(
+                context,
+                event = "RING_QUIET",
+                itemId = itemId,
+                notificationId = notificationId,
+                scheduledEpoch = scheduledEpoch,
+                note = "next ring $nextIndex at $nextAt: $armed",
+            )
+            if (armed != "ok") return false
+            postQuietNotice(context, notificationId, itemId, nextAt)
+            return true
+        }
+
+        private fun quietNoticeId(notificationId: Int): Int =
+            ("quiet:$notificationId").hashCode()
+
+        fun cancelQuietNotice(context: Context, notificationId: Int) {
+            try {
+                val nm = context.getSystemService(Context.NOTIFICATION_SERVICE)
+                    as NotificationManager
+                nm.cancel(quietNoticeId(notificationId))
+            } catch (_: Throwable) {
+            }
+        }
+
+        private fun postQuietNotice(
+            context: Context,
+            notificationId: Int,
+            itemId: String,
+            nextAt: Long,
+        ) {
+            try {
+                val nm = context.getSystemService(Context.NOTIFICATION_SERVICE)
+                    as NotificationManager
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                    nm.getNotificationChannel(QUIET_CHANNEL_ID) == null
+                ) {
+                    nm.createNotificationChannel(
+                        NotificationChannel(
+                            QUIET_CHANNEL_ID,
+                            "Alarm between rings",
+                            NotificationManager.IMPORTANCE_LOW,
+                        ).apply {
+                            description = "An alarm that will ring again soon."
+                            setSound(null, null)
+                            enableVibration(false)
+                            setShowBadge(false)
+                        },
+                    )
+                }
+                // The phone's own clock format (12/24 h, locale digits).
+                val time = android.text.format.DateFormat.getTimeFormat(context)
+                    .format(java.util.Date(nextAt))
+                val open = PendingIntent.getActivity(
+                    context,
+                    quietNoticeId(notificationId),
+                    Intent(context, MainActivity::class.java).apply {
+                        action = "SELECT_NOTIFICATION"
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                        putExtra("notificationId", notificationId)
+                        putExtra("payload", itemId)
+                    },
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                )
+                val dismiss = PendingIntent.getBroadcast(
+                    context,
+                    quietNoticeId(notificationId),
+                    Intent(context, AlarmQuietDismissReceiver::class.java)
+                        .putExtra(AlarmQuietDismissReceiver.EXTRA_ID, notificationId)
+                        .putExtra(AlarmQuietDismissReceiver.EXTRA_ITEM, itemId),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                )
+                val notification = NotificationCompat.Builder(context, QUIET_CHANNEL_ID)
+                    .setSmallIcon(R.drawable.ic_notification)
+                    .setContentTitle(AlarmSoundPolicy.ringingTitle(headlines[itemId]))
+                    .setContentText(AlarmSoundPolicy.quietText(time))
+                    .setCategory(NotificationCompat.CATEGORY_ALARM)
+                    .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                    // Only Dismiss ends it; a swipe would hide the one way to.
+                    .setOngoing(true)
+                    .setContentIntent(open)
+                    .addAction(R.drawable.ic_notification, "Dismiss", dismiss)
+                    .build()
+                nm.notify(quietNoticeId(notificationId), notification)
+            } catch (e: Exception) {
+                Log.e(TAG, "failed to post between-rings notification: $e")
+            }
         }
 
         /** One per item, replacing itself; auto-cancelled when tapped. */
@@ -250,7 +390,18 @@ class AlarmSoundService : Service() {
     private val ownership = AlarmPlaybackOwnership()
     private val handler = Handler(Looper.getMainLooper())
     /** Why the alarm ended on its own, for the audit CSV. */
-    private var endNote = "one_minute_cap"
+    private var endNote = "ring_cap"
+
+    /** When the ring now starting ends (its cycle's clock), or 0: a full ring. */
+    private var currentRingEnds = 0L
+
+    /** How long this ring lasts: to its cycle's end, never past one ring. */
+    private fun ringMs(): Long {
+        val ends = currentRingEnds
+        if (ends <= 0) return AlarmSoundPolicy.MAX_RING_DURATION_MS
+        return (ends - System.currentTimeMillis())
+            .coerceIn(1_000L, AlarmSoundPolicy.MAX_RING_DURATION_MS)
+    }
 
     /** Voice-note plays completed in this ring (item 32c-2), for the audit. */
     private var voicePlays = 0
@@ -267,7 +418,25 @@ class AlarmSoundService : Service() {
     private val autoStop = Runnable {
         val at = System.currentTimeMillis()
         cancelOwningNotifications()
-        ownership.itemIds().forEach { itemId ->
+        // 2026-10-04: a ring that is not the last goes quiet until the next
+        // one. Only the last ring ending — or a next ring that could not be
+        // armed — makes the alarm missed.
+        val missed = ownership.itemIds().filterNot { itemId ->
+            val cycle = cycles[itemId] ?: return@filterNot false
+            if (cycle.ringIndex >= RingCyclePolicy.RINGS) return@filterNot false
+            val next = cycle.ringIndex + 1
+            enterQuiet(
+                this,
+                cycle.notificationId,
+                itemId,
+                cycle.scheduledEpoch,
+                next,
+                RingCyclePolicy.ringStart(cycle.scheduledEpoch, next),
+                headlines[itemId].orEmpty(),
+                cycle.voice,
+            )
+        }
+        missed.forEach { itemId ->
             // The alarm gave up on its own: tell the person, even if the app is
             // dead. Tapping opens the app, whose missed-alarm review offers
             // Done / Skip for exactly this task.
@@ -282,9 +451,9 @@ class AlarmSoundService : Service() {
             )
         }
         // Tell the planner now, not when the app is next opened (2026-09-27).
-        MissedAlarmReporter.report(this, ownership.itemIds().toList(), at)
+        if (missed.isNotEmpty()) MissedAlarmReporter.report(this, missed, at)
         AlarmLifecycleChannel.notifyChanged()
-        Log.i(TAG, "one-minute ring cap reached; stopping")
+        Log.i(TAG, "ring ended; ${missed.size} missed, the rest ring again")
         stopAlarm()
     }
 
@@ -326,9 +495,17 @@ class AlarmSoundService : Service() {
                 val itemId = intent?.getStringExtra(EXTRA_ITEM_ID) ?: ""
                 val headline = intent?.getStringExtra(EXTRA_HEADLINE).orEmpty()
                 val voice = VoiceAlarmSpec.from(intent, "")
+                val scheduledEpoch = intent?.getLongExtra(EXTRA_SCHEDULED, 0L) ?: 0L
+                val ringIndex = intent?.getIntExtra(EXTRA_RING_INDEX, 0) ?: 0
+                val ringEnds = intent?.getLongExtra(EXTRA_RING_ENDS, 0L) ?: 0L
                 if (itemId.isNotEmpty() && headline.isNotBlank()) {
                     headlines[itemId] = headline
                 }
+                if (itemId.isNotEmpty() && notificationId >= 0 && ringIndex > 0) {
+                    cycles[itemId] = Cycle(notificationId, scheduledEpoch, ringIndex, voice)
+                    cancelQuietNotice(this, notificationId)
+                }
+                if (ringEnds > 0) currentRingEnds = ringEnds
                 if (itemId.isNotEmpty()) {
                     if (notificationId >= 0) {
                         Log.i(TAG, "claim notification owner $notificationId")
@@ -390,9 +567,9 @@ class AlarmSoundService : Service() {
             if (VoiceAlarmPolicy.verify(voice) && startVoiceNow(voice)) return
             recordVoiceFallback(itemId)
         }
-        endNote = "one_minute_cap"
+        endNote = "ring_cap"
         startRingtoneNow()
-        handler.postDelayed(autoStop, AlarmSoundPolicy.MAX_RING_DURATION_MS)
+        handler.postDelayed(autoStop, ringMs())
     }
 
     /**
@@ -413,7 +590,7 @@ class AlarmSoundService : Service() {
         }
         val durationMs = player!!.duration.coerceAtLeast(1)
         endNote = "voice_cap"
-        handler.postDelayed(autoStop, AlarmSoundPolicy.MAX_RING_DURATION_MS)
+        handler.postDelayed(autoStop, ringMs())
         player!!.start()
         ReminderAuditLog.write(this, event = "VOICE_PLAYING", note = "${durationMs}ms repeating")
         true
@@ -536,7 +713,9 @@ class AlarmSoundService : Service() {
         ringingItem = null
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
+        ownership.itemIds().forEach { cycles.remove(it) }
         ownership.clear()
+        currentRingEnds = 0L
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
         sendBroadcast(Intent(ACTION_RINGING_ENDED).setPackage(packageName))

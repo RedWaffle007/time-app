@@ -1,5 +1,6 @@
 import '../../scheduling/domain/schedule_item.dart';
 import '../domain/reminder.dart';
+import 'ring_cycle.dart';
 
 /// **The one rule for whether an item gets a reminder**, and the only place the
 /// reminder layer is allowed to know what a [ScheduleItem] is.
@@ -21,7 +22,12 @@ import '../domain/reminder.dart';
 ///     prevent. `rejected`, `withdrawn` and `cancelled` are self-evident.
 ///   * **no outcome is recorded.** Done or skipped means the moment has been
 ///     answered; reminding afterwards is noise.
-///   * **the instant is in the future.** Nothing is retroactive.
+///   * **the alarm is not over yet** (2026-10-04): its time is in the future,
+///     or it is still inside its 25-minute ring cycle ([kRingCycleTotal]) and
+///     was neither dismissed nor ran out. Without this the reconciler would
+///     cancel an alarm the moment its time passed — taking its second and
+///     third rings with it. Done or Skip mid-cycle still ends it, through the
+///     outcome rule above.
 ///
 /// Archive state is deliberately NOT consulted. Archiving is a per-user *view*
 /// rule for settled items (`schedule_providers.dart`), and a live item is
@@ -48,7 +54,9 @@ List<ReminderRequest> desiredReminders({
       if (item.targetUid == uid &&
           item.status == ScheduleItemStatus.approved &&
           item.outcome == null &&
-          item.scheduledInstantUtc.isAfter(now))
+          item.alarm?.dismissedAt == null &&
+          item.alarm?.unavailableAt == null &&
+          item.scheduledInstantUtc.add(kRingCycleTotal).isAfter(now))
         ReminderRequest(
           itemId: item.id,
           fireAtUtc: item.scheduledInstantUtc,

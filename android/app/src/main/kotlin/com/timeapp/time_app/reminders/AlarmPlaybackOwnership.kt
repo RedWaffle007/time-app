@@ -55,7 +55,8 @@ internal class AlarmPlaybackOwnership {
 
 /** Constants whose values are part of the alarm's user-visible contract. */
 internal object AlarmSoundPolicy {
-    const val MAX_RING_DURATION_MS = 60_000L
+    /** One ring of the cycle (2026-10-04): 5 minutes, then quiet or missed. */
+    const val MAX_RING_DURATION_MS = RingCyclePolicy.RING_MS
 
     // MediaPlayer implements this by finishing the entire source before seeking
     // back to its start. Never replace it with a timer that calls start/reseek.
@@ -76,6 +77,9 @@ internal object AlarmSoundPolicy {
      * observed spread without leaving a duplicate up for long.
      */
     val DUPLICATE_RECHECK_MS = listOf(500L, 2_000L, 5_000L)
+
+    /** Between rings (2026-10-04): when it comes back, in the phone's format. */
+    fun quietText(time: String): String = "Rings again at $time · Dismiss to stop"
 
     const val MISSED_TITLE = "Missed alarm"
 
