@@ -193,6 +193,16 @@
   are the user's to remove.
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
 
+## Parked (2026-10-05): planner got "missed your voice note" without Uh-Oh
+
+User-reported, parked by the user. The target's side worked: last repeat
+ended 22:40:45, `MissedAlarmReporter` reached the Worker 22:40:59 (HTTP 200),
+and the Worker's `unavailable` push is negative (`uhOh`, channel
+`planner_unavailable`). The app's channel is correct (checked on the Redmi:
+`raw/uh_oh`, importance high). So the silence is decided on the PLANNER's
+phone. Next time: `dumpsys notification` on the planner's phone (channel
+sound, app version), and `npx wrangler tail` while an alarm runs out.
+
 ## Device test list (2026-10-05, Missed pop-up) — DO THIS FIRST
 
 Debug build, phone plugged in. B = a second phone planning for A (the Redmi).
