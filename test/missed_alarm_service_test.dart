@@ -735,6 +735,15 @@ void main() {
           ),
         );
         await tester.pump();
+        if (play) {
+          // The pop-up stays while the note plays, and records nothing yet
+          // (device report 2026-10-05).
+          await tester.pump();
+          expect(find.text('Playing…'), findsOneWidget);
+          expect(find.text('Missed voice note'), findsOneWidget);
+          expect(outcomes.done, isEmpty);
+          await tester.pump(const Duration(seconds: 2));
+        }
         await tester.pump(kPlannerUpdateDuration);
         await tester.pumpAndSettle();
 
@@ -746,8 +755,11 @@ void main() {
         final container = ProviderScope.containerOf(
           tester.element(find.text('Schedule')),
         );
-        // No confetti: a voice note is not a task.
-        expect(container.read(committedCelebrationProvider), isNull);
+        // Played in full: it closes to confetti. Already heard: none.
+        expect(
+          container.read(committedCelebrationProvider)?.itemId,
+          play ? 'item' : isNull,
+        );
       },
     );
   }
@@ -819,6 +831,7 @@ void main() {
 
     cache.finish();
     await tester.pump();
+    await tester.pump(const Duration(seconds: 2));
     await tester.pump(kPlannerUpdateDuration);
     await tester.pumpAndSettle();
 
@@ -1495,16 +1508,22 @@ class _Cache implements VoiceNoteCache {
 }
 
 class _Player implements VoicePlayer {
+  /// How long the note plays before it reports the end.
+  final Duration playFor = const Duration(seconds: 1);
   final played = <String>[];
+  final _completed = StreamController<void>.broadcast();
 
   @override
-  Future<void> play(String path) async => played.add(path);
+  Future<void> play(String path) async {
+    played.add(path);
+    Timer(playFor, () => _completed.add(null));
+  }
 
   @override
   Future<void> stop() async {}
 
   @override
-  Stream<void> get completed => const Stream.empty();
+  Stream<void> get completed => _completed.stream;
 }
 
 /// A voice-note fetch the test finishes (or fails) by hand (R2).

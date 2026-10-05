@@ -18,6 +18,7 @@ import androidx.core.content.ContextCompat
 import com.timeapp.time_app.reminders.AlarmDeliveryChannel
 import com.timeapp.time_app.reminders.AlarmLifecycleChannel
 import com.timeapp.time_app.reminders.AlarmSoundService
+import com.timeapp.time_app.reminders.VoiceAlarmSpec
 import com.timeapp.time_app.reminders.ReminderAuditChannel
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -330,6 +331,12 @@ class MainActivity : FlutterFragmentActivity() {
                             call.argument<String>("itemId") ?: "",
                             call.argument<String>("headline") ?: "",
                             (call.argument<Number>("scheduledAtMillis") ?: 0).toLong(),
+                            VoiceAlarmSpec.of(
+                                call.argument<String>("voicePath"),
+                                call.argument<String>("voiceSha256"),
+                                (call.argument<Number>("voiceSizeBytes") ?: 0).toLong(),
+                            ),
+                            (call.argument<Number>("voiceDurationMs") ?: 0).toLong(),
                         )
                         result.success(null)
                     }

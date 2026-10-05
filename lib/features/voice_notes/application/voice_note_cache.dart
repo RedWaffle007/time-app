@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../scheduling/domain/schedule_item.dart';
 import '../data/voice_note_client.dart';
 import '../domain/voice_library_note.dart';
+import 'voice_delivery_policy.dart';
 import 'voice_note_providers.dart';
 
 /// Whether [bytes] are exactly the voice note the plan was made with.
@@ -46,14 +47,32 @@ class VoiceNoteCache {
         voiceBytesMatch(await file.readAsBytes(), meta);
   }
 
-  /// Delete every local copy whose id is not in [keepIds]. Returns how many.
-  Future<int> prune(Set<String> keepIds) async {
+  /// Delete every local copy whose id is not in [keepIds] AND that is older
+  /// than [minAge]. Returns how many.
+  ///
+  /// The age floor (device report 2026-10-05): on a cold start the item list
+  /// can be stale — cached before a brand-new plan arrived, or empty while
+  /// signing in — and pruning against it deleted the voice note that had
+  /// just woken the phone, mid-ring; its next play rang the tone. A note is
+  /// never wanted for longer than [kVoiceKeepAfterDue] past its time, so a
+  /// file younger than that is never deleted here.
+  Future<int> prune(
+    Set<String> keepIds, {
+    Duration minAge = kVoiceKeepAfterDue,
+    DateTime? now,
+  }) async {
     var removed = 0;
+    final cutoff = (now ?? DateTime.now()).subtract(minAge);
     await for (final entity in (await _folder()).list()) {
       if (entity is! File || !entity.path.endsWith('.m4a')) continue;
       final name = entity.uri.pathSegments.last;
       final id = name.substring(0, name.length - '.m4a'.length);
       if (keepIds.contains(id)) continue;
+      try {
+        if ((await entity.lastModified()).isAfter(cutoff)) continue;
+      } catch (_) {
+        continue;
+      }
       try {
         await entity.delete();
         removed++;
@@ -74,10 +93,23 @@ class VoiceNoteCache {
         voiceBytesMatch(await file.readAsBytes(), meta)) {
       return file.path;
     }
-    final bytes = await _client.download(
-      targetUid: item.targetUid,
-      itemId: item.id,
-    );
+    // One retry on a dropped or stalled connection (device report
+    // 2026-10-05: a 25 s note timed out on a poor Wi-Fi and the alarm rang
+    // the tone). A refusal from the Worker is final and is not retried.
+    Uint8List bytes;
+    try {
+      bytes = await _client.download(
+        targetUid: item.targetUid,
+        itemId: item.id,
+      );
+    } on VoiceNoteFailure {
+      rethrow;
+    } catch (_) {
+      bytes = await _client.download(
+        targetUid: item.targetUid,
+        itemId: item.id,
+      );
+    }
     if (!voiceBytesMatch(bytes, meta)) {
       throw const VoiceNoteFailure(
         "This voice note didn't arrive intact. Try again.",

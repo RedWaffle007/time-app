@@ -13,6 +13,21 @@ import 'package:flutter/services.dart';
 /// A hand-written channel rather than a package, the same call [SecureWindow]
 /// makes: the job is two verbs over one native service, and an audio package
 /// would not own the wake lock or the foreground-service type this needs.
+/// A voice note for the native queue: the file on this phone and what it
+/// must match (2026-10-05).
+class AlarmVoice {
+  const AlarmVoice({
+    required this.path,
+    required this.sha256,
+    required this.sizeBytes,
+    required this.durationMs,
+  });
+  final String path;
+  final String sha256;
+  final int sizeBytes;
+  final int durationMs;
+}
+
 /// One alarm in the segment ringing now (2026-10-05), as the native queue
 /// holds it: enough to name it on screen before the item stream loads.
 class RingingAlarm {
@@ -59,11 +74,13 @@ class RingingAlarm {
 
 abstract interface class AlarmSound {
   /// Puts [itemId] in the native ring queue if it is not there yet (at
-  /// [scheduledAtUtc], its plan time) and lets the queue look now.
+  /// [scheduledAtUtc], its plan time, with its [voice] note when it has one)
+  /// and lets the queue look now.
   Future<void> start(
     String itemId, {
     String headline = '',
     DateTime? scheduledAtUtc,
+    AlarmVoice? voice,
   });
   Future<void> stop(String itemId);
 
@@ -105,9 +122,14 @@ class PlatformAlarmSound implements AlarmSound {
     String itemId, {
     String headline = '',
     DateTime? scheduledAtUtc,
+    AlarmVoice? voice,
   }) => _invoke('start', itemId, {
     'headline': headline,
     'scheduledAtMillis': ?scheduledAtUtc?.millisecondsSinceEpoch,
+    'voicePath': ?voice?.path,
+    'voiceSha256': ?voice?.sha256,
+    'voiceSizeBytes': ?voice?.sizeBytes,
+    'voiceDurationMs': ?voice?.durationMs,
   });
 
   @override

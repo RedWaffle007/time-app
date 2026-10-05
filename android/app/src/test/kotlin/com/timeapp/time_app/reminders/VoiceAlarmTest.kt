@@ -92,4 +92,18 @@ class VoiceAlarmTest {
         val finish = source.substringAfter("private fun finish()").substringBefore("\n    }\n")
         assertTrue(finish.contains("releasePlayer()"))
     }
+
+    @Test
+    fun `the full-screen launch names the alarm, and every new ring wakes the screen (2026-10-05)`() {
+        val source = File(
+            "src/main/kotlin/com/timeapp/time_app/reminders/AlarmSoundService.kt",
+        ).readText()
+        val start = source.substringAfter("override fun onStartCommand").substringBefore("when (intent?.action)")
+        // The item is known BEFORE the first (full-screen) notification posts.
+        assertTrue(start.indexOf("launchItem = ") in 0 until start.indexOf("ensureForeground()"))
+        // A ring for another alarm reposts under a new id, which re-fires the full-screen intent.
+        val play = source.substringAfter("private fun play(").substringBefore("private fun startSound(")
+        assertTrue(play.contains("repostForFullScreen()"))
+        assertTrue(source.contains("ServiceCompat.startForeground(this, notifId, buildNotification(), type)"))
+    }
 }

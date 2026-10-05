@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_app/features/reminders/application/reminder_policy.dart';
 import 'package:time_app/features/reminders/application/reminder_reconciler.dart';
@@ -735,6 +737,50 @@ void main() {
       expect((await store.load()).map((m) => m.itemId), ['a']);
     });
 
+    test(
+      'a cold start by the same person cancels NOTHING — not the alarm '
+      'that opened the app, not its repeats (device report 2026-10-05)',
+      () async {
+        await service.sync(
+          items: [item(id: 'a')],
+          uid: 'me',
+        );
+        scheduler.reset();
+        // A new process: a fresh service over the same stored mirror + owner.
+        final coldStart = ReminderService(scheduler: scheduler, store: store);
+        await coldStart.claimOwner('me');
+        expect(scheduler.cancelAllCount, 0);
+        expect(scheduler.cancelled, isEmpty);
+        expect((await store.load()).map((m) => m.itemId), ['a']);
+      },
+    );
+
+    test('a different account clears the device', () async {
+      await service.sync(
+        items: [item(id: 'a')],
+        uid: 'me',
+      );
+      scheduler.reset();
+      final coldStart = ReminderService(scheduler: scheduler, store: store);
+      await coldStart.claimOwner('someone-else');
+      expect(scheduler.cancelAllCount, 1);
+      expect(await store.load(), isEmpty);
+    });
+
+    test('the uid listener never reconciles against an empty list for a '
+        'signed-in user', () {
+      final source = File(
+        'lib/features/reminders/application/reminder_providers.dart',
+      ).readAsStringSync();
+      expect(source, contains('service.claimOwner(next)'));
+      expect(
+        source,
+        isNot(
+          contains("reason: next == null ? 'signed-out' : 'account-changed'"),
+        ),
+      );
+    });
+
     test('dismiss cancels the id the MIRROR recorded, not the bare hash', () async {
       // A collision can move a reminder off `reminderNotificationId(itemId)`, and
       // the mirror is the authority. Seed a moved id and prove dismiss honours it.
@@ -872,6 +918,52 @@ void main() {
       expect((await store.load()).map((m) => m.itemId), ['b']);
     });
 
+    test('a plan MISSING from the list keeps its alarm; only a present, '
+        'answered plan loses it (device report 2026-10-05)', () async {
+      await service.sync(items: [item(id: 'a')], uid: 'me');
+      final id = (await store.load()).single.notificationId;
+      scheduler.reset();
+      // The stale empty list a cold start can deliver.
+      await service.sync(items: const [], uid: 'me');
+      expect(scheduler.cancelled, isEmpty);
+      expect((await store.load()).map((m) => m.itemId), ['a']);
+      // Answered: present and no longer wanted.
+      await service.sync(
+        items: [
+          item(
+            id: 'a',
+            outcome: const ScheduleOutcome(result: OutcomeResult.done),
+          ),
+        ],
+        uid: 'me',
+      );
+      expect(scheduler.cancelled, [id]);
+    });
+
+    test('reconcile: missing-but-live is kept, missing-and-long-past is '
+        'cleared', () {
+      final armed = reconcileReminders(
+        desired: [request('a')],
+        mirror: const [],
+        now: now,
+      );
+      final stillLive = reconcileReminders(
+        desired: const [],
+        mirror: armed.mirror,
+        now: now,
+        presentItemIds: const {},
+      );
+      expect(stillLive.toCancel, isEmpty);
+      expect(stillLive.mirror, armed.mirror);
+      final dayLater = reconcileReminders(
+        desired: const [],
+        mirror: armed.mirror,
+        now: inHours(27),
+        presentItemIds: const {},
+      );
+      expect(dayLater.toCancel, [armed.mirror.single.notificationId]);
+    });
+
     test('overlapping syncs are serialized, not interleaved', () async {
       // Resume racing an item emission: both read the mirror, both compute a
       // plan against a state the other is about to change, and the loser's
@@ -888,7 +980,13 @@ void main() {
         uid: 'me',
       );
       final c = service.sync(
-        items: [item(id: 'b')],
+        items: [
+          item(
+            id: 'a',
+            outcome: const ScheduleOutcome(result: OutcomeResult.done),
+          ),
+          item(id: 'b'),
+        ],
         uid: 'me',
       );
       await Future.wait([a, b, c]);

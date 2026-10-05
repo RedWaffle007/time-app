@@ -467,6 +467,21 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    testWidgets('switching back to Voice Note hides the date and time until '
+        'a note is recorded (device report 2026-10-05)', (tester) async {
+      await _open(tester, chooseDefault: false);
+      final date = find.byKey(const ValueKey('group-pick-date'));
+      await tester.tap(find.text('Voice Note'));
+      await tester.pumpAndSettle();
+      expect(date, findsNothing);
+      await tester.tap(find.text('Default Alarm'));
+      await tester.pumpAndSettle();
+      expect(date, findsOneWidget);
+      await tester.tap(find.text('Voice Note'));
+      await tester.pumpAndSettle();
+      expect(date, findsNothing);
+    });
+
     testWidgets('the Plan screen layout: glowing pickers and both kinds', (
       tester,
     ) async {
@@ -496,15 +511,13 @@ void main() {
       expect(repo.calls, isEmpty);
     });
 
-    testWidgets('Voice Note needs a note, said in red on Send', (tester) async {
+    testWidgets('Voice Note with nothing recorded offers no time and no Send '
+        '(2026-10-05)', (tester) async {
       final (repo, _) = await _open(tester);
       await tester.tap(find.text('Voice Note'));
       await tester.pumpAndSettle();
-      await pickDateAndTime(tester);
-      await tester.ensureVisible(find.text('Send to the group'));
-      await tester.tap(find.text('Send to the group'));
-      await tester.pumpAndSettle();
-      expect(find.text('Please record a voice note.'), findsOneWidget);
+      expect(find.byKey(const ValueKey('group-pick-date')), findsNothing);
+      expect(find.text('Send to the group'), findsNothing);
       expect(repo.calls, isEmpty);
     });
 

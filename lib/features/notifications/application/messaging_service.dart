@@ -111,7 +111,19 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     request,
     reminderNotificationId(request.itemId),
   );
-  // Fetch the voice note now rather than waiting for the rescue push.
+  // The notice FIRST (device report 2026-10-05): it used to wait for the
+  // voice download, which on a poor connection took 30 s and more, so the
+  // person saw nothing until they opened the app. The native alarm itself is
+  // armed by AlarmPushReceiver, not here (this engine has no native channels).
+  if (armed) {
+    await scheduler.showNewAlarmAlert(
+      itemId: request.itemId,
+      title: message.data['pushTitle'] as String? ?? 'New alarm for you',
+      body: message.data['pushBody'] as String? ?? request.title,
+      data: message.data,
+    );
+  }
+  // Then fetch the voice note, rather than waiting for the rescue push.
   if (request.voice != null) {
     final target = message.data['targetUid'];
     if (target is String && target.isNotEmpty) {
@@ -124,15 +136,6 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
         debugPrint('TimeApp: background voice fetch failed: $e');
       }
     }
-  }
-  if (armed) {
-    await scheduler.showNewAlarmAlert(
-      itemId: request.itemId,
-      title: message.data['pushTitle'] as String? ??
-          'New alarm for you',
-      body: message.data['pushBody'] as String? ?? request.title,
-      data: message.data,
-    );
   }
 }
 

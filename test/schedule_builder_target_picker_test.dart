@@ -135,6 +135,23 @@ void main() {
     expect(titleField, findsOneWidget);
   });
 
+  testWidgets('switching back to Voice Note hides the date and time until '
+      'a note is recorded (device report 2026-10-05)', (tester) async {
+    await tester.pumpWidget(host(initialTargetUid: 'friend-3'));
+    await tester.pumpAndSettle();
+    final date = find.byKey(const ValueKey('pick-date'));
+    await tester.tap(find.text('Voice Note'));
+    await tester.pumpAndSettle();
+    expect(date, findsNothing);
+    await tester.tap(find.text('Default Alarm'));
+    await tester.pumpAndSettle();
+    expect(date, findsOneWidget);
+    await tester.tap(find.text('Voice Note'));
+    await tester.pumpAndSettle();
+    expect(date, findsNothing);
+    expect(titleField, findsNothing);
+  });
+
   testWidgets('a name still loading never shows the raw uid', (tester) async {
     // Regression (2026-09-25): first Plan tap flashed uids for ~0.2s.
     await tester.pumpWidget(

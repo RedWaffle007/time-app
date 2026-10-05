@@ -72,6 +72,13 @@ class AlarmSoundService : Service() {
         // Fixed id: one segment rings at a time, and re-posting under the same
         // id updates the one notification rather than stacking them.
         private const val NOTIF_ID = 0x7A1A
+
+        /**
+         * Each new ring is posted under the other of two ids (2026-10-05): a
+         * NEW notification is what fires a full-screen intent, so the screen
+         * wakes and shows the alarm for every ring, not just the first.
+         */
+        private const val NOTIF_ID_ALT = 0x7A1B
         private const val WAKE_TAG = "time_app:alarm_sound"
         private const val TAG = "AlarmSound"
 
@@ -203,7 +210,14 @@ class AlarmSoundService : Service() {
          * in the queue, then look. A plan the native side never armed joins
          * as a new alarm at its own time.
          */
-        fun startForItem(context: Context, itemId: String, headline: String, scheduledEpoch: Long) {
+        fun startForItem(
+            context: Context,
+            itemId: String,
+            headline: String,
+            scheduledEpoch: Long,
+            voice: VoiceAlarmSpec? = null,
+            voiceMs: Long = 0L,
+        ) {
             if (itemId.isEmpty()) return
             if (headline.isNotBlank()) headlines[itemId] = headline
             val rows = AlarmDeliveryStore.load(context)
@@ -216,6 +230,8 @@ class AlarmSoundService : Service() {
                         scheduledEpoch = if (scheduledEpoch > 0) scheduledEpoch else System.currentTimeMillis(),
                         exact = true,
                         headline = headline,
+                        voice = voice,
+                        voiceMs = voiceMs,
                     ),
                 )
             }
@@ -533,6 +549,19 @@ class AlarmSoundService : Service() {
     /** The alarm whose sound is playing now. */
     private var soundingItem: String? = null
 
+    /**
+     * The alarm about to ring when the service promotes itself, so the very
+     * first notification — the one whose full-screen intent wakes a locked
+     * phone — already names it (device report 2026-10-05: posted with no
+     * item, the alarm screen was launched without its show-over-lock flags,
+     * and the screen went dark after 2 s).
+     */
+    private var launchItem: String? = null
+
+    /** The notification id in use now, and the alarm its full-screen intent fired for. */
+    private var notifId = NOTIF_ID
+    private var fullScreenFor: String? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -542,7 +571,15 @@ class AlarmSoundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Started with startForegroundService: promote at once, whatever the
-        // action, or Android ends the app for not doing so.
+        // action, or Android ends the app for not doing so — but name the
+        // alarm first, so the full-screen launch shows it over the lock.
+        if (!foreground) {
+            launchItem = RingQueuePolicy.nextSegment(
+                loadQueue(this, System.currentTimeMillis()).map { it.toAlarm() },
+                System.currentTimeMillis(),
+            )?.itemIds?.firstOrNull()
+            fullScreenFor = launchItem
+        }
         ensureForeground()
         when (intent?.action) {
             ACTION_STOP -> {
@@ -627,6 +664,14 @@ class AlarmSoundService : Service() {
             if (sound is Sound.Tone) postAt(sound.to) { releasePlayer() }
         }
         postAt(segment.endsAt) { endSegment() }
+        // A ring for another alarm than the one the screen was woken for:
+        // post it as a NEW notification so it wakes the screen again.
+        val first = segment.itemIds.first()
+        if (fullScreenFor != first) {
+            soundingItem = first
+            repostForFullScreen()
+            fullScreenFor = first
+        }
         // If this process dies mid-ring, the queue still looks again just
         // after the segment would have ended; a normal end re-arms it anyway.
         AlarmDeliveryScheduler.armQueueWake(
@@ -783,7 +828,7 @@ class AlarmSoundService : Service() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
             else 0
-        ServiceCompat.startForeground(this, NOTIF_ID, buildNotification(), type)
+        ServiceCompat.startForeground(this, notifId, buildNotification(), type)
         foreground = true
     }
 
@@ -799,7 +844,20 @@ class AlarmSoundService : Service() {
     private fun updateNotification() {
         if (!foreground) return
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(NOTIF_ID, buildNotification())
+        nm.notify(notifId, buildNotification())
+    }
+
+    /** The ringing notification under the other id: a new post, a new full-screen launch. */
+    private fun repostForFullScreen() {
+        if (!foreground) return
+        val old = notifId
+        notifId = if (old == NOTIF_ID) NOTIF_ID_ALT else NOTIF_ID
+        val type =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            else 0
+        ServiceCompat.startForeground(this, notifId, buildNotification(), type)
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(old)
     }
 
     private fun releasePlayer() {
@@ -918,7 +976,14 @@ class AlarmSoundService : Service() {
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
         foreground = false
+        launchItem = null
+        fullScreenFor = null
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).apply {
+            cancel(NOTIF_ID)
+            cancel(NOTIF_ID_ALT)
+        }
+        notifId = NOTIF_ID
         stopSelf()
         sendBroadcast(Intent(ACTION_RINGING_ENDED).setPackage(packageName))
     }
@@ -967,7 +1032,7 @@ class AlarmSoundService : Service() {
     }
 
     private fun currentItemId(): String =
-        soundingItem ?: current?.itemIds?.firstOrNull().orEmpty()
+        soundingItem ?: current?.itemIds?.firstOrNull() ?: launchItem.orEmpty()
 
     // With the phone unlocked Android shows this as a heads-up instead of the
     // full-screen alarm, so the heads-up itself must say who planned what.

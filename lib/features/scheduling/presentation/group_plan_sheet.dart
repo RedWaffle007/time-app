@@ -212,10 +212,11 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
   /// Set when Send found the note could not be sent; shown with Retry.
   String? _uploadError;
 
-  /// Once shown, the date, time and the rest stay shown.
-  bool _detailsRevealed = false;
+  /// The date, time and the rest: for a Default Alarm at once; for a Voice
+  /// Note only while a note is recorded or chosen — recording comes first,
+  /// whatever was picked before (device report 2026-10-05). What was filled
+  /// in is kept, only hidden.
   bool get _showDetails =>
-      _detailsRevealed ||
       _kind == AlarmKind.defaultAlarm ||
       (_isVoice && (_voiceDraft != null || _libraryNote != null));
   RecordedVoiceNote? _voiceDraft;
@@ -295,7 +296,6 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
       _uploadError = null;
       if (note != null) {
         _voiceError = false;
-        _detailsRevealed = true;
       }
     });
     if (note == null) {
@@ -432,7 +432,6 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
       _libraryNote = picked;
       _voiceError = false;
       _uploadError = null;
-      _detailsRevealed = true;
     });
     unawaited(_startPrep());
   }
@@ -831,9 +830,6 @@ class _GroupPlanSheetState extends ConsumerState<_GroupPlanSheet> {
                         _nameError = false;
                         _voiceError = false;
                         _uploadError = null;
-                        if (_kind == AlarmKind.defaultAlarm) {
-                          _detailsRevealed = true;
-                        }
                       });
                     },
             ),

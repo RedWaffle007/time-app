@@ -216,20 +216,8 @@ void main() {
     );
   });
 
-  testWidgets('cancels the fired notification on mount (no double tone)', (
-    t,
-  ) async {
-    final scheduler = _FakeScheduler();
-    await t.pumpWidget(harness(_FakeAlarmSound(), scheduler));
-    await t.pump();
-    // dismiss() cancels the OS notification for the item — its id falls back to
-    // the deterministic hash when the mirror is empty.
-    expect(scheduler.cancelled, contains(reminderNotificationId('a')));
-  });
-
-  testWidgets('claims service playback before releasing notification owner', (
-    t,
-  ) async {
+  testWidgets('opening the alarm screen never cancels the alarm: it would '
+      'stop the sound and its repeats (device report 2026-10-05)', (t) async {
     final claimReachedNative = Completer<void>();
     final sound = _FakeAlarmSound(startGate: claimReachedNative);
     final scheduler = _FakeScheduler();
@@ -238,15 +226,10 @@ void main() {
     await t.pump();
 
     expect(sound.starts, 1);
-    expect(
-      scheduler.cancelled,
-      isEmpty,
-      reason: 'notification ownership must survive until UI ownership lands',
-    );
-
     claimReachedNative.complete();
-    await t.pump();
-    expect(scheduler.cancelled, contains(reminderNotificationId('a')));
+    await t.pump(const Duration(seconds: 5));
+    expect(scheduler.cancelled, isEmpty);
+    expect(sound.stops, 0);
   });
 
   testWidgets('Dismiss stops the sound and leaves for My Schedule', (t) async {
@@ -786,6 +769,7 @@ class _FakeAlarmSound implements AlarmSound {
     String itemId, {
     String headline = '',
     DateTime? scheduledAtUtc,
+    AlarmVoice? voice,
   }) async {
     starts++;
     startHeadlines.add(headline);

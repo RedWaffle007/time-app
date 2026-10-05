@@ -46,6 +46,10 @@ class _MissedAlarmReviewHostState extends ConsumerState<MissedAlarmReviewHost> {
   /// cannot start a second fetch, play or "heard" write.
   bool _preparingVoice = false;
 
+  /// The note is playing on the pop-up (2026-10-05): it stays open, says
+  /// "Playing…", and closes as heard (with confetti) only once the note ends.
+  bool _playingVoice = false;
+
   /// Reviews whose note was just sent (R6). The review holds an item
   /// snapshot, so the button is hidden here rather than waiting for a resync.
   final _noteSent = <String>{};
@@ -115,10 +119,28 @@ class _MissedAlarmReviewHostState extends ConsumerState<MissedAlarmReviewHost> {
       setState(() => _preparingVoice = true);
       try {
         final path = await ref.read(voiceNoteCacheProvider).ensure(review.item);
-        await ref.read(voicePlayerProvider).play(path);
+        final player = ref.read(voicePlayerProvider);
+        final finished = player.completed.first;
+        await player.play(path);
+        if (!mounted) return;
+        setState(() {
+          _preparingVoice = false;
+          _playingVoice = true;
+        });
+        // Wait for the note to end (device report 2026-10-05: the pop-up
+        // closed the moment Play started). Bounded, in case the end is never
+        // reported: the note's own length plus a margin.
+        await finished.timeout(
+          Duration(milliseconds: review.item.voiceNote?.durationMs ?? 25000) +
+              const Duration(seconds: 5),
+          onTimeout: () {},
+        );
       } catch (_) {
         if (mounted) {
-          setState(() => _preparingVoice = false);
+          setState(() {
+            _preparingVoice = false;
+            _playingVoice = false;
+          });
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text("Couldn't load the voice note. Try again."),
@@ -131,11 +153,24 @@ class _MissedAlarmReviewHostState extends ConsumerState<MissedAlarmReviewHost> {
     if (!mounted) return;
     setState(() {
       _preparingVoice = false;
+      _playingVoice = false;
       _acting = true;
       _answering = review;
     });
     try {
-      await atLeast(service.markDone(review));
+      final committed = await atLeast(service.markDone(review));
+      // Heard in full: it closes to confetti, like a Done (2026-10-05).
+      if (committed && play) {
+        ref
+            .read(committedCelebrationProvider.notifier)
+            .celebrate(
+              CompletionCelebration.committed(
+                targetUid: review.item.targetUid,
+                itemId: review.item.id,
+                plannerUid: review.item.createdByUid,
+              ),
+            );
+      }
     } catch (_) {
       unawaited(service.resync());
       if (mounted) {
@@ -199,7 +234,7 @@ class _MissedAlarmReviewHostState extends ConsumerState<MissedAlarmReviewHost> {
         ? null
         : ref.watch(profileByUidProvider(item.createdByUid)).value?.name;
     final answering = _answering?.event.key == review.event.key;
-    final busy = _acting || _preparingVoice;
+    final busy = _acting || _preparingVoice || _playingVoice;
     return Column(
       key: ValueKey('missed-row-${item.id}'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -318,169 +353,158 @@ class _MissedAlarmReviewHostState extends ConsumerState<MissedAlarmReviewHost> {
                               child: combined
                                   ? _combined(context, service, reviews)
                                   : Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.stretch,
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  const Icon(
+                                    AppIcons.skipped,
+                                    size: Sizes.emptyStateIcon,
+                                  ),
+                                  const SizedBox(height: Space.md),
+                                  Text(
+                                    voice
+                                        ? 'Missed voice note'
+                                        : 'Missed alarm',
+                                    style: context.text.titleLarge,
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: Space.sm),
+                                  // The "permanently recorded" line was
+                                  // removed on request (2026-09-25).
+                                  Text(
+                                    missedPopupMessage(
+                                      review.item,
+                                      plannerName: plannerName,
+                                    ),
+                                    style: context.text.bodyMedium,
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: Space.lg),
+                                  ListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    leading: const Icon(AppIcons.reminders),
+                                    title: Text(review.item.title),
+                                    subtitle: Text(
+                                      missedPlannedAt(context, review.item),
+                                    ),
+                                  ),
+                                  const SizedBox(height: Space.lg),
+                                  if (_acting)
+                                    Text(
+                                      updatingLabel,
+                                      key: const ValueKey(
+                                        'missed-alarm-updating',
+                                      ),
+                                      style: context.text.titleMedium,
+                                      textAlign: TextAlign.center,
+                                    )
+                                  else if (voice)
+                                    Row(
                                       children: [
-                                        const Icon(
-                                          AppIcons.skipped,
-                                          size: Sizes.emptyStateIcon,
-                                        ),
-                                        const SizedBox(height: Space.md),
-                                        Text(
-                                          voice
-                                              ? 'Missed voice note'
-                                              : 'Missed alarm',
-                                          style: context.text.titleLarge,
-                                          textAlign: TextAlign.center,
-                                        ),
-                                        const SizedBox(height: Space.sm),
-                                        // The "permanently recorded" line was
-                                        // removed on request (2026-09-25).
-                                        Text(
-                                          missedPopupMessage(
-                                            review.item,
-                                            plannerName: plannerName,
-                                          ),
-                                          style: context.text.bodyMedium,
-                                          textAlign: TextAlign.center,
-                                        ),
-                                        const SizedBox(height: Space.lg),
-                                        ListTile(
-                                          contentPadding: EdgeInsets.zero,
-                                          leading: const Icon(
-                                            AppIcons.reminders,
-                                          ),
-                                          title: Text(review.item.title),
-                                          subtitle: Text(
-                                            missedPlannedAt(
-                                              context,
-                                              review.item,
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(height: Space.lg),
-                                        if (_acting)
-                                          Text(
-                                            updatingLabel,
+                                        Expanded(
+                                          child: OutlinedButton(
                                             key: const ValueKey(
-                                              'missed-alarm-updating',
+                                              'missed-voice-already-heard',
                                             ),
-                                            style: context.text.titleMedium,
-                                            textAlign: TextAlign.center,
-                                          )
-                                        else if (voice)
-                                          Row(
-                                            children: [
-                                              Expanded(
-                                                child: OutlinedButton(
-                                                  key: const ValueKey(
-                                                    'missed-voice-already-heard',
+                                            onPressed: _preparingVoice || _playingVoice
+                                                ? null
+                                                : () => unawaited(
+                                                    _actVoice(
+                                                      service,
+                                                      review,
+                                                      play: false,
+                                                    ),
                                                   ),
-                                                  onPressed: _preparingVoice
-                                                      ? null
-                                                      : () => unawaited(
-                                                          _actVoice(
-                                                            service,
-                                                            review,
-                                                            play: false,
-                                                          ),
-                                                        ),
-                                                  child: const Text(
-                                                    'Already heard',
-                                                  ),
-                                                ),
-                                              ),
-                                              const SizedBox(width: Space.sm),
-                                              Expanded(
-                                                child: FilledButton.icon(
-                                                  key: const ValueKey(
-                                                    'missed-voice-play',
-                                                  ),
-                                                  onPressed: _preparingVoice
-                                                      ? null
-                                                      : () => unawaited(
-                                                          _actVoice(
-                                                            service,
-                                                            review,
-                                                            play: true,
-                                                          ),
-                                                        ),
-                                                  icon: const Icon(
-                                                    AppIcons.voiceNotePlay,
-                                                  ),
-                                                  label: Text(
-                                                    _preparingVoice
-                                                        ? 'Loading…'
-                                                        : 'Play',
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          )
-                                        else
-                                          Row(
-                                            children: [
-                                              Expanded(
-                                                child: OutlinedButton(
-                                                  onPressed: _acting
-                                                      ? null
-                                                      : () => unawaited(
-                                                          _act(
-                                                            service,
-                                                            review,
-                                                            done: false,
-                                                          ),
-                                                        ),
-                                                  child: const Text(
-                                                    'Mark as Skipped',
-                                                  ),
-                                                ),
-                                              ),
-                                              const SizedBox(width: Space.sm),
-                                              Expanded(
-                                                child: FilledButton(
-                                                  onPressed: _acting
-                                                      ? null
-                                                      : () => unawaited(
-                                                          _act(
-                                                            service,
-                                                            review,
-                                                            done: true,
-                                                          ),
-                                                        ),
-                                                  child: const Text(
-                                                    'Mark as Done',
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
+                                            child: const Text('Already heard'),
                                           ),
-                                        // R6: the optional note, with the
-                                        // answers. Answering directly sends none.
-                                        if (!_acting &&
-                                            review.item.canSendReply &&
-                                            !_noteSent.contains(
-                                              review.event.key,
-                                            ))
-                                          Padding(
-                                            padding: const EdgeInsets.only(
-                                              top: Space.sm,
+                                        ),
+                                        const SizedBox(width: Space.sm),
+                                        Expanded(
+                                          child: FilledButton.icon(
+                                            key: const ValueKey(
+                                              'missed-voice-play',
                                             ),
-                                            child: Center(
-                                              child: SendNoteButton(
-                                                item: review.item,
-                                                enabled: !_preparingVoice,
-                                                onSent: () => setState(
-                                                  () => _noteSent.add(
-                                                    review.event.key,
+                                            onPressed: _preparingVoice || _playingVoice
+                                                ? null
+                                                : () => unawaited(
+                                                    _actVoice(
+                                                      service,
+                                                      review,
+                                                      play: true,
+                                                    ),
                                                   ),
-                                                ),
-                                              ),
+                                            icon: const Icon(
+                                              AppIcons.voiceNotePlay,
+                                            ),
+                                            label: Text(
+                                              _preparingVoice
+                                                  ? 'Loading…'
+                                                  : _playingVoice
+                                                  ? 'Playing…'
+                                                  : 'Play',
                                             ),
                                           ),
+                                        ),
+                                      ],
+                                    )
+                                  else
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: OutlinedButton(
+                                            onPressed: _acting
+                                                ? null
+                                                : () => unawaited(
+                                                    _act(
+                                                      service,
+                                                      review,
+                                                      done: false,
+                                                    ),
+                                                  ),
+                                            child: const Text(
+                                              'Mark as Skipped',
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: Space.sm),
+                                        Expanded(
+                                          child: FilledButton(
+                                            onPressed: _acting
+                                                ? null
+                                                : () => unawaited(
+                                                    _act(
+                                                      service,
+                                                      review,
+                                                      done: true,
+                                                    ),
+                                                  ),
+                                            child: const Text('Mark as Done'),
+                                          ),
+                                        ),
                                       ],
                                     ),
+                                  // R6: the optional note, with the
+                                  // answers. Answering directly sends none.
+                                  if (!_acting &&
+                                      review.item.canSendReply &&
+                                      !_noteSent.contains(review.event.key))
+                                    Padding(
+                                      padding: const EdgeInsets.only(
+                                        top: Space.sm,
+                                      ),
+                                      child: Center(
+                                        child: SendNoteButton(
+                                          item: review.item,
+                                          enabled: !_preparingVoice,
+                                          onSent: () => setState(
+                                            () =>
+                                                _noteSent.add(review.event.key),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ),
                           ),
                         ),

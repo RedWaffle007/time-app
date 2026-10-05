@@ -88,20 +88,7 @@ class ReminderService {
         // user's reminders must not fire into this user's session, and their ids
         // must not be reused. Done before anything else so the reconcile below
         // starts from a clean mirror. (Sign-out arrives here as uid == null.)
-        // The owner is read back first (2026-10-05): a cold start by the same
-        // person is NOT an account change, and must not cancel the alarm that
-        // just opened the app or the repeats waiting in the ring queue.
-        if (!_ownerLoaded) {
-          _uid = await _store.loadOwner();
-          _ownerLoaded = true;
-        }
-        if (uid != _uid) {
-          await _scheduler.cancelAll();
-          await _store.clear();
-          _uid = uid;
-          await _store.saveOwner(uid);
-          _audit.note(event: 'ACCOUNT_CHANGED', note: reason);
-        }
+        await _switchOwnerIfChanged(uid, reason);
         if (uid == null) return;
 
         final now = DateTime.now().toUtc();
@@ -116,6 +103,7 @@ class ReminderService {
           desired: desired,
           mirror: mirror,
           now: now,
+          presentItemIds: {for (final item in items) item.id},
         );
 
         if (plan.isEmpty) return; // the common case: nothing to do, nothing said
@@ -150,6 +138,31 @@ class ReminderService {
             if (!refused.contains(m.itemId)) m,
         ]);
       });
+
+  /// A signed-in user is known (app start, sign-in, account switch): clear
+  /// the device ONLY if it belongs to someone else. Deliberately not a
+  /// [sync]: a sync with no items would cancel every alarm this person has —
+  /// on a cold start opened by a ringing alarm, the alarm itself (device
+  /// report 2026-10-05: the voice note stopped 4 s in). Their own items
+  /// arrive through [sync] from the item stream.
+  Future<void> claimOwner(String uid) =>
+      _enqueue(() => _switchOwnerIfChanged(uid, 'account-changed'));
+
+  /// The owner is read back first (2026-10-05): a cold start by the same
+  /// person is NOT an account change, and must not cancel the alarm that just
+  /// opened the app or the repeats waiting in the ring queue.
+  Future<void> _switchOwnerIfChanged(String? uid, String reason) async {
+    if (!_ownerLoaded) {
+      _uid = await _store.loadOwner();
+      _ownerLoaded = true;
+    }
+    if (uid == _uid) return;
+    await _scheduler.cancelAll();
+    await _store.clear();
+    _uid = uid;
+    await _store.saveOwner(uid);
+    _audit.note(event: 'ACCOUNT_CHANGED', note: reason);
+  }
 
   /// Sign-out. Drops every scheduled reminder and the mirror with it.
   Future<void> clearAll() => sync(items: const [], uid: null, reason: 'clear');

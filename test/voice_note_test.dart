@@ -1429,15 +1429,15 @@ void main() {
       expect(repo.created.single['title'], 'Run');
     });
 
-    testWidgets('Voice Note without a recording asks for one', (tester) async {
+    testWidgets('Voice Note without a recording offers no time and no Send '
+        '(2026-10-05)', (tester) async {
       final (repo, client) = await pumpBuilder(tester);
       await tester.tap(find.text('Voice Note'));
       await tester.pumpAndSettle();
-      await send(tester);
+      expect(find.byKey(const ValueKey('pick-date')), findsNothing);
+      expect(find.byKey(const ValueKey('plan-send')), findsNothing);
       expect(repo.created, isEmpty);
       expect(client.uploads, isEmpty);
-      expect(find.text(kVoiceNoteRequired), findsOneWidget);
-      expect(find.text(kTaskNameRequired), findsNothing);
     });
 
     testWidgets('the layout: possessive zone line, glowing inputs, Send', (
@@ -1578,8 +1578,9 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('library-choice-remove')));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('voice-note-recorder')), findsOneWidget);
-      await send(tester);
-      expect(find.text(kVoiceNoteRequired), findsOneWidget);
+      // Back to recording first: no time and no Send until a note is there.
+      expect(find.byKey(const ValueKey('pick-date')), findsNothing);
+      expect(find.byKey(const ValueKey('plan-send')), findsNothing);
       // 2026-10-04: the pick starts the server copy at once, but a removed
       // choice is never sent with a plan (the Worker sweeps the copy).
       expect(client.attaches, hasLength(1));

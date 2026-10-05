@@ -42,6 +42,22 @@ final allItemsAsTargetProvider = StreamProvider<List<ScheduleItem>>((ref) {
   return ref.watch(scheduleRepositoryProvider).watchItemsForTarget(uid);
 });
 
+/// The signed-in user's target items, TAGGED with the uid they were loaded
+/// for (2026-10-05). For the reconcilers that cancel or delete things
+/// (alarms, voice notes): on a cold start the signed-out empty list could
+/// reach them just after the uid was known, and read as "this person has no
+/// plans" — the alarm that had just woken the phone was cancelled 4 s in.
+/// They act only when [uid] matches the signed-in user.
+final ownedTargetItemsProvider =
+    StreamProvider<({String uid, List<ScheduleItem> items})?>((ref) {
+  final uid = ref.watch(currentUidProvider);
+  if (uid == null) return Stream.value(null);
+  return ref
+      .watch(scheduleRepositoryProvider)
+      .watchItemsForTarget(uid)
+      .map((items) => (uid: uid, items: items));
+});
+
 /// Every item the signed-in user created as PLANNER.
 final allItemsAsPlannerProvider = StreamProvider<List<ScheduleItem>>((ref) {
   final uid = ref.watch(currentUidProvider);

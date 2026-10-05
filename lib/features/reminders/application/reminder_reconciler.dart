@@ -53,6 +53,13 @@ ReminderPlan reconcileReminders({
   required List<ReminderRequest> desired,
   required List<ScheduledReminder> mirror,
   required DateTime now,
+  // Every item id the list being reconciled actually contains. A mirrored
+  // alarm whose item is MISSING from it (a stale or partial list, e.g. the
+  // empty one left over from before sign-in) is kept, not cancelled: only an
+  // item that is present and no longer wanted (answered, dismissed,
+  // withdrawn) loses its alarm (device report 2026-10-05). Null = trust the
+  // list fully, as before.
+  Set<String>? presentItemIds,
 }) {
   // Sorted so that id allocation is a deterministic function of the inputs.
   // Firestore snapshot order is not stable, and without this two devices — or
@@ -79,9 +86,17 @@ ReminderPlan reconcileReminders({
   // account — because each of those simply stops producing a desired entry.
   // Four separate call sites hooked into four transitions would have to be right
   // four times; this has to be right once.
+  bool missingButLive(ScheduledReminder m) =>
+      presentItemIds != null &&
+      !presentItemIds.contains(m.itemId) &&
+      m.fireAtUtc.add(kAlarmLiveWindow).isAfter(now);
+  final kept = [
+    for (final m in mirror)
+      if (!wantedIds.contains(m.itemId) && missingButLive(m)) m,
+  ];
   final toCancel = [
     for (final m in mirror)
-      if (!wantedIds.contains(m.itemId)) m.notificationId,
+      if (!wantedIds.contains(m.itemId) && !missingButLive(m)) m.notificationId,
   ];
 
   // Ids already spoken for. Seeded with every SURVIVING item's current id first,
@@ -90,10 +105,11 @@ ReminderPlan reconcileReminders({
   final taken = <int>{
     for (final r in wanted)
       if (mirrorByItem[r.itemId] case final m?) m.notificationId,
+    for (final m in kept) m.notificationId,
   };
 
   final toSchedule = <ReminderScheduleAction>[];
-  final nextMirror = <ScheduledReminder>[];
+  final nextMirror = <ScheduledReminder>[...kept];
 
   for (final request in wanted) {
     final existing = mirrorByItem[request.itemId];

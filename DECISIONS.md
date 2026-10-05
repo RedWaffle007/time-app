@@ -8160,3 +8160,78 @@ never arms repeats.
   alarms"), a row each with who/what, planned time and its own answers
   (Done/Skipped, or Play/Already heard for a voice note). A single miss keeps
   the old card; its text is now "It rang 3 times with no response."
+
+### Device fixes on the ring queue build (2026-10-05)
+
+- **Voice note stopped 2-3 s in on a locked phone (regression from stage 3).**
+  The alarm screen, on opening, "cancelled the fired notification" through
+  `ReminderService.dismiss` — which since the ring queue also removes the
+  alarm from the native queue. Opening over the lock screen therefore ended
+  the ring (and its repeats). The mount-time cancel is gone: the native
+  service removes the duplicate scheduled notification itself. Test-pinned:
+  opening the screen cancels nothing and stops nothing.
+- **Voice Note → Default Alarm → Voice Note showed date/time before
+  recording.** A "details revealed" latch, set by Default Alarm, never reset.
+  Removed from the one-friend and group/several-friends screens: Voice Note
+  shows the date, time and Send only while a note is recorded or chosen.
+  Filled-in values are kept, only hidden.
+- **Second device report: the voice note still stopped ~4 s in, then the
+  DEFAULT tone rang.** The audit CSV showed it exactly: `AUDIO_FIRED` →
+  `VOICE_PLAYING` → 4 s later `RECONCILE account-changed cancel=1` →
+  `left the queue`. On every cold start the uid goes null → signed-in, and a
+  listener ran a reminder sync with an EMPTY item list, cancelling every
+  alarm on the phone. Pre-queue, a cancel only dropped one sound owner while
+  the alarm screen's own claim kept it ringing, which hid the bug. Now a
+  signed-in uid only CLAIMS the device (`ReminderService.claimOwner`: clears
+  it only for a different account); sign-out still syncs empty. Then the
+  alarm screen's fallback re-added the alarm WITHOUT its voice note, so the
+  tone rang; the fallback now carries the voice note (path, hash, size,
+  length). Volume Down in that run went to the home screen (the alarm screen
+  was gone after unlock); it only works while Mind Time's alarm screen is in
+  front.
+- **Third device report: the "new alarm" notice only came when the app was
+  opened, and the alarm rang the tone, not the voice note.** Logs: the FCM
+  push DID reach the killed app (16:02:59), but (a) the background Dart
+  engine has none of the app's native channels, so it could never arm the
+  native alarm — it was armed only when the app opened; (b) it waited for
+  the voice download before showing the notice; (c) the download (through
+  the Worker) timed out after 30 s on an unstable Wi-Fi (pings up to 1 s,
+  packet loss), so the note never reached the phone and the alarm fell back
+  to the tone (`VOICE_FALLBACK`). Fixes: `AlarmPushReceiver` (native, beside
+  firebase_messaging's receiver) arms the alarm with its voice note straight
+  from the push, using Dart's FNV id so the app's later arming replaces it;
+  the Dart handler shows the notice before downloading; a stalled voice
+  download is retried once (a Worker refusal is not). The missed pop-up's
+  Play downloads the same file, so it failed for the same reason.
+- **Fourth device report (screen dark after 2 s; the voice note became the
+  tone mid-ring; missed Play failing).** Logs again: (a) the service posted
+  its first, full-screen notification before it knew which alarm it was
+  ringing, so the alarm screen was launched without the item and refused
+  to show over the lock (`setShowWhenLocked … false`, `canShowWhenLocked:
+  false`) — the item is now resolved first, and every ring for another
+  alarm is reposted under a second id so its full-screen intent fires
+  again; (b) the voice-note folder was EMPTY: the voice clean-up pruned
+  against a stale/empty item list on the cold start the alarm caused,
+  deleting the note mid-ring — it now never deletes a copy younger than
+  26 h, and both it and the reminder sync ignore the item stream while it
+  reloads (a reloading provider still carries its previous, empty list);
+  (c) missed Play had to re-download the deleted note on a failing Wi-Fi.
+- **Fifth device report (screen dark after 2 s again).** System log: the
+  launch fix worked (`setShowWhenLocked false → true` at 18:13:01), but at
+  18:13:04 the reminder sync cancelled the ringing alarm (`items … cancel=1`),
+  the queue ended, and the alarm screen dropped its show-over-lock flag.
+  Cause: a cold start's signed-out EMPTY item list could reach the sync just
+  after the uid was known, read as "no plans". Two fixes: the reconcilers
+  that cancel or delete (reminders, voice notes) now read
+  `ownedTargetItemsProvider`, a list tagged with the uid it was loaded for,
+  and act only when it matches; and `reconcileReminders` keeps a mirrored
+  alarm whose item is MISSING from the list (within the 24 h window) — only
+  a present, no-longer-wanted item (answered, dismissed, withdrawn) is
+  cancelled.
+- **Missed pop-up Play** now keeps the pop-up open ("Playing…") until the
+  note ends, then records it heard and closes to confetti; Already heard
+  closes at once with no confetti.
+- **Formatting (user-directed):** never format a whole file. The files this
+  session had formatted were restored from `3a5b85f` with only the real
+  edits re-applied (the missed pop-up's ~170 re-indented lines went back to
+  their original layout). Rule recorded in handoff.md, CLAUDE.md and memory.

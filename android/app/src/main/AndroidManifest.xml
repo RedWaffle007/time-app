@@ -205,6 +205,19 @@
             android:exported="false"
             android:directBootAware="true"
             android:name=".reminders.AlarmDeliveryReceiver" />
+        <!-- A "new alarm for you" push arms the alarm natively, even with
+             the app killed (2026-10-05): the Dart background handler has no
+             native channels. FCM delivers to every matching receiver in the
+             package, beside firebase_messaging's own; only Google Play
+             services may send it. -->
+        <receiver
+            android:exported="true"
+            android:permission="com.google.android.c2dm.permission.SEND"
+            android:name=".reminders.AlarmPushReceiver">
+            <intent-filter>
+                <action android:name="com.google.android.c2dm.intent.RECEIVE" />
+            </intent-filter>
+        </receiver>
         <!-- Dismiss on the "Rings again at ..." notice between rings
              (2026-10-04): cancels the next ring, records the dismissal. -->
         <receiver

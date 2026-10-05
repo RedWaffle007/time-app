@@ -91,12 +91,17 @@ final voiceDeliveryReconcilerProvider = Provider<VoiceDeliveryReconciler>((
 final voiceDeliverySyncProvider = Provider<void>((ref) {
   final uid = ref.watch(currentUidProvider);
   final reconciler = ref.watch(voiceDeliveryReconcilerProvider);
-  ref.listen<AsyncValue<List<ScheduleItem>>>(allItemsAsTargetProvider, (
+  ref.listen<AsyncValue<({String uid, List<ScheduleItem> items})?>>(
+    ownedTargetItemsProvider, (
     _,
     next,
   ) {
-    final items = next.value;
-    if (items == null) return;
+    // Never while reloading, and never on a list loaded for another uid
+    // (2026-10-05): the empty list from before sign-in is not this person's
+    // plans.
+    final owned = next.value;
+    if (owned == null || next.isLoading || owned.uid != uid) return;
+    final items = owned.items;
     unawaited(reconciler.reconcile(uid: uid, items: items));
   }, fireImmediately: true);
 });

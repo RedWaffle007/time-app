@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -50,9 +51,12 @@ ScheduleItem _item(
 );
 
 class _Client implements VoiceNoteClient {
-  _Client({this.fail = false});
+  _Client({this.fail = false, this.stallFirst = 0});
   bool fail;
   var downloads = 0;
+
+  /// The first [stallFirst] downloads time out, like a poor Wi-Fi.
+  int stallFirst;
 
   @override
   Future<Uint8List> download({
@@ -60,6 +64,7 @@ class _Client implements VoiceNoteClient {
     required String itemId,
   }) async {
     downloads++;
+    if (downloads <= stallFirst) throw TimeoutException('stalled');
     if (fail) throw const VoiceNoteFailure('offline');
     return _audio;
   }
@@ -234,6 +239,23 @@ void main() {
       expect(receipts, ['a']);
     });
 
+    test('a stalled download is tried once more; a refusal is not '
+        '(2026-10-05)', () async {
+      final stalled = _Client(stallFirst: 1);
+      final path = await VoiceNoteCache(
+        stalled,
+        () async => temp,
+      ).ensure(_item('retry'));
+      expect(File(path).existsSync(), isTrue);
+      expect(stalled.downloads, 2);
+      final refused = _Client(fail: true);
+      await expectLater(
+        VoiceNoteCache(refused, () async => temp).ensure(_item('refused')),
+        throwsA(isA<VoiceNoteFailure>()),
+      );
+      expect(refused.downloads, 1);
+    });
+
     test('one failure does not stop the others', () async {
       final receipts = <String>[];
       final r = VoiceDeliveryReconciler(
@@ -253,7 +275,9 @@ void main() {
 
     test('copies no longer needed are deleted; wanted ones kept', () async {
       final dir = Directory('${temp.path}/voice-notes')..createSync();
-      File('${dir.path}/stale.m4a').writeAsBytesSync([1]);
+      File('${dir.path}/stale.m4a')
+        ..writeAsBytesSync([1])
+        ..setLastModifiedSync(DateTime.now().subtract(const Duration(days: 2)));
       File('${dir.path}/keep.m4a').writeAsBytesSync(_audio);
       File('${dir.path}/notes.txt').writeAsStringSync('not ours');
       final r = VoiceDeliveryReconciler(
@@ -269,6 +293,33 @@ void main() {
       expect(File('${dir.path}/stale.m4a').existsSync(), isFalse);
       expect(File('${dir.path}/keep.m4a').existsSync(), isTrue);
       expect(File('${dir.path}/notes.txt').existsSync(), isTrue);
+    });
+
+    test('a copy younger than a day is never deleted, even when the list '
+        'does not name it (stale list on a cold start, 2026-10-05)', () async {
+      final dir = Directory('${temp.path}/voice-notes')..createSync();
+      File('${dir.path}/ringing-now.m4a').writeAsBytesSync(_audio);
+      final r = VoiceDeliveryReconciler(
+        VoiceNoteCache(_Client(), () async => temp),
+        (_) async {},
+      );
+      final result = await r.reconcile(uid: 'ME', items: const [], now: _now);
+      expect(result.pruned, 0);
+      expect(File('${dir.path}/ringing-now.m4a').existsSync(), isTrue);
+    });
+
+    test('the item stream is ignored while it reloads or belongs to another '
+        'uid', () {
+      for (final path in [
+        'lib/features/voice_notes/application/voice_delivery_reconciler.dart',
+        'lib/features/reminders/application/reminder_providers.dart',
+      ]) {
+        expect(
+          File(path).readAsStringSync(),
+          contains('owned.uid != uid) return;'),
+          reason: path,
+        );
+      }
     });
 
     test('signed out: nothing happens', () async {

@@ -1066,6 +1066,11 @@ no exceptions, no "just this once." Read-only git (`status`, `diff`, `log`,
 
 ## Working agreement
 
+- **Never format a whole file** — no `dart format` or any other formatter on
+  any file, ever (user-directed 2026-10-05). Edit by hand in the file's own
+  layout and touch only the lines the change needs; a formatted file hides
+  the real change in the diff. See handoff.md "Operating rules".
+
 - Before writing code in a step, state the plan briefly and wait for confirmation.
 - Ask when a decision has real trade-offs rather than guessing.
 - Stop for review after each numbered step; do not run ahead.

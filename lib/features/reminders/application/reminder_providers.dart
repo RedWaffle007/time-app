@@ -113,13 +113,19 @@ final reminderSyncProvider = Provider<void>((ref) {
   service.initialize();
 
   ref.listen(
-    allItemsAsTargetProvider,
+    ownedTargetItemsProvider,
     (previous, next) {
-      final items = next.value;
-      if (items == null) return; // loading, or a stream error — leave the OS as-is
+      final owned = next.value;
+      // Loading, or a stream error — leave the OS as-is. A RELOADING provider
+      // still carries its previous list (empty from before sign-in), and a
+      // list loaded for another uid is not this person's: syncing either
+      // would cancel every alarm (2026-10-05).
+      final uid = ref.read(currentUidProvider);
+      if (owned == null || next.isLoading || owned.uid != uid) return;
+      final items = owned.items;
       service.sync(
         items: items,
-        uid: ref.read(currentUidProvider),
+        uid: uid,
         reason: 'items',
         plannerNames: ref.read(reminderPlannerNamesProvider),
       );
@@ -131,29 +137,37 @@ final reminderSyncProvider = Provider<void>((ref) {
   // Idempotent: an unchanged sentence is an unchanged fingerprint, so nothing
   // re-arms.
   ref.listen(reminderPlannerNamesProvider, (previous, next) {
-    final items = ref.read(allItemsAsTargetProvider).value;
-    if (items == null) return;
+    final current = ref.read(ownedTargetItemsProvider);
+    final owned = current.value;
+    final uid = ref.read(currentUidProvider);
+    if (owned == null || current.isLoading || owned.uid != uid) return;
+    final items = owned.items;
     service.sync(
       items: items,
-      uid: ref.read(currentUidProvider),
+      uid: uid,
       reason: 'planner-names',
       plannerNames: next,
     );
   });
 
-  // Sign-out and account switches. `sync` itself detects the uid change and
-  // clears everything, so this only has to make sure it is CALLED — the item
-  // stream goes empty on sign-out but a stream that never emits again would
-  // otherwise leave the previous user's reminders armed on the device.
+  // Sign-out and account switches — the item stream goes empty on sign-out,
+  // and a stream that never emits again would otherwise leave the previous
+  // user's reminders armed on the device.
+  //
+  // A signed-in uid only CLAIMS the device (2026-10-05): it clears it when it
+  // belonged to someone else, and never reconciles against an empty list.
+  // Every cold start goes null → uid here, and that empty-list sync used to
+  // cancel every alarm — including the voice note that had just opened the
+  // app, 4 s into its ring.
   ref.listen(
     currentUidProvider,
     (previous, next) {
       if (previous == next) return;
-      service.sync(
-        items: const [],
-        uid: next,
-        reason: next == null ? 'signed-out' : 'account-changed',
-      );
+      if (next == null) {
+        service.sync(items: const [], uid: null, reason: 'signed-out');
+      } else {
+        service.claimOwner(next);
+      }
     },
   );
 });

@@ -151,11 +151,11 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
   /// Set when Send found the voice note could not be sent; shown with Retry.
   String? _uploadError;
 
-  /// The date, time and the rest, once revealed, stay revealed: discarding a
-  /// note must not make fields the planner already filled in vanish.
-  bool _detailsRevealed = false;
+  /// The date, time and the rest: for a Default Alarm at once; for a Voice
+  /// Note only while a note is recorded or chosen — recording comes first,
+  /// whatever was picked before (device report 2026-10-05). What was filled
+  /// in is kept, only hidden.
   bool get _showDetails =>
-      _detailsRevealed ||
       _isSelf ||
       _kind == AlarmKind.defaultAlarm ||
       (_isVoice && (_voiceDraft != null || _libraryNote != null));
@@ -629,9 +629,6 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
                           _nameError = false;
                           _voiceError = false;
                           _uploadError = null;
-                          if (_kind == AlarmKind.defaultAlarm) {
-                            _detailsRevealed = true;
-                          }
                         });
                       },
               ),
@@ -814,7 +811,6 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       _libraryNote = picked;
       _voiceError = false;
       _uploadError = null;
-      _detailsRevealed = true;
     });
     unawaited(_startPrep());
   }
@@ -837,7 +833,6 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
       _uploadError = null;
       if (note != null) {
         _voiceError = false;
-        _detailsRevealed = true;
       }
     });
     if (note == null) {
@@ -1013,7 +1008,6 @@ class _ScheduleBuilderScreenState extends ConsumerState<ScheduleBuilderScreen> {
           // friends the note is kept and sent again for the new person.
           if (from) {
             _kind = null;
-            _detailsRevealed = false;
           }
           if (_prepHasSource) {
             _prep.retarget([grant.targetUid], groupId: grant.groupId);

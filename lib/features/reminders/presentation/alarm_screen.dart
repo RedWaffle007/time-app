@@ -21,6 +21,7 @@ import '../application/reminder_policy.dart';
 import '../application/reminder_providers.dart';
 import '../data/alarm_lifecycle_store.dart';
 import '../data/alarm_sound.dart';
+import '../../voice_notes/application/voice_note_cache.dart';
 import '../domain/reminder.dart';
 import '../../outcomes/presentation/reply_note.dart';
 
@@ -143,10 +144,24 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
       // restarting playback on an unlocked/full-screen launch.
       // The UI-fallback start carries the sentence too, for the heads-up of an
       // alarm whose native delivery did not run first.
+      // A voice note travels with it (device report 2026-10-05): without it
+      // a plan the native queue lost would ring the default tone instead.
+      AlarmVoice? voice;
+      final note = item?.voiceNote;
+      if (item != null && item.isVoiceAlarm && note != null) {
+        voice = AlarmVoice(
+          path: await ref.read(voiceNoteCacheProvider).pathFor(item.id),
+          sha256: note.sha256,
+          sizeBytes: note.sizeBytes,
+          durationMs: note.durationMs,
+        );
+        if (!mounted) return;
+      }
       await sound.start(
         widget.itemId,
         headline: _headlineNow() ?? '',
         scheduledAtUtc: item?.scheduledInstantUtc,
+        voice: voice,
       );
       if (!mounted) return;
       final uid = ref.read(currentUidProvider);
@@ -157,11 +172,11 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
               .recordRangFallback(uid, widget.itemId),
         );
       }
-      // `dismiss` here means "cancel the OS notification for this item" — it
-      // removes the redundant scheduled surface now that the foreground
-      // service owns sound and its actionable notification. It does not
-      // navigate; that is `_leave`.
-      await ref.read(reminderServiceProvider).dismiss(widget.itemId);
+      // NEVER cancel the alarm here (device report 2026-10-05). Cancelling
+      // takes it out of the native ring queue: opening this screen over the
+      // lock screen stopped the voice note 2-3 s in and dropped its repeats.
+      // The native service removes the duplicate scheduled notification
+      // itself when it starts ringing.
       if (mounted) _watchRinging();
     });
   }
