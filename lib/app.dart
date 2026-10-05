@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/theme/app_text.dart';
 import 'core/theme/app_theme.dart';
+import 'core/widgets/app_overlay_scope.dart';
 import 'core/widgets/time_backdrop.dart';
 import 'features/applock/presentation/app_lock_gate.dart';
 import 'features/auth/application/auth_providers.dart';
@@ -478,6 +479,9 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
         ),
         child: DeviceClockScope(
           use24Hour: ref.watch(deviceUses24HourProvider),
+          // An overlay for the hosts above the router (2026-10-05): without
+          // it a tooltip or menu in them is a red error screen.
+          child: AppOverlayScope(
           child: Listener(
             behavior: HitTestBehavior.translucent,
             onPointerDown: (_) {
@@ -507,6 +511,7 @@ class _TimeAppState extends ConsumerState<TimeApp> with WidgetsBindingObserver {
                 ),
               ),
             ),
+          ),
           ),
         ),
       ),

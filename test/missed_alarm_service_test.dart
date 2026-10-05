@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 
 import 'package:time_app/core/theme/app_theme.dart';
+import 'package:time_app/core/widgets/app_overlay_scope.dart';
 import 'package:time_app/features/applock/application/app_lock_controller.dart';
 import 'package:time_app/features/applock/application/app_lock_providers.dart';
 import 'package:time_app/features/applock/data/app_lock_store.dart';
@@ -640,6 +641,9 @@ void main() {
       VoiceNoteCache? cache,
       Set<String> ringing = const {},
       bool locked = false,
+      // Where the real app puts it: in MaterialApp.builder, above the
+      // router's navigator (device report 2026-10-05).
+      bool aboveRouter = false,
     }) async {
       outcomes = _RecordingOutcomes();
       timeline = _RecordingTimeline();
@@ -681,13 +685,21 @@ void main() {
               ),
             ),
           ],
-          child: MaterialApp(
-            theme: AppTheme.light,
-            home: const MissedAlarmReviewHost(
-              enabled: true,
-              child: Scaffold(body: Text('Schedule')),
-            ),
-          ),
+          child: aboveRouter
+              ? MaterialApp(
+                  theme: AppTheme.light,
+                  builder: (context, child) => AppOverlayScope(
+                    child: MissedAlarmReviewHost(enabled: true, child: child!),
+                  ),
+                  home: const Scaffold(body: Text('Schedule')),
+                )
+              : MaterialApp(
+                  theme: AppTheme.light,
+                  home: const MissedAlarmReviewHost(
+                    enabled: true,
+                    child: Scaffold(body: Text('Schedule')),
+                  ),
+                ),
         ),
       );
       await service.sync(items, 'target');
@@ -927,6 +939,34 @@ void main() {
       await tester.pump(const Duration(seconds: 4));
       expect(popup, findsNothing);
       await open(tester, [rung('alarm-1')], locked: true);
+      expect(popup, findsNothing);
+      expect(find.text('Schedule'), findsOneWidget);
+    });
+
+    testWidgets('in the real app position (above the router): no error '
+        'screen, the ✕ tooltip works, and Send note opens ON TOP of the '
+        'pop-up', (tester) async {
+      await open(tester, [rung('alarm-1')], aboveRouter: true);
+      expect(tester.takeException(), isNull);
+      expect(popup, findsOneWidget);
+      await tester.longPress(find.byKey(const ValueKey('missed-close')));
+      await tester.pumpAndSettle();
+      expect(find.text('Close'), findsOneWidget);
+      await tester.tap(find.text('Send note'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await tester.enterText(
+        find.byKey(const ValueKey('send-note-text')),
+        'On my way',
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('send-note-send')));
+      await tester.pumpAndSettle();
+      expect(replies.replies, ['target/alarm-1/On my way']);
+      // The pop-up is still there, answers intact.
+      expect(find.byKey(const ValueKey('missed-done-alarm-1')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('missed-close')));
+      await tester.pumpAndSettle();
       expect(popup, findsNothing);
       expect(find.text('Schedule'), findsOneWidget);
     });

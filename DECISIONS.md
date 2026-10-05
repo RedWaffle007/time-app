@@ -8291,3 +8291,26 @@ Steps 1-6 of the plan above, all hand-edited (no formatter):
 - **Test helper:** `test/support/missed_alarm_fakes.dart` (`noMissedAlarms()`,
   `missedAlarmsWith(items)`) lets any screen that shows the button render
   without Firebase.
+
+### "No Overlay widget found" red screen — fixed app-wide (2026-10-05)
+
+Device report: unlocking after a ring showed Flutter's red error screen. The
+app-wide hosts (splash, app lock, celebration, Missed pop-up) sit in
+`MaterialApp.builder`, ABOVE the router's navigator — the only Overlay and
+Navigator the app had. The new Missed pop-up's ✕ tooltip needs an Overlay
+(the red screen), and its Send note dialog needs a Navigator. The old tests
+put the host UNDER `MaterialApp(home:)`, so they never saw it.
+
+- `AppOverlayScope` (core/widgets) wraps that whole layer in one stable
+  Overlay: any tooltip / menu / dropdown placed there works, now and later.
+  Deliberately NOT a Navigator: `showDialog` uses the root navigator by
+  default, and an outer Navigator would have moved every dialog in the app
+  there (and off the Back button).
+- The Missed pop-up has its own one-page Navigator (rebuilt in place, state
+  kept) inside `HeroControllerScope.none` — the app's hero controller belongs
+  to the router's navigator and cannot be shared (a second red screen the new
+  test caught). Send note now opens on top of the pop-up.
+- Tests place the hosts where the app does (`MaterialApp.builder`):
+  `app_overlay_scope_test.dart` (reproduces the bug without the scope) and
+  the pop-up's "real app position" test (no error, tooltip, Send note).
+  The other hosts were audited: none uses an overlay or a navigator.

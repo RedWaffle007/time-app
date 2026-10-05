@@ -303,7 +303,18 @@ class _MissedAlarmReviewHostState extends ConsumerState<MissedAlarmReviewHost>
             ),
             if (visible)
               Positioned.fill(
-                child: ColoredBox(
+                // Its own navigator (2026-10-05): this pop-up sits above the
+                // router, so a dialog it opens (Send note) needs a navigator
+                // of its own to open ON TOP of it, and its ✕ tooltip an
+                // overlay. One page, rebuilt in place, so the deck keeps its
+                // state. No hero animations: the app's hero controller
+                // belongs to the router's navigator and cannot be shared.
+                child: HeroControllerScope.none(
+                child: Navigator(
+                  pages: [
+                    MaterialPage<void>(
+                      key: const ValueKey('missed-popup-page'),
+                      child: ColoredBox(
                   color: context.colors.scrim.withValues(alpha: 0.55),
                   child: SafeArea(
                     child: Center(
@@ -325,6 +336,11 @@ class _MissedAlarmReviewHostState extends ConsumerState<MissedAlarmReviewHost>
                       ),
                     ),
                   ),
+                ),
+                    ),
+                  ],
+                  onDidRemovePage: (_) {},
+                ),
                 ),
               ),
           ],
