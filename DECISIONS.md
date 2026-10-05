@@ -8235,3 +8235,59 @@ never arms repeats.
   session had formatted were restored from `3a5b85f` with only the real
   edits re-applied (the missed pop-up's ~170 re-indented lines went back to
   their original layout). Rule recorded in handoff.md, CLAUDE.md and memory.
+
+## Missed pop-up: two card decks + the 🔔 Missed button (2026-10-05)
+
+User-directed, building on "Volume Down only silences" (same day). Replaces
+the one-at-a-time missed-alarm card (UI-RULES §6.16, 2026-09-25).
+
+- **What is in it:** every alarm of mine that rang at least once, is
+  unanswered and is not ringing now — silenced, waiting for a repeat, or ran
+  out (`missedAlarms()` in `reminders/application/missed_alarms.dart`).
+  Repeats keep coming until an alarm is ANSWERED in the pop-up; opening the
+  app or closing the pop-up answers nothing.
+- **Shown on every app open** while anything waits, and from the 🔔 Missed
+  button. Never above the app lock or the cold-start reveal, never while an
+  alarm rings.
+- **Two decks, voice notes first.** Swipeable cards ("2 of 5"), one alarm per
+  card: who planned it and the planned time (and the task for default
+  alarms).
+  - Voice card: **Play** · **Already heard** · **Send note**. Playing it in
+    full, or Already heard, answers it (heard, planner told at once, its
+    repeats stop); after a full play the card shows **Played ✓** with Send
+    note still there. Back-and-forth swiping is free.
+  - Default deck, once every voice card is answered: **Skip** · **Done** ·
+    **Send note**, answered per card — no bulk "read all" action (1a).
+  - **✕** closes the pop-up without answering anything.
+- **The 🔔 Missed button** sits at the far right of the Plan header, always
+  visible, with the standard count badge (§6.2a) when anything waits. With
+  nothing waiting it says so.
+- **Icons:** two new concepts in `app_icons.dart` — `missed`
+  (`notifications_outlined`, the button) and `played`
+  (`done_all`, the Played state). Both glyphs are unused elsewhere. No new
+  colour, type or spacing token: the deck reuses the card, scrim, button and
+  count-badge recipes. One size: `Sizes.missedCardHeight` (220), the swipe
+  area's fixed height, so every card in a deck is the same size and the
+  pop-up does not jump while swiping.
+
+### Missed pop-up — built (2026-10-05)
+
+Steps 1-6 of the plan above, all hand-edited (no formatter):
+- **Volume Down silences** (`AlarmSoundService` ACTION_VOLUME_SILENCE →
+  `endSegment(silenced = true)` → `RingQueuePolicy.creditSilenced`): the ring
+  playing ends and counts, the alarm stays queued with its next repeat 10 min
+  after that ring started, no dismissal, no planner message. The alarm
+  screen leaves on Volume Down without stopping or dismissing.
+- **The list:** `missedAlarms()` (pure). **The pop-up:**
+  `missed_alarm_review_host.dart`, rewritten (the old single/combined card
+  is gone); answers go through `MissedAlarmService.answer()` — a ran-out alarm
+  via its review (keeps the unavailable fact), a silenced/waiting one via the
+  plain first-write-wins outcome + planner push. Ringing alarms are polled
+  natively every 3 s and hide the pop-up. **The button:** `MissedButton` in
+  the Plan AppBar actions; it bumps `missedPopupTriggerProvider`.
+- **Send note** stays on answered cards (the rules never tied a reply to the
+  outcome; only the old UI hid it), and **Dismiss & reply** is now offered on
+  default alarms from someone else too.
+- **Test helper:** `test/support/missed_alarm_fakes.dart` (`noMissedAlarms()`,
+  `missedAlarmsWith(items)`) lets any screen that shows the button render
+  without Firebase.

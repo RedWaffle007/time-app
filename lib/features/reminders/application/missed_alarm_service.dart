@@ -252,6 +252,43 @@ class MissedAlarmService extends ChangeNotifier {
   Future<bool> markSkipped(MissedAlarmReview review) =>
       _choose(review, MissedAlarmReviewChoice.skipped);
 
+  /// Answers [item] from the Missed pop-up (2026-10-05): Done (a voice note
+  /// heard counts as Done) or Skipped. One that ran out on this phone goes
+  /// through its review, which keeps the "unavailable" fact; one that was
+  /// silenced or is waiting for a repeat gets the plain first-write-wins
+  /// outcome. Either way the planner is told, and the reminder reconciler
+  /// stops its repeats. Returns whether THIS call recorded it.
+  Future<bool> answer(ScheduleItem item, {required bool done}) async {
+    for (final review in _reviews) {
+      if (review.item.id == item.id) {
+        return done ? markDone(review) : markSkipped(review);
+      }
+    }
+    final uid = item.targetUid;
+    final changed = done
+        ? await _outcomes.markDoneIfUnsettled(
+            uid,
+            item.id,
+            plannerUid: item.createdByUid,
+          )
+        : await _outcomes.markSkippedIfUnsettled(
+            uid,
+            item.id,
+            reason: '',
+            plannerUid: item.createdByUid,
+          );
+    if (changed && item.createdByUid != uid) {
+      _retryInBackground(
+        _notifier.notifyConfirmed(
+          event: NotifyEvent.outcome,
+          targetUid: uid,
+          itemId: item.id,
+        ),
+      );
+    }
+    return changed;
+  }
+
   Future<bool> _choose(
     MissedAlarmReview review,
     MissedAlarmReviewChoice choice,

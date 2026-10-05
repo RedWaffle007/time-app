@@ -245,6 +245,15 @@ abstract final class AppIcons {
   /// different concepts (rule 1).
   static const IconData reminders = Icons.notifications_active_outlined;
 
+  /// The 🔔 Missed button on the Plan header (2026-10-05, UI-RULES §6.16a):
+  /// alarms that rang and wait for an answer. Not [reminders] (an alarm
+  /// going off) — waiting is a different concept (rule 1).
+  static const IconData missed = Icons.notifications_outlined;
+
+  /// A card in the Missed pop-up that was answered — played, heard or done
+  /// (UI-RULES §6.16).
+  static const IconData played = Icons.done_all;
+
   /// Timing precision — the exact-alarm permission and anything naming it.
   ///
   /// Distinct from [reminders]: whether you get reminded at all and whether you

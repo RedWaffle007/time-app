@@ -267,8 +267,45 @@ void main() {
   );
   final dismissReply = find.byKey(const ValueKey('alarm-dismiss-reply'));
 
-  testWidgets('a default alarm offers Dismiss only', (t) async {
-    await t.pumpWidget(harness(_FakeAlarmSound(), _FakeScheduler()));
+  testWidgets('a default alarm from someone else offers Dismiss & reply too '
+      '(2026-10-05)', (t) async {
+    final timeline = _FakeAlarmTimelineRepository();
+    await t.pumpWidget(
+      harness(_FakeAlarmSound(), _FakeScheduler(), timeline: timeline),
+    );
+    await t.pumpAndSettle();
+    expect(find.text('Dismiss'), findsOneWidget);
+    expect(dismissReply, findsOneWidget);
+    await t.tap(dismissReply);
+    await t.pumpAndSettle();
+    expect(timeline.dismissed, ['a']);
+    expect(
+      find.text('Optional: send a note to {planner} about this alarm.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a self-plan offers Dismiss only: no one to reply to', (
+    t,
+  ) async {
+    final self = ScheduleItem(
+      id: 'a',
+      targetUid: 'me',
+      createdByUid: 'me',
+      groupId: '',
+      title: 'Morning run',
+      localWallTime: '',
+      timezone: 'Asia/Kolkata',
+      scheduledInstantUtc: DateTime.utc(2030, 1, 1, 3, 30),
+      status: ScheduleItemStatus.approved,
+    );
+    await t.pumpWidget(
+      harness(
+        _FakeAlarmSound(),
+        _FakeScheduler(),
+        items: Stream.value([self]),
+      ),
+    );
     await t.pumpAndSettle();
     expect(find.text('Dismiss'), findsOneWidget);
     expect(dismissReply, findsNothing);
@@ -305,9 +342,8 @@ void main() {
     expect(find.text('PLAN'), findsOneWidget);
   });
 
-  testWidgets('Volume Down silence leaves through the same dismiss path', (
-    t,
-  ) async {
+  testWidgets('Volume Down only silences: it leaves without stopping the '
+      'alarm or recording a dismissal (2026-10-05)', (t) async {
     final sound = _FakeAlarmSound();
     final timeline = _FakeAlarmTimelineRepository();
     final keys = _FakeAlarmKeyEvents();
@@ -319,8 +355,10 @@ void main() {
     await keys.silence();
     await t.pumpAndSettle();
 
-    expect(sound.stops, 1);
-    expect(timeline.dismissed, ['a']);
+    // Stopping would take it out of the ring queue (no repeats); a dismissal
+    // would tell the planner it was answered. Neither happens.
+    expect(sound.stops, 0);
+    expect(timeline.dismissed, isEmpty);
     expect(find.text('PLAN'), findsOneWidget);
   });
 

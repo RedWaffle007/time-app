@@ -18,6 +18,7 @@ import 'package:time_app/features/scheduling/presentation/planner_activity_scree
 import 'package:time_app/features/social/application/social_providers.dart';
 import 'package:time_app/routing/app_router.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
+import 'support/missed_alarm_fakes.dart';
 
 /// Regressions from the second 2026-09-25 device pass. Each group names the
 /// report it guards so a failure reads as the bug it would reintroduce.
@@ -167,6 +168,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          ...noMissedAlarms(),
           myItemsAsTargetProvider.overrideWithValue(const AsyncData([])),
           myItemsAsPlannerProvider.overrideWithValue(const AsyncData([])),
           myGroupsProvider.overrideWithValue(const AsyncData([])),
@@ -298,6 +300,7 @@ Future<void> _expandIfCollapsed(WidgetTester tester, String title) async {
 
 Widget _host(Widget screen, List<ScheduleItem> items) => ProviderScope(
   overrides: [
+    ...noMissedAlarms(),
     myItemsAsTargetProvider.overrideWithValue(AsyncData(items)),
     profileByUidProvider.overrideWith(
       (ref, uid) => Stream.value(

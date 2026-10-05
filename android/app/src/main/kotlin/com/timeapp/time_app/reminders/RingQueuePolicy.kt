@@ -226,6 +226,23 @@ internal object RingQueuePolicy {
         return Credit(updated, missed)
     }
 
+    /**
+     * Volume Down silenced [segment] (2026-10-05): EVERY alarm in it counts
+     * this ring, however briefly it sounded — it was heard and silenced, so
+     * it must not come straight back. Its next ring is due as usual (10 min
+     * after this one started). Nothing is answered.
+     */
+    fun creditSilenced(alarms: List<Alarm>, segment: Segment): Credit {
+        val missed = mutableListOf<String>()
+        val updated = alarms.map { alarm ->
+            if (alarm.itemId !in segment.itemIds) return@map alarm
+            alarm.copy(ringsDone = alarm.ringsDone + 1, lastRingAt = segment.startsAt).also {
+                if (it.isOver) missed += it.itemId
+            }
+        }
+        return Credit(updated, missed)
+    }
+
     /** When something next comes due after [now], or null when nothing will. */
     fun nextWakeAt(alarms: List<Alarm>, now: Long): Long? =
         alarms.filter { !it.isOver && it.dueAt > now }.minOfOrNull { it.dueAt }

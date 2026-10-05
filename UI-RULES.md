@@ -867,20 +867,47 @@ Repeated live snapshots must not restart the same event, a slow acknowledgement
 must not block the next event, and pausing or locking the app pauses the current
 visual rather than replaying it from zero.
 
-### 6.16 Missed-alarm review
+### 6.16 Missed pop-up (two card decks)
 
-After the native one-minute ring cap expires, the next unlocked foreground
-session places one blocking review card over the current route. It uses the
-ordinary surface Card on the standard scrim, not an error-red takeover: a missed
-alarm is a neutral Skipped outcome, not app failure. The underlying route is
-`IgnorePointer` + `ExcludeSemantics` while visible. Show one missed task at a
-time, with exactly two actions: neutral **Mark as Skipped** and primary
-**Mark as Done**. There is no generic acknowledgement or bulk outcome action.
-Additional misses advance through the same card. The card appears as soon as the
-automatic outcome is durably recorded—planner push delivery is not on its
-critical path—and never above the app lock or cold-start reveal. A later Done is
-shown as **Done (Late)** while the separate **User unavailable at alarm time**
-timeline fact remains visible.
+Every alarm that rang, is unanswered and is not ringing now waits here
+(DECISIONS.md "Missed pop-up: two card decks + the 🔔 Missed button",
+2026-10-05). It opens on every app open while anything waits and from the
+🔔 Missed button; never above the app lock or the cold-start reveal, and never
+while an alarm rings.
+
+- **Surface.** One ordinary surface Card on the standard scrim, centred,
+  `Sizes.modalMaxWidth` wide — not an error-red takeover: a missed alarm is a
+  neutral fact. The route underneath is `IgnorePointer` + `ExcludeSemantics`.
+  An `AppIcons.close` icon button (48dp target) at the card's top-right closes
+  it without answering anything.
+- **Two decks, voice notes first.** A swipeable page of cards per deck with a
+  position line ("2 of 5", `bodySmall`, `onSurfaceVariant`). Each card names
+  who planned it and the planned time (the task too on a default alarm).
+  - Voice card: secondary **Already heard** (`OutlinedButton`), tertiary
+    **Send note**, primary **Play** (`FilledButton.icon`). While loading,
+    Play reads "Loading…"; while playing, "Playing…" and every action on the
+    card is off. After a full play the two answers are replaced by
+    `AppIcons.played` + "Played" in `onSurfaceVariant`; Send note stays.
+  - Default card (once every voice card is answered): secondary **Skip**,
+    tertiary **Send note**, primary **Done**. Answered one card at a time —
+    no bulk action.
+  - An answered card shows "Updating {planner}…" for
+    `kPlannerUpdateDuration`, then leaves its deck. A Done or a full play
+    closes with the completion celebration (§6.15a).
+- **Self-plans** have no Send note (nothing to reply to).
+- **Size.** The swipe area is `Sizes.missedCardHeight` tall for every card,
+  so the pop-up does not jump while swiping. When every card in a deck is
+  answered, a primary button at the bottom moves on ("Next: missed alarms
+  (N)") or closes.
+
+### 6.16a The 🔔 Missed button
+
+At the far right of the Plan header's top row: `AppIcons.missed` + the word
+**Missed** (`labelLarge`), a `TextButton` with a 48dp target. Always visible,
+so the pop-up can be reopened at will; the count of waiting alarms rides on it
+as the standard `PendingCountBadge` (§6.2a, hidden at zero). With nothing
+waiting, a tap says "Nothing missed" (SnackBar) instead of opening an empty
+pop-up.
 
 ### 6.17 Android alarm wake surface
 

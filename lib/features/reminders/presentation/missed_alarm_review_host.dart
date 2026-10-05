@@ -8,21 +8,33 @@ import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../applock/application/app_lock_providers.dart';
+import '../../auth/application/auth_providers.dart';
 import '../../celebrations/application/celebration_providers.dart';
 import '../../celebrations/domain/completion_celebration.dart';
-import '../../auth/application/auth_providers.dart';
 import '../../outcomes/application/outcome_feedback.dart';
 import '../../outcomes/presentation/reply_note.dart';
+import '../../scheduling/application/schedule_providers.dart';
+import '../../scheduling/domain/schedule_item.dart';
 import '../../voice_notes/application/voice_note_cache.dart';
 import '../../voice_notes/application/voice_note_providers.dart';
 import '../application/missed_alarm_providers.dart';
-import '../application/missed_alarm_service.dart';
+import '../application/missed_alarms.dart';
 import '../application/reminder_policy.dart';
+import '../application/reminder_providers.dart';
 import '../domain/reminder.dart';
-import '../../scheduling/domain/schedule_item.dart';
 
-/// App-wide review surface for alarms that rang all three times unanswered.
-/// Several at once share ONE pop-up, a row each (ring queue, 2026-10-05).
+/// How an alarm on a card was answered in this pop-up.
+enum MissedCardAnswer { played, heard, done, skipped }
+
+/// **The Missed pop-up** (2026-10-05, user-directed; UI-RULES §6.16).
+///
+/// Every alarm of mine that rang, is unanswered and is not ringing now
+/// ([missedAlarms]) waits here, in two swipeable decks: voice notes first,
+/// then default alarms. Each card is answered on its own; answering is what
+/// stops that alarm's repeats. ✕ closes it without answering anything. It
+/// opens on every app open while anything waits, whenever a new one joins,
+/// and from the 🔔 Missed button ([missedPopupTriggerProvider]); never above
+/// the app lock, and never while an alarm rings.
 class MissedAlarmReviewHost extends ConsumerStatefulWidget {
   const MissedAlarmReviewHost({
     super.key,
@@ -38,293 +50,250 @@ class MissedAlarmReviewHost extends ConsumerStatefulWidget {
       _MissedAlarmReviewHostState();
 }
 
-class _MissedAlarmReviewHostState extends ConsumerState<MissedAlarmReviewHost> {
-  bool _acting = false;
+class _MissedAlarmReviewHostState extends ConsumerState<MissedAlarmReviewHost>
+    with WidgetsBindingObserver {
+  /// How often the pop-up checks whether an alarm is ringing (it hides then).
+  static const _ringingPoll = Duration(seconds: 3);
 
-  /// A missed voice note's Play is fetching/starting the note (R2,
-  /// 2026-10-02). Set on the FIRST tap, before any await, so repeated taps
-  /// cannot start a second fetch, play or "heard" write.
-  bool _preparingVoice = false;
+  bool _open = true;
+  bool _onAlarmDeck = false;
 
-  /// The note is playing on the pop-up (2026-10-05): it stays open, says
-  /// "Playing…", and closes as heard (with confetti) only once the note ends.
-  bool _playingVoice = false;
+  /// The cards of this opening, in order. Answered ones stay (Played ✓ and
+  /// Send note) until the pop-up closes.
+  final _voiceIds = <String>[];
+  final _alarmIds = <String>[];
 
-  /// Reviews whose note was just sent (R6). The review holds an item
-  /// snapshot, so the button is hidden here rather than waiting for a resync.
+  /// Every id shown since the last close: a NEW one reopens the pop-up.
+  final _seen = <String>{};
+  final _known = <String, ScheduleItem>{};
+  final _answers = <String, MissedCardAnswer>{};
   final _noteSent = <String>{};
 
-  /// The review being answered. The service drops it from its list at once,
-  /// so it is held here to keep "Updating {planner}…" on screen for the full
-  /// [kPlannerUpdateDuration] (directed 2026-09-25).
-  MissedAlarmReview? _answering;
+  /// The card being worked on, and what it is doing.
+  String? _busyId;
+  bool _loading = false;
+  bool _playing = false;
+  bool _updating = false;
 
-  Future<void> _act(
-    MissedAlarmService service,
-    MissedAlarmReview review, {
-    required bool done,
-  }) async {
-    if (_acting) return;
-    setState(() {
-      _acting = true;
-      _answering = review;
-    });
-    try {
-      if (done) {
-        final committed = await atLeast(service.markDone(review));
-        if (committed) {
-          ref
-              .read(committedCelebrationProvider.notifier)
-              .celebrate(
-                CompletionCelebration.committed(
-                  targetUid: review.item.targetUid,
-                  itemId: review.item.id,
-                  plannerUid: review.item.createdByUid,
-                ),
-              );
-        }
-      } else {
-        await atLeast(service.markSkipped(review));
-      }
-    } catch (_) {
-      unawaited(service.resync());
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not finish syncing. It will retry.'),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _acting = false;
-          _answering = null;
-        });
-      }
+  Set<String> _ringing = const {};
+  Timer? _poll;
+  int _trigger = 0;
+  int _voicePage = 0;
+  int _alarmPage = 0;
+  final _voicePager = PageController();
+  final _alarmPager = PageController();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _poll = Timer.periodic(_ringingPoll, (_) => unawaited(_checkRinging()));
+    unawaited(_checkRinging());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _poll?.cancel();
+    _voicePager.dispose();
+    _alarmPager.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Every app open shows what still waits, from a fresh deck.
+    if (state == AppLifecycleState.resumed) _reopen();
+  }
+
+  Future<void> _checkRinging() async {
+    final ids = (await ref.read(alarmSoundProvider).ringingItems()).toSet();
+    if (!mounted) return;
+    if (ids.length != _ringing.length || !ids.containsAll(_ringing)) {
+      setState(() => _ringing = ids);
     }
   }
 
-  /// A missed VOICE note (2026-09-28): Play and Already heard both close it
-  /// as heard late (Done under the hood, "Heard (Late)" on screen) and tell
-  /// the planner "{Y} heard your voice note late." Play also plays it; if the
-  /// note cannot be loaded, nothing is recorded and the popup stays.
-  Future<void> _actVoice(
-    MissedAlarmService service,
-    MissedAlarmReview review, {
-    required bool play,
-  }) async {
-    if (_acting || _preparingVoice) return;
-    if (play) {
-      setState(() => _preparingVoice = true);
-      try {
-        final path = await ref.read(voiceNoteCacheProvider).ensure(review.item);
-        final player = ref.read(voicePlayerProvider);
-        final finished = player.completed.first;
-        await player.play(path);
-        if (!mounted) return;
-        setState(() {
-          _preparingVoice = false;
-          _playingVoice = true;
-        });
-        // Wait for the note to end (device report 2026-10-05: the pop-up
-        // closed the moment Play started). Bounded, in case the end is never
-        // reported: the note's own length plus a margin.
-        await finished.timeout(
-          Duration(milliseconds: review.item.voiceNote?.durationMs ?? 25000) +
-              const Duration(seconds: 5),
-          onTimeout: () {},
-        );
-      } catch (_) {
-        if (mounted) {
-          setState(() {
-            _preparingVoice = false;
-            _playingVoice = false;
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("Couldn't load the voice note. Try again."),
-            ),
-          );
-        }
-        return;
-      }
-    }
+  void _reopen() {
     if (!mounted) return;
     setState(() {
-      _preparingVoice = false;
-      _playingVoice = false;
-      _acting = true;
-      _answering = review;
+      _open = true;
+      _onAlarmDeck = false;
+      _voiceIds.clear();
+      _alarmIds.clear();
+      _answers.clear();
+      _seen.clear();
+      _voicePage = 0;
+      _alarmPage = 0;
+    });
+    _rewindPagers();
+  }
+
+  /// A fresh deck starts at its first card.
+  void _rewindPagers() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final pager in [_voicePager, _alarmPager]) {
+        if (pager.hasClients) pager.jumpToPage(0);
+      }
+    });
+  }
+
+  void _close() {
+    setState(() => _open = false);
+  }
+
+  /// Brings this opening's decks up to date with [missed]: new alarms join
+  /// at the end (and reopen a closed pop-up); answered ones stay put.
+  void _absorb(MissedAlarms missed, List<ScheduleItem> items) {
+    for (final item in items) {
+      _known[item.id] = item;
+    }
+    var added = false;
+    for (final item in missed.voice) {
+      if (!_voiceIds.contains(item.id)) {
+        _voiceIds.add(item.id);
+        added |= _seen.add(item.id);
+      }
+    }
+    for (final item in missed.alarms) {
+      if (!_alarmIds.contains(item.id)) {
+        _alarmIds.add(item.id);
+        added |= _seen.add(item.id);
+      }
+    }
+    if (added) _open = true;
+  }
+
+  bool _answered(String id) =>
+      _answers.containsKey(id) || _known[id]?.outcome != null;
+
+  Future<void> _play(ScheduleItem item) async {
+    if (_busyId != null) return;
+    setState(() {
+      _busyId = item.id;
+      _loading = true;
     });
     try {
-      final committed = await atLeast(service.markDone(review));
-      // Heard in full: it closes to confetti, like a Done (2026-10-05).
-      if (committed && play) {
+      final path = await ref.read(voiceNoteCacheProvider).ensure(item);
+      final player = ref.read(voicePlayerProvider);
+      final finished = player.completed.first;
+      await player.play(path);
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _playing = true;
+      });
+      // The card stays until the note ends (device report 2026-10-05).
+      // Bounded, in case the end is never reported.
+      await finished.timeout(
+        Duration(milliseconds: item.voiceNote?.durationMs ?? 25000) +
+            const Duration(seconds: 5),
+        onTimeout: () {},
+      );
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _busyId = null;
+          _loading = false;
+          _playing = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Couldn't load the voice note. Try again."),
+          ),
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _playing = false);
+    await _answer(item, MissedCardAnswer.played);
+  }
+
+  /// Records [answer] for [item]: Played / Heard / Done count as Done to the
+  /// planner, Skipped as Skipped. A full play or a Done closes to confetti.
+  Future<void> _answer(ScheduleItem item, MissedCardAnswer answer) async {
+    setState(() {
+      _busyId = item.id;
+      _updating = true;
+    });
+    final done = answer != MissedCardAnswer.skipped;
+    try {
+      final committed = await atLeast(
+        ref.read(missedAlarmServiceProvider).answer(item, done: done),
+      );
+      if (!mounted) return;
+      setState(() => _answers[item.id] = answer);
+      if (committed &&
+          (answer == MissedCardAnswer.played ||
+              answer == MissedCardAnswer.done)) {
         ref
             .read(committedCelebrationProvider.notifier)
             .celebrate(
               CompletionCelebration.committed(
-                targetUid: review.item.targetUid,
-                itemId: review.item.id,
-                plannerUid: review.item.createdByUid,
+                targetUid: item.targetUid,
+                itemId: item.id,
+                plannerUid: item.createdByUid,
               ),
             );
       }
     } catch (_) {
-      unawaited(service.resync());
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Could not finish syncing. It will retry.'),
+            content: Text(
+              "Couldn't save. Check your connection and try again.",
+            ),
           ),
         );
       }
     } finally {
       if (mounted) {
         setState(() {
-          _acting = false;
-          _answering = null;
+          _busyId = null;
+          _updating = false;
         });
       }
     }
-  }
-
-  /// Several missed alarms in ONE pop-up (2026-10-05): who, what and when
-  /// for each, with its own answers. One answered drops out of the list.
-  Widget _combined(
-    BuildContext context,
-    MissedAlarmService service,
-    List<MissedAlarmReview> reviews,
-  ) {
-    return Column(
-      key: const ValueKey('missed-alarms-combined'),
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Icon(AppIcons.skipped, size: Sizes.emptyStateIcon),
-        const SizedBox(height: Space.md),
-        Text(
-          missedCombinedTitle(reviews.length),
-          style: context.text.titleLarge,
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: Space.sm),
-        Text(
-          'Each rang $kAlarmRingCount times with no response.',
-          style: context.text.bodyMedium,
-          textAlign: TextAlign.center,
-        ),
-        for (final review in reviews) ...[
-          const Divider(height: Space.xl),
-          _combinedRow(context, service, review),
-        ],
-      ],
-    );
-  }
-
-  Widget _combinedRow(
-    BuildContext context,
-    MissedAlarmService service,
-    MissedAlarmReview review,
-  ) {
-    final item = review.item;
-    final self = item.createdByUid == item.targetUid;
-    final plannerName = self
-        ? null
-        : ref.watch(profileByUidProvider(item.createdByUid)).value?.name;
-    final answering = _answering?.event.key == review.event.key;
-    final busy = _acting || _preparingVoice || _playingVoice;
-    return Column(
-      key: ValueKey('missed-row-${item.id}'),
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          alarmHeadline(item, plannerName: plannerName),
-          style: context.text.titleSmall,
-        ),
-        const SizedBox(height: Space.xs),
-        Text(
-          missedPlannedAt(context, item),
-          style: context.text.bodySmall?.copyWith(
-            color: context.colors.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: Space.sm),
-        if (answering)
-          Text(
-            updatingPlannerLabel(selfPlanned: self, plannerName: plannerName),
-            style: context.text.titleSmall,
-          )
-        else
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  key: ValueKey('missed-row-skip-${item.id}'),
-                  onPressed: busy
-                      ? null
-                      : () => unawaited(
-                          item.isVoiceAlarm
-                              ? _actVoice(service, review, play: false)
-                              : _act(service, review, done: false),
-                        ),
-                  child: Text(item.isVoiceAlarm ? 'Already heard' : 'Skipped'),
-                ),
-              ),
-              const SizedBox(width: Space.sm),
-              Expanded(
-                child: FilledButton(
-                  key: ValueKey('missed-row-done-${item.id}'),
-                  onPressed: busy
-                      ? null
-                      : () => unawaited(
-                          item.isVoiceAlarm
-                              ? _actVoice(service, review, play: true)
-                              : _act(service, review, done: true),
-                        ),
-                  child: Text(item.isVoiceAlarm ? 'Play' : 'Done'),
-                ),
-              ),
-            ],
-          ),
-      ],
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     final service = ref.watch(missedAlarmServiceProvider);
     final lock = ref.watch(appLockControllerProvider);
+    final uid = ref.watch(currentUidProvider);
+    final items = ref.watch(allItemsAsTargetProvider).value ?? const [];
+    final trigger = ref.watch(missedPopupTriggerProvider);
+    if (trigger != _trigger) {
+      // The 🔔 Missed button: a fresh deck of what still waits.
+      _trigger = trigger;
+      _open = true;
+      _onAlarmDeck = false;
+      _voiceIds.clear();
+      _alarmIds.clear();
+      _answers.clear();
+      _voicePage = 0;
+      _alarmPage = 0;
+      _rewindPagers();
+    }
     return ListenableBuilder(
       listenable: Listenable.merge([service, lock]),
       builder: (context, _) {
-        final reviews = service.reviews;
-        final review = _answering ?? reviews.firstOrNull;
-        final selfPlanned =
-            review != null && review.item.createdByUid == review.item.targetUid;
-        final plannerProfile = review == null || selfPlanned
-            ? null
-            : ref.watch(profileByUidProvider(review.item.createdByUid));
-        final plannerName = plannerProfile?.value?.name;
-        // R3 (2026-10-02): the popup names the planner, so it waits for the
-        // profile while it is still loading (normally cached already). A
-        // failed or missing profile still shows, with "Someone".
-        final nameLoading =
-            plannerProfile != null &&
-            plannerProfile.isLoading &&
-            plannerName == null;
-        final updatingLabel = review == null
-            ? ''
-            : updatingPlannerLabel(
-                selfPlanned: selfPlanned,
-                plannerName: plannerName,
-              );
-        final voice = review?.item.isVoiceAlarm ?? false;
+        final missed = missedAlarms(
+          items: items,
+          uid: uid,
+          nowUtc: DateTime.now().toUtc(),
+          ringingIds: _ringing,
+          timedOutIds: {for (final r in service.reviews) r.item.id},
+        );
+        _absorb(missed, items);
+        final hasCards = _voiceIds.isNotEmpty || _alarmIds.isNotEmpty;
         final visible =
-            widget.enabled && !lock.isLocked && review != null && !nameLoading;
-        // Several missed together: one pop-up listing them all (2026-10-05).
-        final combined = reviews.length > 1;
+            widget.enabled &&
+            !lock.isLocked &&
+            _open &&
+            _ringing.isEmpty &&
+            hasCards;
         return Stack(
           fit: StackFit.expand,
           children: [
@@ -346,166 +315,11 @@ class _MissedAlarmReviewHostState extends ConsumerState<MissedAlarmReviewHost> {
                               Sizes.modalMaxHeightFraction,
                         ),
                         child: Card(
+                          key: const ValueKey('missed-popup'),
                           margin: Space.screenForm,
                           child: Padding(
                             padding: Space.cardPadding,
-                            child: SingleChildScrollView(
-                              child: combined
-                                  ? _combined(context, service, reviews)
-                                  : Column(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  const Icon(
-                                    AppIcons.skipped,
-                                    size: Sizes.emptyStateIcon,
-                                  ),
-                                  const SizedBox(height: Space.md),
-                                  Text(
-                                    voice
-                                        ? 'Missed voice note'
-                                        : 'Missed alarm',
-                                    style: context.text.titleLarge,
-                                    textAlign: TextAlign.center,
-                                  ),
-                                  const SizedBox(height: Space.sm),
-                                  // The "permanently recorded" line was
-                                  // removed on request (2026-09-25).
-                                  Text(
-                                    missedPopupMessage(
-                                      review.item,
-                                      plannerName: plannerName,
-                                    ),
-                                    style: context.text.bodyMedium,
-                                    textAlign: TextAlign.center,
-                                  ),
-                                  const SizedBox(height: Space.lg),
-                                  ListTile(
-                                    contentPadding: EdgeInsets.zero,
-                                    leading: const Icon(AppIcons.reminders),
-                                    title: Text(review.item.title),
-                                    subtitle: Text(
-                                      missedPlannedAt(context, review.item),
-                                    ),
-                                  ),
-                                  const SizedBox(height: Space.lg),
-                                  if (_acting)
-                                    Text(
-                                      updatingLabel,
-                                      key: const ValueKey(
-                                        'missed-alarm-updating',
-                                      ),
-                                      style: context.text.titleMedium,
-                                      textAlign: TextAlign.center,
-                                    )
-                                  else if (voice)
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: OutlinedButton(
-                                            key: const ValueKey(
-                                              'missed-voice-already-heard',
-                                            ),
-                                            onPressed: _preparingVoice || _playingVoice
-                                                ? null
-                                                : () => unawaited(
-                                                    _actVoice(
-                                                      service,
-                                                      review,
-                                                      play: false,
-                                                    ),
-                                                  ),
-                                            child: const Text('Already heard'),
-                                          ),
-                                        ),
-                                        const SizedBox(width: Space.sm),
-                                        Expanded(
-                                          child: FilledButton.icon(
-                                            key: const ValueKey(
-                                              'missed-voice-play',
-                                            ),
-                                            onPressed: _preparingVoice || _playingVoice
-                                                ? null
-                                                : () => unawaited(
-                                                    _actVoice(
-                                                      service,
-                                                      review,
-                                                      play: true,
-                                                    ),
-                                                  ),
-                                            icon: const Icon(
-                                              AppIcons.voiceNotePlay,
-                                            ),
-                                            label: Text(
-                                              _preparingVoice
-                                                  ? 'Loading…'
-                                                  : _playingVoice
-                                                  ? 'Playing…'
-                                                  : 'Play',
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    )
-                                  else
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: OutlinedButton(
-                                            onPressed: _acting
-                                                ? null
-                                                : () => unawaited(
-                                                    _act(
-                                                      service,
-                                                      review,
-                                                      done: false,
-                                                    ),
-                                                  ),
-                                            child: const Text(
-                                              'Mark as Skipped',
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: Space.sm),
-                                        Expanded(
-                                          child: FilledButton(
-                                            onPressed: _acting
-                                                ? null
-                                                : () => unawaited(
-                                                    _act(
-                                                      service,
-                                                      review,
-                                                      done: true,
-                                                    ),
-                                                  ),
-                                            child: const Text('Mark as Done'),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  // R6: the optional note, with the
-                                  // answers. Answering directly sends none.
-                                  if (!_acting &&
-                                      review.item.canSendReply &&
-                                      !_noteSent.contains(review.event.key))
-                                    Padding(
-                                      padding: const EdgeInsets.only(
-                                        top: Space.sm,
-                                      ),
-                                      child: Center(
-                                        child: SendNoteButton(
-                                          item: review.item,
-                                          enabled: !_preparingVoice,
-                                          onSent: () => setState(
-                                            () =>
-                                                _noteSent.add(review.event.key),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
+                            child: _deck(context),
                           ),
                         ),
                       ),
@@ -518,7 +332,202 @@ class _MissedAlarmReviewHostState extends ConsumerState<MissedAlarmReviewHost> {
       },
     );
   }
+
+  Widget _deck(BuildContext context) {
+    final voiceDeck = _voiceIds.isNotEmpty && !_onAlarmDeck;
+    final ids = voiceDeck ? _voiceIds : _alarmIds;
+    final pager = voiceDeck ? _voicePager : _alarmPager;
+    final page = (voiceDeck ? _voicePage : _alarmPage).clamp(0, ids.length - 1);
+    final allAnswered = ids.every(_answered);
+    final nextDeck = voiceDeck && _alarmIds.isNotEmpty;
+    return Column(
+      key: ValueKey(voiceDeck ? 'missed-voice-deck' : 'missed-alarm-deck'),
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                voiceDeck ? 'Missed voice notes' : 'Missed alarms',
+                style: context.text.titleLarge,
+              ),
+            ),
+            IconButton(
+              key: const ValueKey('missed-close'),
+              tooltip: 'Close',
+              icon: const Icon(AppIcons.close),
+              onPressed: _close,
+            ),
+          ],
+        ),
+        Text(
+          '${page + 1} of ${ids.length}',
+          key: const ValueKey('missed-position'),
+          style: context.text.bodySmall?.copyWith(
+            color: context.colors.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: Space.md),
+        Flexible(
+          child: SizedBox(
+            height: Sizes.missedCardHeight,
+            child: PageView(
+              key: const ValueKey('missed-pages'),
+              controller: pager,
+              onPageChanged: (i) => setState(() {
+                if (voiceDeck) {
+                  _voicePage = i;
+                } else {
+                  _alarmPage = i;
+                }
+              }),
+              children: [
+                for (final id in ids)
+                  if (_known[id] case final item?) _card(context, item),
+              ],
+            ),
+          ),
+        ),
+        if (allAnswered) ...[
+          const SizedBox(height: Space.md),
+          FilledButton(
+            key: const ValueKey('missed-deck-next'),
+            onPressed: nextDeck
+                ? () => setState(() => _onAlarmDeck = true)
+                : _close,
+            child: Text(
+              nextDeck ? 'Next: missed alarms (${_alarmIds.length})' : 'Close',
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _card(BuildContext context, ScheduleItem item) {
+    final self = item.createdByUid == item.targetUid;
+    final plannerName = self
+        ? null
+        : ref.watch(profileByUidProvider(item.createdByUid)).value?.name;
+    final answer = _answers[item.id] ??
+        (item.outcome == null
+            ? null
+            : item.outcome!.result == OutcomeResult.done
+            ? MissedCardAnswer.done
+            : MissedCardAnswer.skipped);
+    final mine = _busyId == item.id;
+    final busy = _busyId != null;
+    final canNote =
+        !self && item.reply == null && !_noteSent.contains(item.id);
+    // Scrolls inside the fixed card height, so a long sentence, large text
+    // or the answered line never overflows it.
+    return SingleChildScrollView(
+      child: Column(
+      key: ValueKey('missed-card-${item.id}'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          alarmHeadline(item, plannerName: plannerName),
+          style: context.text.titleMedium,
+        ),
+        const SizedBox(height: Space.xs),
+        Text(
+          missedPlannedAt(context, item),
+          style: context.text.bodySmall?.copyWith(
+            color: context.colors.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: Space.md),
+        if (mine && _updating)
+          Text(
+            updatingPlannerLabel(selfPlanned: self, plannerName: plannerName),
+            key: ValueKey('missed-updating-${item.id}'),
+            style: context.text.titleSmall,
+          )
+        else if (answer != null)
+          Row(
+            key: ValueKey('missed-answered-${item.id}'),
+            children: [
+              Icon(
+                answer == MissedCardAnswer.skipped
+                    ? AppIcons.skipped
+                    : AppIcons.played,
+                color: context.colors.onSurfaceVariant,
+              ),
+              const SizedBox(width: Space.xs),
+              Text(
+                missedAnswerLabel(answer),
+                style: context.text.titleSmall?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        const SizedBox(height: Space.sm),
+        Wrap(
+          alignment: WrapAlignment.end,
+          spacing: Space.sm,
+          runSpacing: Space.xs,
+          children: [
+            if (answer == null && item.isVoiceAlarm)
+              OutlinedButton(
+                key: ValueKey('missed-heard-${item.id}'),
+                onPressed: busy
+                    ? null
+                    : () => _answer(item, MissedCardAnswer.heard),
+                child: const Text('Already heard'),
+              ),
+            if (answer == null && !item.isVoiceAlarm)
+              OutlinedButton(
+                key: ValueKey('missed-skip-${item.id}'),
+                onPressed: busy
+                    ? null
+                    : () => _answer(item, MissedCardAnswer.skipped),
+                child: const Text('Skip'),
+              ),
+            if (canNote)
+              SendNoteButton(
+                item: item,
+                enabled: !busy,
+                onSent: () => setState(() => _noteSent.add(item.id)),
+              ),
+            if (answer == null && item.isVoiceAlarm)
+              FilledButton.icon(
+                key: ValueKey('missed-play-${item.id}'),
+                onPressed: busy ? null : () => _play(item),
+                icon: const Icon(AppIcons.voiceNotePlay),
+                label: Text(
+                  mine && _loading
+                      ? 'Loading…'
+                      : mine && _playing
+                      ? 'Playing…'
+                      : 'Play',
+                ),
+              ),
+            if (answer == null && !item.isVoiceAlarm)
+              FilledButton(
+                key: ValueKey('missed-done-${item.id}'),
+                onPressed: busy
+                    ? null
+                    : () => _answer(item, MissedCardAnswer.done),
+                child: const Text('Done'),
+              ),
+          ],
+        ),
+      ],
+      ),
+    );
+  }
 }
+
+/// The answered state a card shows. Pure, for tests.
+String missedAnswerLabel(MissedCardAnswer answer) => switch (answer) {
+  MissedCardAnswer.played => 'Played',
+  MissedCardAnswer.heard => 'Heard',
+  MissedCardAnswer.done => 'Done',
+  MissedCardAnswer.skipped => 'Skipped',
+};
 
 /// The missed popup's message (R3, 2026-10-02): always says who planned it.
 /// A voice note keeps its question; a Default Alarm leads with the one alarm
@@ -532,9 +541,6 @@ String missedPopupMessage(ScheduleItem item, {String? plannerName}) {
   return '${alarmHeadline(item, plannerName: plannerName)}. '
       'It rang $kAlarmRingCount times with no response.';
 }
-
-/// "You missed 3 alarms" — the combined pop-up's title (2026-10-05).
-String missedCombinedTitle(int count) => 'You missed $count alarms';
 
 /// When the missed alarm was planned for, in its own zone.
 String missedPlannedAt(BuildContext context, ScheduleItem item) =>

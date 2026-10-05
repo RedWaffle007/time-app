@@ -15,6 +15,7 @@ import 'package:time_app/features/scheduling/domain/schedule_item.dart';
 import 'package:time_app/features/social/application/social_providers.dart';
 import 'package:time_app/routing/app_router.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
+import 'support/missed_alarm_fakes.dart';
 
 void main() {
   setUpAll(tz_data.initializeTimeZones);
@@ -85,6 +86,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          ...noMissedAlarms(),
           myItemsAsTargetProvider.overrideWithValue(const AsyncData([])),
           myItemsAsPlannerProvider.overrideWithValue(const AsyncData([])),
           myGroupsProvider.overrideWithValue(const AsyncData([])),
@@ -137,6 +139,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            ...noMissedAlarms(),
             myItemsAsTargetProvider.overrideWithValue(const AsyncData([])),
             myItemsAsPlannerProvider.overrideWithValue(const AsyncData([])),
             myGroupsProvider.overrideWithValue(const AsyncData([])),
@@ -361,6 +364,7 @@ ScheduleItem _decided(String title, DateTime instant, {String? id}) => _item(
 
 Widget _host(Widget screen, List<ScheduleItem> items) => ProviderScope(
   overrides: [
+    ...noMissedAlarms(),
     myItemsAsTargetProvider.overrideWithValue(AsyncData(items)),
     profileByUidProvider.overrideWith((ref, uid) => Stream.value(null)),
   ],

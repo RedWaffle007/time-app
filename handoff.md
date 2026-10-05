@@ -59,7 +59,17 @@
 
 ## Current state
 
-- **2026-10-05 (latest): ring queue — BUILT, NOT committed, NOT on a phone.**
+- **2026-10-05 (latest): Missed pop-up — BUILT, NOT committed, NOT on a
+  phone.** Volume Down only silences (repeats continue, planner told
+  nothing); unanswered alarms wait in a two-deck Missed pop-up (voice notes
+  first; Play waits for the note, then "Played" + confetti; Send note stays)
+  shown on every app open and from 🔔 Missed on the Plan header; Dismiss &
+  reply on default alarms too. DECISIONS.md "Missed pop-up: two card decks"
+  (+ "built"). Device list: "Device test list (2026-10-05, Missed pop-up)"
+  below.
+- **2026-10-05: ring queue — device-tested by the user** (committed
+  `52dd850`, `1828ca2`); the voice-note, screen-wake and cold-start cancel
+  bugs found on the way are fixed.
   User-directed redesign of the alarm cycle; full reasoning in DECISIONS.md
   "Ring queue: new alarms first, repeats fill the gaps" (+ its stage 3 and
   stages 4-5 entries). New alarms ring at their time (up to 5 min, cut at the
@@ -182,6 +192,30 @@
 - Supabase: the 7 `group-avatars/…` folders from the 2026-09-27 group reset
   are the user's to remove.
 - Detailed rationale/history belongs in `DECISIONS.md`; do not duplicate it here.
+
+## Device test list (2026-10-05, Missed pop-up) — DO THIS FIRST
+
+Debug build, phone plugged in. B = a second phone planning for A (the Redmi).
+
+1. **Volume Down silences:** B's alarm rings on A; press Volume Down. The
+   sound stops, B gets NO "dismissed"/"heard", and the alarm rings again
+   about 10 min after that ring started.
+2. **Pop-up on open:** after a silence, open Mind Time. The Missed pop-up
+   shows; ✕ closes it with nothing answered; the repeat still comes.
+3. **Voice deck:** two voice notes from B missed. Cards swipe both ways,
+   "1 of 2". Play: "Playing…" and the card stays until the note ends, then
+   "Played" with confetti and Send note still there; B gets "heard".
+   Already heard: "Heard", no confetti. Answered → no more repeats.
+4. **Alarm deck:** with default alarms waiting too, "Next: missed alarms
+   (N)" appears once every voice card is answered; each alarm card is
+   answered on its own (Skip / Done / Send note); Close at the end.
+5. **🔔 Missed** on the Plan header: the count badge matches; a tap reopens
+   the pop-up after ✕; with nothing waiting, "Nothing missed".
+6. **Dismiss & reply** on a ringing DEFAULT alarm from B: dismisses, then the
+   note box; B gets the dismissal and the note.
+7. **Ran out:** let an alarm ring all three times. "User unavailable" reaches
+   B; the card is in the pop-up; answering it keeps "User unavailable at
+   alarm time" on B's card.
 
 ## Product model now (2026-09-28 — read before touching planning or alarms)
 

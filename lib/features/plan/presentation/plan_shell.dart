@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../routing/app_router.dart';
 import '../../groups/presentation/groups_screen.dart';
 import '../../outcomes/presentation/outcome_screen.dart';
+import '../../reminders/presentation/missed_button.dart';
 import '../../scheduling/presentation/planner_activity_screen.dart';
 import '../application/plan_intent.dart';
 import '../../../core/widgets/tab_body_inset.dart';
@@ -140,6 +141,8 @@ class _PlanShellState extends ConsumerState<PlanShell>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Plan'),
+        // 🔔 Missed (2026-10-05, UI-RULES §6.16a): far right of the top row.
+        actions: const [MissedButton()],
         bottom: TabBar(
           controller: _tabController,
           // §6.12: understated text tabs, soft sage underline (from the central

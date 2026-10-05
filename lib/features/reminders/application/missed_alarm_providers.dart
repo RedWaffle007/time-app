@@ -52,3 +52,15 @@ final missedAlarmSyncProvider = Provider<void>((ref) {
     }
   }, fireImmediately: true);
 });
+
+/// Bumped by the 🔔 Missed button (2026-10-05): the Missed pop-up opens on
+/// each bump, even after its ✕ closed it.
+final missedPopupTriggerProvider =
+    NotifierProvider<MissedPopupTrigger, int>(MissedPopupTrigger.new);
+
+class MissedPopupTrigger extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void open() => state++;
+}

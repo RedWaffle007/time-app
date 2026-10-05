@@ -18,6 +18,8 @@ import 'package:time_app/features/outcomes/application/outcome_feedback.dart';
 import 'package:time_app/features/notifications/application/outcome_notifier.dart';
 import 'package:time_app/features/reminders/application/missed_alarm_providers.dart';
 import 'package:time_app/features/reminders/application/missed_alarm_service.dart';
+import 'package:time_app/features/reminders/application/reminder_providers.dart';
+import 'package:time_app/features/reminders/data/alarm_sound.dart';
 import 'package:time_app/features/reminders/data/alarm_lifecycle_store.dart';
 import 'package:time_app/features/reminders/data/alarm_timeline_repository.dart';
 import 'package:time_app/features/reminders/presentation/missed_alarm_review_host.dart';
@@ -569,390 +571,6 @@ void main() {
     expect(service.reviews, isEmpty);
   });
 
-  testWidgets('multiple misses share ONE pop-up, a row each with its own '
-      'answers (2026-10-05)', (tester) async {
-    final store = _MemoryLifecycleStore([
-      _event(),
-      AlarmLifecycleEvent(
-        key: 'timeout:item-2:2000',
-        itemId: 'item-2',
-        occurredAtUtc: DateTime.fromMillisecondsSinceEpoch(2000, isUtc: true),
-        kind: AlarmLifecycleEventKind.timeout,
-        outcomeRecorded: false,
-        notificationDelivered: false,
-        reviewed: false,
-      ),
-    ]);
-    final service = MissedAlarmService(
-      store: store,
-      outcomes: _RecordingOutcomes(),
-      timeline: _RecordingTimeline(),
-      notifier: _RecordingNotifier(),
-    );
-    final lock = AppLockController(
-      store: _NoopLockStore(),
-      auth: _NoopDeviceAuth(),
-      secureWindow: _NoopSecureWindow(),
-      initiallyEnabled: false,
-    );
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          missedAlarmServiceProvider.overrideWithValue(service),
-          appLockControllerProvider.overrideWithValue(lock),
-          profileByUidProvider.overrideWith(
-            (ref, uid) => Stream.value(
-              const UserProfile(
-                uid: 'planner',
-                name: '{planner}',
-                homeTimezone: 'Etc/UTC',
-              ),
-            ),
-          ),
-        ],
-        child: MaterialApp(
-          theme: AppTheme.light,
-          home: const MissedAlarmReviewHost(
-            enabled: true,
-            child: Scaffold(body: Text('Schedule')),
-          ),
-        ),
-      ),
-    );
-    await service.sync([
-      _item(),
-      _item(id: 'item-2', title: 'Medicine'),
-    ], 'target');
-    await tester.pumpAndSettle();
-
-    expect(find.text('You missed 2 alarms'), findsOneWidget);
-    expect(find.text('{planner} planned Morning walk for you'), findsOneWidget);
-    expect(find.text('{planner} planned Medicine for you'), findsOneWidget);
-    expect(find.textContaining('Planned for'), findsNWidgets(2));
-    expect(find.text('Mark reviewed'), findsNothing);
-    // Removed on request (2026-09-25).
-    expect(find.textContaining('permanently recorded'), findsNothing);
-
-    await tester.tap(find.byKey(const ValueKey('missed-row-skip-item')));
-    await tester.pump();
-    // "Updating {planner}…" holds the answered review on screen for 1.5 s.
-    expect(find.text('Updating {planner}…'), findsOneWidget);
-    expect(find.text('Morning walk'), findsOneWidget);
-    expect(find.text('Mark as Done'), findsNothing);
-    await tester.pump(const Duration(milliseconds: 1400));
-    expect(find.text('Updating {planner}…'), findsOneWidget);
-    await tester.pump(const Duration(milliseconds: 200));
-    await tester.pump();
-    expect(find.text('Morning walk'), findsNothing);
-    expect(find.text('Medicine'), findsOneWidget);
-
-    await tester.tap(find.text('Mark as Done'));
-    await tester.pump();
-    final container = ProviderScope.containerOf(
-      tester.element(find.text('Schedule')),
-    );
-    expect(find.text('Updating {planner}…'), findsOneWidget);
-    expect(
-      container.read(committedCelebrationProvider),
-      isNull,
-      reason: 'the celebration follows the Updating message',
-    );
-    await tester.pump(kPlannerUpdateDuration);
-    await tester.pump();
-    expect(find.text('Missed alarm'), findsNothing);
-    expect(find.text('Schedule'), findsOneWidget);
-    expect(store.events.every((event) => event.reviewed), isTrue);
-
-    // Only the popup's own committed Done celebrates — right after Updating.
-    expect(container.read(committedCelebrationProvider)?.itemId, 'item-2');
-  });
-
-  // 2026-09-28: a missed VOICE note has no Done/Skip. Play and Already heard
-  // both close it as heard late and tell the planner.
-  for (final play in [false, true]) {
-    testWidgets(
-      'a missed voice note: ${play ? 'Play' : 'Already heard'} closes it '
-      'as heard and tells the planner',
-      (tester) async {
-        final outcomes = _RecordingOutcomes();
-        final notifier = _RecordingNotifier();
-        final service = MissedAlarmService(
-          store: _MemoryLifecycleStore([_event()]),
-          outcomes: outcomes,
-          timeline: _RecordingTimeline(),
-          notifier: notifier,
-        );
-        final lock = AppLockController(
-          store: _NoopLockStore(),
-          auth: _NoopDeviceAuth(),
-          secureWindow: _NoopSecureWindow(),
-          initiallyEnabled: false,
-        );
-        final player = _Player();
-        await tester.pumpWidget(
-          ProviderScope(
-            overrides: [
-              missedAlarmServiceProvider.overrideWithValue(service),
-              appLockControllerProvider.overrideWithValue(lock),
-              voiceNoteCacheProvider.overrideWithValue(_Cache()),
-              voicePlayerProvider.overrideWithValue(player),
-              profileByUidProvider.overrideWith(
-                (ref, uid) => Stream.value(
-                  const UserProfile(
-                    uid: 'planner',
-                    name: '{planner}',
-                    homeTimezone: 'Etc/UTC',
-                  ),
-                ),
-              ),
-            ],
-            child: MaterialApp(
-              theme: AppTheme.light,
-              home: const MissedAlarmReviewHost(
-                enabled: true,
-                child: Scaffold(body: Text('Schedule')),
-              ),
-            ),
-          ),
-        );
-        await service.sync([_item(voiceNote: _voiceMeta)], 'target');
-        await tester.pumpAndSettle();
-
-        expect(find.text('Missed voice note'), findsOneWidget);
-        expect(
-          find.text('{planner} sent you a voice note. Listen now?'),
-          findsOneWidget,
-        );
-        expect(find.text('Play'), findsOneWidget);
-        expect(find.text('Already heard'), findsOneWidget);
-        expect(find.text('Mark as Done'), findsNothing);
-        expect(find.text('Mark as Skipped'), findsNothing);
-
-        await tester.tap(
-          find.byKey(
-            ValueKey(play ? 'missed-voice-play' : 'missed-voice-already-heard'),
-          ),
-        );
-        await tester.pump();
-        if (play) {
-          // The pop-up stays while the note plays, and records nothing yet
-          // (device report 2026-10-05).
-          await tester.pump();
-          expect(find.text('Playing…'), findsOneWidget);
-          expect(find.text('Missed voice note'), findsOneWidget);
-          expect(outcomes.done, isEmpty);
-          await tester.pump(const Duration(seconds: 2));
-        }
-        await tester.pump(kPlannerUpdateDuration);
-        await tester.pumpAndSettle();
-
-        expect(outcomes.done, [('target', 'item', 'planner')]);
-        expect(outcomes.skipped, isEmpty);
-        expect(notifier.calls, contains(('target', 'item')));
-        expect(player.played, play ? ['/voice/item.m4a'] : isEmpty);
-        expect(find.text('Missed voice note'), findsNothing);
-        final container = ProviderScope.containerOf(
-          tester.element(find.text('Schedule')),
-        );
-        // Played in full: it closes to confetti. Already heard: none.
-        expect(
-          container.read(committedCelebrationProvider)?.itemId,
-          play ? 'item' : isNull,
-        );
-      },
-    );
-  }
-
-  // R2 (2026-10-02): Play fetched the note with no in-flight guard, so a
-  // slow fetch let every extra tap start its own fetch + play + "heard"
-  // write; the duplicates failed as "Could not finish syncing" snackbars.
-  testWidgets('a missed voice note: repeated Play taps while the note loads '
-      'fetch, play and record it exactly once', (tester) async {
-    final outcomes = _RecordingOutcomes();
-    final service = MissedAlarmService(
-      store: _MemoryLifecycleStore([_event()]),
-      outcomes: outcomes,
-      timeline: _RecordingTimeline(),
-      notifier: _RecordingNotifier(),
-    );
-    final lock = AppLockController(
-      store: _NoopLockStore(),
-      auth: _NoopDeviceAuth(),
-      secureWindow: _NoopSecureWindow(),
-      initiallyEnabled: false,
-    );
-    final cache = _SlowCache();
-    final player = _Player();
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          missedAlarmServiceProvider.overrideWithValue(service),
-          appLockControllerProvider.overrideWithValue(lock),
-          voiceNoteCacheProvider.overrideWithValue(cache),
-          voicePlayerProvider.overrideWithValue(player),
-          profileByUidProvider.overrideWith(
-            (ref, uid) => Stream.value(
-              const UserProfile(
-                uid: 'planner',
-                name: '{planner}',
-                homeTimezone: 'Etc/UTC',
-              ),
-            ),
-          ),
-        ],
-        child: MaterialApp(
-          theme: AppTheme.light,
-          home: const MissedAlarmReviewHost(
-            enabled: true,
-            child: Scaffold(body: Text('Schedule')),
-          ),
-        ),
-      ),
-    );
-    await service.sync([_item(voiceNote: _voiceMeta)], 'target');
-    await tester.pumpAndSettle();
-
-    final play = find.byKey(const ValueKey('missed-voice-play'));
-    await tester.tap(play);
-    await tester.pump();
-    // Loading: both buttons are off and the first tap is the only one.
-    expect(find.text('Loading…'), findsOneWidget);
-    for (var i = 0; i < 4; i++) {
-      await tester.tap(play, warnIfMissed: false);
-      await tester.tap(
-        find.byKey(const ValueKey('missed-voice-already-heard')),
-        warnIfMissed: false,
-      );
-      await tester.pump();
-    }
-    expect(cache.calls, 1);
-    expect(player.played, isEmpty);
-
-    cache.finish();
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
-    await tester.pump(kPlannerUpdateDuration);
-    await tester.pumpAndSettle();
-
-    expect(player.played, ['/voice/item.m4a']);
-    expect(outcomes.done, [('target', 'item', 'planner')]);
-    expect(find.textContaining('Could not finish syncing'), findsNothing);
-    expect(find.text('Missed voice note'), findsNothing);
-  });
-
-  testWidgets('a missed voice note that cannot load re-enables Play', (
-    tester,
-  ) async {
-    final outcomes = _RecordingOutcomes();
-    final service = MissedAlarmService(
-      store: _MemoryLifecycleStore([_event()]),
-      outcomes: outcomes,
-      timeline: _RecordingTimeline(),
-      notifier: _RecordingNotifier(),
-    );
-    final lock = AppLockController(
-      store: _NoopLockStore(),
-      auth: _NoopDeviceAuth(),
-      secureWindow: _NoopSecureWindow(),
-      initiallyEnabled: false,
-    );
-    final cache = _SlowCache();
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          missedAlarmServiceProvider.overrideWithValue(service),
-          appLockControllerProvider.overrideWithValue(lock),
-          voiceNoteCacheProvider.overrideWithValue(cache),
-          voicePlayerProvider.overrideWithValue(_Player()),
-          profileByUidProvider.overrideWith(
-            (ref, uid) => Stream.value(
-              const UserProfile(
-                uid: 'planner',
-                name: '{planner}',
-                homeTimezone: 'Etc/UTC',
-              ),
-            ),
-          ),
-        ],
-        child: MaterialApp(
-          theme: AppTheme.light,
-          home: const MissedAlarmReviewHost(
-            enabled: true,
-            child: Scaffold(body: Text('Schedule')),
-          ),
-        ),
-      ),
-    );
-    await service.sync([_item(voiceNote: _voiceMeta)], 'target');
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byKey(const ValueKey('missed-voice-play')));
-    await tester.pump();
-    cache.fail();
-    await tester.pump();
-    await tester.pump();
-
-    expect(
-      find.text("Couldn't load the voice note. Try again."),
-      findsOneWidget,
-    );
-    expect(find.text('Play'), findsOneWidget);
-    expect(find.text('Loading…'), findsNothing);
-    expect(outcomes.done, isEmpty);
-    expect(find.text('Missed voice note'), findsOneWidget);
-  });
-
-  // R3 (2026-10-02): the Default Alarm popup names the planner too.
-  testWidgets('the missed alarm popup says who planned it', (tester) async {
-    final service = MissedAlarmService(
-      store: _MemoryLifecycleStore([_event()]),
-      outcomes: _RecordingOutcomes(),
-      timeline: _RecordingTimeline(),
-      notifier: _RecordingNotifier(),
-    );
-    final lock = AppLockController(
-      store: _NoopLockStore(),
-      auth: _NoopDeviceAuth(),
-      secureWindow: _NoopSecureWindow(),
-      initiallyEnabled: false,
-    );
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          missedAlarmServiceProvider.overrideWithValue(service),
-          appLockControllerProvider.overrideWithValue(lock),
-          profileByUidProvider.overrideWith(
-            (ref, uid) => Stream.value(
-              const UserProfile(
-                uid: 'planner',
-                name: '{planner}',
-                homeTimezone: 'Etc/UTC',
-              ),
-            ),
-          ),
-        ],
-        child: MaterialApp(
-          theme: AppTheme.light,
-          home: const MissedAlarmReviewHost(
-            enabled: true,
-            child: Scaffold(body: Text('Schedule')),
-          ),
-        ),
-      ),
-    );
-    await service.sync([_item()], 'target');
-    await tester.pumpAndSettle();
-
-    expect(
-      find.text(
-        '{planner} planned Morning walk for you. '
-        'It rang 3 times with no response.',
-      ),
-      findsOneWidget,
-    );
-  });
-
   group('missedPopupMessage (R3)', () {
     test('a Default Alarm leads with the alarm sentence', () {
       expect(
@@ -990,35 +608,68 @@ void main() {
   });
 
   // R6 (2026-10-02): "Send note" sits with the missed popup's answers.
-  group('missed popup: Send note', () {
-    Future<(_ReplyRepo, MissedAlarmService)> open(
+  group('Missed pop-up: two card decks (2026-10-05)', () {
+    late _RecordingOutcomes outcomes;
+    late _RecordingTimeline timeline;
+    late _RecordingNotifier notifier;
+    late _ReplyRepo replies;
+
+    ScheduleItem rung(
+      String id, {
+      bool voice = false,
+      String createdBy = 'planner',
+      String title = 'Morning walk',
+    }) => ScheduleItem(
+      id: id,
+      voiceNote: voice ? _voiceMeta : null,
+      targetUid: 'target',
+      createdByUid: createdBy,
+      alarm: ScheduleAlarmTimeline(rangAt: _occurred, ring: 1),
+      groupId: '',
+      title: title,
+      localWallTime: '',
+      timezone: 'Etc/UTC',
+      scheduledInstantUtc: DateTime.utc(2026, 9, 23, 8),
+      status: ScheduleItemStatus.approved,
+    );
+
+    Future<ProviderContainer> open(
       WidgetTester tester,
-      ScheduleItem item, {
-      _RecordingOutcomes? outcomes,
+      List<ScheduleItem> items, {
+      List<AlarmLifecycleEvent> events = const [],
+      VoiceNoteCache? cache,
+      Set<String> ringing = const {},
+      bool locked = false,
     }) async {
-      final repo = _ReplyRepo();
+      outcomes = _RecordingOutcomes();
+      timeline = _RecordingTimeline();
+      notifier = _RecordingNotifier();
+      replies = _ReplyRepo();
       final service = MissedAlarmService(
-        store: _MemoryLifecycleStore([_event()]),
-        outcomes: outcomes ?? _RecordingOutcomes(),
-        timeline: _RecordingTimeline(),
-        notifier: _RecordingNotifier(),
+        store: _MemoryLifecycleStore(events),
+        outcomes: outcomes,
+        timeline: timeline,
+        notifier: notifier,
       );
       final lock = AppLockController(
         store: _NoopLockStore(),
         auth: _NoopDeviceAuth(),
         secureWindow: _NoopSecureWindow(),
-        initiallyEnabled: false,
+        initiallyEnabled: locked,
       );
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
             missedAlarmServiceProvider.overrideWithValue(service),
             appLockControllerProvider.overrideWithValue(lock),
-            scheduleRepositoryProvider.overrideWithValue(repo),
-            notificationEventNotifierProvider.overrideWithValue(
-              _RecordingNotifier(),
+            currentUidProvider.overrideWithValue('target'),
+            allItemsAsTargetProvider.overrideWith(
+              (ref) => Stream.value(items),
             ),
-            voiceNoteCacheProvider.overrideWithValue(_Cache()),
+            alarmSoundProvider.overrideWithValue(_RingingSound(ringing)),
+            scheduleRepositoryProvider.overrideWithValue(replies),
+            notificationEventNotifierProvider.overrideWithValue(notifier),
+            voiceNoteCacheProvider.overrideWithValue(cache ?? _Cache()),
             voicePlayerProvider.overrideWithValue(_Player()),
             profileByUidProvider.overrideWith(
               (ref, uid) => Stream.value(
@@ -1039,99 +690,253 @@ void main() {
           ),
         ),
       );
-      await service.sync([item], 'target');
+      await service.sync(items, 'target');
       await tester.pumpAndSettle();
-      return (repo, service);
+      return ProviderScope.containerOf(tester.element(find.text('Schedule')));
     }
 
-    final sendNote = find.text('Send note');
+    final popup = find.byKey(const ValueKey('missed-popup'));
 
-    testWidgets('a missed alarm offers Send note with its two answers', (
-      tester,
-    ) async {
-      await open(tester, _item());
-      expect(find.text('Mark as Skipped'), findsOneWidget);
-      expect(find.text('Mark as Done'), findsOneWidget);
-      expect(sendNote, findsOneWidget);
-    });
-
-    testWidgets('a missed voice note offers it too', (tester) async {
-      await open(tester, _item(voiceNote: _voiceMeta));
+    testWidgets('voice notes come first, one card at a time, with who, '
+        'when and the three actions', (tester) async {
+      await open(tester, [
+        rung('alarm-1'),
+        rung('voice-1', voice: true),
+        rung('voice-2', voice: true),
+      ]);
+      expect(find.text('Missed voice notes'), findsOneWidget);
+      expect(find.text('1 of 2'), findsOneWidget);
+      expect(find.text('{planner} sent you a voice alarm'), findsOneWidget);
+      expect(find.textContaining('Planned for'), findsOneWidget);
+      expect(find.text('Already heard'), findsOneWidget);
+      expect(find.text('Send note'), findsOneWidget);
       expect(find.text('Play'), findsOneWidget);
-      expect(sendNote, findsOneWidget);
+      // The default alarm waits for its own deck.
+      expect(find.text('Missed alarms'), findsNothing);
+      expect(find.byKey(const ValueKey('missed-done-alarm-1')), findsNothing);
     });
 
-    testWidgets('a missed self-plan has no one to send a note to', (
-      tester,
-    ) async {
-      await open(tester, _item(createdByUid: 'target'));
-      expect(find.text('Mark as Done'), findsOneWidget);
-      expect(sendNote, findsNothing);
-    });
-
-    testWidgets('after a note is sent the button goes and the answers stay', (
-      tester,
-    ) async {
-      final outcomes = _RecordingOutcomes();
-      final (repo, _) = await open(tester, _item(), outcomes: outcomes);
-      await tester.tap(sendNote);
-      await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byKey(const ValueKey('send-note-text')),
-        'Was driving',
+    testWidgets('swiping moves between cards, both ways', (tester) async {
+      await open(tester, [
+        rung('voice-1', voice: true),
+        rung('voice-2', voice: true),
+      ]);
+      await tester.drag(
+        find.byKey(const ValueKey('missed-pages')),
+        const Offset(-400, 0),
       );
-      await tester.pump();
-      await tester.tap(find.byKey(const ValueKey('send-note-send')));
       await tester.pumpAndSettle();
+      expect(find.text('2 of 2'), findsOneWidget);
+      await tester.drag(
+        find.byKey(const ValueKey('missed-pages')),
+        const Offset(400, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('1 of 2'), findsOneWidget);
+    });
 
-      expect(repo.replies, ['target/item/Was driving']);
-      expect(sendNote, findsNothing);
-      expect(find.text('Mark as Done'), findsOneWidget);
-      // The note did not answer the alarm.
-      expect(outcomes.done, isEmpty);
-
-      await tester.tap(find.text('Mark as Done'));
+    testWidgets('Play keeps the card up while the note plays, then shows '
+        'Played with Send note still there, and closes to confetti', (
+      tester,
+    ) async {
+      final container = await open(tester, [rung('voice-1', voice: true)]);
+      await tester.tap(find.byKey(const ValueKey('missed-play-voice-1')));
       await tester.pump();
+      await tester.pump();
+      expect(find.text('Playing…'), findsOneWidget);
+      expect(popup, findsOneWidget);
+      expect(outcomes.done, isEmpty, reason: 'not heard until it ends');
+      await tester.pump(const Duration(seconds: 2));
+      expect(find.text('Updating {planner}…'), findsOneWidget);
+      await tester.pump(kPlannerUpdateDuration);
+      await tester.pump();
+      expect(outcomes.done, [('target', 'voice-1', 'planner')]);
+      expect(find.text('Played'), findsOneWidget);
+      expect(find.text('Play'), findsNothing);
+      expect(find.text('Already heard'), findsNothing);
+      expect(find.text('Send note'), findsOneWidget);
+      expect(container.read(committedCelebrationProvider)?.itemId, 'voice-1');
+      expect(notifier.calls, contains(('target', 'voice-1')));
+    });
+
+    testWidgets('Already heard answers it with no confetti', (tester) async {
+      final container = await open(tester, [rung('voice-1', voice: true)]);
+      await tester.tap(find.byKey(const ValueKey('missed-heard-voice-1')));
+      await tester.pump();
+      await tester.pump(kPlannerUpdateDuration);
+      await tester.pumpAndSettle();
+      expect(outcomes.done, [('target', 'voice-1', 'planner')]);
+      expect(find.text('Heard'), findsOneWidget);
+      expect(container.read(committedCelebrationProvider), isNull);
+    });
+
+    testWidgets('after every voice card is answered, Next opens the alarm '
+        'deck; each alarm is answered on its own card', (tester) async {
+      final container = await open(tester, [
+        rung('voice-1', voice: true),
+        rung('alarm-1'),
+        rung('alarm-2', title: 'Medicine'),
+      ]);
+      expect(find.byKey(const ValueKey('missed-deck-next')), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('missed-heard-voice-1')));
+      await tester.pump();
+      await tester.pump(kPlannerUpdateDuration);
+      await tester.pumpAndSettle();
+      expect(find.text('Next: missed alarms (2)'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('missed-deck-next')));
+      await tester.pumpAndSettle();
+      expect(find.text('Missed alarms'), findsOneWidget);
+      expect(find.text('{planner} planned Morning walk for you'), findsOneWidget);
+      expect(find.text('Skip'), findsOneWidget);
+      expect(find.text('Done'), findsOneWidget);
+      expect(find.text('Send note'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('missed-done-alarm-1')));
+      await tester.pump();
+      await tester.pump(kPlannerUpdateDuration);
+      await tester.pumpAndSettle();
+      expect(outcomes.done.last, ('target', 'alarm-1', 'planner'));
+      expect(container.read(committedCelebrationProvider)?.itemId, 'alarm-1');
+      // No bulk answer: the other card is still open.
+      expect(find.byKey(const ValueKey('missed-deck-next')), findsNothing);
+
+      await tester.drag(
+        find.byKey(const ValueKey('missed-pages')),
+        const Offset(-400, 0),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('missed-skip-alarm-2')));
+      await tester.pump();
+      await tester.pump(kPlannerUpdateDuration);
+      await tester.pumpAndSettle();
+      expect(outcomes.skipped.single.$2, 'alarm-2');
+      expect(find.text('Skipped'), findsOneWidget);
+
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      expect(popup, findsNothing);
+    });
+
+    testWidgets('✕ closes it without answering; a new missed alarm brings it '
+        'back, and so does the Missed button', (tester) async {
+      final container = await open(tester, [rung('voice-1', voice: true)]);
+      await tester.tap(find.byKey(const ValueKey('missed-close')));
+      await tester.pumpAndSettle();
+      expect(popup, findsNothing);
+      expect(outcomes.done, isEmpty);
+      expect(outcomes.skipped, isEmpty);
+      container.read(missedPopupTriggerProvider.notifier).open();
+      await tester.pumpAndSettle();
+      expect(popup, findsOneWidget);
+    });
+
+    testWidgets('a silenced or waiting alarm is answered directly, with the '
+        'planner told; one that ran out keeps its unavailable fact', (
+      tester,
+    ) async {
+      await open(
+        tester,
+        [rung('alarm-1'), _item()],
+        events: [_event()],
+      );
+      // `item` ran out (timeout row): it is in the deck too.
+      await tester.tap(find.byKey(const ValueKey('missed-done-alarm-1')));
+      await tester.pump();
+      await tester.pump(kPlannerUpdateDuration);
+      await tester.pumpAndSettle();
+      expect(outcomes.done, contains(('target', 'alarm-1', 'planner')));
+      expect(notifier.calls, contains(('target', 'alarm-1')));
+      await tester.drag(
+        find.byKey(const ValueKey('missed-pages')),
+        const Offset(-400, 0),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('missed-done-item')));
+      await tester.pump();
+      await tester.pump(kPlannerUpdateDuration);
+      await tester.pumpAndSettle();
+      expect(timeline.unavailable, contains(('target', 'item')));
+      expect(outcomes.done, contains(('target', 'item', 'planner')));
+    });
+
+    testWidgets('repeated Play taps while the note loads fetch it once', (
+      tester,
+    ) async {
+      final cache = _SlowCache();
+      await open(tester, [rung('item', voice: true)], cache: cache);
+      final play = find.byKey(const ValueKey('missed-play-item'));
+      await tester.tap(play);
+      await tester.pump();
+      expect(find.text('Loading…'), findsOneWidget);
+      for (var i = 0; i < 4; i++) {
+        await tester.tap(play, warnIfMissed: false);
+        await tester.pump();
+      }
+      expect(cache.calls, 1);
+      cache.finish();
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 2));
       await tester.pump(kPlannerUpdateDuration);
       await tester.pumpAndSettle();
       expect(outcomes.done, [('target', 'item', 'planner')]);
     });
-  });
 
-  testWidgets('review remains hidden while app lock is active', (tester) async {
-    final service = MissedAlarmService(
-      store: _MemoryLifecycleStore([_event()]),
-      outcomes: _RecordingOutcomes(),
-      timeline: _RecordingTimeline(),
-      notifier: _RecordingNotifier(),
-    );
-    final lock = AppLockController(
-      store: _NoopLockStore(),
-      auth: _NoopDeviceAuth(),
-      secureWindow: _NoopSecureWindow(),
-      initiallyEnabled: true,
-    );
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          missedAlarmServiceProvider.overrideWithValue(service),
-          appLockControllerProvider.overrideWithValue(lock),
-        ],
-        child: MaterialApp(
-          theme: AppTheme.light,
-          home: const MissedAlarmReviewHost(
-            enabled: true,
-            child: Scaffold(body: Text('Schedule')),
-          ),
-        ),
-      ),
-    );
+    testWidgets('a note that cannot load records nothing and Play comes '
+        'back', (tester) async {
+      final cache = _SlowCache();
+      await open(tester, [rung('item', voice: true)], cache: cache);
+      await tester.tap(find.byKey(const ValueKey('missed-play-item')));
+      await tester.pump();
+      cache.fail();
+      await tester.pumpAndSettle();
+      expect(find.text("Couldn't load the voice note. Try again."), findsOneWidget);
+      expect(find.text('Play'), findsOneWidget);
+      expect(outcomes.done, isEmpty);
+    });
 
-    await service.sync([_item()], 'target');
-    await tester.pump();
+    testWidgets('Send note: sent once, then gone; the answers stay', (
+      tester,
+    ) async {
+      await open(tester, [rung('alarm-1')]);
+      await tester.tap(find.text('Send note'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('send-note-text')),
+        'Running late',
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('send-note-send')));
+      await tester.pumpAndSettle();
+      expect(replies.replies, ['target/alarm-1/Running late']);
+      expect(find.text('Send note'), findsNothing);
+      expect(find.text('Done'), findsOneWidget);
+      // The note did not answer the alarm.
+      expect(outcomes.done, isEmpty);
+    });
 
-    expect(find.text('Missed alarm'), findsNothing);
-    expect(find.text('Schedule'), findsOneWidget);
+    testWidgets('a self-plan has no one to send a note to', (tester) async {
+      await open(tester, [rung('mine', createdBy: 'target')]);
+      expect(find.text('Done'), findsOneWidget);
+      expect(find.text('Send note'), findsNothing);
+    });
+
+    testWidgets('hidden while an alarm rings, and under the app lock', (
+      tester,
+    ) async {
+      await open(tester, [rung('alarm-1')], ringing: {'other'});
+      await tester.pump(const Duration(seconds: 4));
+      expect(popup, findsNothing);
+      await open(tester, [rung('alarm-1')], locked: true);
+      expect(popup, findsNothing);
+      expect(find.text('Schedule'), findsOneWidget);
+    });
+
+    test('the answered state reads plainly', () {
+      expect(missedAnswerLabel(MissedCardAnswer.played), 'Played');
+      expect(missedAnswerLabel(MissedCardAnswer.heard), 'Heard');
+      expect(missedAnswerLabel(MissedCardAnswer.done), 'Done');
+      expect(missedAnswerLabel(MissedCardAnswer.skipped), 'Skipped');
+    });
   });
 }
 
@@ -1551,6 +1356,19 @@ class _ReplyRepo implements ScheduleRepository {
   @override
   Future<void> sendReply(String targetUid, String itemId, String text) async =>
       replies.add('$targetUid/$itemId/$text');
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// The native alarm-sound bridge, as far as the pop-up asks: what rings now.
+class _RingingSound implements AlarmSound {
+  _RingingSound(this.ringing);
+
+  final Set<String> ringing;
+
+  @override
+  Future<List<String>> ringingItems() async => ringing.toList();
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

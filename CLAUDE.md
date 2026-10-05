@@ -561,6 +561,10 @@ Redmi pass in person.
   `reconcileReminders` never cancels or re-arms an armed alarm past its time
   — reverting either silently kills its repeats. The reminder owner uid is
   persisted so a cold start never cancels every native alarm.
+- **Volume Down SILENCES, never answers (2026-10-05).** Unanswered alarms
+  wait in the two-deck Missed pop-up (opened on every app open and from 🔔
+  Missed on the Plan header); only an answer there stops an alarm's
+  repeats. DECISIONS.md "Missed pop-up: two card decks".
 - **Several alarms at once:** own ring ends, newest has the speaker
   (`AlarmRingSet`); alarm screen lists the others with Dismiss / Dismiss all;
   Volume Down silences all.

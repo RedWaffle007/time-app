@@ -90,7 +90,7 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
       keyEvents.listen(() async {
         _ringingPoll?.cancel();
         _alsoRinging = const [];
-        await _leave();
+        await _leaveSilenced();
       });
       final sound = ref.read(alarmSoundProvider);
       // Both reads start together: the "already ended?" check never delays
@@ -323,7 +323,19 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
     _goToPlan();
   }
 
-  /// R6: "Dismiss & reply" on a voice note. Dismissing first (so the tone
+  /// Volume Down silenced the ring (2026-10-05): it is NOT an answer. Leave
+  /// without stopping (that would take the alarm out of the ring queue and
+  /// its repeats with it) and without recording a dismissal; the alarm waits,
+  /// unanswered, in the Missed pop-up.
+  Future<void> _leaveSilenced() async {
+    if (_dismissing) return;
+    _dismissing = true;
+    if (!mounted) return;
+    context.go(Routes.plan);
+  }
+
+  /// R6: "Dismiss & reply" (a voice note, or a default alarm since
+  /// 2026-10-05). Dismissing first (so the tone
   /// stops and the planner hears "heard", as with Dismiss), then the optional
   /// note pop-up right here, then the same landing as Dismiss.
   Future<void> _dismissAndReply(ScheduleItem item) async {
@@ -600,10 +612,11 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
                     child: Text('Dismiss'),
                   ),
                 ),
-                // R6: a voice note may be answered with a note. Dismiss alone
-                // sends none.
+                // R6: someone else's alarm may be answered with a note — a
+                // voice note or, since 2026-10-05, a default alarm. Dismiss
+                // alone sends none; a self-plan has no one to reply to.
                 if (item != null &&
-                    item.isVoiceAlarm &&
+                    item.createdByUid != item.targetUid &&
                     item.reply == null) ...[
                   const SizedBox(height: Space.sm),
                   OutlinedButton(

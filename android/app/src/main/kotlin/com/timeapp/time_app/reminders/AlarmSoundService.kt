@@ -597,10 +597,15 @@ class AlarmSoundService : Service() {
                 takeOut(listOf(itemId))
             }
             ACTION_VOLUME_SILENCE -> {
-                // Volume Down silences EVERY alarm ringing now (2026-10-04).
-                val ids = current?.itemIds.orEmpty()
-                recordDismissal("VOLUME_SILENCED", "foreground_activity", ids)
-                takeOut(ids)
+                // Volume Down SILENCES, it does not answer (2026-10-05): the
+                // ring playing now ends and counts, nothing is recorded as
+                // dismissed, the planner hears nothing, and the alarms stay in
+                // the queue — their repeats still come until answered in the
+                // app's Missed pop-up.
+                current?.itemIds.orEmpty().forEach {
+                    ReminderAuditLog.write(this, event = "VOLUME_SILENCED", itemId = it, note = "foreground_activity")
+                }
+                endSegment(silenced = true)
             }
             ACTION_NOTIFICATION_DISMISS -> {
                 // The notification names the alarm that is sounding; Dismiss
@@ -736,8 +741,11 @@ class AlarmSoundService : Service() {
         updateNotification()
     }
 
-    /** The segment ran its course (or was cut): count its rings, look again. */
-    private fun endSegment() {
+    /**
+     * The segment ran its course (or was cut, or [silenced] by Volume Down):
+     * count its rings, look again.
+     */
+    private fun endSegment(silenced: Boolean = false) {
         val segment = current ?: return
         val at = System.currentTimeMillis()
         cancelTimers()
@@ -745,7 +753,11 @@ class AlarmSoundService : Service() {
         current = null
         soundingItem = null
         val rows = AlarmDeliveryStore.load(this)
-        val credit = RingQueuePolicy.credit(rows.map { it.toAlarm() }, segment, at)
+        val credit = if (silenced) {
+            RingQueuePolicy.creditSilenced(rows.map { it.toAlarm() }, segment)
+        } else {
+            RingQueuePolicy.credit(rows.map { it.toAlarm() }, segment, at)
+        }
         AlarmDeliveryStore.save(this, AlarmDeliveryStore.withRings(rows, credit.alarms))
         if (credit.missed.isNotEmpty()) {
             // The last ring ended unanswered: tell the person, even if the app

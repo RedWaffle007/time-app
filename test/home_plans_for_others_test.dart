@@ -16,6 +16,7 @@ import 'package:time_app/features/scheduling/presentation/planner_activity_scree
 import 'package:time_app/routing/app_router.dart';
 import 'package:time_app/routing/notification_routing.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
+import 'support/missed_alarm_fakes.dart';
 
 /// Batch G item 7 (2026-09-27): "My Schedule" is Home, and a plan you set for
 /// someone else stays on Home until they answer it — then it moves to
@@ -87,6 +88,7 @@ void main() {
   }) => ProviderScope(
     overrides: [
       currentUidProvider.overrideWithValue('me'),
+      ...noMissedAlarms(),
       myItemsAsTargetProvider.overrideWithValue(AsyncData(mine)),
       myItemsAsPlannerProvider.overrideWithValue(AsyncData(planned)),
       myGroupsProvider.overrideWithValue(const AsyncData([])),

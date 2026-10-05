@@ -255,6 +255,10 @@ abstract final class Sizes {
   static const double modalMaxWidth = 420;
   static const double modalMaxHeightFraction = 0.8;
 
+  /// The Missed pop-up's swipe area (2026-10-05, UI-RULES §6.16): one fixed
+  /// height for every card so the pop-up does not jump while swiping.
+  static const double missedCardHeight = 220;
+
   /// The celestial body's limb. Deliberately heavier than [hairline]: in light
   /// mode the sky is light at every hour, so the rim — not the fill — is what
   /// makes the shape read at all.

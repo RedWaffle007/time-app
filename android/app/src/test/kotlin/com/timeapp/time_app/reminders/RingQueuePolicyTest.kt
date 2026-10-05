@@ -314,4 +314,27 @@ class RingQueuePolicyTest {
         val ringing = RingQueuePolicy.nextSegment(alarms, at(18))!!
         assertEquals(at(28), RingQueuePolicy.forecast(alarms, at(19), ringing)["x"])
     }
+
+    @Test
+    fun `a silenced ring counts, however short, and its next repeat is due 10 min later`() {
+        val v = Alarm("v", at(8), voiceMs = 25 * sec, ringsDone = 1, lastRingAt = at(8))
+        val other = Alarm("t", at(9), ringsDone = 1, lastRingAt = at(9))
+        val segment = RingQueuePolicy.nextSegment(listOf(v), at(18))!!
+        // Silenced 3 s in: no play finished, so the ordinary credit counts nothing.
+        assertEquals(1, RingQueuePolicy.credit(listOf(v), segment, at(18, 3)).alarms.single().ringsDone)
+        val silenced = RingQueuePolicy.creditSilenced(listOf(v, other), segment)
+        val after = silenced.alarms.first { it.itemId == "v" }
+        assertEquals(2, after.ringsDone)
+        assertEquals(at(28), after.dueAt)
+        // An alarm not in the segment is untouched; nothing is missed yet.
+        assertEquals(other, silenced.alarms.first { it.itemId == "t" })
+        assertTrue(silenced.missed.isEmpty())
+    }
+
+    @Test
+    fun `silencing the last ring makes it missed`() {
+        val last = Alarm("a", at(8), ringsDone = 2, lastRingAt = at(18))
+        val segment = RingQueuePolicy.nextSegment(listOf(last), at(28))!!
+        assertEquals(listOf("a"), RingQueuePolicy.creditSilenced(listOf(last), segment).missed)
+    }
 }

@@ -87,7 +87,7 @@ class VoiceAlarmTest {
         assertTrue(voice.contains("isLooping = false"))
         assertTrue(!voice.contains("postDelayed"))
         // Ending a segment releases the player.
-        val end = source.substringAfter("private fun endSegment()").substringBefore("\n    }\n")
+        val end = source.substringAfter("private fun endSegment(").substringBefore("\n    }\n")
         assertTrue(end.contains("releasePlayer()"))
         val finish = source.substringAfter("private fun finish()").substringBefore("\n    }\n")
         assertTrue(finish.contains("releasePlayer()"))
@@ -105,5 +105,17 @@ class VoiceAlarmTest {
         val play = source.substringAfter("private fun play(").substringBefore("private fun startSound(")
         assertTrue(play.contains("repostForFullScreen()"))
         assertTrue(source.contains("ServiceCompat.startForeground(this, notifId, buildNotification(), type)"))
+    }
+
+    @Test
+    fun `Volume Down silences without answering - no dismissal, the alarms stay queued (2026-10-05)`() {
+        val source = File(
+            "src/main/kotlin/com/timeapp/time_app/reminders/AlarmSoundService.kt",
+        ).readText()
+        val volume = source.substringAfter("ACTION_VOLUME_SILENCE -> {").substringBefore("ACTION_NOTIFICATION_DISMISS -> {")
+        assertTrue(volume.contains("endSegment(silenced = true)"))
+        assertTrue(!volume.contains("recordDismissal"))
+        assertTrue(!volume.contains("takeOut"))
+        assertTrue(source.contains("RingQueuePolicy.creditSilenced("))
     }
 }
