@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,7 +10,6 @@ import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:time_app/core/theme/app_theme.dart';
 import 'package:time_app/features/auth/application/auth_providers.dart';
 import 'package:time_app/features/auth/domain/user_profile.dart';
-import 'package:time_app/features/reminders/application/ring_cycle.dart';
 import 'package:time_app/features/reminders/application/alarm_timeline_providers.dart';
 import 'package:time_app/features/reminders/application/alarm_timeline_service.dart';
 import 'package:time_app/features/reminders/application/missed_alarm_providers.dart';
@@ -388,14 +388,14 @@ void main() {
   );
 
   testWidgets(
-    'opened after the 25-minute cycle: no tone, missed, lands on Plan',
+    'opened a day late and not in the queue: no tone, missed, lands on Plan',
     (t) async {
       final sound = _FakeAlarmSound();
       await t.pumpWidget(
         harness(
           sound,
           _FakeScheduler(),
-          items: Stream.value([dueAgo(const Duration(minutes: 26))]),
+          items: Stream.value([dueAgo(const Duration(hours: 25))]),
         ),
       );
       await t.pumpAndSettle();
@@ -406,10 +406,10 @@ void main() {
     },
   );
 
-  testWidgets('opened between rings: silent, says when, Dismiss offered', (
-    t,
-  ) async {
-    final sound = _FakeAlarmSound();
+  testWidgets('opened while waiting for a repeat: silent, says when, Dismiss '
+      'offered (2026-10-05)', (t) async {
+    final sound = _FakeAlarmSound()
+      ..nextRing = DateTime.now().toUtc().add(const Duration(minutes: 40));
     await t.pumpWidget(
       harness(
         sound,
@@ -418,14 +418,14 @@ void main() {
       ),
     );
     await t.pumpAndSettle();
-    expect(sound.starts, 0, reason: 'the next ring is armed natively');
+    expect(sound.starts, 0, reason: 'the native queue rings it');
     expect(sound.missedLate, isEmpty);
     expect(find.byKey(const ValueKey('alarm-quiet')), findsOneWidget);
     expect(find.textContaining('Rings again at'), findsOneWidget);
     expect(find.text('Dismiss'), findsOneWidget);
   });
 
-  testWidgets('opened during ring 2 with nothing ringing: rings', (t) async {
+  testWidgets('opened after its time but not in the queue: rings', (t) async {
     final sound = _FakeAlarmSound();
     await t.pumpWidget(
       harness(
@@ -531,12 +531,86 @@ void main() {
     expect(find.text('PLAN'), findsOneWidget);
   });
 
+  test('a repeat is labelled with its ring; a new alarm is not', () {
+    expect(alarmRingLabel(1), isNull);
+    expect(alarmRingLabel(2), 'Reminder 2 of 3');
+    expect(alarmRingLabel(3), 'Reminder 3 of 3');
+  });
+
+  test('the ring count in words matches the native queue', () {
+    final native = File(
+      'android/app/src/main/kotlin/com/timeapp/time_app/reminders/'
+      'RingQueuePolicy.kt',
+    ).readAsStringSync();
+    expect(native, contains('const val RINGS = $kAlarmRingCount'));
+  });
+
+  testWidgets('a cold-started repeat names who, what, when and which ring '
+      'before the item stream loads (2026-10-05)', (t) async {
+    final sound = _FakeAlarmSound(ringingList: ['a'])
+      ..details = [
+        RingingAlarm(
+          itemId: 'a',
+          headline: '{planner} planned Morning run for you',
+          scheduledAtUtc: DateTime.utc(2030, 1, 1, 3, 30),
+          ring: 2,
+          voice: false,
+          sounding: true,
+        ),
+      ];
+    await t.pumpWidget(
+      harness(
+        sound,
+        _FakeScheduler(),
+        items: const Stream<List<ScheduleItem>>.empty(),
+      ),
+    );
+    await t.pump();
+    await t.pump(const Duration(seconds: 3));
+    expect(find.text('Reminder 2 of 3'), findsOneWidget);
+    expect(headlineText(t), '{planner} planned Morning run for you');
+    expect(find.byKey(const ValueKey('alarm-planned-at')), findsOneWidget);
+  });
+
+  testWidgets('a batch lists every alarm with its time and ring, and marks '
+      'the one playing (2026-10-05)', (t) async {
+    final sound = _FakeAlarmSound(ringingList: ['a', 'b'])
+      ..details = [
+        RingingAlarm(
+          itemId: 'a',
+          headline: '{planner} sent you a voice alarm',
+          scheduledAtUtc: DateTime.utc(2030, 1, 1, 3, 30),
+          ring: 2,
+          voice: true,
+          sounding: false,
+        ),
+        RingingAlarm(
+          itemId: 'b',
+          headline: 'Friend sent you a voice alarm',
+          scheduledAtUtc: DateTime.utc(2030, 1, 1, 3, 31),
+          ring: 3,
+          voice: true,
+          sounding: true,
+        ),
+      ];
+    await t.pumpWidget(harness(sound, _FakeScheduler()));
+    await t.pump();
+    await t.pump(const Duration(seconds: 3));
+    expect(find.text('Also ringing'), findsOneWidget);
+    expect(find.text('Friend sent you a voice alarm'), findsOneWidget);
+    expect(find.textContaining('Reminder 3 of 3'), findsOneWidget);
+    expect(find.byKey(const ValueKey('alarm-now-playing-b')), findsOneWidget);
+    expect(find.byKey(const ValueKey('alarm-now-playing-a')), findsNothing);
+    await t.tap(find.text('Dismiss').first);
+    await t.pumpAndSettle();
+  });
+
   test('alsoRingingIds leaves out this alarm and keeps the order', () {
     expect(alsoRingingIds(['b', 'a', 'c'], 'a'), ['b', 'c']);
     expect(alsoRingingIds(const [], 'a'), isEmpty);
   });
 
-  test('alarmScreenPhase follows the 25-minute cycle (2026-10-04)', () {
+  test('alarmScreenPhase follows the native queue (2026-10-05)', () {
     final due = DateTime.utc(2030, 1, 1, 9);
     final i = dueAgo(Duration.zero);
     final at = ScheduleItem(
@@ -550,15 +624,26 @@ void main() {
       scheduledInstantUtc: due,
       status: i.status,
     );
-    RingPhase at_(Duration after) =>
-        alarmScreenPhase(at, nowUtc: due.add(after));
-    expect(at_(Duration.zero), isA<Ringing>());
-    expect(at_(const Duration(minutes: 4)), isA<Ringing>());
-    expect(at_(const Duration(minutes: 5)), isA<Quiet>());
-    expect(at_(const Duration(minutes: 10)), isA<Ringing>());
-    expect(at_(const Duration(minutes: 24)), isA<Ringing>());
-    expect(at_(const Duration(minutes: 25)), isA<RingOver>());
-    expect(at_(const Duration(seconds: -30)), isA<Ringing>());
+    AlarmScreenPhase phase(Duration after, {Duration? nextIn}) =>
+        alarmScreenPhase(
+          at,
+          nowUtc: due.add(after),
+          nextRingAtUtc: nextIn == null ? null : due.add(after).add(nextIn),
+        );
+    // Waiting in the queue for a repeat, however far it was pushed back.
+    expect(
+      phase(const Duration(minutes: 7), nextIn: const Duration(minutes: 40)),
+      AlarmScreenPhase.waiting,
+    );
+    // Due now in the queue.
+    expect(
+      phase(const Duration(minutes: 7), nextIn: Duration.zero),
+      AlarmScreenPhase.ring,
+    );
+    // Not in the queue: rung (it joins as a new alarm) unless a day old.
+    expect(phase(Duration.zero), AlarmScreenPhase.ring);
+    expect(phase(const Duration(hours: 3)), AlarmScreenPhase.ring);
+    expect(phase(const Duration(hours: 24)), AlarmScreenPhase.over);
   });
 
   testWidgets('an item already marked unavailable leaves too', (t) async {
@@ -656,6 +741,31 @@ class _FakeAlarmSound implements AlarmSound {
 
   /// Every alarm the native service is ringing now (2026-10-04).
   List<String> ringingList;
+
+  /// The native queue's forecast for the next ring (2026-10-05).
+  DateTime? nextRing;
+
+  /// The segment's rows as native reports them (2026-10-05); derived from
+  /// [ringingList] when not set.
+  List<RingingAlarm>? details;
+
+  @override
+  Future<List<RingingAlarm>> segmentDetails() async {
+    if (details != null) return details!;
+    final ids = await ringingItems();
+    return [
+      for (final id in ids)
+        RingingAlarm(
+          itemId: id,
+          headline: '',
+          scheduledAtUtc: null,
+          ring: 1,
+          voice: false,
+          sounding: id == (ringing ?? ids.last),
+        ),
+    ];
+  }
+
   final stopped = <String>[];
 
   final Completer<void>? startGate;
@@ -669,7 +779,14 @@ class _FakeAlarmSound implements AlarmSound {
   final startHeadlines = <String>[];
 
   @override
-  Future<void> start(String itemId, {String headline = ''}) async {
+  Future<DateTime?> nextRingAt(String itemId) async => nextRing;
+
+  @override
+  Future<void> start(
+    String itemId, {
+    String headline = '',
+    DateTime? scheduledAtUtc,
+  }) async {
     starts++;
     startHeadlines.add(headline);
     if (startGate != null) await startGate!.future;
@@ -689,7 +806,8 @@ class _FakeAlarmSound implements AlarmSound {
   }
 
   @override
-  Future<List<String>> ringingItems() async => ringingList;
+  Future<List<String>> ringingItems() async =>
+      ringingList.isEmpty && ringing != null ? [ringing!] : ringingList;
 
   @override
   Future<String?> ringingItem() async => ringing;

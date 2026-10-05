@@ -181,7 +181,7 @@ class _VoiceNoteRecorderState extends ConsumerState<VoiceNoteRecorder> {
     _ticker?.cancel();
     _hardStop?.cancel();
     _clock.stop();
-    // An automatic stop is the full-length note: shown as 1:00.
+    // An automatic stop is the full-length note: shown as 0:25.
     final length = auto || _clock.elapsed > kMaxVoiceNote
         ? kMaxVoiceNote
         : _clock.elapsed;
@@ -281,13 +281,13 @@ class _VoiceNoteRecorderState extends ConsumerState<VoiceNoteRecorder> {
               style: context.text.bodyMedium,
             ),
             Text(
-              'Up to 1 minute. It repeats for as long as the alarm rings.',
+              'Up to 25 seconds. It repeats for as long as the alarm rings.',
               style: muted,
             ),
             if (_phase == _Phase.recorded && _autoStopped) ...[
               const SizedBox(height: Space.sm),
               Text(
-                'Stopped at 1 minute, the longest a voice note can be.',
+                'Stopped at 25 seconds, the longest a voice note can be.',
                 key: const ValueKey('voice-note-auto-stopped'),
                 style: muted,
               ),

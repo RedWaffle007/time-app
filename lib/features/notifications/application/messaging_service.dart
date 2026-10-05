@@ -42,9 +42,16 @@ ReminderRequest? reminderRequestFromPushData(Map<String, dynamic> data) {
   // A voice alarm (item 32c-2) arms WITH its note.
   final sha = data['voiceSha256'];
   final size = int.tryParse('${data['voiceSizeBytes'] ?? ''}');
+  // 2026-10-05: the note's length (absent from older Workers: 0, and the
+  // phone measures the file itself).
+  final durationMs = int.tryParse('${data['voiceDurationMs'] ?? ''}') ?? 0;
   final voice =
       sha is String && RegExp(r'^[0-9a-f]{64}$').hasMatch(sha) && size != null && size > 0
-      ? ReminderVoice(sha256: sha, sizeBytes: size)
+      ? ReminderVoice(
+          sha256: sha,
+          sizeBytes: size,
+          durationMs: durationMs > 0 ? durationMs : 0,
+        )
       : null;
   return ReminderRequest(
     itemId: itemId,

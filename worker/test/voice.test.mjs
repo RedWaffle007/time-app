@@ -172,7 +172,7 @@ test('bad audio is refused before anything is stored', async () => {
     [new Uint8Array(MAX_VOICE_BYTES + 1), 413, 'too-large'],
     [new TextEncoder().encode('<script>alert(1)</script>'), 415, 'unsupported-type'],
     [m4a({ noMoov: true }), 415, 'unreadable-audio'],
-    [m4a({ ms: 60600 }), 413, 'too-long'],
+    [m4a({ ms: 25600 }), 413, 'too-long'],
     [m4a({ ms: 100 }), 400, 'too-short'],
     [m4a({ ms: 999 }), 400, 'too-short'],
   ];
@@ -192,9 +192,9 @@ test('the shortest accepted note is exactly one second (F5)', async () => {
   assert.equal(h.store[`voiceUploads/${ITEM}`].durationMs, 1000);
 });
 
-test('a full one-minute note is accepted (2026-10-04)', async () => {
-  assert.equal(MAX_VOICE_MS, 60_500);
-  for (const ms of [59_000, 60_000, 60_500]) {
+test('a full 25-second note is accepted (2026-10-05)', async () => {
+  assert.equal(MAX_VOICE_MS, 25_500);
+  for (const ms of [24_000, 25_000, 25_500]) {
     const h = harness();
     const res = await upload(h, { bytes: m4a({ ms }) });
     assert.equal(res.status, 200, `${ms} ms`);

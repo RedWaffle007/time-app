@@ -1,6 +1,5 @@
 import '../../scheduling/domain/schedule_item.dart';
 import '../domain/reminder.dart';
-import 'ring_cycle.dart';
 
 /// **The one rule for whether an item gets a reminder**, and the only place the
 /// reminder layer is allowed to know what a [ScheduleItem] is.
@@ -22,12 +21,14 @@ import 'ring_cycle.dart';
 ///     prevent. `rejected`, `withdrawn` and `cancelled` are self-evident.
 ///   * **no outcome is recorded.** Done or skipped means the moment has been
 ///     answered; reminding afterwards is noise.
-///   * **the alarm is not over yet** (2026-10-04): its time is in the future,
-///     or it is still inside its 25-minute ring cycle ([kRingCycleTotal]) and
-///     was neither dismissed nor ran out. Without this the reconciler would
-///     cancel an alarm the moment its time passed — taking its second and
-///     third rings with it. Done or Skip mid-cycle still ends it, through the
-///     outcome rule above.
+///   * **the alarm is not over yet** (ring queue, 2026-10-05): it was neither
+///     dismissed nor ran out, and its time is less than [kAlarmLiveWindow]
+///     ago. Repeats have no cut-off and can be pushed far back by new
+///     alarms, so the alarm stays wanted until the native queue reports it
+///     missed (`unavailableAt`) or it is answered. Without this the
+///     reconciler would cancel an alarm the moment its time passed — taking
+///     its repeats with it. Done or Skip still ends it, through the outcome
+///     rule above.
 ///
 /// Archive state is deliberately NOT consulted. Archiving is a per-user *view*
 /// rule for settled items (`schedule_providers.dart`), and a live item is
@@ -56,7 +57,7 @@ List<ReminderRequest> desiredReminders({
           item.outcome == null &&
           item.alarm?.dismissedAt == null &&
           item.alarm?.unavailableAt == null &&
-          item.scheduledInstantUtc.add(kRingCycleTotal).isAfter(now))
+          item.scheduledInstantUtc.add(kAlarmLiveWindow).isAfter(now))
         ReminderRequest(
           itemId: item.id,
           fireAtUtc: item.scheduledInstantUtc,
@@ -70,6 +71,7 @@ List<ReminderRequest> desiredReminders({
               ? ReminderVoice(
                   sha256: item.voiceNote!.sha256,
                   sizeBytes: item.voiceNote!.sizeBytes,
+                  durationMs: item.voiceNote!.durationMs,
                 )
               : null,
         ),

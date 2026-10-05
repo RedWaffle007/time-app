@@ -552,9 +552,15 @@ Redmi pass in person.
   kept equal by tests: `reminders/application/ring_cycle.dart` and native
   `RingCyclePolicy`. Each next ring is its own exact alarm with a "Rings again
   at …" notice + Dismiss; nothing runs between rings.
-- **Do not undo:** `desiredReminders` keeps an alarm desired until its cycle
-  ends, and `reconcileReminders` never cancels or re-arms an armed alarm
-  mid-cycle. Reverting either silently kills rings 2 and 3.
+- **SUPERSEDED 2026-10-05 by the ring queue** (DECISIONS.md "Ring queue: new
+  alarms first, repeats fill the gaps"): new alarms ring at their time (up to
+  5 min, cut at the next new alarm), repeats are 2 min, batched, pushed back
+  with no cut-off; voice notes max 25 s. One rule: native `RingQueuePolicy`.
+  The store (`AlarmDeliveryStore`) IS the queue. **Do not undo:**
+  `desiredReminders` keeps an unanswered alarm wanted for 24 h, and
+  `reconcileReminders` never cancels or re-arms an armed alarm past its time
+  — reverting either silently kills its repeats. The reminder owner uid is
+  persisted so a cold start never cancels every native alarm.
 - **Several alarms at once:** own ring ends, newest has the speaker
   (`AlarmRingSet`); alarm screen lists the others with Dismiss / Dismiss all;
   Volume Down silences all.

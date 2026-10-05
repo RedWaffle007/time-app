@@ -329,6 +329,7 @@ class MainActivity : FlutterFragmentActivity() {
                             this,
                             call.argument<String>("itemId") ?: "",
                             call.argument<String>("headline") ?: "",
+                            (call.argument<Number>("scheduledAtMillis") ?: 0).toLong(),
                         )
                         result.success(null)
                     }
@@ -337,13 +338,24 @@ class MainActivity : FlutterFragmentActivity() {
                     // instead of placeholders while the item stream loads.
                     "headline" -> result.success(
                         AlarmSoundService.headlineFor(
+                            this,
                             call.argument<String>("itemId") ?: "",
                         ),
                     )
                     // R5: the plan ringing now, for an app opened mid-ring.
                     "ringingItem" -> result.success(AlarmSoundService.ringingItemId())
-                    // 2026-10-04: every alarm ringing now, oldest first.
+                    // 2026-10-05: every alarm in the segment ringing now.
                     "ringingItems" -> result.success(AlarmSoundService.ringingItemIds())
+                    // 2026-10-05: the rows of the segment ringing now.
+                    "segmentDetails" -> result.success(AlarmSoundService.segmentDetails(this))
+                    // 2026-10-05: when a waiting alarm rings next (forecast),
+                    // or null when it is not waiting in the queue.
+                    "nextRingAt" -> result.success(
+                        AlarmSoundService.nextRingAt(
+                            this,
+                            call.argument<String>("itemId") ?: "",
+                        ),
+                    )
                     // R5: an alarm opened too late to ring ends as missed.
                     "missLate" -> {
                         AlarmSoundService.missWithoutRinging(

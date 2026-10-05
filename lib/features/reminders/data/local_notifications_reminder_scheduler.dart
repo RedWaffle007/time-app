@@ -325,6 +325,7 @@ class LocalNotificationsReminderScheduler implements ReminderScheduler {
       voicePath: voicePath,
       voiceSha256: voicePath == null ? null : voice!.sha256,
       voiceSizeBytes: voicePath == null ? null : voice!.sizeBytes,
+      voiceDurationMs: voicePath == null ? null : voice!.durationMs,
     );
     if (delivery != 'ok') {
       _audit.note(

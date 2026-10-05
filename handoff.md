@@ -54,6 +54,31 @@
 
 ## Current state
 
+- **2026-10-05 (latest): ring queue — BUILT, NOT committed, NOT on a phone.**
+  User-directed redesign of the alarm cycle; full reasoning in DECISIONS.md
+  "Ring queue: new alarms first, repeats fill the gaps" (+ its stage 3 and
+  stages 4-5 entries). New alarms ring at their time (up to 5 min, cut at the
+  next new alarm, 20 s minimum for a tone, a voice play never cut); 2 repeats
+  of 2 min each, due 10 min after the previous ring started, only in free
+  time, batched (voice notes first, 3 s apart, then one tone), no cut-off;
+  "User unavailable" after the last repeat; voice notes max 25 s. One rule:
+  native `RingQueuePolicy` (JVM-tested with a simulator). The native store
+  IS the queue. Also fixed: every cold start used to cancel every native
+  alarm (reminder owner uid now persisted).
+  - **Deployed by the user 2026-10-05:** Worker (25.5 s / 256 KB voice limit,
+    then `voiceDurationMs` in the killed-app push) and the rules (voice
+    limits). **The ring-record rules (`alarm.ring/ringAt/ringEndsAt/
+    nextRingAt`) are NOT deployed yet** — deploy rules before installing,
+    or the planner card stays blank (writes are refused, nothing else breaks).
+  - Verification: analyze clean, Flutter 1098, Worker 247, rules 301,
+    Android unit tests green. Debug APK built for the Redmi pass.
+  - Lock-screen wake report (2026-10-05): voice note did not start until
+    unlock on the user's latest build. The code path did not change between
+    builds; suspected HyperOS per-app permissions reset by a reinstall
+    (Autostart / Show on Lock screen / pop-ups). The user rejected OEM-
+    specific prompts. Check it with the debug build's logs (see the device
+    list below).
+
 - **2026-10-04 (latest): alarm duration overhaul — BUILT, committed
   (`462f091` … `6286eee`), deploys done; NOT checked on a phone.** User-directed
   ("mirror standard phone alarm behavior"). Full reasoning: DECISIONS.md "Alarm
@@ -277,7 +302,36 @@
   `calendar_markers.dart` are known-unclean. Formatting a directory reflowed
   unrelated files twice on 2026-09-28 (restored from HEAD each time).
 
-## Device test list (2026-10-04) — DO THIS FIRST
+## Device test list (2026-10-05, ring queue) — DO THIS FIRST
+
+Debug build (dev menu → Reminder audit for `RING_FIRST`, `RING_REPEAT`,
+`QUEUE_WAKE`, `QUEUE_WOKE`, `AUDIO_FIRED`, `AUDIO_START_FAILED`). Deploy the
+rules first and run `scripts/check-deployed-rules.sh`.
+
+1. **Lock-screen wake (reported regression):** plan a default alarm and a
+   voice note 2 min out, lock the phone, screen off. Expect: screen wakes,
+   alarm screen over the lock screen, sound starts at once. If not, capture
+   `adb logcat -s AlarmSound RingRecordReporter` + `dumpsys alarm` + the audit
+   CSV — `AUDIO_FIRED` absent = the receiver never ran (OEM block).
+2. **One alarm alone:** rings 5 min; repeats at +10 and +20 min (2 min each);
+   "Rings again at …" notice between; Missed + "User unavailable" after the
+   last repeat.
+3. **Back to back (5:08 + 5:09):** 5:08 rings 1 min, 5:09 on time.
+4. **New alarm on a repeat's minute:** it rings on time, the repeats ring
+   together right after it.
+5. **Batch:** two voice notes + one default alarm missed → repeat plays
+   both notes (3 s apart, "Now playing" moves), then the tone; rows show
+   who/what/time/"Reminder 2 of 3"; Dismiss one row, the rest go on.
+6. **Voice note 25 s:** recorder stops at 0:25; two plays fit in a 1-min ring.
+7. **Planner card (second account):** "Ringing now" → "Not answered · rings
+   again about …" → "Ringing · reminder 2 of 3".
+8. **Missed together:** two alarms run out → ONE pop-up, a row each.
+9. **Kill + reboot:** swipe the app away mid-queue — repeats still ring;
+   reboot between rings — the next repeat still rings.
+10. **Cold start keeps alarms:** open the app from the alarm (killed
+    before) — the alarm keeps ringing and later repeats still come.
+
+## Device test list (2026-10-04) — superseded by the ring queue where they overlap
 
 The user runs this in person. Build a release with `version: 1.0.0+7`
 (`flutter build apk --release`, then `adb install -r

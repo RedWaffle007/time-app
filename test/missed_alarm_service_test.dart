@@ -569,9 +569,8 @@ void main() {
     expect(service.reviews, isEmpty);
   });
 
-  testWidgets('multiple misses are reviewed one at a time with two actions', (
-    tester,
-  ) async {
+  testWidgets('multiple misses share ONE pop-up, a row each with its own '
+      'answers (2026-10-05)', (tester) async {
     final store = _MemoryLifecycleStore([
       _event(),
       AlarmLifecycleEvent(
@@ -627,16 +626,15 @@ void main() {
     ], 'target');
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('2 missed alarms'), findsOneWidget);
-    expect(find.text('Morning walk'), findsOneWidget);
-    expect(find.text('Medicine'), findsNothing);
+    expect(find.text('You missed 2 alarms'), findsOneWidget);
+    expect(find.text('{planner} planned Morning walk for you'), findsOneWidget);
+    expect(find.text('{planner} planned Medicine for you'), findsOneWidget);
+    expect(find.textContaining('Planned for'), findsNWidgets(2));
     expect(find.text('Mark reviewed'), findsNothing);
-    expect(find.text('Mark as Skipped'), findsOneWidget);
-    expect(find.text('Mark as Done'), findsOneWidget);
     // Removed on request (2026-09-25).
     expect(find.textContaining('permanently recorded'), findsNothing);
 
-    await tester.tap(find.text('Mark as Skipped'));
+    await tester.tap(find.byKey(const ValueKey('missed-row-skip-item')));
     await tester.pump();
     // "Updating {planner}…" holds the answered review on screen for 1.5 s.
     expect(find.text('Updating {planner}…'), findsOneWidget);
@@ -936,7 +934,7 @@ void main() {
     expect(
       find.text(
         '{planner} planned Morning walk for you. '
-        'It rang for 25 minutes with no response.',
+        'It rang 3 times with no response.',
       ),
       findsOneWidget,
     );
@@ -947,19 +945,19 @@ void main() {
       expect(
         missedPopupMessage(_item(), plannerName: '{planner}'),
         '{planner} planned Morning walk for you. '
-        'It rang for 25 minutes with no response.',
+        'It rang 3 times with no response.',
       );
       expect(
         missedPopupMessage(_item()),
         'Someone planned Morning walk for you. '
-        'It rang for 25 minutes with no response.',
+        'It rang 3 times with no response.',
       );
     });
 
     test('a self-plan needs no name', () {
       expect(
         missedPopupMessage(_item(createdByUid: 'target'), plannerName: 'x'),
-        'You planned Morning walk. It rang for 25 minutes with no response.',
+        'You planned Morning walk. It rang 3 times with no response.',
       );
     });
 

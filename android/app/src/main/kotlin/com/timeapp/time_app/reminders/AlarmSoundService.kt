@@ -23,22 +23,25 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.timeapp.time_app.MainActivity
 import com.timeapp.time_app.R
+import com.timeapp.time_app.reminders.RingQueuePolicy.Segment
+import com.timeapp.time_app.reminders.RingQueuePolicy.Sound
 
 /**
- * Owns the alarm SOUND so it is independent of the screen.
+ * Owns the alarm SOUND so it is independent of the screen, and runs the ring
+ * queue (2026-10-05): DECISIONS.md "Ring queue: new alarms first, repeats
+ * fill the gaps".
  *
- * Scheduled notifications are deliberately silent. Repetition is owned only
- * here instead of by notification audio or FLAG_INSISTENT: some Android
- * variants restart notification sound on a short cadence without waiting for
- * the source to finish. A foreground service holding a PARTIAL_WAKE_LOCK and
- * playing a looping [MediaPlayer] on USAGE_ALARM finishes the selected tone
- * before each replay and keeps ringing with the screen off until dismissal.
+ * Every live alarm sits in [AlarmDeliveryStore] with its counted rings. When
+ * something is due, this foreground service — holding a PARTIAL_WAKE_LOCK so
+ * the sound carries on with the screen off — asks [RingQueuePolicy] what to
+ * play, plays that segment (one new alarm's ring, or a batch of repeats), and
+ * asks again when it ends. A new alarm coming due mid-segment cuts in under
+ * the policy's rules. When nothing is due the service stops; the next look is
+ * an exact OS alarm ([AlarmDeliveryScheduler.armQueueWake]), so the phone
+ * sleeps between rings.
  *
- * Lifecycle is driven from Dart over `time_app/alarm_sound` (start on mount, stop
- * on dismiss). Each ring is capped at 5 minutes so a missed dismiss cannot ring
- * — or hold the wake lock — indefinitely. Between rings (2026-10-04) nothing
- * runs at all: the next ring is an exact OS alarm, and a quiet notice with
- * Dismiss stands in for it ([enterQuiet]).
+ * Scheduled notifications are deliberately silent: this service is the one
+ * place alarm audio comes from.
  */
 class AlarmSoundService : Service() {
 
@@ -54,78 +57,140 @@ class AlarmSoundService : Service() {
          */
         const val ACTION_RINGING_STARTED = "com.timeapp.time_app.ALARM_RINGING_STARTED"
         const val EXTRA_RINGING_ITEM = "itemId"
-        private const val ACTION_STOP_NOTIFICATION =
-            "com.timeapp.time_app.ALARM_STOP_NOTIFICATION"
         private const val ACTION_STOP_ITEM = "com.timeapp.time_app.ALARM_STOP_ITEM"
+        private const val ACTION_LEAVE_ITEM = "com.timeapp.time_app.ALARM_LEAVE_ITEM"
         private const val ACTION_VOLUME_SILENCE =
             "com.timeapp.time_app.ALARM_VOLUME_SILENCE"
         private const val ACTION_NOTIFICATION_DISMISS =
             "com.timeapp.time_app.ALARM_NOTIFICATION_DISMISS"
-        private const val EXTRA_NOTIFICATION_ID = "notification_id"
         private const val EXTRA_ITEM_ID = "item_id"
-        private const val EXTRA_HEADLINE = "headline"
-        private const val EXTRA_SCHEDULED = "scheduled_epoch"
-        private const val EXTRA_RING_INDEX = "ring_index"
-        private const val EXTRA_RING_ENDS = "ring_ends_epoch"
         private const val MISSED_CHANNEL_ID = "time_app_missed_alarms"
-        private const val QUIET_CHANNEL_ID = "time_app_alarm_quiet"
+        private const val WAITING_CHANNEL_ID = "time_app_alarm_quiet"
 
         private const val CHANNEL_ID = "time_app_alarm_ringing_v2"
         private const val LEGACY_CHANNEL_ID = "time_app_alarm_ringing"
-        // Fixed id: there is only ever one alarm ringing, and re-posting under the
-        // same id updates the one notification rather than stacking them.
+        // Fixed id: one segment rings at a time, and re-posting under the same
+        // id updates the one notification rather than stacking them.
         private const val NOTIF_ID = 0x7A1A
         private const val WAKE_TAG = "time_app:alarm_sound"
         private const val TAG = "AlarmSound"
+
+        /** Extra wake-lock time past a segment's planned end. */
+        private const val WAKE_SLACK_MS = 60_000L
+
+        /** The fallback look after a segment, should the process die. */
+        private const val SAFETY_WAKE_MS = 5_000L
+
         @Volatile private var ringing = false
 
-        /** The plan ringing now, for an app opened mid-ring (R5). */
+        /** The service is alive and owns the queue right now. */
+        @Volatile private var running = false
+
+        /** The plan whose sound is playing now, for an app opened mid-ring (R5). */
         @Volatile private var ringingItem: String? = null
 
+        /** Every alarm in the segment ringing now, in its order. */
+        @Volatile private var ringingItems: List<String> = emptyList()
+
         /**
-         * itemId → "{planner} planned {task} for you". Delivered with the alarm itself,
-         * so the heads-up, the lock-screen AlarmScreen and the missed notice all
-         * name who and what from the first frame — no item/profile read needed.
+         * itemId → "{planner} planned {task} for you". Stored with the alarm,
+         * so the heads-up, the lock-screen AlarmScreen and the missed notice
+         * all name who and what from the first frame.
          */
         private val headlines = java.util.concurrent.ConcurrentHashMap<String, String>()
 
-        fun headlineFor(itemId: String): String? = headlines[itemId]
+        fun headlineFor(context: Context, itemId: String): String? =
+            headlines[itemId]
+                ?: AlarmDeliveryStore.load(context).firstOrNull { it.itemId == itemId }
+                    ?.headline?.takeIf { it.isNotBlank() }
 
-        /** Where a ringing item is in its cycle (2026-10-04), so the end of
-         *  this ring knows whether another follows. */
-        private data class Cycle(
-            val notificationId: Int,
-            val scheduledEpoch: Long,
-            val ringIndex: Int,
-            val voice: VoiceAlarmSpec?,
-        )
+        private fun remember(rows: List<AlarmDeliveryStore.Pending>) {
+            rows.forEach { if (it.headline.isNotBlank()) headlines[it.itemId] = it.headline }
+        }
 
-        private val cycles = java.util.concurrent.ConcurrentHashMap<String, Cycle>()
+        /** True only while this process owns active alarm playback. */
+        fun isRinging(): Boolean = ringing
 
-        fun start(
-            context: Context,
-            notificationId: Int,
-            itemId: String,
-            headline: String = "",
-            voice: VoiceAlarmSpec? = null,
-            scheduledEpoch: Long = 0L,
-            ringIndex: Int = 0,
-            ringEndsEpoch: Long = 0L,
-        ): Boolean {
-            if (itemId.isNotEmpty() && headline.isNotBlank()) {
-                headlines[itemId] = headline
+        /** The item sounding now, or null (R5). */
+        fun ringingItemId(): String? = if (ringing) ringingItem else null
+
+        /** Every alarm in the segment ringing now. */
+        fun ringingItemIds(): List<String> = if (ringing) ringingItems else emptyList()
+
+        /** The segment ringing now, for forecasts made from outside. */
+        @Volatile private var playingSegment: Segment? = null
+
+        /** Which ring each alarm in [playingSegment] is on. */
+        @Volatile private var playingRings: Map<String, Int> = emptyMap()
+
+        /**
+         * Every alarm in the segment ringing now, for the alarm screen's rows
+         * (2026-10-05): who and what (the stored sentence), the plan's time,
+         * which ring, whether it is a voice note and whether it is the one
+         * sounding. All from the store, so a cold start has it at once.
+         */
+        fun segmentDetails(context: Context): List<Map<String, Any>> {
+            if (!ringing) return emptyList()
+            val segment = playingSegment ?: return emptyList()
+            val rows = AlarmDeliveryStore.load(context).associateBy { it.itemId }
+            val sounding = ringingItem
+            return segment.itemIds.map { id ->
+                val row = rows[id]
+                mapOf(
+                    "itemId" to id,
+                    "headline" to (row?.headline ?: headlines[id]).orEmpty(),
+                    "scheduledAtMillis" to (row?.scheduledEpoch ?: 0L),
+                    "ring" to (playingRings[id] ?: 1),
+                    "voice" to (row?.voice != null),
+                    "sounding" to (id == sounding),
+                )
             }
-            val intent = Intent(context, AlarmSoundService::class.java)
-                .setAction(ACTION_START)
-                .putExtra(EXTRA_NOTIFICATION_ID, notificationId)
-                .putExtra(EXTRA_ITEM_ID, itemId)
-                .putExtra(EXTRA_HEADLINE, headline)
-                .putExtra(EXTRA_SCHEDULED, scheduledEpoch)
-                .putExtra(EXTRA_RING_INDEX, ringIndex)
-                .putExtra(EXTRA_RING_ENDS, ringEndsEpoch)
-            voice?.putInto(intent, "")
+        }
+
+        /**
+         * When [itemId] rings next if nothing new is planned, or null when it
+         * is not in the queue. While it rings, this is the ring after.
+         */
+        fun nextRingAt(context: Context, itemId: String): Long? {
+            val rows = AlarmDeliveryStore.load(context)
+            if (rows.none { it.itemId == itemId }) return null
+            return RingQueuePolicy.forecast(
+                rows.map { it.toAlarm() },
+                System.currentTimeMillis(),
+                playingSegment,
+            )[itemId]
+        }
+
+        /**
+         * Look at the queue now: an OS alarm fired (a plan's time, or the
+         * queue's own wake-up), or the queue changed. Starts the service when
+         * something is due; otherwise arms the next wake-up. Returns false
+         * only when a due alarm could not start its service.
+         */
+        fun kick(context: Context): Boolean {
+            if (running) {
+                return try {
+                    context.startService(
+                        Intent(context, AlarmSoundService::class.java).setAction(ACTION_START),
+                    )
+                    true
+                } catch (error: Throwable) {
+                    Log.e(TAG, "failed to reach the running service", error)
+                    false
+                }
+            }
+            val now = System.currentTimeMillis()
+            val rows = loadQueue(context, now)
+            val alarms = rows.map { it.toAlarm() }
+            if (RingQueuePolicy.nextSegment(alarms, now) == null) {
+                planIdle(context, rows, alarms, now, null)
+                return true
+            }
             return try {
-                ContextCompat.startForegroundService(context, intent)
+                ContextCompat.startForegroundService(
+                    context,
+                    Intent(context, AlarmSoundService::class.java).setAction(ACTION_START),
+                )
                 true
             } catch (error: Throwable) {
                 Log.e(TAG, "failed to request alarm service start", error)
@@ -133,54 +198,130 @@ class AlarmSoundService : Service() {
             }
         }
 
-        /** UI fallback when native delivery did not run first. */
-        fun startForItem(context: Context, itemId: String, headline: String = "") =
-            start(context, -1, itemId, headline)
-
-        fun stopForItem(context: Context, itemId: String) {
-            // Not startForeground: a stop must never (re)promote the service.
-            val intent = Intent(context, AlarmSoundService::class.java)
-                .setAction(ACTION_STOP_ITEM)
-                .putExtra(EXTRA_ITEM_ID, itemId)
-            context.startService(intent)
-        }
-
-        fun stopForNotification(context: Context, notificationId: Int) {
-            val intent = Intent(context, AlarmSoundService::class.java)
-                .setAction(ACTION_STOP_NOTIFICATION)
-                .putExtra(EXTRA_NOTIFICATION_ID, notificationId)
-            try {
-                context.startService(intent)
-            } catch (_: Throwable) {
-                // If no service exists Android may reject a background start;
-                // there is then no playback to stop.
+        /**
+         * The alarm screen opened [itemId] (R5 / UI fallback): make sure it is
+         * in the queue, then look. A plan the native side never armed joins
+         * as a new alarm at its own time.
+         */
+        fun startForItem(context: Context, itemId: String, headline: String, scheduledEpoch: Long) {
+            if (itemId.isEmpty()) return
+            if (headline.isNotBlank()) headlines[itemId] = headline
+            val rows = AlarmDeliveryStore.load(context)
+            if (rows.none { it.itemId == itemId }) {
+                AlarmDeliveryStore.put(
+                    context,
+                    AlarmDeliveryStore.Pending(
+                        id = ("ui:$itemId").hashCode() and 0x7FFF_FFFF,
+                        itemId = itemId,
+                        scheduledEpoch = if (scheduledEpoch > 0) scheduledEpoch else System.currentTimeMillis(),
+                        exact = true,
+                        headline = headline,
+                    ),
+                )
             }
+            kick(context)
         }
-
-        fun stopAll(context: Context) {
-            val intent = Intent(context, AlarmSoundService::class.java).setAction(ACTION_STOP)
-            try {
-                context.startService(intent)
-            } catch (_: Throwable) {
-            }
-        }
-
-        /** True only while this process owns active alarm playback. */
-        fun isRinging(): Boolean = ringing
-
-        /** The item ringing now, or null (R5). */
-        fun ringingItemId(): String? = if (ringing) ringingItem else null
-
-        /** Every alarm in a ring now, oldest first (2026-10-04). */
-        @Volatile private var ringingItems: List<String> = emptyList()
-
-        fun ringingItemIds(): List<String> = if (ringing) ringingItems else emptyList()
 
         /**
-         * An alarm delivered after its whole ring cycle ran out
-         * ([RingCyclePolicy]) ends exactly as an unanswered ring does, but
-         * without a sound: the missed notice, the timeout row (the app's
-         * missed popup) and the planner's "unavailable" push.
+         * Dismiss from the app (the alarm screen): [itemId] leaves the queue
+         * and stops if it is ringing; the rest carry on. The app records the
+         * dismissal itself.
+         */
+        fun stopForItem(context: Context, itemId: String) {
+            if (itemId.isEmpty()) return
+            if (running) {
+                context.startService(
+                    Intent(context, AlarmSoundService::class.java)
+                        .setAction(ACTION_STOP_ITEM)
+                        .putExtra(EXTRA_ITEM_ID, itemId),
+                )
+                return
+            }
+            AlarmDeliveryStore.removeItems(context, listOf(itemId))
+            kick(context)
+        }
+
+        /**
+         * The plan is no longer wanted (answered, withdrawn, dismissed between
+         * rings): already removed from the store by the caller. Stop it if it
+         * is ringing, and re-plan the rest.
+         */
+        fun leaveQueue(context: Context, itemId: String) {
+            if (running) {
+                try {
+                    context.startService(
+                        Intent(context, AlarmSoundService::class.java)
+                            .setAction(ACTION_LEAVE_ITEM)
+                            .putExtra(EXTRA_ITEM_ID, itemId),
+                    )
+                } catch (_: Throwable) {
+                }
+                return
+            }
+            kick(context)
+        }
+
+        /**
+         * Reads the queue: stale plans pruned, and any voice note whose length
+         * never arrived measured from its file and recorded (2026-10-05).
+         */
+        private fun loadQueue(context: Context, now: Long): List<AlarmDeliveryStore.Pending> {
+            val rows = pruneStale(context, AlarmDeliveryStore.load(context), now)
+            val measured = AlarmDeliveryStore.withMeasuredVoices(rows, VoiceNoteLength::measure)
+            if (measured != rows) AlarmDeliveryStore.save(context, measured)
+            remember(measured)
+            return measured
+        }
+
+        /** Plans whose first ring is a day overdue end as missed, unrung. */
+        private fun pruneStale(
+            context: Context,
+            rows: List<AlarmDeliveryStore.Pending>,
+            now: Long,
+        ): List<AlarmDeliveryStore.Pending> {
+            val stale = AlarmDeliveryStore.stale(rows, now)
+            if (stale.isEmpty()) return rows
+            AlarmDeliveryStore.removeItems(context, stale.map { it.itemId })
+            stale.forEach {
+                missWithoutRinging(context, it.itemId, it.headline, now, it.scheduledEpoch)
+            }
+            return rows.filterNot { row -> stale.any { it.itemId == row.itemId } }
+        }
+
+        /**
+         * Nothing to ring now: arm the next look, and keep each waiting alarm's
+         * "Rings again at …" notice current.
+         */
+        private fun planIdle(
+            context: Context,
+            rows: List<AlarmDeliveryStore.Pending>,
+            alarms: List<RingQueuePolicy.Alarm>,
+            now: Long,
+            current: Segment?,
+        ) {
+            if (current == null) {
+                val next = RingQueuePolicy.nextWakeAt(alarms, now)
+                if (next == null) {
+                    AlarmDeliveryScheduler.cancelQueueWake(context)
+                } else {
+                    val itemId = alarms.firstOrNull { it.dueAt == next }?.itemId.orEmpty()
+                    val armed = AlarmDeliveryScheduler.armQueueWake(context, next, itemId)
+                    ReminderAuditLog.write(
+                        context,
+                        event = "QUEUE_WAKE",
+                        itemId = itemId,
+                        atEpoch = next,
+                        note = if (armed) "armed" else "arm_failed",
+                    )
+                }
+            }
+            refreshWaitingNotices(context, rows, alarms, now, current)
+        }
+
+        /**
+         * An alarm whose first ring is long gone ends exactly as an unanswered
+         * ring does, but without a sound: the missed notice, the timeout row
+         * (the app's missed popup) and the planner's "unavailable" push.
          */
         fun missWithoutRinging(
             context: Context,
@@ -210,74 +351,56 @@ class AlarmSoundService : Service() {
             AlarmLifecycleChannel.notifyChanged()
         }
 
-        /**
-         * Between rings (2026-10-04): arm ring [nextIndex] at [nextAt] and show
-         * "Rings again at …" with Dismiss. Nothing runs meanwhile, so the
-         * phone sleeps. False if the next ring could not be armed — the
-         * caller then ends the alarm as missed rather than lose it silently.
-         */
-        fun enterQuiet(
-            context: Context,
-            notificationId: Int,
-            itemId: String,
-            scheduledEpoch: Long,
-            nextIndex: Int,
-            nextAt: Long,
-            headline: String,
-            voice: VoiceAlarmSpec?,
-        ): Boolean {
-            if (itemId.isEmpty() || notificationId < 0) return false
-            if (headline.isNotBlank()) headlines[itemId] = headline
-            val armed = AlarmDeliveryScheduler.arm(
-                context,
-                notificationId,
-                itemId,
-                scheduledEpoch,
-                exact = true,
-                headline = headline.ifBlank { headlines[itemId].orEmpty() },
-                voice = voice,
-                triggerEpoch = nextAt,
-            )
-            ReminderAuditLog.write(
-                context,
-                event = "RING_QUIET",
-                itemId = itemId,
-                notificationId = notificationId,
-                scheduledEpoch = scheduledEpoch,
-                note = "next ring $nextIndex at $nextAt: $armed",
-            )
-            if (armed != "ok") return false
-            postQuietNotice(context, notificationId, itemId, nextAt)
-            return true
-        }
-
-        private fun quietNoticeId(notificationId: Int): Int =
+        private fun waitingNoticeId(notificationId: Int): Int =
             ("quiet:$notificationId").hashCode()
 
-        fun cancelQuietNotice(context: Context, notificationId: Int) {
+        fun cancelWaitingNotice(context: Context, notificationId: Int) {
             try {
                 val nm = context.getSystemService(Context.NOTIFICATION_SERVICE)
                     as NotificationManager
-                nm.cancel(quietNoticeId(notificationId))
+                nm.cancel(waitingNoticeId(notificationId))
             } catch (_: Throwable) {
             }
         }
 
-        private fun postQuietNotice(
+        /**
+         * One ongoing notice per alarm waiting for a repeat: "Rings again at
+         * {forecast}" with Dismiss. Alarms not waiting (ringing now, or not
+         * rung yet) have none.
+         */
+        private fun refreshWaitingNotices(
             context: Context,
-            notificationId: Int,
-            itemId: String,
+            rows: List<AlarmDeliveryStore.Pending>,
+            alarms: List<RingQueuePolicy.Alarm>,
+            now: Long,
+            current: Segment?,
+        ) {
+            val forecast = RingQueuePolicy.forecast(alarms, now, current)
+            val inSegment = current?.itemIds.orEmpty().toSet()
+            rows.forEach { row ->
+                val at = forecast[row.itemId]
+                if (row.ringsDone >= 1 && row.itemId !in inSegment && at != null) {
+                    postWaitingNotice(context, row, at)
+                } else {
+                    cancelWaitingNotice(context, row.id)
+                }
+            }
+        }
+
+        private fun postWaitingNotice(
+            context: Context,
+            row: AlarmDeliveryStore.Pending,
             nextAt: Long,
         ) {
             try {
                 val nm = context.getSystemService(Context.NOTIFICATION_SERVICE)
                     as NotificationManager
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-                    nm.getNotificationChannel(QUIET_CHANNEL_ID) == null
+                    nm.getNotificationChannel(WAITING_CHANNEL_ID) == null
                 ) {
                     nm.createNotificationChannel(
                         NotificationChannel(
-                            QUIET_CHANNEL_ID,
+                            WAITING_CHANNEL_ID,
                             "Alarm between rings",
                             NotificationManager.IMPORTANCE_LOW,
                         ).apply {
@@ -291,37 +414,39 @@ class AlarmSoundService : Service() {
                 // The phone's own clock format (12/24 h, locale digits).
                 val time = android.text.format.DateFormat.getTimeFormat(context)
                     .format(java.util.Date(nextAt))
+                val noticeId = waitingNoticeId(row.id)
                 val open = PendingIntent.getActivity(
                     context,
-                    quietNoticeId(notificationId),
+                    noticeId,
                     Intent(context, MainActivity::class.java).apply {
                         action = "SELECT_NOTIFICATION"
                         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                        putExtra("notificationId", notificationId)
-                        putExtra("payload", itemId)
+                        putExtra("notificationId", row.id)
+                        putExtra("payload", row.itemId)
                     },
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
                 )
                 val dismiss = PendingIntent.getBroadcast(
                     context,
-                    quietNoticeId(notificationId),
+                    noticeId,
                     Intent(context, AlarmQuietDismissReceiver::class.java)
-                        .putExtra(AlarmQuietDismissReceiver.EXTRA_ID, notificationId)
-                        .putExtra(AlarmQuietDismissReceiver.EXTRA_ITEM, itemId),
+                        .putExtra(AlarmQuietDismissReceiver.EXTRA_ID, row.id)
+                        .putExtra(AlarmQuietDismissReceiver.EXTRA_ITEM, row.itemId),
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
                 )
-                val notification = NotificationCompat.Builder(context, QUIET_CHANNEL_ID)
+                val notification = NotificationCompat.Builder(context, WAITING_CHANNEL_ID)
                     .setSmallIcon(R.drawable.ic_notification)
-                    .setContentTitle(AlarmSoundPolicy.ringingTitle(headlines[itemId]))
+                    .setContentTitle(AlarmSoundPolicy.ringingTitle(row.headline))
                     .setContentText(AlarmSoundPolicy.quietText(time))
                     .setCategory(NotificationCompat.CATEGORY_ALARM)
                     .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                     // Only Dismiss ends it; a swipe would hide the one way to.
                     .setOngoing(true)
+                    .setOnlyAlertOnce(true)
                     .setContentIntent(open)
                     .addAction(R.drawable.ic_notification, "Dismiss", dismiss)
                     .build()
-                nm.notify(quietNoticeId(notificationId), notification)
+                nm.notify(noticeId, notification)
             } catch (e: Exception) {
                 Log.e(TAG, "failed to post between-rings notification: $e")
             }
@@ -393,253 +518,282 @@ class AlarmSoundService : Service() {
     private var player: MediaPlayer? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var foreground = false
-    private val ownership = AlarmPlaybackOwnership()
     private val handler = Handler(Looper.getMainLooper())
 
-    /**
-     * Every alarm in a ring right now, in the order they started (2026-10-04).
-     * Each keeps its OWN end time; only the newest one makes a sound. When it
-     * ends or is dismissed, the one before it takes the speaker back.
-     */
-    private val rings = AlarmRingSet()
-    private val sounds = mutableMapOf<String, VoiceAlarmSpec?>()
-    private val ringEnds = mutableMapOf<String, Runnable>()
+    /** The segment ringing now, and the plan time of its first alarm. */
+    private var current: Segment? = null
+    private var currentScheduledAt = 0L
+
+    /** Which ring each alarm in [current] is on (1, 2 or 3). */
+    private var ringNumbers: Map<String, Int> = emptyMap()
+
+    /** Every timer of [current]: sound starts and stops, and its end. */
+    private val timers = mutableListOf<Runnable>()
 
     /** The alarm whose sound is playing now. */
     private var soundingItem: String? = null
 
-    /** Voice-note plays completed in this ring (item 32c-2), for the audit. */
-    private var voicePlays = 0
-
-    /** Starts the next play of the voice note after [VoiceAlarmPolicy.REPLAY_GAP_MS]. */
-    private val voiceReplay = Runnable {
-        try {
-            player?.let { it.seekTo(0); it.start() }
-        } catch (e: IllegalStateException) {
-            Log.e(TAG, "voice replay failed: $e")
-        }
-    }
-
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onCreate() {
+        super.onCreate()
+        running = true
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Started with startForegroundService: promote at once, whatever the
+        // action, or Android ends the app for not doing so.
+        ensureForeground()
         when (intent?.action) {
             ACTION_STOP -> {
                 Log.i(TAG, "stop all")
-                stopAlarm()
-                return START_NOT_STICKY
-            }
-            ACTION_STOP_NOTIFICATION -> {
-                val notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, -1)
-                Log.i(TAG, "release notification owner $notificationId")
-                val itemId = ownership.itemForNotification(notificationId)
-                ownership.releaseNotification(notificationId)
-                // That alarm ends only once nothing else (its screen) holds it.
-                if (itemId != null && itemId !in ownership.itemIds()) dropItem(itemId)
-                if (!ownership.hasOwners) stopAlarm()
-                return START_NOT_STICKY
+                finish()
             }
             ACTION_STOP_ITEM -> {
-                val itemId = intent.getStringExtra(EXTRA_ITEM_ID) ?: ""
-                Log.i(TAG, "stop item $itemId")
-                ownership.releaseItem(itemId)
-                dropItem(itemId)
-                if (!ownership.hasOwners) stopAlarm()
-                return START_NOT_STICKY
+                val itemId = intent.getStringExtra(EXTRA_ITEM_ID).orEmpty()
+                Log.i(TAG, "dismissed in app: $itemId")
+                takeOut(listOf(itemId))
+            }
+            ACTION_LEAVE_ITEM -> {
+                val itemId = intent.getStringExtra(EXTRA_ITEM_ID).orEmpty()
+                Log.i(TAG, "left the queue: $itemId")
+                takeOut(listOf(itemId))
             }
             ACTION_VOLUME_SILENCE -> {
                 // Volume Down silences EVERY alarm ringing now (2026-10-04).
-                recordDismissal("VOLUME_SILENCED", "foreground_activity", rings.ids())
-                stopAlarm()
-                return START_NOT_STICKY
+                val ids = current?.itemIds.orEmpty()
+                recordDismissal("VOLUME_SILENCED", "foreground_activity", ids)
+                takeOut(ids)
             }
             ACTION_NOTIFICATION_DISMISS -> {
                 // The notification names the alarm that is sounding; Dismiss
-                // answers that one. Any other alarm ringing takes over.
-                val itemId = soundingItem
+                // answers that one. The rest of the segment carries on.
+                val itemId = soundingItem ?: current?.itemIds?.firstOrNull()
                 if (itemId == null) {
-                    stopAlarm()
+                    tick()
                 } else {
                     recordDismissal("NOTIFICATION_DISMISSED", "notification_action", listOf(itemId))
-                    ownership.releaseItem(itemId)
-                    dropItem(itemId)
+                    takeOut(listOf(itemId))
                 }
-                return START_NOT_STICKY
             }
-            else -> {
-                val notificationId = intent?.getIntExtra(EXTRA_NOTIFICATION_ID, -1) ?: -1
-                val itemId = intent?.getStringExtra(EXTRA_ITEM_ID) ?: ""
-                val headline = intent?.getStringExtra(EXTRA_HEADLINE).orEmpty()
-                val voice = VoiceAlarmSpec.from(intent, "")
-                val scheduledEpoch = intent?.getLongExtra(EXTRA_SCHEDULED, 0L) ?: 0L
-                val ringIndex = intent?.getIntExtra(EXTRA_RING_INDEX, 0) ?: 0
-                val ringEndsAt = intent?.getLongExtra(EXTRA_RING_ENDS, 0L) ?: 0L
-                if (itemId.isNotEmpty() && headline.isNotBlank()) {
-                    headlines[itemId] = headline
-                }
-                if (itemId.isNotEmpty() && notificationId >= 0 && ringIndex > 0) {
-                    cycles[itemId] = Cycle(notificationId, scheduledEpoch, ringIndex, voice)
-                    cancelQuietNotice(this, notificationId)
-                }
-                if (itemId.isNotEmpty()) {
-                    if (notificationId >= 0) {
-                        Log.i(TAG, "claim notification owner $notificationId")
-                        ownership.claimNotification(notificationId, itemId)
-                        suppressScheduledDuplicate(notificationId)
-                    } else {
-                        // AlarmScreen owns playback independently from the fired
-                        // notification. It immediately cancels that notification
-                        // to prevent a second tone; retaining this UI owner keeps
-                        // the service ringing until the user actually dismisses.
-                        Log.i(TAG, "claim UI owner $itemId")
-                        ownership.claimUi(itemId)
-                    }
-                }
-                startRing(itemId, voice, ringEndsAt)
-            }
+            else -> tick()
         }
-        // NOT sticky: if the system kills us under memory pressure we do not want
-        // a silent restart with no wake lock and no UI resurrecting the alarm.
+        // NOT sticky: a silent restart with no wake lock and no UI must never
+        // resurrect an alarm. The queue's OS alarms bring it back instead.
         return START_NOT_STICKY
     }
 
-    /**
-     * Adds [itemId] to the alarms ringing now and gives it the speaker. A
-     * repeat start for an alarm already ringing (the screen mounting, a
-     * resume) changes nothing.
-     */
-    private fun startRing(itemId: String, voice: VoiceAlarmSpec?, endsAt: Long) {
-        ensureForeground()
-        if (rings.contains(itemId)) return
+    /** Looks at the queue: cut in for a newly due alarm, play, or go idle. */
+    private fun tick() {
         val now = System.currentTimeMillis()
-        val ends = if (endsAt > 0) {
-            endsAt.coerceIn(now + 1_000L, now + AlarmSoundPolicy.MAX_RING_DURATION_MS)
-        } else {
-            now + AlarmSoundPolicy.MAX_RING_DURATION_MS
+        val rows = loadQueue(this, now)
+        val alarms = rows.map { it.toAlarm() }
+        val playing = current
+        if (playing != null) {
+            val incoming = alarms
+                .filter { it.isFresh && it.scheduledAt <= now && it.itemId !in playing.itemIds }
+                .maxByOrNull { it.scheduledAt }
+            if (incoming != null && RingQueuePolicy.interrupts(playing, currentScheduledAt, incoming)) {
+                val cut = RingQueuePolicy.cutAt(playing, now)
+                Log.i(TAG, "${incoming.itemId} cuts in at $cut")
+                cancelTimers()
+                postAt(cut) { endSegment() }
+            }
+            planIdle(this, rows, alarms, now, playing)
+            return
         }
-        rings.add(itemId, ends)
-        sounds[itemId] = voice
-        val end = Runnable { endRing(itemId) }
-        ringEnds[itemId] = end
-        handler.postDelayed(end, ends - now)
+        val segment = RingQueuePolicy.nextSegment(alarms, now)
+        if (segment == null) {
+            planIdle(this, rows, alarms, now, null)
+            finish()
+            return
+        }
+        play(segment, rows, now)
+        planIdle(this, rows, alarms, now, segment)
+    }
 
-        // The sound starts at once. The ting belongs to app start only
-        // (user-directed 2026-09-26) and stays suppressed while this rings.
+    private fun play(segment: Segment, rows: List<AlarmDeliveryStore.Pending>, now: Long) {
+        val byItem = rows.associateBy { it.itemId }
+        current = segment
+        currentScheduledAt = byItem[segment.itemIds.first()]?.scheduledEpoch ?: now
+        ringNumbers = segment.itemIds.associateWith { (byItem[it]?.ringsDone ?: 0) + 1 }
         ringing = true
-        publishRings()
+        acquireWake(segment.endsAt - now + WAKE_SLACK_MS)
+        if (segment.fresh) {
+            byItem[segment.itemIds.first()]?.let { suppressScheduledDuplicate(it.id) }
+        }
+        for (sound in segment.sounds) {
+            postAt(sound.from) { startSound(sound, byItem) }
+            if (sound is Sound.Tone) postAt(sound.to) { releasePlayer() }
+        }
+        postAt(segment.endsAt) { endSegment() }
+        // If this process dies mid-ring, the queue still looks again just
+        // after the segment would have ended; a normal end re-arms it anyway.
+        AlarmDeliveryScheduler.armQueueWake(
+            this,
+            segment.endsAt + SAFETY_WAKE_MS,
+            segment.itemIds.first(),
+        )
+        publish()
+        // The planner's card: which ring, from when, until when (2026-10-05).
+        RingRecordReporter.report(
+            this,
+            segment.itemIds.map { id ->
+                RingRecordReporter.Record(
+                    itemId = id,
+                    ring = ringNumbers[id] ?: 1,
+                    times = buildMap {
+                        put("ringAt", segment.startsAt)
+                        put("ringEndsAt", segment.endsAt)
+                        put("nextRingAt", null)
+                        if (segment.fresh) put("rangAt", segment.startsAt)
+                    },
+                )
+            },
+        )
+        ReminderAuditLog.write(
+            this,
+            event = if (segment.fresh) "RING_FIRST" else "RING_REPEAT",
+            itemId = segment.itemIds.joinToString(","),
+            atEpoch = segment.startsAt,
+            note = "until ${segment.endsAt}, ${segment.sounds.size} sound(s)",
+        )
         // R5: tell the open app which plan is ringing, so it shows the alarm.
         sendBroadcast(
             Intent(ACTION_RINGING_STARTED)
                 .setPackage(packageName)
-                .putExtra(EXTRA_RINGING_ITEM, itemId),
+                .putExtra(EXTRA_RINGING_ITEM, segment.itemIds.first()),
         )
-        playFor(itemId)
+    }
+
+    /** Gives the speaker to one sound: a voice note's single play, or the tone. */
+    private fun startSound(sound: Sound, byItem: Map<String, AlarmDeliveryStore.Pending>) {
+        releasePlayer()
+        when (sound) {
+            is Sound.Voice -> {
+                soundingItem = sound.itemId
+                val voice = byItem[sound.itemId]?.voice
+                // Only the exact file the plan was made with; anything else
+                // rings the tone for the same span (never silence) and tells
+                // the planner, once.
+                if (voice == null || !VoiceAlarmPolicy.verify(voice) || !startVoiceOnce(voice)) {
+                    recordVoiceFallback(sound.itemId)
+                    startRingtoneNow()
+                    postAt(sound.to) { releasePlayer() }
+                }
+            }
+            is Sound.Tone -> {
+                soundingItem = sound.itemIds.first()
+                startRingtoneNow()
+            }
+        }
+        publish()
+        updateNotification()
+    }
+
+    /** The segment ran its course (or was cut): count its rings, look again. */
+    private fun endSegment() {
+        val segment = current ?: return
+        val at = System.currentTimeMillis()
+        cancelTimers()
+        releasePlayer()
+        current = null
+        soundingItem = null
+        val rows = AlarmDeliveryStore.load(this)
+        val credit = RingQueuePolicy.credit(rows.map { it.toAlarm() }, segment, at)
+        AlarmDeliveryStore.save(this, AlarmDeliveryStore.withRings(rows, credit.alarms))
+        if (credit.missed.isNotEmpty()) {
+            // The last ring ended unanswered: tell the person, even if the app
+            // is dead. Tapping opens the app, whose missed-alarm review offers
+            // Done / Skip.
+            credit.missed.forEach { itemId ->
+                rows.firstOrNull { it.itemId == itemId }?.let { cancelWaitingNotice(this, it.id) }
+                postMissedNotice(this, itemId)
+                AlarmLifecycleStore.record(this, itemId, AlarmLifecycleStore.KIND_TIMEOUT, at)
+                ReminderAuditLog.write(this, event = "AUDIO_TIMEOUT", itemId = itemId, atEpoch = at)
+            }
+            // Tell the planners now, not when the app is next opened.
+            MissedAlarmReporter.report(this, credit.missed, at)
+            AlarmLifecycleChannel.notifyChanged()
+        }
+        Log.i(TAG, "ring ended for ${segment.itemIds}; missed ${credit.missed}")
+        // The planner's card: when this ring really ended, and when the next
+        // is expected for each alarm still waiting (a forecast).
+        val stillLive = credit.alarms.filter { !it.isOver }
+        val forecast = RingQueuePolicy.forecast(stillLive, at)
+        RingRecordReporter.report(
+            this,
+            segment.itemIds
+                .filter { id -> rows.any { it.itemId == id } }
+                .map { id ->
+                    RingRecordReporter.Record(
+                        itemId = id,
+                        times = mapOf("ringEndsAt" to at, "nextRingAt" to forecast[id]),
+                    )
+                },
+        )
+        tick()
     }
 
     /**
-     * The foreground notification and the wake lock: the whole point is to
-     * keep the CPU (and therefore audio) alive with the screen off. Each new
-     * ring re-arms the lock's timeout, so a leak is impossible even if stop
-     * is never called.
+     * [itemIds] leave the queue now (dismissed, answered, cancelled). If any
+     * is in the segment ringing, that segment ends here — what played still
+     * counts for the others — and the queue looks again.
+     */
+    private fun takeOut(itemIds: List<String>) {
+        val ids = itemIds.filter { it.isNotEmpty() }
+        val rows = AlarmDeliveryStore.load(this)
+        rows.filter { it.itemId in ids }.forEach { cancelWaitingNotice(this, it.id) }
+        AlarmDeliveryStore.removeItems(this, ids)
+        val playing = current
+        if (playing != null && playing.itemIds.any { it in ids }) {
+            endSegment()
+        } else {
+            tick()
+        }
+    }
+
+    private fun postAt(atEpoch: Long, block: () -> Unit) {
+        val runnable = Runnable { block() }
+        timers += runnable
+        handler.postDelayed(runnable, (atEpoch - System.currentTimeMillis()).coerceAtLeast(0L))
+    }
+
+    private fun cancelTimers() {
+        timers.forEach(handler::removeCallbacks)
+        timers.clear()
+    }
+
+    /** What the app asks for: which alarms ring now, and which one sounds. */
+    private fun publish() {
+        ringingItem = soundingItem ?: current?.itemIds?.firstOrNull()
+        ringingItems = current?.itemIds.orEmpty()
+        playingSegment = current
+        playingRings = ringNumbers
+    }
+
+    /**
+     * The foreground notification: the whole point is to keep the CPU (and
+     * therefore audio) alive with the screen off.
      */
     private fun ensureForeground() {
-        if (!foreground) {
-            createChannel()
-            val type =
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-                else 0
-            ServiceCompat.startForeground(this, NOTIF_ID, buildNotification(), type)
-            foreground = true
-        }
+        if (foreground) return
+        createChannel()
+        val type =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            else 0
+        ServiceCompat.startForeground(this, NOTIF_ID, buildNotification(), type)
+        foreground = true
+    }
+
+    /** Each segment re-arms the lock's timeout, so a leak cannot outlive it. */
+    private fun acquireWake(forMs: Long) {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         val lock = wakeLock ?: pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_TAG).apply {
             setReferenceCounted(false)
         }.also { wakeLock = it }
-        lock.acquire(AlarmSoundPolicy.MAX_RING_DURATION_MS + 5_000L)
-    }
-
-    /** Gives the speaker to [itemId]: its voice note, else the ringtone. */
-    private fun playFor(itemId: String) {
-        releasePlayer()
-        soundingItem = itemId
-        publishRings()
-        updateNotification()
-        val voice = sounds[itemId]
-        if (voice != null) {
-            // A voice-note alarm repeats the note for the whole ring — but only
-            // the exact file the plan was approved with. Anything else rings
-            // the normal ringtone (never silence) and tells the planner, once.
-            if (VoiceAlarmPolicy.verify(voice) && startVoiceNow(voice)) return
-            recordVoiceFallback(itemId)
-            sounds[itemId] = null
-        }
-        startRingtoneNow()
-    }
-
-    /** One alarm's ring ran its course: quiet until its next ring, or missed. */
-    private fun endRing(itemId: String) {
-        val at = System.currentTimeMillis()
-        ringEnds.remove(itemId)
-        cancelNotificationsOf(itemId)
-        // 2026-10-04: a ring that is not the last goes quiet until the next
-        // one. Only the last ring ending — or a next ring that could not be
-        // armed — makes the alarm missed.
-        val cycle = cycles[itemId]
-        val quiet = cycle != null && cycle.ringIndex < RingCyclePolicy.RINGS && enterQuiet(
-            this,
-            cycle.notificationId,
-            itemId,
-            cycle.scheduledEpoch,
-            cycle.ringIndex + 1,
-            RingCyclePolicy.ringStart(cycle.scheduledEpoch, cycle.ringIndex + 1),
-            headlines[itemId].orEmpty(),
-            cycle.voice,
-        )
-        if (!quiet) {
-            // The alarm gave up on its own: tell the person, even if the app is
-            // dead. Tapping opens the app, whose missed-alarm review offers
-            // Done / Skip for exactly this task.
-            postMissedNotification(itemId)
-            AlarmLifecycleStore.record(this, itemId, AlarmLifecycleStore.KIND_TIMEOUT, at)
-            ReminderAuditLog.write(
-                this,
-                event = "AUDIO_TIMEOUT",
-                itemId = itemId,
-                atEpoch = at,
-                note = if (sounds[itemId] != null) "voice_cap x$voicePlays" else "ring_cap",
-            )
-            // Tell the planner now, not when the app is next opened (2026-09-27).
-            MissedAlarmReporter.report(this, listOf(itemId), at)
-        }
-        AlarmLifecycleChannel.notifyChanged()
-        Log.i(TAG, "ring ended for $itemId; ${if (quiet) "rings again" else "missed"}")
-        ownership.releaseItem(itemId)
-        dropItem(itemId)
-    }
-
-    /**
-     * Takes [itemId] out of the ring. The last one out stops everything;
-     * otherwise, if it had the speaker, the newest still ringing takes it.
-     */
-    private fun dropItem(itemId: String) {
-        ringEnds.remove(itemId)?.let(handler::removeCallbacks)
-        cycles.remove(itemId)
-        sounds.remove(itemId)
-        val wasSounding = soundingItem == itemId
-        if (!rings.remove(itemId)) return
-        if (rings.isEmpty) {
-            stopAlarm()
-            return
-        }
-        publishRings()
-        if (wasSounding) rings.sounding()?.let(::playFor) else updateNotification()
-    }
-
-    /** What the app asks for: which alarms ring now, and which one sounds. */
-    private fun publishRings() {
-        ringingItem = soundingItem
-        ringingItems = rings.ids()
+        lock.acquire(forMs.coerceAtLeast(WAKE_SLACK_MS))
     }
 
     private fun updateNotification() {
@@ -649,7 +803,6 @@ class AlarmSoundService : Service() {
     }
 
     private fun releasePlayer() {
-        handler.removeCallbacks(voiceReplay)
         player?.let {
             try {
                 if (it.isPlaying) it.stop()
@@ -660,25 +813,16 @@ class AlarmSoundService : Service() {
         player = null
     }
 
-    /**
-     * Plays [voice] on the alarm stream, again and again with a short pause
-     * between plays, until its ring ends (2026-10-04).
-     */
-    private fun startVoiceNow(voice: VoiceAlarmSpec): Boolean = try {
-        voicePlays = 0
+    /** One play of [voice] on the alarm stream; the queue times the next. */
+    private fun startVoiceOnce(voice: VoiceAlarmSpec): Boolean = try {
         player = MediaPlayer().apply {
             setAudioAttributes(alarmAttributes())
             setDataSource(voice.path)
             isLooping = false
-            setOnCompletionListener {
-                voicePlays += 1
-                handler.postDelayed(voiceReplay, VoiceAlarmPolicy.REPLAY_GAP_MS)
-            }
             prepare()
+            start()
         }
-        val durationMs = player!!.duration.coerceAtLeast(1)
-        player!!.start()
-        ReminderAuditLog.write(this, event = "VOICE_PLAYING", note = "${durationMs}ms repeating")
+        ReminderAuditLog.write(this, event = "VOICE_PLAYING", note = "${player!!.duration}ms")
         true
     } catch (e: Exception) {
         Log.e(TAG, "voice note failed, ringing instead: $e")
@@ -708,7 +852,7 @@ class AlarmSoundService : Service() {
             .build()
 
     private fun startRingtoneNow() {
-        if (player != null) return
+        if (!AlarmSoundPolicy.shouldStartPlayer(player != null)) return
         try {
             player = MediaPlayer().apply {
                 setAudioAttributes(alarmAttributes())
@@ -723,48 +867,29 @@ class AlarmSoundService : Service() {
             }
             Log.i(TAG, "alarm ringing")
         } catch (e: Exception) {
-            // If playback cannot start there is nothing to keep foreground for.
             Log.e(TAG, "failed to start alarm playback: $e")
-            stopAlarm()
+            releasePlayer()
         }
     }
 
-    /** One per item, replacing itself; auto-cancelled when tapped. */
-    private fun postMissedNotification(itemId: String) = postMissedNotice(this, itemId)
-
     /**
      * ONE notification per alarm (device report 2026-09-25). The scheduled
-     * reminder notification shares [notificationId] and fires from a separate
+     * reminder notification shares the plan's id and fires from a separate
      * OS alarm at the same instant; once this service rings, its own
      * notification says everything, so the scheduled one is removed — now and
      * again shortly after, because the two alarms can land in either order.
-     * Cancelled on the NotificationManager directly: going through Dart's
-     * cancel path would release the notification owner and stop the ring.
-     * If native delivery never runs, nothing cancels it and it stays as the
-     * fallback.
      */
     private fun suppressScheduledDuplicate(notificationId: Int) {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.cancel(notificationId)
         AlarmSoundPolicy.DUPLICATE_RECHECK_MS.forEach { delay ->
-            handler.postDelayed({
-                if (ringing && notificationId in ownership.notificationIds()) {
-                    nm.cancel(notificationId)
-                }
-            }, delay)
+            handler.postDelayed({ if (ringing) nm.cancel(notificationId) }, delay)
         }
-    }
-
-    /** An ended or silenced alarm must not remain tappable and restart playback. */
-    private fun cancelNotificationsOf(itemId: String) {
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        ownership.notificationIdsOf(itemId).forEach(manager::cancel)
     }
 
     private fun recordDismissal(event: String, note: String, itemIds: Collection<String>) {
         val at = System.currentTimeMillis()
         itemIds.forEach { itemId ->
-            cancelNotificationsOf(itemId)
             AlarmLifecycleStore.record(
                 this,
                 itemId,
@@ -782,20 +907,16 @@ class AlarmSoundService : Service() {
         AlarmLifecycleChannel.notifyChanged()
     }
 
-    private fun stopAlarm() {
-        ringEnds.values.forEach(handler::removeCallbacks)
-        ringEnds.clear()
+    /** Nothing rings: release everything and stop. The queue lives on in the store. */
+    private fun finish() {
+        cancelTimers()
         releasePlayer()
         ringing = false
-        rings.ids().forEach { cycles.remove(it) }
-        ownership.itemIds().forEach { cycles.remove(it) }
-        rings.clear()
-        sounds.clear()
+        current = null
         soundingItem = null
-        publishRings()
+        publish()
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
-        ownership.clear()
         foreground = false
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -803,9 +924,10 @@ class AlarmSoundService : Service() {
     }
 
     override fun onDestroy() {
-        // Belt and braces — a destroyed service must not leave the wake lock held
-        // or the tone playing.
-        stopAlarm()
+        // Belt and braces — a destroyed service must not leave the wake lock
+        // held or the tone playing.
+        running = false
+        if (current != null || player != null) finish()
         super.onDestroy()
     }
 
@@ -817,8 +939,7 @@ class AlarmSoundService : Service() {
     /**
      * A SILENT, HIGH channel — the service plays the sound, so the notification
      * must not add a second one. High importance lets its full-screen intent or
-     * heads-up Dismiss fallback remain visible when the scheduled notification
-     * path is suppressed.
+     * heads-up Dismiss fallback remain visible.
      */
     private fun createChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -838,31 +959,47 @@ class AlarmSoundService : Service() {
         nm.createNotificationChannel(channel)
     }
 
+    /** The plan's time in the phone's own clock format, from the store. */
+    private fun plannedTimeOf(itemId: String): String? {
+        val at = AlarmDeliveryStore.load(this).firstOrNull { it.itemId == itemId }
+            ?.scheduledEpoch ?: return null
+        return android.text.format.DateFormat.getTimeFormat(this).format(java.util.Date(at))
+    }
+
     private fun currentItemId(): String =
-        soundingItem ?: ownership.latestNotification()?.second ?: ownership.latestUiItem().orEmpty()
+        soundingItem ?: current?.itemIds?.firstOrNull().orEmpty()
 
     // With the phone unlocked Android shows this as a heads-up instead of the
     // full-screen alarm, so the heads-up itself must say who planned what.
-    private fun buildNotification() =
-        NotificationCompat.Builder(this, CHANNEL_ID)
+    private fun buildNotification(): android.app.Notification {
+        val itemId = currentItemId()
+        return NotificationCompat.Builder(this, CHANNEL_ID)
             // Android small icons are monochrome silhouettes. The launcher icon
             // becomes a solid blob here; this resource is the Mind Time mark
             // specifically drawn for the notification tray.
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(AlarmSoundPolicy.ringingTitle(headlines[currentItemId()]))
-            .setContentText(AlarmSoundPolicy.RINGING_TEXT)
+            .setContentTitle(
+                AlarmSoundPolicy.ringingTitle(headlines[itemId], ringNumbers[itemId] ?: 1),
+            )
+            .setContentText(
+                AlarmSoundPolicy.ringingText(
+                    plannedTimeOf(itemId),
+                    (current?.itemIds?.size ?: 1) - 1,
+                ),
+            )
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setContentIntent(launchAlarmUi())
-            .setFullScreenIntent(launchAlarmUi(), true)
+            .setContentIntent(launchAlarmUi(itemId))
+            .setFullScreenIntent(launchAlarmUi(itemId), true)
             .addAction(
                 R.drawable.ic_notification,
                 "Dismiss",
                 dismissFromNotification(),
             )
             .build()
+    }
 
     private fun dismissFromNotification(): PendingIntent =
         PendingIntent.getService(
@@ -876,15 +1013,13 @@ class AlarmSoundService : Service() {
     /**
      * Uses flutter_local_notifications' own tap contract so tapping either the
      * scheduled reminder or this foreground-service notification reaches the
-     * same AlarmScreen. This matters when an OEM hides one of the two entries.
+     * same AlarmScreen.
      */
-    private fun launchAlarmUi(): PendingIntent {
-        val alarm = ownership.latestNotification()
-        val itemId = currentItemId()
+    private fun launchAlarmUi(itemId: String): PendingIntent {
         val intent = Intent(this, MainActivity::class.java).apply {
             action = "SELECT_NOTIFICATION"
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            putExtra("notificationId", alarm?.first ?: NOTIF_ID)
+            putExtra("notificationId", NOTIF_ID)
             putExtra("payload", itemId)
         }
         return PendingIntent.getActivity(

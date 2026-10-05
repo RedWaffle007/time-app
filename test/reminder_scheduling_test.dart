@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:time_app/features/reminders/application/ring_cycle.dart';
 import 'package:time_app/features/reminders/application/reminder_policy.dart';
 import 'package:time_app/features/reminders/application/reminder_reconciler.dart';
 import 'package:time_app/features/reminders/application/reminder_service.dart';
@@ -230,7 +229,7 @@ void main() {
         [
           item(id: 'live'),
           item(id: 'self', createdByUid: 'me'),
-          item(id: 'past', createdByUid: 'old', at: inHours(-1)),
+          item(id: 'past', createdByUid: 'old', at: inHours(-25)),
           item(
             id: 'pending',
             createdByUid: 'asker',
@@ -309,18 +308,28 @@ void main() {
       }
     });
 
-    test('an item past its whole 25-minute ring cycle is not reminded', () {
+    test('an item a day past its time is not reminded (2026-10-05)', () {
       expect(
         desiredReminders(
           items: [
-            item(id: 'a', at: inHours(-1)),
-            item(id: 'b', at: now.subtract(kRingCycleTotal)),
+            item(id: 'a', at: inHours(-25)),
+            item(id: 'b', at: now.subtract(kAlarmLiveWindow)),
           ],
           uid: 'me',
           now: now,
         ),
         isEmpty,
       );
+    });
+
+    test('an unanswered item hours past its time stays desired: repeats have '
+        'no cut-off (2026-10-05)', () {
+      final d = desiredReminders(
+        items: [item(id: 'a', at: inHours(-3))],
+        uid: 'me',
+        now: now,
+      );
+      expect(d.single.itemId, 'a');
     });
 
     test('an item mid-cycle stays desired, so its later rings are not '
@@ -556,8 +565,8 @@ void main() {
       final later = reconcileReminders(
         desired: [request('a')],
         mirror: armed.mirror,
-        // Three hours on, the 2-hour item is in the past.
-        now: inHours(3),
+        // A day on, the 2-hour item is past the live window.
+        now: inHours(27),
       );
       expect(later.toCancel, [armed.mirror.single.notificationId]);
       expect(later.mirror, isEmpty);

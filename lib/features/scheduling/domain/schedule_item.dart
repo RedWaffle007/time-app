@@ -89,28 +89,51 @@ class ScheduleAlarmTimeline {
     this.rangAt,
     this.dismissedAt,
     this.unavailableAt,
+    this.ring,
+    this.ringAt,
+    this.ringEndsAt,
+    this.nextRingAt,
   });
 
   final DateTime? rangAt;
   final DateTime? dismissedAt;
 
-  /// The alarm rang out its whole 25-minute cycle without a response. Unlike the
-  /// mutable task outcome, this device-observed fact is permanent.
+  /// The alarm rang its last repeat without a response. Unlike the mutable
+  /// task outcome, this device-observed fact is permanent.
   final DateTime? unavailableAt;
+
+  /// The ring queue's live record (2026-10-05), written by the target's
+  /// phone: which ring (1-3) went last, when it started and ends, and when
+  /// the next one is expected (a forecast; new plans can push it back).
+  final int? ring;
+  final DateTime? ringAt;
+  final DateTime? ringEndsAt;
+  final DateTime? nextRingAt;
 
   static ScheduleAlarmTimeline? fromMap(Map<String, dynamic>? map) {
     if (map == null) return null;
-    final rangAt = (map['rangAt'] as Timestamp?)?.toDate();
-    final dismissedAt = (map['dismissedAt'] as Timestamp?)?.toDate();
-    final unavailableAt = (map['unavailableAt'] as Timestamp?)?.toDate();
-    if (rangAt == null && dismissedAt == null && unavailableAt == null) {
+    DateTime? at(String key) {
+      final v = map[key];
+      return v is Timestamp ? v.toDate() : null;
+    }
+
+    final ring = map['ring'];
+    final timeline = ScheduleAlarmTimeline(
+      rangAt: at('rangAt'),
+      dismissedAt: at('dismissedAt'),
+      unavailableAt: at('unavailableAt'),
+      ring: ring is int ? ring : null,
+      ringAt: at('ringAt'),
+      ringEndsAt: at('ringEndsAt'),
+      nextRingAt: at('nextRingAt'),
+    );
+    if (timeline.rangAt == null &&
+        timeline.dismissedAt == null &&
+        timeline.unavailableAt == null &&
+        timeline.ring == null) {
       return null;
     }
-    return ScheduleAlarmTimeline(
-      rangAt: rangAt,
-      dismissedAt: dismissedAt,
-      unavailableAt: unavailableAt,
-    );
+    return timeline;
   }
 }
 

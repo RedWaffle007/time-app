@@ -8049,3 +8049,114 @@ every one ends with a "Missed alarm" notice. Chosen with the user:
   (byte-verified) for the voice limits. NOT VERIFIED ON A DEVICE; the user
   runs the Redmi pass in person.
 
+
+## Ring queue: new alarms first, repeats fill the gaps (2026-10-05)
+
+User-directed, replacing the fixed 5-on / 5-off × 3 cycle of "Alarm duration
+overhaul" (2026-10-04). The app's job is to ring at the chosen minute, so a
+new alarm always sounds at its time and a missed alarm's repeats wait for free
+time. Decided with the user, in order:
+
+- **Voice notes are at most 25 s** (recorder stops at 24.5 s; Worker + rules
+  25.5 s / 256 KB; ring-time check 256 KB). Two plays plus the 1 s pause
+  (51 s) fit in a 1-minute ring, and four notes plus gaps fit in one 2-minute
+  repeat. Worker + ruleset deployed by the user 2026-10-05.
+- **A new alarm (ring 1)** rings at its time for up to 5 minutes and stops
+  when the next new alarm is due: 5:08 and 5:09 → 5:08 rings one minute.
+- **Repeats:** 2 per alarm (3 rings in all). Each is due 10 minutes after the
+  START of that alarm's previous ring (on time: 0 / 10 / 20 min), rings
+  2 minutes, and only in free time. A new alarm always goes first; a repeat
+  that cannot fit waits. **No cut-off**: both repeats happen even if pushed
+  past an hour.
+- **Cutting:** nothing is cut mid voice-note play: a new alarm due during one
+  waits for that play to end (at most 25 s, only after a late OS delivery).
+  A tone can be cut once it has sounded at least 20 s. A voice note never
+  STARTS a play that would end after the next new alarm is due, and a tone
+  repeat never starts with less than 20 s before it, so on-time alarms are
+  never delayed.
+- **Batching:** repeats due together ring as one batch. Voice notes first,
+  one after another with a 3 s gap, each played once even if that runs past
+  2 minutes; default alarms then share one tone that fills the rest of the
+  2 minutes (at least 20 s). A voice-only batch cycles its notes until
+  2 minutes. A note a new alarm cuts off stays due.
+- **A ring counts** when a voice note played once in full, or a tone sounded
+  20 s. "User unavailable", the Missed notice and the missed pop-up come
+  after the LAST repeat, whenever that is; several at once share one pop-up.
+- **Two late new alarms at once** (late OS delivery, reboot): the one
+  scheduled latest rings first; an older one never interrupts a newer one.
+- **Limits:** none beyond one new alarm per minute per person (minute locks).
+  Unfriending is the control for unwanted alarms.
+- **Shown on screen** for every ring and batch row: who planned it, the
+  planned time, and the task (default alarms), with "Reminder 2 of 3" on
+  repeats. That text travels with the alarm so it is there from the first
+  second of a cold start.
+- **Planner card:** the target's phone records each ring (option 3a), since
+  the planner's phone can no longer derive the timing.
+
+**Where the rule lives:** ONE pure Kotlin object, `RingQueuePolicy`, unit
+tested on the JVM. This replaces the earlier plan of a Dart copy plus a Kotlin
+copy kept equal by tests: the queue runs natively (the app may be dead when an
+alarm rings), and the Dart side reads ring state and ring records instead of
+recomputing timing. `ring_cycle.dart` / `RingCyclePolicy` are retired when the
+queue is wired in.
+
+**Reverses, deliberately:** "an armed alarm mid-cycle is never cancelled or
+re-armed" (2026-10-04). Repeat times now move, so the native queue owns them
+and re-plans on every change; Dart still arms each alarm's first ring and
+never arms repeats.
+
+### Ring queue — native wiring (stage 3, 2026-10-05)
+
+- **The store is the queue.** `AlarmDeliveryStore` rows now live from arming
+  until answered / dismissed / cancelled / missed, carrying `ringsDone`,
+  `lastRingAt` and the voice note's length (`voiceMs`, passed from Dart; 25 s
+  assumed when unknown, e.g. the FCM emergency path). Rows are written with
+  `commit()`, not `apply()`: a receiver may be killed right after.
+- **OS alarms:** Dart still arms each plan's first ring (`setAlarmClock`).
+  The queue arms ONE extra exact alarm, its wake-up, for the next repeat — and,
+  while a segment rings, a safety wake-up 5 s after its planned end in case
+  the process dies. Any OS alarm just "kicks" the queue; the service decides.
+- **Boot:** re-arms every never-rung plan in the future and the queue's
+  wake-up (2 s out when something is already due — a mediaPlayback
+  foreground service may not start from BOOT_COMPLETED on newer Android, but
+  may from an exact alarm).
+- **Safety bound, not a cut-off:** a plan whose FIRST ring is a day overdue
+  (phone off) ends as missed, unrung. Repeats keep no cut-off. Dart's
+  reconciler keeps an unanswered alarm wanted for 24 h (`kAlarmLiveWindow`)
+  so it never cancels one the queue is still holding.
+- **Bug fixed on the way:** `ReminderService` began every process with no
+  owner, so the first sync after ANY cold start looked like an account change
+  and cancelled every native alarm — including the one that had just opened
+  the app and, from 2026-10-04, every waiting ring. The owner uid is now
+  persisted with the mirror.
+- **Retired:** `RingCyclePolicy`, `AlarmRingSet`, `AlarmPlaybackOwnership`
+  and the "between rings" re-arming. `ring_cycle.dart` stays only for the
+  planner card until stage 5. `reminderDeliveryRevision` → 4 so existing
+  alarms re-arm once with their voice length.
+
+### Ring queue — screen, planner card, missed pop-up (stages 4-5, 2026-10-05)
+
+- **Voice length is never guessed on a killed app:** the Worker's
+  killed-app push carries `voiceDurationMs` (the length it verified at
+  upload), and the native queue measures any note whose length is still
+  unknown from the file itself (`VoiceNoteLength`) and records it. 25 s only
+  when the file cannot be read.
+- **Alarm screen:** "Reminder 2 of 3" on repeats; planned time from the
+  native store on a cold start; a batch lists every alarm (who/what, planned
+  time, ring) with its own Dismiss and marks the note playing ("Now
+  playing"). The ringing notification says "Planned for 5:08 PM · +2 more".
+- **Ring records (option 3a):** the target's phone writes `alarm.ring`,
+  `ringAt`, `ringEndsAt`, `nextRingAt` (and `rangAt` on ring 1) when a
+  segment starts and ends. Written natively through Firestore's REST
+  `documents:commit` with the user's ID token — same rules as an app write,
+  and no second Firestore SDK instance beside the Flutter plugin's (whose
+  settings call would fail if native code started Firestore first). Rules
+  allow exactly those fields, `ring` an int 1-3, times as timestamps.
+- **Planner card:** "Ringing now" / "Ringing · reminder 2 of 3" / "Not
+  answered · rings again about 5:23" / "Not answered after 1 of 3 · reminder
+  pending" (forecast passed, the repeat was pushed back). `ring_cycle.dart`
+  is deleted.
+- **Missed pop-up:** several missed together share ONE card ("You missed N
+  alarms"), a row each with who/what, planned time and its own answers
+  (Done/Skipped, or Play/Already heard for a voice note). A single miss keeps
+  the old card; its text is now "It rang 3 times with no response."

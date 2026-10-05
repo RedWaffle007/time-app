@@ -23,7 +23,6 @@ import '../../auth/application/auth_providers.dart';
 import '../../notifications/application/outcome_notifier.dart';
 import '../application/planner_ring_status.dart';
 import '../application/schedule_item_order.dart';
-import '../../reminders/application/ring_cycle.dart';
 import '../application/schedule_providers.dart';
 import '../domain/schedule_item.dart';
 import 'planner_item_detail_sheet.dart';
@@ -520,8 +519,9 @@ class PlannerItemCard extends ConsumerWidget {
   }
 }
 
-/// "Ringing · 2 of 3" or "Quiet · rings again 5:10" while the alarm is in its
-/// ring cycle; nothing otherwise. Re-checks itself every few seconds, only
+/// "Ringing now", "Ringing · reminder 2 of 3" or "Not answered · rings again
+/// about 5:23" from the target phone's ring record (2026-10-05); nothing
+/// otherwise. Re-checks itself every few seconds, only
 /// while there is something live to show.
 class PlannerRingStatusLine extends StatefulWidget {
   const PlannerRingStatusLine({super.key, required this.item, this.now});
@@ -564,11 +564,17 @@ class _PlannerRingStatusLineState extends State<PlannerRingStatusLine> {
     // then on it ticks by itself until the cycle is over.
     _keepTicking(status != null);
     final text = switch (status) {
-      Ringing(:final ring) => 'Ringing · $ring of $kRingCount',
-      Quiet(:final nextRingAtUtc) =>
-        'Quiet · rings again '
-            '${formatInstantTime(context, nextRingAtUtc, widget.item.timezone)}',
-      _ => null,
+      PlannerRinging(:final ring) =>
+        ring <= 1
+            ? 'Ringing now'
+            : 'Ringing · reminder $ring of $kPlannerRingCount',
+      PlannerWaiting(:final ringsDone, :final nextRingAtUtc) =>
+        nextRingAtUtc != null && nextRingAtUtc.isAfter(_now())
+            ? 'Not answered · rings again about '
+                  '${formatInstantTime(context, nextRingAtUtc, widget.item.timezone)}'
+            : 'Not answered after $ringsDone of $kPlannerRingCount · '
+                  'reminder pending',
+      null => null,
     };
     if (text == null) return const SizedBox.shrink();
     return Padding(

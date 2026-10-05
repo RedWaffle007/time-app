@@ -35,10 +35,10 @@ data class VoiceAlarmSpec(val path: String, val sha256: String, val sizeBytes: L
 /** The ring-time rules for a voice note, pure and unit-tested. */
 internal object VoiceAlarmPolicy {
     /**
-     * Matches the Worker's and the rules' 512 KB (2026-10-04: 1-minute notes
+     * Matches the Worker's and the rules' 256 KB (2026-10-05: 25-second notes
      * at 32 kbps). Lower and a valid note would fail here and ring the tone.
      */
-    const val MAX_BYTES = 512L * 1024L
+    const val MAX_BYTES = 256L * 1024L
 
     /**
      * User-directed (2026-10-04): the note repeats for the whole ring,
@@ -69,5 +69,30 @@ internal object VoiceAlarmPolicy {
         }
     } catch (_: Throwable) {
         false
+    }
+}
+
+/**
+ * The real length of a voice note on this phone (2026-10-05), read from the
+ * file itself. The ring queue times every play by it, so an alarm whose
+ * length never arrived (an older push) is measured, not guessed.
+ */
+internal object VoiceNoteLength {
+    /** Milliseconds, or 0 when the file is missing or unreadable. */
+    fun measure(path: String): Long {
+        if (!java.io.File(path).exists()) return 0L
+        val retriever = android.media.MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(path)
+            retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull()?.takeIf { it > 0 } ?: 0L
+        } catch (_: Exception) {
+            0L
+        } finally {
+            try {
+                retriever.release()
+            } catch (_: Exception) {
+            }
+        }
     }
 }

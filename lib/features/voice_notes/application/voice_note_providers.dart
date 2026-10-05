@@ -24,15 +24,16 @@ final voiceNoteClientProvider = Provider<VoiceNoteClient>(
   (ref) => HttpVoiceNoteClient(),
 );
 
-/// The recorder's hard stop (2026-10-04: 1 minute). The Worker and the rules
-/// allow 60.5 s for encoder slack.
-const kMaxVoiceNote = Duration(minutes: 1);
+/// The recorder's hard stop (2026-10-05: 25 seconds, so two plays plus the
+/// pause fit in a 1-minute ring). The Worker and the rules allow 25.5 s for
+/// encoder slack.
+const kMaxVoiceNote = Duration(seconds: 25);
 
 /// When the recorder actually stops itself, timed from BEFORE the microphone
 /// opens. The half second under [kMaxVoiceNote] absorbs the start/stop
 /// latency the phone adds to the file, which could push a full-length note
-/// past the Worker's 60.5 s and fail it at Send (device report 2026-09-28).
-const kVoiceAutoStopAt = Duration(milliseconds: 59500);
+/// past the Worker's 25.5 s and fail it at Send (device report 2026-09-28).
+const kVoiceAutoStopAt = Duration(milliseconds: 24500);
 
 /// The shortest note the Worker accepts (F5, `MIN_VOICE_MS`). Shorter
 /// recordings are discarded on the spot.

@@ -1179,10 +1179,12 @@ test('the emergency alarm command carries the voice note only when there is one'
     scheduledInstantUtc: '2030-01-01T10:00:00.000Z', createdByUid: 'planner',
   };
   const withVoice = buildMessage('created', null, {
-    ...base, voiceNote: { sha256: 'b'.repeat(64), sizeBytes: 9000 },
+    ...base, voiceNote: { sha256: 'b'.repeat(64), sizeBytes: 9000, durationMs: 21000 },
   }, 'target', 'i', { actorName: 'Test Planner', groupName: null });
   assert.equal(withVoice.data.voiceSha256, 'b'.repeat(64));
   assert.equal(withVoice.data.voiceSizeBytes, '9000');
+  // 2026-10-05: the note's length rides along for the ring queue.
+  assert.equal(withVoice.data.voiceDurationMs, '21000');
   for (const value of Object.values(withVoice.data)) assert.equal(typeof value, 'string');
   const plain = buildMessage('created', null, base, 'target', 'i', {});
   assert.equal(plain.data.voiceSha256, undefined);

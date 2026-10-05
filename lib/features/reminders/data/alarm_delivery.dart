@@ -25,6 +25,7 @@ class AlarmDelivery {
     String? voicePath,
     String? voiceSha256,
     int? voiceSizeBytes,
+    int? voiceDurationMs,
   }) async {
     try {
       return await _channel.invokeMethod<String>('arm', {
@@ -38,6 +39,7 @@ class AlarmDelivery {
             'voicePath': ?voicePath,
             'voiceSha256': ?voiceSha256,
             'voiceSizeBytes': ?voiceSizeBytes,
+            'voiceDurationMs': ?voiceDurationMs,
           }) ??
           'unavailable';
     } on MissingPluginException {

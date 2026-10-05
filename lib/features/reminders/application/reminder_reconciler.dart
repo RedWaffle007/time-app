@@ -1,5 +1,4 @@
 import '../domain/reminder.dart';
-import 'ring_cycle.dart';
 
 /// One thing to tell the OS.
 class ReminderScheduleAction {
@@ -64,11 +63,11 @@ ReminderPlan reconcileReminders({
       // The last guard against arming something in the past. Callers filter too,
       // but this is the one place `now` is in scope, so this is where the rule
       // belongs rather than being trusted to every caller. An alarm already
-      // armed whose time has passed is still mid-cycle (2026-10-04): it stays,
-      // untouched, so its next rings are not cancelled.
+      // armed whose time has passed may still be in the native ring queue
+      // (2026-10-05): it stays, untouched, so its repeats are not cancelled.
       if (r.fireAtUtc.isAfter(now) ||
           (mirrorByItem.containsKey(r.itemId) &&
-              r.fireAtUtc.add(kRingCycleTotal).isAfter(now)))
+              r.fireAtUtc.add(kAlarmLiveWindow).isAfter(now)))
         r,
   ]..sort((a, b) => a.itemId.compareTo(b.itemId));
 

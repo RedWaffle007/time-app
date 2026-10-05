@@ -32,12 +32,20 @@ abstract interface class ReminderMirrorStore {
   Future<List<ScheduledReminder>> load();
   Future<void> save(List<ScheduledReminder> reminders);
   Future<void> clear();
+
+  /// Whose alarms these are (2026-10-05). Kept with the mirror so a fresh
+  /// process can tell "the same person, app restarted" from an account
+  /// change; without it every cold start cancelled every native alarm —
+  /// including one ringing and every repeat waiting in the ring queue.
+  Future<String?> loadOwner();
+  Future<void> saveOwner(String? uid);
 }
 
 class SharedPrefsReminderMirrorStore implements ReminderMirrorStore {
   const SharedPrefsReminderMirrorStore();
 
   static const _key = 'reminder_mirror_v1';
+  static const _ownerKey = 'reminder_mirror_owner_v1';
 
   @override
   Future<List<ScheduledReminder>> load() async {
@@ -71,6 +79,31 @@ class SharedPrefsReminderMirrorStore implements ReminderMirrorStore {
       debugPrint('ReminderMirrorStore: clear failed: $e');
     }
   }
+
+  @override
+  Future<String?> loadOwner() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_ownerKey);
+    } catch (e) {
+      debugPrint('ReminderMirrorStore: loadOwner failed: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<void> saveOwner(String? uid) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (uid == null) {
+        await prefs.remove(_ownerKey);
+      } else {
+        await prefs.setString(_ownerKey, uid);
+      }
+    } catch (e) {
+      debugPrint('ReminderMirrorStore: saveOwner failed: $e');
+    }
+  }
 }
 
 /// In-memory mirror, for tests and for any platform with no reminder support.
@@ -87,4 +120,12 @@ class InMemoryReminderMirrorStore implements ReminderMirrorStore {
 
   @override
   Future<void> clear() async => _reminders = const [];
+
+  String? _owner;
+
+  @override
+  Future<String?> loadOwner() async => _owner;
+
+  @override
+  Future<void> saveOwner(String? uid) async => _owner = uid;
 }

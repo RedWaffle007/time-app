@@ -46,6 +46,18 @@ class AlarmSoundPolicyTest {
         )
         assertEquals("Alarm", AlarmSoundPolicy.ringingTitle(null))
         assertEquals("Alarm", AlarmSoundPolicy.ringingTitle("  "))
+        // The second line says when it was planned for and how many more ring.
+        assertEquals(
+            "Planned for 5:08 PM · +2 more · Tap to open · Dismiss to stop",
+            AlarmSoundPolicy.ringingText("5:08 PM", 2),
+        )
+        assertEquals(AlarmSoundPolicy.RINGING_TEXT, AlarmSoundPolicy.ringingText(null, 0))
+        // A repeat says which ring it is (2026-10-05).
+        assertEquals(
+            "Reminder 2 of 3 · Test Planner planned Walk for you",
+            AlarmSoundPolicy.ringingTitle("Test Planner planned Walk for you", 2),
+        )
+        assertEquals("Alarm", AlarmSoundPolicy.ringingTitle(null, 1))
     }
 
     @Test

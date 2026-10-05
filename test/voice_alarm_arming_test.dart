@@ -53,6 +53,7 @@ void main() {
       ).single;
       expect(request.voice?.sha256, _sha);
       expect(request.voice?.sizeBytes, 9000);
+      expect(request.voice?.durationMs, 12000);
     });
 
     test('self-plans and plain alarms carry none', () {
@@ -75,7 +76,7 @@ void main() {
     });
 
     test(
-      'the voice note is part of the fingerprint, and revision 3 re-arms all',
+      'the voice note is part of the fingerprint, and revision 4 re-arms all',
       () {
         final withVoice = desiredReminders(
           items: [_item()],
@@ -89,8 +90,8 @@ void main() {
         ).single;
         expect(withVoice.fingerprint, isNot(plain.fingerprint));
         expect(withVoice.fingerprint, contains(_sha));
-        expect(reminderDeliveryRevision, 3);
-        expect(plain.fingerprint, startsWith('3|'));
+        expect(reminderDeliveryRevision, 4);
+        expect(plain.fingerprint, startsWith('4|'));
       },
     );
   });
@@ -128,7 +129,7 @@ void main() {
       return calls;
     }
 
-    test('the native arm receives the path, hash and size', () async {
+    test('the native arm receives the path, hash, size and length', () async {
       final request = desiredReminders(
         items: [_item()],
         uid: 'ME',
@@ -140,6 +141,8 @@ void main() {
       expect(args['voicePath'], '/data/voice-notes/item-1.m4a');
       expect(args['voiceSha256'], _sha);
       expect(args['voiceSizeBytes'], 9000);
+      // The ring queue times every play (2026-10-05).
+      expect(args['voiceDurationMs'], 12000);
       expect(args['headline'], 'Someone sent you a voice alarm');
     });
 
@@ -154,11 +157,12 @@ void main() {
               as Map;
       expect(args.containsKey('voicePath'), isFalse);
       expect(args.containsKey('voiceSha256'), isFalse);
+      expect(args.containsKey('voiceDurationMs'), isFalse);
     });
   });
 
   group('emergency push (killed app)', () {
-    Map<String, dynamic> data({String? sha, String? size}) => {
+    Map<String, dynamic> data({String? sha, String? size, String? ms}) => {
       'command': 'scheduleReminder',
       'itemId': 'item-1',
       'targetUid': 'ME',
@@ -170,6 +174,7 @@ void main() {
       'body': 'Tap to mark it done or skip.',
       'voiceSha256': ?sha,
       'voiceSizeBytes': ?size,
+      'voiceDurationMs': ?ms,
     };
 
     test('the voice note in the push arms the alarm with it', () {
@@ -178,6 +183,38 @@ void main() {
       )!;
       expect(request.voice?.sha256, _sha);
       expect(request.voice?.sizeBytes, 9000);
+    });
+
+    test("the note's length rides along; an older Worker's push has none "
+        '(2026-10-05)', () {
+      expect(
+        reminderRequestFromPushData(
+          data(sha: _sha, size: '9000', ms: '21000'),
+        )!.voice?.durationMs,
+        21000,
+      );
+      expect(
+        reminderRequestFromPushData(
+          data(sha: _sha, size: '9000'),
+        )!.voice?.durationMs,
+        0,
+      );
+    });
+
+    test("the note's length rides along; an older Worker's push has none "
+        '(2026-10-05)', () {
+      expect(
+        reminderRequestFromPushData(
+          data(sha: _sha, size: '9000', ms: '21000'),
+        )!.voice?.durationMs,
+        21000,
+      );
+      expect(
+        reminderRequestFromPushData(
+          data(sha: _sha, size: '9000'),
+        )!.voice?.durationMs,
+        0,
+      );
     });
 
     test('a malformed or absent voice note arms a plain alarm', () {

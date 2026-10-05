@@ -1204,6 +1204,33 @@ describe('alarm timeline writes', () => {
     }, { merge: true }));
   });
 
+  it('allows the target to record its ring queue state (2026-10-05)', async () => {
+    const ref = itemRef(as(TARGET), APPROVED_ITEM);
+    await assertSucceeds(setDoc(ref, {
+      alarm: {
+        ring: 2,
+        ringAt: Timestamp.fromDate(new Date('2026-08-11T13:40:00Z')),
+        ringEndsAt: Timestamp.fromDate(new Date('2026-08-11T13:42:00Z')),
+        nextRingAt: Timestamp.fromDate(new Date('2026-08-11T13:50:00Z')),
+      },
+      updatedAt: serverTimestamp(),
+    }, { merge: true }));
+  });
+
+  it('denies a ring outside 1-3, a non-number ring or untyped times', async () => {
+    const ref = itemRef(as(TARGET), APPROVED_ITEM);
+    for (const alarm of [
+      { ring: 0 }, { ring: 4 }, { ring: '2' }, { ring: 1.5 },
+      { ringAt: 'now' }, { ringEndsAt: 5 }, { nextRingAt: true },
+    ]) {
+      await assertFails(setDoc(ref, { alarm, updatedAt: serverTimestamp() }, { merge: true }));
+    }
+    // The planner still cannot write any of it.
+    await assertFails(setDoc(itemRef(as(PLANNER), APPROVED_ITEM), {
+      alarm: { ring: 1 }, updatedAt: serverTimestamp(),
+    }, { merge: true }));
+  });
+
   it('denies alarm events on an unapproved item', async () => {
     await assertFails(setDoc(itemRef(as(TARGET), PENDING_ITEM), {
       alarm: {

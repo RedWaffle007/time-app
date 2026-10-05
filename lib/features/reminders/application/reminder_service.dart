@@ -48,6 +48,9 @@ class ReminderService {
   /// an ordinary re-emission. Null means nobody is signed in.
   String? _uid;
 
+  /// Whether [_uid] has been read back from the store in this process.
+  bool _ownerLoaded = false;
+
   /// Serializes [action] behind everything already queued. Failures are
   /// contained: a broken pass must not poison the chain and stop every later
   /// reconcile, which would turn one transient error into permanently dead
@@ -85,10 +88,18 @@ class ReminderService {
         // user's reminders must not fire into this user's session, and their ids
         // must not be reused. Done before anything else so the reconcile below
         // starts from a clean mirror. (Sign-out arrives here as uid == null.)
+        // The owner is read back first (2026-10-05): a cold start by the same
+        // person is NOT an account change, and must not cancel the alarm that
+        // just opened the app or the repeats waiting in the ring queue.
+        if (!_ownerLoaded) {
+          _uid = await _store.loadOwner();
+          _ownerLoaded = true;
+        }
         if (uid != _uid) {
           await _scheduler.cancelAll();
           await _store.clear();
           _uid = uid;
+          await _store.saveOwner(uid);
           _audit.note(event: 'ACCOUNT_CHANGED', note: reason);
         }
         if (uid == null) return;

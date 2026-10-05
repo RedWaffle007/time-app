@@ -19,8 +19,9 @@ import '../application/alarm_timeline_providers.dart';
 import '../application/missed_alarm_providers.dart';
 import '../application/reminder_policy.dart';
 import '../application/reminder_providers.dart';
-import '../application/ring_cycle.dart';
 import '../data/alarm_lifecycle_store.dart';
+import '../data/alarm_sound.dart';
+import '../domain/reminder.dart';
 import '../../outcomes/presentation/reply_note.dart';
 
 /// The full-screen alarm surface a reminder lands on.
@@ -63,9 +64,14 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
   /// silent and offers Dismiss, which also cancels the rings still to come.
   DateTime? _quietUntilUtc;
 
-  /// Other alarms ringing at the same time (2026-10-04), oldest first. Only
-  /// the newest makes a sound; each can be dismissed here on its own.
+  /// Other alarms in the segment ringing now (2026-10-05): a batch of
+  /// repeats, in the order they play. Each can be dismissed here on its own.
   List<String> _alsoRinging = const [];
+
+  /// The whole segment as the native queue holds it: who, what, when, which
+  /// ring, and which one is sounding. Native data, so it is there on a cold
+  /// start before the item stream loads.
+  List<RingingAlarm> _segment = const [];
   Timer? _ringingPoll;
 
   @override
@@ -104,24 +110,29 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
         return;
       }
       if (!mounted) return;
-      // 2026-10-04: where the alarm is in its 25-minute cycle. Past it, with
-      // nothing ringing now, it ends as missed with no tone, exactly like the
-      // native path. Between rings it stays quiet: the next ring is already
-      // armed natively, so this screen must not ring early.
+      // 2026-10-05: where the alarm stands in the native ring queue. Waiting
+      // for a repeat, it stays quiet (the queue rings it); long past and not
+      // in the queue, it ends as missed with no tone.
       final item = ref
           .read(allItemsAsTargetProvider)
           .maybeWhen(data: _find, orElse: () => null);
-      if (item != null && await sound.ringingItem() != widget.itemId) {
-        switch (alarmScreenPhase(item, nowUtc: DateTime.now().toUtc())) {
-          case RingOver():
+      if (item != null &&
+          !(await sound.ringingItems()).contains(widget.itemId)) {
+        final next = await sound.nextRingAt(widget.itemId);
+        switch (alarmScreenPhase(
+          item,
+          nowUtc: DateTime.now().toUtc(),
+          nextRingAtUtc: next,
+        )) {
+          case AlarmScreenPhase.over:
             await sound.missLate(widget.itemId, headline: _headlineNow() ?? '');
             await _leaveEnded();
             return;
-          case Quiet(:final nextRingAtUtc):
-            if (mounted) setState(() => _quietUntilUtc = nextRingAtUtc);
+          case AlarmScreenPhase.waiting:
+            if (mounted) setState(() => _quietUntilUtc = next);
             _watchRinging();
             return;
-          case Ringing():
+          case AlarmScreenPhase.ring:
             break;
         }
       }
@@ -132,7 +143,11 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
       // restarting playback on an unlocked/full-screen launch.
       // The UI-fallback start carries the sentence too, for the heads-up of an
       // alarm whose native delivery did not run first.
-      await sound.start(widget.itemId, headline: _headlineNow() ?? '');
+      await sound.start(
+        widget.itemId,
+        headline: _headlineNow() ?? '',
+        scheduledAtUtc: item?.scheduledInstantUtc,
+      );
       if (!mounted) return;
       final uid = ref.read(currentUidProvider);
       if (uid != null) {
@@ -169,25 +184,27 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
   }
 
   Future<void> _refreshRinging() async {
-    final ids = await ref.read(alarmSoundProvider).ringingItems();
+    final sound = ref.read(alarmSoundProvider);
+    final segment = await sound.segmentDetails();
     if (!mounted) return;
+    final ids = [for (final r in segment) r.itemId];
     final others = alsoRingingIds(ids, widget.itemId);
-    // This alarm's own ring ended while others still ring: if it rings again
-    // later, say when (the native side armed it).
-    DateTime? quiet = _quietUntilUtc;
-    if (quiet == null && ids.isNotEmpty && !ids.contains(widget.itemId)) {
-      final item = ref
-          .read(allItemsAsTargetProvider)
-          .maybeWhen(data: _find, orElse: () => null);
-      if (item != null) {
-        final phase = alarmScreenPhase(item, nowUtc: DateTime.now().toUtc());
-        if (phase is Quiet) quiet = phase.nextRingAtUtc;
-      }
+    // This alarm is not in the segment ringing now: if it rings again later,
+    // say when (the native queue's forecast, which moves as plans arrive).
+    DateTime? quiet;
+    if (!ids.contains(widget.itemId)) {
+      quiet = await sound.nextRingAt(widget.itemId);
+      if (!mounted) return;
     }
-    if (listEquals(others, _alsoRinging) && quiet == _quietUntilUtc) return;
+    if (listEquals(others, _alsoRinging) &&
+        quiet == _quietUntilUtc &&
+        _sameSegment(segment, _segment)) {
+      return;
+    }
     setState(() {
       _alsoRinging = others;
       _quietUntilUtc = quiet;
+      _segment = segment;
     });
   }
 
@@ -338,7 +355,25 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
     context.go(Routes.plan);
   }
 
-  /// One other ringing alarm: who planned what, and its own Dismiss.
+  RingingAlarm? _detailFor(String id) {
+    for (final r in _segment) {
+      if (r.itemId == id) return r;
+    }
+    return null;
+  }
+
+  /// "Mon 5 Oct, 5:08 PM" in the plan's own zone once the item is known;
+  /// from the native queue's copy (this phone's zone) before then.
+  String? _plannedAt(ScheduleItem? item, RingingAlarm? detail) {
+    if (item != null) {
+      return formatInstant(context, item.scheduledInstantUtc, item.timezone);
+    }
+    final at = detail?.scheduledAtUtc;
+    return at == null ? null : formatLocalInstant(context, at);
+  }
+
+  /// One other ringing alarm: who planned what, when, which ring, whether it
+  /// is the one sounding, and its own Dismiss.
   Widget _alsoRingingRow(String id) {
     final items = ref.watch(allItemsAsTargetProvider);
     final item = items.maybeWhen(
@@ -350,8 +385,9 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
       },
       orElse: () => null,
     );
+    final detail = _detailFor(id);
     final headline = item == null
-        ? null
+        ? (detail?.headline.isNotEmpty ?? false ? detail!.headline : null)
         : alarmHeadline(
             item,
             plannerName: ref
@@ -359,17 +395,44 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
                 .value
                 ?.name,
           );
+    final sub = [
+      ?_plannedAt(item, detail),
+      if (detail != null) ?alarmRingLabel(detail.ring),
+    ].join(' · ');
+    final sounding = detail?.sounding ?? false;
     return Padding(
       padding: const EdgeInsets.only(top: Space.sm),
       child: Row(
         key: ValueKey('alarm-also-$id'),
         children: [
           Expanded(
-            child: Text(
-              headline ?? '',
-              style: context.text.bodyMedium,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  headline ?? '',
+                  style: context.text.bodyMedium?.copyWith(
+                    fontWeight: sounding ? FontWeight.bold : null,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (sub.isNotEmpty)
+                  Text(
+                    sub,
+                    style: context.text.bodySmall?.copyWith(
+                      color: context.colors.onSurfaceVariant,
+                    ),
+                  ),
+                if (sounding)
+                  Text(
+                    kNowPlayingLabel,
+                    key: ValueKey('alarm-now-playing-$id'),
+                    style: context.text.labelMedium?.copyWith(
+                      color: context.colors.primary,
+                    ),
+                  ),
+              ],
             ),
           ),
           TextButton(
@@ -400,12 +463,16 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
         if (mounted) _leaveEnded();
       });
     }
+    final mine = _detailFor(widget.itemId);
     final headline = item == null
-        ? _deliveredHeadline
+        ? (_deliveredHeadline ??
+              (mine?.headline.isNotEmpty ?? false ? mine!.headline : null))
         : _resolveHeadline(
             item,
             ref.watch(profileByUidProvider(item.createdByUid)),
           );
+    final plannedAt = _plannedAt(item, mine);
+    final ringLabel = mine == null ? null : alarmRingLabel(mine.ring);
 
     // Back / gesture-dismiss must also stop the tone, never leave it ringing.
     return PopScope(
@@ -427,6 +494,18 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
                   color: context.attention,
                 ),
                 const SizedBox(height: Space.xl),
+                // A repeat says so (2026-10-05): "Reminder 2 of 3".
+                if (ringLabel != null) ...[
+                  Text(
+                    ringLabel,
+                    key: const ValueKey('alarm-ring'),
+                    textAlign: TextAlign.center,
+                    style: context.text.titleSmall?.copyWith(
+                      color: context.colors.primary,
+                    ),
+                  ),
+                  const SizedBox(height: Space.sm),
+                ],
                 // ONE sentence, centered and bold: "{planner} planned {task} for
                 // you" (device-directed copy, 2026-09-25). Nothing — not a
                 // placeholder — until a trustworthy sentence is known.
@@ -438,14 +517,11 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                if (item != null) ...[
+                if (plannedAt != null) ...[
                   const SizedBox(height: Space.sm),
                   Text(
-                    formatInstant(
-                      context,
-                      item.scheduledInstantUtc,
-                      item.timezone,
-                    ),
+                    plannedAt,
+                    key: const ValueKey('alarm-planned-at'),
                     textAlign: TextAlign.center,
                     style: context.text.bodyMedium?.copyWith(
                       color: context.colors.onSurfaceVariant,
@@ -469,6 +545,20 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
                     item.note!.trim(),
                     textAlign: TextAlign.center,
                     style: context.text.bodyMedium,
+                  ),
+                ],
+                // In a batch, which note is playing right now (2026-10-05).
+                if (mine != null &&
+                    mine.sounding &&
+                    _alsoRinging.isNotEmpty) ...[
+                  const SizedBox(height: Space.sm),
+                  Text(
+                    kNowPlayingLabel,
+                    key: ValueKey('alarm-now-playing-${widget.itemId}'),
+                    textAlign: TextAlign.center,
+                    style: context.text.labelMedium?.copyWith(
+                      color: context.colors.primary,
+                    ),
                   ),
                 ],
                 if (_alsoRinging.isNotEmpty) ...[
@@ -519,16 +609,61 @@ class _AlarmScreenState extends ConsumerState<AlarmScreen> {
   }
 }
 
+/// Marks the alarm whose sound is playing in a batch.
+const kNowPlayingLabel = 'Now playing';
+
+/// "Reminder 2 of 3" for a repeat; null for a new alarm's own ring.
+String? alarmRingLabel(int ring) =>
+    ring > 1 ? 'Reminder $ring of $kAlarmRingCount' : null;
+
+bool _sameSegment(List<RingingAlarm> a, List<RingingAlarm> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i].itemId != b[i].itemId ||
+        a[i].sounding != b[i].sounding ||
+        a[i].ring != b[i].ring ||
+        a[i].headline != b[i].headline) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /// The other alarms ringing with [itemId], oldest first. Pure, for tests.
 List<String> alsoRingingIds(List<String> ringing, String itemId) => [
   for (final id in ringing)
     if (id != itemId) id,
 ];
 
-/// Where an alarm opened on this screen stands in its ring cycle, when the
-/// native service is not ringing it (2026-10-04). Pure, for tests.
-RingPhase alarmScreenPhase(ScheduleItem item, {required DateTime nowUtc}) =>
-    ringPhaseAt(item.scheduledInstantUtc, nowUtc);
+/// What the alarm screen does with an alarm the native service is not
+/// ringing right now (2026-10-05).
+enum AlarmScreenPhase {
+  /// Ring it: due now, or never reached the native queue.
+  ring,
+
+  /// Waiting in the queue for its next ring: stay quiet and say when.
+  waiting,
+
+  /// Long past and not in the queue: it ends as missed, unrung.
+  over,
+}
+
+/// Where an alarm opened on this screen stands, from the native queue's
+/// forecast [nextRingAtUtc] (null: not in the queue). Pure, for tests.
+AlarmScreenPhase alarmScreenPhase(
+  ScheduleItem item, {
+  required DateTime nowUtc,
+  DateTime? nextRingAtUtc,
+}) {
+  if (nextRingAtUtc != null) {
+    return nextRingAtUtc.isAfter(nowUtc)
+        ? AlarmScreenPhase.waiting
+        : AlarmScreenPhase.ring;
+  }
+  return item.scheduledInstantUtc.add(kAlarmLiveWindow).isAfter(nowUtc)
+      ? AlarmScreenPhase.ring
+      : AlarmScreenPhase.over;
+}
 
 /// True when an alarm is over and must not be shown or rung again: the native
 /// side recorded its timeout, or the item already has an answer, an

@@ -19,9 +19,9 @@ class VoiceAlarmTest {
     @Test
     fun `a note repeats for the whole ring with a short pause (2026-10-04)`() {
         assertEquals(1_000L, VoiceAlarmPolicy.REPLAY_GAP_MS)
-        // Must match the Worker's MAX_VOICE_BYTES and the rules' 524288, or a
-        // valid one-minute note fails the ring-time check and rings the tone.
-        assertEquals(524_288L, VoiceAlarmPolicy.MAX_BYTES)
+        // Must match the Worker's MAX_VOICE_BYTES and the rules' 262144, or a
+        // valid 25-second note fails the ring-time check and rings the tone.
+        assertEquals(262_144L, VoiceAlarmPolicy.MAX_BYTES)
     }
 
     @Test
@@ -77,19 +77,19 @@ class VoiceAlarmTest {
         val source = File(
             "src/main/kotlin/com/timeapp/time_app/reminders/AlarmSoundService.kt",
         ).readText()
-        assertTrue(source.contains("VoiceAlarmPolicy.verify(voice) && startVoiceNow(voice)"))
+        assertTrue(source.contains("!VoiceAlarmPolicy.verify(voice) || !startVoiceOnce(voice)"))
         assertTrue(source.contains("AlarmLifecycleStore.KIND_VOICE_FALLBACK"))
-        // Voice plays on the ALARM stream, never looping on its own.
-        val voice = source.substringAfter("private fun startVoiceNow").substringBefore("private fun recordVoiceFallback")
+        // Voice plays on the ALARM stream, once per play: the ring queue
+        // (2026-10-05) times every play, so the player never loops or
+        // schedules its own replay.
+        val voice = source.substringAfter("private fun startVoiceOnce").substringBefore("private fun recordVoiceFallback")
         assertTrue(voice.contains("setAudioAttributes(alarmAttributes())"))
         assertTrue(voice.contains("isLooping = false"))
-        // It repeats after the pause; its ring's own end stops it.
-        assertTrue(voice.contains("handler.postDelayed(voiceReplay, VoiceAlarmPolicy.REPLAY_GAP_MS)"))
-        // Releasing the player (stop, or another alarm taking the speaker)
-        // cancels a pending replay, so nothing restarts.
-        val release = source.substringAfter("private fun releasePlayer()").substringBefore("\n    }\n")
-        assertTrue(release.contains("handler.removeCallbacks(voiceReplay)"))
-        val stop = source.substringAfter("private fun stopAlarm()").substringBefore("\n    }\n")
-        assertTrue(stop.contains("releasePlayer()"))
+        assertTrue(!voice.contains("postDelayed"))
+        // Ending a segment releases the player.
+        val end = source.substringAfter("private fun endSegment()").substringBefore("\n    }\n")
+        assertTrue(end.contains("releasePlayer()"))
+        val finish = source.substringAfter("private fun finish()").substringBefore("\n    }\n")
+        assertTrue(finish.contains("releasePlayer()"))
     }
 }

@@ -26,6 +26,7 @@ class AlarmDeliveryChannel(private val appContext: Context) {
                         call.argument<String>("voiceSha256"),
                         (call.argument<Number>("voiceSizeBytes") ?: 0).toLong(),
                     )
+                    val voiceMs = (call.argument<Number>("voiceDurationMs") ?: 0).toLong()
                     if (id == null || fireAt == null || itemId.isEmpty()) {
                         result.success("bad_args")
                     } else {
@@ -38,6 +39,7 @@ class AlarmDeliveryChannel(private val appContext: Context) {
                                 exact,
                                 headline,
                                 voice,
+                                voiceMs,
                             ),
                         )
                     }

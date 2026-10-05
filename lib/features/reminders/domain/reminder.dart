@@ -9,14 +9,34 @@ import 'dart:convert';
 ///
 /// Revision 3 (2026-09-26): no ting on alarms, and a voice note travels with
 /// the armed alarm (item 32c-2) — re-arm everything once.
-const reminderDeliveryRevision = 3;
+///
+/// Revision 4 (2026-10-05): the native ring queue needs each voice note's
+/// length — re-arm everything once so it reaches the native store.
+const reminderDeliveryRevision = 4;
+
+/// How long after its time an unanswered alarm is still wanted: a safety
+/// bound only. The native ring queue ends an alarm after its last repeat, and
+/// a plan never rung a day after its time ends unrung (2026-10-05).
+const kAlarmLiveWindow = Duration(hours: 24);
+
+/// Rings per alarm: the first plus two repeats. Native `RingQueuePolicy.RINGS`
+/// decides; this is only for words ("Reminder 2 of 3"), kept equal by a test.
+const kAlarmRingCount = 3;
 
 /// The voice note an alarm must play (item 32c-2): what the downloaded file
 /// must match. The file's path is resolved by the scheduler at the edge.
 class ReminderVoice {
-  const ReminderVoice({required this.sha256, required this.sizeBytes});
+  const ReminderVoice({
+    required this.sha256,
+    required this.sizeBytes,
+    this.durationMs = 0,
+  });
   final String sha256;
   final int sizeBytes;
+
+  /// How long one play lasts (2026-10-05): the ring queue times every play
+  /// and fits two in a 1-minute ring. 0 when unknown.
+  final int durationMs;
 }
 
 /// The reminder layer's value types. No plugins, no Firestore, no BuildContext —

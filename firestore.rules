@@ -1361,7 +1361,20 @@ service cloud.firestore {
             before is map
             && after is map
             && after.keys().hasOnly(
-                 ['rangAt', 'dismissedAt', 'unavailableAt', 'voiceFallbackAt'])
+                 ['rangAt', 'dismissedAt', 'unavailableAt', 'voiceFallbackAt',
+                  'ring', 'ringAt', 'ringEndsAt', 'nextRingAt'])
+            // The ring queue (2026-10-05): the target's phone records which
+            // ring is going (1-3), when it started and ends, and when the
+            // next is expected — what the planner's card shows live.
+            && (!after.keys().hasAny(['ring'])
+                || (after.get('ring', 0) is int
+                    && after.get('ring', 0) >= 1 && after.get('ring', 0) <= 3))
+            && (!after.keys().hasAny(['ringAt'])
+                || after.get('ringAt', null) is timestamp)
+            && (!after.keys().hasAny(['ringEndsAt'])
+                || after.get('ringEndsAt', null) is timestamp)
+            && (!after.keys().hasAny(['nextRingAt'])
+                || after.get('nextRingAt', null) is timestamp)
             // Item 32c-2: the voice note could not play, the ringtone rang.
             && (!after.keys().hasAny(['voiceFallbackAt'])
                 || after.get('voiceFallbackAt', null) is timestamp)
@@ -1395,9 +1408,9 @@ service cloud.firestore {
             && note is map
             && note.keys().hasOnly(['durationMs', 'sha256', 'sizeBytes'])
             && note.durationMs is int
-            && note.durationMs > 0 && note.durationMs <= 60500
+            && note.durationMs > 0 && note.durationMs <= 25500
             && note.sizeBytes is int
-            && note.sizeBytes > 0 && note.sizeBytes <= 524288
+            && note.sizeBytes > 0 && note.sizeBytes <= 262144
             && note.sha256 is string && note.sha256.size() == 64
             && exists(upload)
             && get(upload).data.uploaderUid == request.auth.uid

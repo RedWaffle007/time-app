@@ -79,9 +79,9 @@ describe('voice note on create', () => {
     await assertSucceeds(plan(as(B), itemPath, plain));
   });
 
-  it('a full one-minute note at the size cap is accepted', async () => {
+  it('a full 25-second note at the size cap is accepted (2026-10-05)', async () => {
     await assertSucceeds(plan(as(B), itemPath, item({
-      voiceNote: { durationMs: 60500, sha256: SHA, sizeBytes: 524288 },
+      voiceNote: { durationMs: 25500, sha256: SHA, sizeBytes: 262144 },
     })));
   });
 
@@ -93,9 +93,9 @@ describe('voice note on create', () => {
 
   it('DENIES malformed metadata', async () => {
     const bad = [
-      { durationMs: 60501, sha256: SHA, sizeBytes: 90000 },
+      { durationMs: 25501, sha256: SHA, sizeBytes: 90000 },
       { durationMs: 0, sha256: SHA, sizeBytes: 90000 },
-      { durationMs: 12000, sha256: SHA, sizeBytes: 524289 },
+      { durationMs: 12000, sha256: SHA, sizeBytes: 262145 },
       { durationMs: 12000, sha256: 'abc', sizeBytes: 90000 },
       { durationMs: 12000, sha256: SHA, sizeBytes: 90000, url: 'https://x' },
       { durationMs: 12000, sha256: SHA, sizeBytes: 90000, deliveredAt: new Date() },

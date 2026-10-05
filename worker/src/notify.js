@@ -521,6 +521,8 @@ export function buildMessage(event, subtype, item, targetUid, itemId, names = {}
           ? {
               voiceSha256: item.voiceNote.sha256,
               voiceSizeBytes: String(item.voiceNote.sizeBytes || ''),
+              // 2026-10-05: the ring queue times every play by it.
+              voiceDurationMs: String(item.voiceNote.durationMs || ''),
             }
           : {}),
       },

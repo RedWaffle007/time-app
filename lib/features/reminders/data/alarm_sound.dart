@@ -13,8 +13,58 @@ import 'package:flutter/services.dart';
 /// A hand-written channel rather than a package, the same call [SecureWindow]
 /// makes: the job is two verbs over one native service, and an audio package
 /// would not own the wake lock or the foreground-service type this needs.
+/// One alarm in the segment ringing now (2026-10-05), as the native queue
+/// holds it: enough to name it on screen before the item stream loads.
+class RingingAlarm {
+  const RingingAlarm({
+    required this.itemId,
+    required this.headline,
+    required this.scheduledAtUtc,
+    required this.ring,
+    required this.voice,
+    required this.sounding,
+  });
+
+  final String itemId;
+
+  /// "{planner} planned {task} for you" / "{planner} sent you a voice alarm".
+  final String headline;
+  final DateTime? scheduledAtUtc;
+
+  /// 1 for a new alarm's ring; 2 or 3 for its repeats.
+  final int ring;
+  final bool voice;
+
+  /// The one whose sound is playing right now.
+  final bool sounding;
+
+  static RingingAlarm? fromMap(Object? raw) {
+    if (raw is! Map) return null;
+    final id = raw['itemId'];
+    if (id is! String || id.isEmpty) return null;
+    final at = raw['scheduledAtMillis'];
+    final ring = raw['ring'];
+    return RingingAlarm(
+      itemId: id,
+      headline: raw['headline'] is String ? raw['headline'] as String : '',
+      scheduledAtUtc: at is int && at > 0
+          ? DateTime.fromMillisecondsSinceEpoch(at, isUtc: true)
+          : null,
+      ring: ring is int && ring > 0 ? ring : 1,
+      voice: raw['voice'] == true,
+      sounding: raw['sounding'] == true,
+    );
+  }
+}
+
 abstract interface class AlarmSound {
-  Future<void> start(String itemId, {String headline = ''});
+  /// Puts [itemId] in the native ring queue if it is not there yet (at
+  /// [scheduledAtUtc], its plan time) and lets the queue look now.
+  Future<void> start(
+    String itemId, {
+    String headline = '',
+    DateTime? scheduledAtUtc,
+  });
   Future<void> stop(String itemId);
 
   /// The sentence the native alarm was delivered with ("{planner} planned {task} for
@@ -25,9 +75,16 @@ abstract interface class AlarmSound {
   /// mid-ring shows that alarm instead of only playing its tone.
   Future<String?> ringingItem();
 
-  /// Every alarm ringing right now, oldest first (2026-10-04). Only the
-  /// newest makes a sound; the rest keep their own rings.
+  /// Every alarm in the segment ringing right now (2026-10-05): one new
+  /// alarm, or a batch of repeats.
   Future<List<String>> ringingItems();
+
+  /// The alarms in the segment ringing now, in order (2026-10-05).
+  Future<List<RingingAlarm>> segmentDetails();
+
+  /// When [itemId] rings next if nothing new is planned (the native queue's
+  /// forecast), or null when it is not in the queue (2026-10-05).
+  Future<DateTime?> nextRingAt(String itemId);
 
   /// Ends an alarm opened after its ring cycle ran out ([alarmScreenPhase])
   /// as missed, with no sound: missed notice, missed popup, planner told.
@@ -44,8 +101,46 @@ class PlatformAlarmSound implements AlarmSound {
   static const _channel = MethodChannel('time_app/alarm_sound');
 
   @override
-  Future<void> start(String itemId, {String headline = ''}) =>
-      _invoke('start', itemId, {'headline': headline});
+  Future<void> start(
+    String itemId, {
+    String headline = '',
+    DateTime? scheduledAtUtc,
+  }) => _invoke('start', itemId, {
+    'headline': headline,
+    'scheduledAtMillis': ?scheduledAtUtc?.millisecondsSinceEpoch,
+  });
+
+  @override
+  Future<List<RingingAlarm>> segmentDetails() async {
+    try {
+      final raw = await _channel.invokeListMethod<Object?>('segmentDetails');
+      return [
+        for (final r in raw ?? const <Object?>[]) ?RingingAlarm.fromMap(r),
+      ];
+    } on MissingPluginException {
+      return const [];
+    } on PlatformException catch (e) {
+      debugPrint('alarm_sound: segmentDetails failed: $e');
+      return const [];
+    }
+  }
+
+  @override
+  Future<DateTime?> nextRingAt(String itemId) async {
+    try {
+      final ms = await _channel.invokeMethod<int>('nextRingAt', {
+        'itemId': itemId,
+      });
+      return ms == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true);
+    } on MissingPluginException {
+      return null;
+    } on PlatformException catch (e) {
+      debugPrint('alarm_sound: nextRingAt failed: $e');
+      return null;
+    }
+  }
 
   @override
   Future<void> stop(String itemId) => _invoke('stop', itemId);
